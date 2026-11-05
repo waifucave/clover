@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 export type CiArea =
-  | "workspaces" | "daemon" | "app" | "gallery" | "typecheck" | "lockfiles"
+  | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
   | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
@@ -30,6 +30,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
   daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
   app: ["apps/"],
+  // the Linux packages: the app, its builder config, packaging/ and the scripts that build them
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],

@@ -1,0 +1,165 @@
+// The Linux packages (plan §4 M1): the deb and the rpm, the main ones, which install the AppArmor profile Electron's
+// sandbox needs on Ubuntu, and the AppImage, the fallback (spec §4). Each holds the desktop app and the daemon,
+// clover-core, in its resources. The dmg and the Windows installer come with E-M1's app; signing and updates are M2.
+//
+//   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run]
+//
+// Linux only: electron-builder makes the deb and the rpm with fpm, and the rpm needs rpmbuild (`apt-get install rpm`).
+// Both architectures build on an x64 machine. For each architecture it:
+//   1. builds the daemon for linux-<arch> (scripts/build-daemon.ts)
+//   2. stages it in apps/desktop/out/daemon/, where electron-builder.yml's extraResources picks it up
+//   3. builds the app (apps/desktop's `build`) once, and packages it: electron-builder --linux <formats> --<arch>
+//   4. with --check, opens each package and checks it holds the daemon, the AppArmor profile and packaging/linux's
+//      scripts (`checkPackage`)
+// Output: apps/desktop/out/dist/. Nothing is signed, published or installed.
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
+
+export const LINUX_ARCHES = ["x64", "arm64"] as const;
+export type LinuxArch = (typeof LINUX_ARCHES)[number];
+export const LINUX_FORMATS = ["deb", "rpm", "AppImage"] as const;
+export type LinuxFormat = (typeof LINUX_FORMATS)[number];
+
+export interface BuildPackagesArgs {
+  arches: LinuxArch[];
+  formats: LinuxFormat[];
+  check: boolean;
+  dryRun: boolean;
+}
+
+function listOf<T extends string>(flag: string, value: string | undefined, allowed: readonly T[]): T[] {
+  const list = (value ?? "").split(",").filter(Boolean);
+  const unknown = list.filter((v) => !allowed.includes(v as T));
+  if (list.length === 0 || unknown.length > 0) throw new Error(`${flag} takes some of ${allowed.join(", ")}${unknown.length > 0 ? ` (not ${unknown.join(", ")})` : ""}`);
+  return [...new Set(list as T[])];
+}
+
+/** `hostArch` is this machine's (`process.arch`), passed in so the parse stays pure. */
+export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string): BuildPackagesArgs {
+  let arches: LinuxArch[] | undefined;
+  let formats: LinuxFormat[] = [...LINUX_FORMATS];
+  let check = false;
+  let dryRun = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    const value = (name: string): string | undefined => (a === name ? argv[++i] : a.slice(name.length + 1));
+    if (a === "--check") check = true;
+    else if (a === "--dry-run") dryRun = true;
+    else if (a === "--arch" || a.startsWith("--arch=")) arches = listOf("--arch", value("--arch"), LINUX_ARCHES);
+    else if (a === "--formats" || a.startsWith("--formats=")) formats = listOf("--formats", value("--formats"), LINUX_FORMATS);
+    else throw new Error(`unknown argument ${a} (usage: build-packages [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run])`);
+  }
+  if (arches === undefined) {
+    if (!LINUX_ARCHES.includes(hostArch as LinuxArch)) throw new Error(`this machine is ${hostArch}: name an architecture with --arch`);
+    arches = [hostArch as LinuxArch];
+  }
+  return { arches, formats, check, dryRun };
+}
+
+export function daemonTargetFor(arch: LinuxArch): DaemonTarget {
+  return arch === "x64" ? "linux-x64" : "linux-arm64";
+}
+
+/** Debian's and RPM's names for an architecture, as electron-builder writes them into file names. */
+export function packageArchNames(arch: LinuxArch): { deb: string; rpm: string; appImage: string } {
+  return arch === "x64" ? { deb: "amd64", rpm: "x86_64", appImage: "x86_64" } : { deb: "arm64", rpm: "aarch64", appImage: "arm64" };
+}
+
+/** The electron-builder command for one architecture, run in apps/desktop. */
+export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxFormat[]): string[] {
+  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never"];
+}
+
+/** What a package must hold: the daemon and the AppArmor profile in the app's resources. */
+export const REQUIRED_FILES = ["/opt/Clover/resources/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover"] as const;
+/** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
+export const AFTER_INSTALL_MARK = "/opt/Clover/resources/clover-core";
+
+/**
+ * The problems with one package, from its file list (`dpkg-deb -c`, `rpm -qlp`) and its scripts (`dpkg-deb -I … postinst`,
+ * `rpm -qp --scripts`). An empty list is a good package.
+ */
+export function checkPackage(format: "deb" | "rpm", listing: string, scripts: string): string[] {
+  // dpkg-deb -c prints `drwxr-xr-x root/root 0 2026-11-05 12:00 ./opt/Clover/…`; rpm -qlp prints the bare path.
+  const paths = new Set(listing.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => (format === "deb" ? (l.split(/\s+/).pop() ?? "").replace(/^\./, "") : l)));
+  const problems = REQUIRED_FILES.filter((f) => !paths.has(f)).map((f) => `${format}: ${f} is missing`);
+  if (!scripts.includes(AFTER_INSTALL_MARK)) problems.push(`${format}: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`);
+  if (!scripts.includes("apparmor_parser")) problems.push(`${format}: its scripts never load the AppArmor profile`);
+  return problems;
+}
+
+function run(cmd: string[], cwd: string): { status: number; stdout: string } {
+  const r = spawnSync(cmd[0]!, cmd.slice(1), { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env } });
+  if (r.error !== undefined) return { status: 127, stdout: `${r.error.message}` };
+  return { status: r.status ?? 1, stdout: `${r.stdout ?? ""}${r.status === 0 ? "" : r.stderr ?? ""}` };
+}
+
+function checkBuilt(outDir: string, arch: LinuxArch, formats: readonly LinuxFormat[]): string[] {
+  const names = packageArchNames(arch);
+  const files = existsSync(outDir) ? readdirSync(outDir) : [];
+  const problems: string[] = [];
+  for (const format of formats) {
+    const suffix = format === "deb" ? `_${names.deb}.deb` : format === "rpm" ? `.${names.rpm}.rpm` : `-${names.appImage}.AppImage`;
+    const file = files.find((f) => f.endsWith(suffix));
+    if (file === undefined) { problems.push(`${format} (${arch}): no *${suffix} in ${outDir}`); continue; }
+    const path = join(outDir, file);
+    console.log(`build-packages: ${file} (${(statSync(path).size / 1_048_576).toFixed(1)} MB)`);
+    if (format === "AppImage") continue; // it runs its own runtime to list itself; the app checks its daemon at first launch
+    const listing = format === "deb" ? run(["dpkg-deb", "-c", path], outDir) : run(["rpm", "-qlp", path], outDir);
+    const scripts = format === "deb" ? run(["dpkg-deb", "-I", path, "postinst"], outDir) : run(["rpm", "-qp", "--scripts", path], outDir);
+    if (listing.status !== 0 || scripts.status !== 0) { problems.push(`${format} (${arch}): could not open it: ${listing.stdout.slice(0, 300)}${scripts.stdout.slice(0, 300)}`); continue; }
+    problems.push(...checkPackage(format, listing.stdout, scripts.stdout).map((p) => `${p} (${arch})`));
+  }
+  return problems;
+}
+
+export function main(argv: readonly string[], root: string): number {
+  let args: BuildPackagesArgs;
+  try {
+    args = parseBuildPackagesArgs(argv, process.arch);
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 2;
+  }
+  if (process.platform !== "linux" && !args.dryRun) {
+    console.error("build-packages: the Linux packages build on Linux (fpm and rpmbuild); use --dry-run elsewhere");
+    return 2;
+  }
+  const desktop = join(root, "apps", "desktop");
+  const staged = join(desktop, "out", "daemon");
+  const outDir = join(desktop, "out", "dist");
+  // `stage`: this architecture's daemon goes where electron-builder.yml's extraResources reads it, just before packaging.
+  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [{ say: "the app", cmd: ["bun", "run", "build"], cwd: desktop }];
+  for (const arch of args.arches) {
+    steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch)], cwd: root });
+    steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats)], cwd: desktop, stage: arch });
+  }
+  if (args.dryRun) {
+    for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
+    return 0;
+  }
+  rmSync(outDir, { recursive: true, force: true });
+  for (const s of steps) {
+    console.log(`build-packages: ${s.say}…`);
+    if (s.stage !== undefined) {
+      rmSync(staged, { recursive: true, force: true });
+      mkdirSync(staged, { recursive: true });
+      copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
+    }
+    const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
+    if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
+  }
+  rmSync(staged, { recursive: true, force: true });
+  if (args.check) {
+    const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
+    for (const p of problems) console.error(`build-packages: ${p}`);
+    if (problems.length > 0) return 1;
+    console.log("build-packages: every package holds the daemon, the AppArmor profile and packaging/linux's scripts");
+  }
+  return 0;
+}
+
+if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));

@@ -242,6 +242,44 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  # The Linux packages (plan §4 M1): the deb, the rpm and the AppImage of the app with the daemon inside, for x64 and
+  # arm64, built on one x64 machine and opened to check what they hold (scripts/build-packages.ts --check). Then the
+  # x64 deb is installed on this runner, checked (`clover` is the daemon's command line, the AppArmor profile is in)
+  # and removed (both are gone). Nothing is uploaded: the packages are unsigned skeletons until M2.
+  packages:
+    name: packages · linux (deb, rpm, AppImage)
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: rpmbuild, for the rpm
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends rpm
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and check the packages
+        run: bun scripts/build-packages.ts --arch x64,arm64 --check
+
+      - name: Install the x64 deb, check it, and remove it
+        run: |
+          deb=$(ls apps/desktop/out/dist/*_amd64.deb)
+          name=$(dpkg-deb -f "$deb" Package)
+          sudo apt-get install -y -qq "./$deb"
+          test "$(readlink -f /usr/bin/clover)" = /opt/Clover/resources/clover-core
+          CLOVER_HOME="$(mktemp -d)" clover --version
+          test -f /etc/apparmor.d/clover
+          sudo apt-get remove -y -qq "$name"
+          test ! -e /usr/bin/clover
+          test ! -e /etc/apparmor.d/clover
+
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
   # boolean>`, fails core's tsc when a `SessionEvent` variant is added). `bun run typecheck` is every workspace
@@ -645,7 +683,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
