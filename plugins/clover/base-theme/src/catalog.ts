@@ -244,8 +244,9 @@ export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "card.ap
 /** Lane B's catalog values for those tokens: what a `"system"` falls back to with nothing beneath it but the
  *  catalog (the base theme's own case) and no OS reading. */
 export const CATALOG_ACCENTS: Readonly<Record<string, { readonly light: string; readonly dark: string }>> = {
-  "color.accent": { light: "#C2387A", dark: "#FF7AB6" },
-  "card.approve.background": { light: "#C2387A", dark: "#FF7AB6" },
+  // Lane F's measured control blue (a step darker under the approve button's white text in dark), asked of B.
+  "color.accent": { light: "#2F6FDF", dark: "#4180E3" },
+  "card.approve.background": { light: "#2F6FDF", dark: "#3570D8" },
 };
 
 export interface AutoInk {

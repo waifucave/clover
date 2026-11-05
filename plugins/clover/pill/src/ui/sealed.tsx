@@ -115,7 +115,7 @@ export const PILL_CARD_SOURCES: Readonly<Record<string, CardTokenSource>> = {
   "card.rim": { value: "#00000000" },
   "card.text": { token: "pill.text", fallback: "#FFFFFF" },
   "card.muted": { token: "pill.muted", fallback: "#8B8B8B" },
-  "card.approve.background": { token: "pill.accept", fallback: "#C2387A" },
+  "card.approve.background": { token: "pill.accept", fallback: "#4180E3" },
   "card.approve.text": { token: "pill.text", fallback: "#FFFFFF" },
   "card.deny.background": { token: "pill.send", fallback: "#FFFFFF" },
   "card.deny.text": { token: "pill.send.glyph", fallback: "#000000" },

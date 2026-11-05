@@ -100,7 +100,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 700;
   color: var(--clover-pill-surface, #000000);
   background: var(--clover-pill-text, #FFFFFF);
@@ -181,7 +181,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   color: var(--clover-pill-text, #FFFFFF);
   background: var(--clover-pill-accessory, #FFFFFF1F);
   transition: box-shadow 150ms ease-out;
@@ -196,7 +196,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   color: var(--clover-pill-send-glyph, #000000);
   background: var(--clover-pill-send, #FFFFFF);
   transition: box-shadow 150ms ease-out, transform 120ms ease-out;
@@ -221,8 +221,8 @@
 .clp-answer[data-role="accept"]:hover,
 .clp-answer[data-role="accept"][data-hover="true"]:not(:disabled) {
   box-shadow:
-    0 0 8px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 45%, transparent),
-    0 0 20px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 22%, transparent);
+    0 0 8px color-mix(in srgb, var(--clover-pill-accept, #4180E3) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-pill-accept, #4180E3) 22%, transparent);
 }
 
 /* The ⋯ menu and the target menu: small dark lists floating above the pill, in the stack over it. */
@@ -254,7 +254,7 @@
   padding: 7px 10px;
   border-radius: 9px;
   text-align: left;
-  font-size: var(--clover-font-size-control, 13px);
+  font-size: var(--clover-font-size-control, 14px);
   white-space: nowrap;
 }
 
@@ -273,7 +273,7 @@
   width: 16px;
   display: inline-flex;
   justify-content: center;
-  font-size: var(--clover-font-size-control, 13px);
+  font-size: var(--clover-font-size-control, 14px);
   color: var(--clover-pill-muted, #8B8B8B);
 }
 
@@ -310,7 +310,7 @@
 
 .clp-preview-position {
   flex: none;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-variant-numeric: tabular-nums;
   color: var(--clover-pill-muted, #8B8B8B);
 }
@@ -351,7 +351,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 500;
   color: var(--clover-pill-muted, #8B8B8B);
 }
@@ -388,7 +388,7 @@
   border-radius: 10px;
   background: var(--clover-pill-option, #FFFFFF14);
   font-family: var(--clover-font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   line-height: 17px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -396,7 +396,7 @@
 
 .clp-card-risk {
   display: block;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 500;
   color: var(--clover-pill-attention, #FFC747);
 }
@@ -411,7 +411,7 @@
 .clp-card-status {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 500;
   color: var(--clover-pill-muted, #8B8B8B);
 }
@@ -428,7 +428,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   color: var(--clover-pill-send-glyph, #000000);
   background: var(--clover-pill-send, #FFFFFF);
   transition: box-shadow 150ms ease-out, transform 120ms ease-out;
@@ -436,7 +436,7 @@
 
 .clp-answer[data-role="accept"] {
   color: var(--clover-pill-text, #FFFFFF);
-  background: var(--clover-pill-accept, #C2387A);
+  background: var(--clover-pill-accept, #4180E3);
 }
 
 .clp-answer[data-role="quiet"] {
@@ -475,7 +475,7 @@
 
 .clp-slot[data-role="accept"] {
   color: var(--clover-pill-text, #FFFFFF);
-  background: var(--clover-pill-accept, #C2387A);
+  background: var(--clover-pill-accept, #4180E3);
 }
 
 /* An answer that carries its own sealed label ("Always allow"): a capsule as tall as the circles. */
@@ -483,7 +483,7 @@
   width: auto;
   min-width: 30px;
   border-radius: 15px;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 600;
   color: var(--clover-pill-text, #FFFFFF);
   background: var(--clover-pill-accessory, #FFFFFF1F);
@@ -518,8 +518,8 @@
 .clp-slot[data-role="accept"]:hover::before,
 .clp-slot[data-role="accept"][data-hover="true"]::before {
   box-shadow:
-    0 0 8px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 45%, transparent),
-    0 0 20px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 22%, transparent);
+    0 0 8px color-mix(in srgb, var(--clover-pill-accept, #4180E3) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-pill-accept, #4180E3) 22%, transparent);
 }
 
 .clp-question {
@@ -531,7 +531,7 @@
 .clp-question-hint {
   display: block;
   margin-top: 2px;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   color: var(--clover-pill-muted, #8B8B8B);
 }
 
@@ -575,7 +575,7 @@
 }
 
 .clp-option-detail {
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   line-height: 15px;
   color: var(--clover-pill-muted, #8B8B8B);
 }
@@ -586,7 +586,7 @@
 
 .clp-option-mark {
   flex: none;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   color: #FFFFFF80;
 }
 
@@ -699,7 +699,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 500;
 }
 
@@ -719,7 +719,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
 }
 
 .clp-child-glyph[data-status="needsYou"] {
@@ -744,7 +744,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   color: var(--clover-pill-text, #FFFFFF);
 }
 
@@ -756,7 +756,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 600;
   background: var(--clover-pill-surface, #000000);
   box-shadow: var(--clover-pill-shadow, 0 4px 24px #00000073), inset 0 0 0 1px var(--clover-pill-rim, #FFFFFF17);

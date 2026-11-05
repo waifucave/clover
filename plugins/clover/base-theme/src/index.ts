@@ -11,5 +11,5 @@ export * from "./theme";
 export { checkThemeCss, hidesFrames, drawsOver, lifts, styleRules, hidingKeyframes, ALLOWED_AT_RULES, type CssCheckOptions, type Declaration } from "./css-check";
 export { checkLayout, BOT_TAB_SPOTS, type LayoutCheck } from "./layout-check";
 
-/** The base theme, read and checked. */
-export const BASE_THEME: ThemeFile = readTheme(baseTheme, { strict: true });
+/** The base theme, read and checked. Its own tokens are `plugin.clover.*` (lane F's, until lane B's catalog has them). */
+export const BASE_THEME: ThemeFile = readTheme(baseTheme, { strict: true, plugin: "clover" });

@@ -3,7 +3,7 @@
 // is not the registry's validator and refuses nothing the spec allows.
 
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { checkTheme, isPluginPath } from "./theme";
 
 const TOP_KEYS = new Set([
@@ -91,7 +91,9 @@ export function checkManifest(folder: string, options: { child: boolean; folderN
           problems.push(`theme ${String(theme.id)}: its file is not inside the plugin`);
           continue;
         }
-        const themeProblems = checkTheme(JSON.parse(readFileSync(join(folder, theme.file), "utf8")), { strict: true });
+        // Its own tokens are `plugin.<top-level id>.…`: a child's top-level plugin is the folder it sits in.
+        const plugin = options.child ? basename(dirname(resolve(folder))) : typeof raw.id === "string" ? raw.id : undefined;
+        const themeProblems = checkTheme(JSON.parse(readFileSync(join(folder, theme.file), "utf8")), { strict: true, plugin });
         for (const p of themeProblems) problems.push(`theme ${String(theme.id)}: ${p}`);
       }
     }

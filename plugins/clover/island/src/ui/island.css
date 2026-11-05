@@ -52,7 +52,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -73,7 +73,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -83,7 +83,7 @@
 }
 
 .clv-working {
-  color: var(--clover-island-working, #FF7AB6);
+  color: var(--clover-island-working, #4180E3);
 }
 
 /* A card's panel, its liquid birth and its shell. */
@@ -140,7 +140,7 @@
   align-items: center;
   gap: 6px;
   min-height: 14px;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 500;
   color: var(--clover-island-muted, #8B8B8B);
 }
@@ -178,7 +178,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  font-size: var(--clover-font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 15px);
   line-height: 1.38;
   color: var(--clover-island-text, #FFFFFF);
 }
@@ -188,7 +188,7 @@
   align-items: center;
   gap: 5px;
   font-family: var(--clover-font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   color: var(--clover-island-muted, #8B8B8B);
 }
 
@@ -199,14 +199,14 @@
 }
 
 .clv-risk {
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   line-height: 1.38;
   color: var(--clover-island-muted, #8B8B8B);
 }
 
 .clv-command {
   font-family: var(--clover-font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   line-height: 1.45;
   color: var(--clover-island-text, #FFFFFF);
   background: var(--clover-island-option, #FFFFFF1F);
@@ -252,7 +252,7 @@
 
 .clv-circle[data-role="accept"],
 .clv-sealed-slot[data-role="accept"] {
-  background: var(--clover-island-accept, #C2387A);
+  background: var(--clover-island-accept, #4180E3);
   color: var(--clover-island-accept-text, #FFFFFF);
 }
 
@@ -262,7 +262,7 @@
   min-width: 30px;
   border-radius: 15px;
   padding: 0 4px;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 600;
   background: var(--clover-island-option, #FFFFFF1F);
   color: var(--clover-island-text, #FFFFFF);
@@ -288,8 +288,8 @@
 .clv-circle[data-role="accept"][data-hover="true"]::before,
 .clv-sealed-slot[data-role="accept"][data-hover="true"]::before {
   box-shadow:
-    0 0 8px color-mix(in srgb, var(--clover-island-accept, #C2387A) 45%, transparent),
-    0 0 20px color-mix(in srgb, var(--clover-island-accept, #C2387A) 22%, transparent);
+    0 0 8px color-mix(in srgb, var(--clover-island-accept, #4180E3) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-island-accept, #4180E3) 22%, transparent);
 }
 
 .clv-circle:disabled {
@@ -317,7 +317,7 @@
 /* A question. */
 
 .clv-question-text {
-  font-size: var(--clover-font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 15px);
   line-height: 1.38;
   color: var(--clover-island-text, #FFFFFF);
   display: -webkit-box;
@@ -343,7 +343,7 @@
   border-radius: 15px;
   background: var(--clover-island-option, #FFFFFF1F);
   color: var(--clover-island-text, #FFFFFF);
-  font-size: var(--clover-font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 15px);
   text-align: left;
   transition: background-color 150ms ease-out;
 }
@@ -386,7 +386,7 @@
   background: #FFFFFF14;
   color: var(--clover-island-text, #FFFFFF);
   font: inherit;
-  font-size: var(--clover-font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 15px);
   outline: none;
   user-select: text;
 }
@@ -407,7 +407,7 @@
 .clv-card-status {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   color: var(--clover-island-attention, #FFC747);
   white-space: nowrap;
   overflow: hidden;
@@ -430,7 +430,7 @@
   box-shadow:
     inset 0 0 0 1px var(--clover-island-rim, #FFFFFF17),
     0 3px 20px #00000073;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 500;
   transform-origin: 50% 0;
   pointer-events: auto;
@@ -439,7 +439,7 @@
 .clv-waiting > svg {
   flex: none;
   color: var(--clover-island-attention, #FFC747);
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   --glyph-cut: var(--clover-island-surface, #000000);
 }
 
@@ -516,7 +516,7 @@
 
 .clv-open-title {
   min-width: 0;
-  font-size: var(--clover-font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 15px);
   color: var(--clover-island-text, #FFFFFF);
   white-space: nowrap;
   overflow: hidden;
@@ -532,7 +532,7 @@
   border-radius: 9px;
   background: var(--clover-island-attention, #FFC747);
   color: var(--clover-island-surface, #000000);
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   display: inline-flex;
@@ -640,7 +640,7 @@
   justify-content: center;
   gap: 8px;
   color: var(--clover-island-muted, #8B8B8B);
-  font-size: var(--clover-font-size-control, 13px);
+  font-size: var(--clover-font-size-control, 14px);
 }
 
 .clv-empty > svg {
@@ -696,7 +696,7 @@
 .clv-row-title {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--clover-font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 13px);
   font-weight: 500;
   color: #FFFFFFEB;
   white-space: nowrap;
@@ -775,7 +775,7 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 18px;
-  font-size: var(--clover-font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 12px);
   font-weight: 600;
   color: var(--clover-island-text, #FFFFFF);
 }

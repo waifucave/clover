@@ -30,7 +30,7 @@ const hex = (tokens: Readonly<Record<string, string | number>>, name: string) =>
 describe("the base theme file", () => {
   test("is theme format 1 and holds only catalog tokens, each of its type", () => {
     const json = JSON.parse(readFileSync(join(root, "theme.json"), "utf8"));
-    expect(checkTheme(json, { strict: true })).toEqual([]);
+    expect(checkTheme(json, { strict: true, plugin: "clover" })).toEqual([]);
   });
 
   test("gives every catalog token a value in both appearances", () => {
@@ -88,6 +88,8 @@ describe("contrast", () => {
     ["stage.text", "color.surface", 4.5],
     // Placeholders are words, and the compact pill's is its only label.
     ["color.text.placeholder", "color.surface", 4.5],
+    // An input's placeholder sits on the control fill (lane F flagged it at 4.16:1).
+    ["color.text.placeholder", "color.control", 4.5],
     ["composer.placeholder", "composer.background", 4.5],
     ["pill.placeholder", "pill.surface", 4.5],
     ["pill.placeholder.typing", "pill.surface", 4.5],
@@ -163,7 +165,7 @@ describe("the stack", () => {
   });
 
   test("resolves dark from tokens plus dark.tokens", () => {
-    expect(dark["color.surface"]).toBe("#18181C");
+    expect(dark["color.surface"]).toBe("#191919");
     expect(dark["radius.small"]).toBe(light["radius.small"]);
   });
 });
@@ -309,7 +311,7 @@ describe("the OS accent colour (lane B's rule)", () => {
   const ACCENTS = [
     "#007AFF", "#A550A7", "#F74F9E", "#FF5257", "#F7821B", "#FFC600", "#62BA46", "#8C8C8C",
     "#0A84FF", "#BF5AF2", "#FF375F", "#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#98989D",
-    "#0078D4", "#4CC2FF", "#C2387A", "#FF7AB6",
+    "#0078D4", "#4CC2FF", "#2F6FDF", "#4180E3", "#3570D8",
   ];
 
   test("the base theme's controls follow it: the accent and the approve button are \"system\", their inks \"auto\"", () => {
@@ -321,8 +323,9 @@ describe("the OS accent colour (lane B's rule)", () => {
   });
 
   test("with no reading the theme's accent stands; with one, the OS accent", () => {
-    expect(light["color.accent"]).toBe("#C2387A");
-    expect(dark["color.accent"]).toBe("#FF7AB6");
+    expect(light["color.accent"]).toBe("#2F6FDF");
+    expect(dark["color.accent"]).toBe("#4180E3");
+    expect(dark["card.approve.background"]).toBe("#3570D8");
     const blue = resolveTokens("light", [tokensFor(BASE_THEME, "light")], { systemAccent: "#007AFF" });
     expect(blue["color.accent"]).toBe("#007AFF");
     expect(blue["card.approve.background"]).toBe("#007AFF");

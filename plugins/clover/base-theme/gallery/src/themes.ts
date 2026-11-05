@@ -6,7 +6,7 @@ import baseThemeJson from "../../theme.json" with { type: "json" };
 import baseThemeCss from "../../theme.css" with { type: "text" };
 import { cssVariables, readTheme, resolveTokens, tokensFor, type Appearance, type ThemeFile, type Tokens } from "../../src/theme";
 
-export const BASE: ThemeFile = readTheme(baseThemeJson, { strict: true });
+export const BASE: ThemeFile = readTheme(baseThemeJson, { strict: true, plugin: "clover" });
 
 export interface ThemeLayer {
   id: string;
