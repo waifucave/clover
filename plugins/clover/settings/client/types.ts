@@ -7,7 +7,8 @@
 
 import type { ReactNode } from "react";
 
-export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots" | "usage";
+/** Clover's own sections. Usage is the usage plugin's, which fills `settings.section` (the controller's R3). */
+export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots";
 
 /** A plugin's state (lane B's `PLUGIN_STATES`, spec §5.1): found and waiting for the user's OK, refused, invalid, off,
  *  waiting for a point another plugin declares, running, stopped after crashes, or blocked (revoked). */
@@ -86,12 +87,31 @@ export interface SettingsModalProps {
   onRequestLevel?: (computer: string, level: string) => void;
   /** Ask to remove a device: a sealed card too. */
   onRemoveDevice?: (id: string) => void;
+  /** Ask to make a computer the main one: a sealed card too (§6.4). */
+  onMakeMain?: (id: string) => void;
+  /** Pairing a device without an account (§8.1): the code this device shows, or the four words both show. */
+  pairing?: SettingsPairing;
+  /** Show a code here for another device to enter. */
+  onPairBegin?: () => void;
+  /** Enter the code another device shows. */
+  onPairJoin?: (code: string) => void;
+  /** The four words match on both devices: adding it is a sealed card. */
+  onPairConfirm?: () => void;
+  onPairCancel?: () => void;
   /** Sections plugins add, after Clover's own. */
   extraSections?: ExtraSection[];
   /** A plugin's log, shown on the Plugins page in place of the list. */
   logs?: { name: string; lines: string[]; onBack: () => void };
   /** Open a bot in the bot editor. */
   onEditBot?: (id: string) => void;
+}
+
+/** A pairing under way: the code to enter on the other device, then the four words both show. */
+export interface SettingsPairing {
+  code?: string;
+  words?: string[];
+  /** Asked for: its card waits. */
+  confirming?: boolean;
 }
 
 export interface Language {

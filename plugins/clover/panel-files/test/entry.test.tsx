@@ -14,6 +14,47 @@ const CODE: SessionView = { id: "code-1", kind: "coding", computer: "Studio", ro
 const stat = (path: string, type: FileStat["type"]): FileStat => ({ path, type, size: 1, modifiedAt: 0, executable: false });
 
 describe("the files entry", () => {
+  test("watches the folder: a change lists the folders it touched and reads the open file again; a resync lists all", async () => {
+    const listed: string[] = [];
+    let fire: ((e: { type: "changed"; paths: string[] } | { type: "resync" }) => void) | undefined;
+    let stopped = false;
+    const api = fakeApi({
+      conversation: { get: async () => CODE },
+      files: {
+        list: async (path) => {
+          listed.push(path);
+          return (LISTING[path] ?? []).map((e) => stat(e.path, e.type));
+        },
+        readText: async () => "v2",
+        grep: async () => ({ matches: [], truncated: false }),
+        watch: async (_path, fn) => {
+          fire = fn;
+          return () => void (stopped = true);
+        },
+      },
+    });
+    const { unmount } = render(
+      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+        <FilesEntry props={{ session: "code-1" }} />
+      </UiRuntimeProvider>,
+    );
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("treeitem", { name: "docs" }));
+    fireEvent.click(screen.getByRole("treeitem", { name: "README.md" }));
+    await act(() => settle());
+    listed.length = 0;
+    act(() => fire!({ type: "changed", paths: [`${ROOT}/docs/new.md`, `${ROOT}/README.md`, "home/Studio/elsewhere/x"] }));
+    await act(() => settle());
+    expect(listed.sort()).toEqual([ROOT, `${ROOT}/docs`].sort());
+    expect(screen.getByLabelText(`Contents of ${ROOT}/README.md`).textContent).toContain("v2");
+    listed.length = 0;
+    act(() => fire!({ type: "resync" }));
+    await act(() => settle());
+    expect(listed.sort()).toEqual([ROOT, `${ROOT}/docs`].sort());
+    unmount();
+    expect(stopped).toBe(true);
+  });
+
   test("`inside` keeps to the folder", () => {
     expect(inside("home/S/a", "home/S/a")).toBe(true);
     expect(inside("home/S/a", "home/S/a/b")).toBe(true);

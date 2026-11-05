@@ -17,8 +17,9 @@ function setup(props: Partial<SettingsModalProps> = {}) {
     onRequestLevel: mock((_c: string, _l: string) => undefined),
     onOpenPluginLogs: mock((_id: string) => undefined),
   };
-  render(<SettingsModal section="appearance" values={VALUES} {...h} {...props} />);
-  return h;
+  const all: SettingsModalProps = { section: "appearance", values: VALUES, ...h, ...props };
+  const { rerender } = render(<SettingsModal {...all} />);
+  return { ...h, props: all, rerender };
 }
 
 describe("the settings window", () => {
@@ -29,7 +30,7 @@ describe("the settings window", () => {
     const nav = screen.getByRole("navigation", { name: "Sections" });
     expect(within(nav).getAllByRole("button")).toHaveLength(SECTIONS.length);
     expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "Account", "Devices", "Appearance", "Notifications", "Plugins", "Levels", "Bots", "Usage",
+      "Account", "Devices", "Appearance", "Notifications", "Plugins", "Levels", "Bots",
     ]);
     expect(within(nav).getByRole("button", { name: "Appearance" }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(within(nav).getByRole("button", { name: "Levels" }));
@@ -101,9 +102,36 @@ describe("the settings window", () => {
     expect(screen.queryByRole("button", { name: "Remove Studio" })).toBeNull();
   });
 
-  test("a page with nothing to set yet says so", () => {
-    setup({ section: "usage" });
-    expect(screen.getByText("Nothing to set here yet.")).toBeTruthy();
+  test("Usage is the usage plugin's section, after Clover's own; Settings has none of its own (R3)", () => {
+    expect(SECTIONS).not.toContain("usage" as never);
+    setup({ section: "clover-usage#settings", extraSections: [{ id: "clover-usage#settings", title: "Usage", render: () => <p>Usage today</p> }] });
+    const nav = [...document.querySelectorAll(".cl-settings__section")].map((b) => b.textContent);
+    expect(nav[nav.length - 1]).toBe("Usage");
+    expect(screen.getByText("Usage today")).toBeTruthy();
+  });
+
+  test("devices: make another computer the main one, and pair a device by a code or by joining one", () => {
+    const onMakeMain = mock((_id: string) => undefined);
+    const onPairBegin = mock(() => undefined);
+    const onPairJoin = mock((_c: string) => undefined);
+    const { rerender, props } = setup({ section: "devices", onMakeMain, onPairBegin, onPairJoin });
+    // Studio is the main one already; the phone can't be.
+    expect(screen.queryByRole("button", { name: "Make Studio the main computer" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Make iPhone the main computer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Make Laptop the main computer" }));
+    expect(onMakeMain).toHaveBeenCalledWith("d2");
+    fireEvent.click(screen.getByRole("button", { name: "Show a code" }));
+    expect(onPairBegin).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByRole("textbox", { name: "Code from another device" }), { target: { value: "KQ7-M2P" } });
+    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    expect(onPairJoin).toHaveBeenCalledWith("KQ7-M2P");
+    const onPairConfirm = mock(() => undefined);
+    rerender(<SettingsModal {...props} onMakeMain={onMakeMain} onPairBegin={onPairBegin} pairing={{ code: "KQ7-M2P" }} />);
+    expect(screen.getByRole("status").textContent).toContain("KQ7-M2P");
+    rerender(<SettingsModal {...props} onPairBegin={onPairBegin} onPairConfirm={onPairConfirm} pairing={{ words: ["amber", "river", "lantern", "moss"] }} />);
+    expect(screen.getByRole("status").textContent).toContain("amber · river · lantern · moss");
+    fireEvent.click(screen.getByRole("button", { name: "They match" }));
+    expect(onPairConfirm).toHaveBeenCalledTimes(1);
   });
 });
 

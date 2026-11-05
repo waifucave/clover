@@ -8,7 +8,7 @@ import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
 import type { SettingsModalProps, SettingsSection } from "./types";
 
-export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots", "usage"];
+export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots"];
 
 /** Where the section list breaks into groups, as the dividers show. */
 const GROUP_ENDS: ReadonlySet<SettingsSection> = new Set(["devices", "notifications", "levels"]);
@@ -22,7 +22,6 @@ const INDEX: Record<SettingsSection, string[]> = {
   plugins: [S.plugins, S.pluginManager, S.pluginLogs],
   levels: [S.levels],
   bots: [],
-  usage: [],
 };
 
 export function sectionsMatching(query: string): SettingsSection[] {
@@ -63,6 +62,70 @@ function Choice<T extends string>({ label, value, options, labels, onChange }: {
         </button>
       ))}
     </div>
+  );
+}
+
+/** Pairing a device without an account (§8.1): show a code here, or enter the other device's; then check that both
+ *  show the same four words. Adding the device is a sealed card. */
+function Pairing({ props }: { props: SettingsModalProps }) {
+  const [code, setCode] = useState("");
+  const p = props.pairing;
+  return (
+    <section className="cl-settings__pairing" aria-label={S.pairTitle}>
+      <h3 className="cl-settings__subhead">{S.pairTitle}</h3>
+      {!p ? (
+        <>
+          <p className="cl-settings__note">{S.pairDetail}</p>
+          <div className="cl-settings__control cl-settings__pair-row">
+            {props.onPairBegin && (
+              <button type="button" className="cl-settings__button" onClick={props.onPairBegin}>
+                {S.pairBegin}
+              </button>
+            )}
+            {props.onPairJoin && (
+              <form
+                className="cl-settings__control"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (code.trim()) props.onPairJoin?.(code.trim());
+                }}
+              >
+                <input className="cl-settings__input" aria-label={S.pairJoinLabel} placeholder={S.pairJoinLabel} value={code} onChange={(e) => setCode(e.target.value)} />
+                <button type="submit" className="cl-settings__button" disabled={code.trim() === ""}>
+                  {S.pairJoin}
+                </button>
+              </form>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="cl-settings__pair" role="status">
+          {p.words ? (
+            <>
+              <p className="cl-settings__note">{S.pairWords}</p>
+              <p className="cl-settings__pair-words">{p.words.join(" · ")}</p>
+            </>
+          ) : (
+            p.code && (
+              <>
+                <p className="cl-settings__note">{S.pairCodeNote}</p>
+                <p className="cl-settings__pair-code">{p.code}</p>
+              </>
+            )
+          )}
+          <div className="cl-settings__control">
+            {p.words && props.onPairConfirm && (
+              <button type="button" className="cl-settings__button" disabled={p.confirming} onClick={props.onPairConfirm}>
+                {p.confirming ? S.pairConfirming : S.pairConfirm}
+              </button>
+            )}
+            <button type="button" className="cl-settings__button" onClick={props.onPairCancel}>
+              {S.pairCancel}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -219,6 +282,11 @@ function Page({ props }: { props: SettingsModalProps }) {
           <p className="cl-settings__note">{S.devicesDetail}</p>
           {values.devices.map((d) => (
             <Row key={d.id} label={d.name} detail={[d.here ? S.thisDevice : "", d.main ? S.mainDevice : ""].filter(Boolean).join(" · ") || undefined}>
+              {d.kind === "computer" && !d.main && props.onMakeMain && (
+                <button type="button" className="cl-settings__button" aria-label={S.makeMain(d.name)} onClick={() => props.onMakeMain?.(d.id)}>
+                  {S.makeMainLabel}
+                </button>
+              )}
               {!d.here && props.onRemoveDevice && (
                 <button type="button" className="cl-settings__button" aria-label={S.remove(d.name)} onClick={() => props.onRemoveDevice?.(d.id)}>
                   {S.removeLabel}
@@ -226,6 +294,7 @@ function Page({ props }: { props: SettingsModalProps }) {
               )}
             </Row>
           ))}
+          {(props.onPairBegin || props.onPairJoin) && <Pairing props={props} />}
         </>
       );
     case "bots":

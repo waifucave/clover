@@ -471,3 +471,29 @@
 .cl-settings__reason {
   color: var(--clover-color-attention-text);
 }
+
+/* Pairing a device: a code to enter on the other device, then the four words both show. */
+.cl-settings__pairing {
+  margin-top: var(--clover-space-l);
+}
+
+.cl-settings__pair-row {
+  flex-wrap: wrap;
+  margin-top: var(--clover-space-s);
+}
+
+.cl-settings__pair {
+  padding: var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-surface);
+}
+
+.cl-settings__pair-code,
+.cl-settings__pair-words {
+  margin: 0 0 var(--clover-space-m);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-title);
+  letter-spacing: 0.04em;
+}

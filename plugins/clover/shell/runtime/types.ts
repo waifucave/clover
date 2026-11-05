@@ -145,6 +145,15 @@ export interface AccountView {
   user?: { id: string; email?: string; name?: string };
 }
 
+/** A pairing without an account (`PairingView`, devices.ts): a code or QR, then the four words. */
+export interface PairingView {
+  pairingId: string;
+  code?: string;
+  qr?: string;
+  words?: string[];
+  expiresAt: number;
+}
+
 /** A pending card as a plugin hears it: never its text (`CardMeta`). */
 export interface CardMeta {
   id: string;
@@ -298,6 +307,9 @@ export interface PluginApi {
     list(path: string): Promise<FileStat[]>;
     readText(path: string): Promise<string>;
     grep(pattern: string, opts: { cwd: string; limit?: number }): Promise<{ matches: { path: string; line: number; text: string }[]; truncated: boolean }>;
+    /** Changes under a folder (lane J's `filesWatch`, asked of B for `FilesApi`): the paths that changed, or a
+     *  resync when the watch lost track. */
+    watch?(path: string, listener: (e: { type: "changed"; paths: string[] } | { type: "resync" }) => void): Unsubscribe | Promise<Unsubscribe>;
   };
   readonly terminal?: {
     open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
@@ -326,6 +338,11 @@ export interface CoreMethods {
   "session.setModel": { params: { id: string; model: string; effort?: string }; result: { ok: true } };
   "computer.setLevel": { params: { name: string; level: Level }; result: ChangeResult };
   "device.revoke": { params: { id: string }; result: ChangeResult };
+  "device.pair.begin": { params: Record<string, never>; result: PairingView };
+  "device.pair.join": { params: { code: string }; result: PairingView };
+  "device.pair.confirm": { params: { pairingId: string; words: string[] }; result: ChangeResult };
+  "device.pair.cancel": { params: { pairingId: string }; result: { ok: true } };
+  "main.set": { params: { device: string }; result: ChangeResult };
   "account.status": { params: Record<string, never>; result: AccountView };
   "plugin.list": { params: Record<string, never>; result: { plugins: PluginSummary[] } };
   /** Every running plugin's UI: its themes and string tables, for Settings' theme and language pickers. */

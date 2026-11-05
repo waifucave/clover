@@ -299,6 +299,11 @@ const coreHandlers: Handlers = {
   // A sensitive change comes back as a card the core raises (`raise` below adds it to the world's cards).
   "computer.setLevel": () => ({ applied: false, card: "card-level" }),
   "device.revoke": () => ({ applied: false, card: "card-device" }),
+  "main.set": () => ({ applied: false, card: "card-main" }),
+  "device.pair.begin": () => ({ pairingId: "pair-1", code: "KQ7-M2P", expiresAt: NOW + 600_000 }),
+  "device.pair.join": () => ({ pairingId: "pair-2", words: ["amber", "river", "lantern", "moss"], expiresAt: NOW + 600_000 }),
+  "device.pair.confirm": () => ({ applied: false, card: "card-pair" }),
+  "device.pair.cancel": () => ({ ok: true }),
   "bot.setUserLayer": () => ({ applied: true }),
   "session.send": () => ({ seq: 1 }),
   "session.interrupt": () => ({ ok: true }),

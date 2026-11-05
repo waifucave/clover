@@ -32,6 +32,7 @@ export const CATALOG_TOKENS = [
   "font.size.caption",
   "font.size.control",
   "font.size.label",
+  "font.size.title",
   "font.weight.medium",
   "font.weight.regular",
   "radius.large",

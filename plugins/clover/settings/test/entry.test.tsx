@@ -29,10 +29,15 @@ async function mount(params: { section?: string } = {}, extra: { component?: Ent
     "ui.set": () => ({ applied: true }),
     "computer.setLevel": () => ({ applied: false, card: "card-1" }),
     "device.revoke": () => ({ applied: false, card: "card-2" }),
+    "main.set": () => ({ applied: false, card: "card-3" }),
+    "device.pair.begin": () => ({ pairingId: "p1", code: "KQ7-M2P", expiresAt: 0 }),
+    "device.pair.join": () => ({ pairingId: "p2", words: ["amber", "river", "lantern", "moss"], expiresAt: 0 }),
+    "device.pair.confirm": () => ({ applied: false, card: "card-4" }),
+    "device.pair.cancel": () => ({ ok: true }),
   });
   const api = fakeApi({
     computers: { list: async () => [{ name: "Studio", device: "d1", os: "macos", level: "ask-risky", state: "online", link: "self", isMain: true, agents: [] }, { name: "Laptop", device: "d2", os: "macos", level: "ask", state: "online", link: "lan", isMain: false, agents: [] }] },
-    devices: { list: async () => [{ id: "d1", name: "Studio", kind: "computer", runsCore: true, online: true, isThis: true, isMain: true, addedAt: 0 }, { id: "d3", name: "iPhone", kind: "phone", runsCore: false, online: true, isThis: false, isMain: false, addedAt: 0 }], watch: () => () => undefined },
+    devices: { list: async () => [{ id: "d1", name: "Studio", kind: "computer", runsCore: true, online: true, isThis: true, isMain: true, addedAt: 0 }, { id: "d2", name: "Laptop", kind: "computer", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0 }, { id: "d3", name: "iPhone", kind: "phone", runsCore: false, online: true, isThis: false, isMain: false, addedAt: 0 }], watch: () => () => undefined },
     bots: { list: async () => [{ id: "alpha", name: "Alpha", model: "m", userLayer: [], state: "idle", mainSession: "s" }], get: async () => { throw new Error("x"); }, watch: () => () => undefined },
   });
   const routes: unknown[] = [];
@@ -112,6 +117,31 @@ describe("settings on the runtime", () => {
     fireEvent.click(within(chooser).getByRole("radio", { name: /Deutsch/ }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toContainEqual({ patch: { language: "de" } });
+  });
+
+  test("devices: choosing the main computer and pairing go through the core", async () => {
+    const { core } = await mount({ section: "devices" });
+    fireEvent.click(screen.getByRole("button", { name: "Make Laptop the main computer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show a code" }));
+    await act(() => settle());
+    expect(screen.getByText("KQ7-M2P")).toBeTruthy();
+    // The other device joins: this side hears the words.
+    act(() => core.emit("pairing_joined", { pairingId: "p1", words: ["amber", "river", "lantern", "moss"] }));
+    fireEvent.click(screen.getByRole("button", { name: "They match" }));
+    await act(() => settle());
+    expect(screen.getByRole("button", { name: "Waiting for your OK" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Code from another device" }), { target: { value: "ZZ9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method.startsWith("device.pair") || c.method === "main.set").map((c) => [c.method, c.params])).toEqual([
+      ["main.set", { device: "d2" }],
+      ["device.pair.begin", {}],
+      ["device.pair.confirm", { pairingId: "p1", words: ["amber", "river", "lantern", "moss"] }],
+      ["device.pair.cancel", { pairingId: "p1" }],
+      ["device.pair.join", { code: "ZZ9" }],
+    ]);
+    expect(screen.getByRole("status").textContent).toContain("amber · river · lantern · moss");
   });
 
   test("the account and the bots, each opening in the bot editor", async () => {

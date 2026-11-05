@@ -129,6 +129,16 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
   const [own, setOwn] = useState<{ appearance?: SettingsValues["appearance"]; notifications?: SettingsValues["notifications"] }>({});
+  const [pairing, setPairing] = useState<{ id: string; code?: string; words?: string[]; confirming?: boolean } | undefined>(undefined);
+
+  // The side that showed the code hears the four words once the other device joins (a core event; its name is lane H's).
+  useEffect(() => {
+    if (!core || !pairing) return;
+    return core.on("pairing_joined", (e) => {
+      const words = e.words;
+      if (e.pairingId === pairing.id && Array.isArray(words) && words.every((w) => typeof w === "string")) setPairing((p) => (p ? { ...p, words: words as string[] } : p));
+    });
+  }, [core, pairing?.id]);
 
   useEffect(() => {
     let live = true;
@@ -229,9 +239,27 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
               void core.call("plugin.logs", { id, lines: 200 }).then((r) => setLogs({ name: values.plugins.find((p) => p.id === id)?.name ?? id, lines: r.lines })),
             onRequestLevel: (computer: string, level: string) => void core.call("computer.setLevel", { name: computer, level: level as never }),
             onRemoveDevice: (id: string) => void core.call("device.revoke", { id }),
+            onMakeMain: (id: string) => void core.call("main.set", { device: id }),
+            onPairBegin: () =>
+              void core.call("device.pair.begin", {}).then((p) => setPairing({ id: p.pairingId, ...(p.code ? { code: p.code } : {}), ...(p.words ? { words: p.words } : {}) })),
+            onPairJoin: (code: string) =>
+              void core.call("device.pair.join", { code }).then((p) => setPairing({ id: p.pairingId, ...(p.code ? { code: p.code } : {}), ...(p.words ? { words: p.words } : {}) })),
+            onPairConfirm: () => {
+              if (!pairing?.words) return;
+              setPairing({ ...pairing, confirming: true });
+              void core.call("device.pair.confirm", { pairingId: pairing.id, words: pairing.words }).then((r) => {
+                // Applied at once (the user's own terminal) or after its card: either way the list shows the device.
+                if (r.applied) setPairing(undefined);
+              });
+            },
+            onPairCancel: () => {
+              if (pairing) void core.call("device.pair.cancel", { pairingId: pairing.id });
+              setPairing(undefined);
+            },
           }
         : {})}
       {...(logs ? { logs: { ...logs, onBack: () => setLogs(undefined) } } : {})}
+      {...(pairing ? { pairing: { ...(pairing.code ? { code: pairing.code } : {}), ...(pairing.words ? { words: pairing.words } : {}), ...(pairing.confirming ? { confirming: true } : {}) } } : {})}
       extraSections={extra}
     />
   );
