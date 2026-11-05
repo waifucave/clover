@@ -9,12 +9,14 @@
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
 import { mkdirSync, writeFileSync } from "node:fs";
-import { release as osRelease } from "node:os";
+import { hostname, release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
+import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
+import { HangWatch } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
@@ -24,7 +26,7 @@ import { daemonEndpoint, type DaemonClient } from "./protocol/client";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { MenuGate, checkRegions, inRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { MenuGate, ViewFrames, checkRegions, inRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
@@ -67,6 +69,7 @@ const safeMode = start.safeMode || args.safeMode;
 
 let runtime: UiRuntime;
 let pair: Pair;
+let browser: BrowserHost | undefined;
 let tray: AppTray | undefined;
 let mainWindow: BrowserWindow | undefined;
 let leaving = false;
@@ -82,6 +85,11 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on("window-all-closed", () => {
     // Closing a window only closes it: the app stays in the menu bar.
+  });
+  // The app's guards on every webContents but the Clover Browser's (its tabs, the windows its pages open and its
+  // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
+  app.on("web-contents-created", (_event, contents) => {
+    if (!isBrowserContents(contents)) guardContents(contents, log);
   });
   app.on("before-quit", (event) => {
     if (leaving || shuttingDown) return;
@@ -107,7 +115,7 @@ async function ready(): Promise<void> {
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
 
-  runtime = new UiRuntime({ os, platform: process.platform, safeMode, log });
+  runtime = new UiRuntime({ os, platform: process.platform, safeMode, log, onGone: (mount) => views.drop(mount) });
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });
@@ -120,6 +128,7 @@ async function ready(): Promise<void> {
     surface: (id, request) => steerSurface(id, request),
     surfaceEnvironment: (id) => surfaceEnvironment(id),
     open: (pluginId, target) => openFor(pluginId, target),
+    viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used),
     menu: (id, items, point) => popupMenu(id, items, point),
   }, log);
   startCensus(runtime);
@@ -128,6 +137,7 @@ async function ready(): Promise<void> {
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
 
   for (const e of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(e as "display-added", () => tellSurfaces());
+  startBrowser();
   pair = makePair();
   setMenu();
   if (!headless) {
@@ -161,6 +171,18 @@ function makePair(): Pair {
       exitApp();
     },
   });
+  // The Clover Browser (lane L): the daemon drives its tabs over the pair.
+  p.handle("app.tab.open", async (params) => {
+    const a = BROWSER_METHODS.appTabOpen.params.parse(params);
+    return { tab: await browserHost().open(a) };
+  });
+  p.handle("app.tab.command", async (params) => {
+    const a = BROWSER_METHODS.appTabCommand.params.parse(params);
+    return { result: await browserHost().command(a.id, a.command) };
+  });
+  p.handle("app.tab.list", () => ({ tabs: browserHost().list() }));
+  // The heartbeat (ruling R9): answered at once, from the main process, so a hung app goes unanswered.
+  p.handle("app.ping", () => ({ ok: true }));
   p.handle("app.show", (params) => {
     const parsed = APP_METHODS.appShow.params.safeParse(params);
     if (!parsed.success) throw new Error("app.show needs a place to show");
@@ -282,6 +304,11 @@ async function restart(safe: boolean): Promise<void> {
 
 function exitApp(): void {
   leaving = true;
+  try {
+    browser?.shutdown();
+  } catch (err) {
+    log(`browser: shutdown failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   pair?.stop();
   tray?.destroy();
   app.exit(0);
@@ -480,15 +507,54 @@ function clickThrough(s: Surface): void {
 /** The menu broker's gate: menus open only right after the user's click or key press in that window, one at a time. */
 const menus = new MenuGate();
 
-/** The guards the app's own windows get (never another webContents: lane L's browser views have L's own policy), and
- *  the input the menu gate counts. */
+/** Ruling R9: a window that stays unresponsive restarts the app into safe mode. */
+const hangs = new HangWatch((windowId) => {
+  log(`window ${windowId} stayed unresponsive: restarting in safe mode`);
+  void restart(true);
+});
+
+/** Where each native view goes (ruling R8: the place the person used last), as the Clover Browser's `setView`. */
+const views = new ViewFrames((name, target) => {
+  if (browser === undefined) return;
+  const win = target === undefined ? null : BrowserWindow.fromId(target.windowId);
+  browser.setView(name, win === null || win.isDestroyed() ? undefined : { window: win, bounds: target!.bounds });
+});
+
+/** The Clover Browser in this process (lane L, spec §12.1): made once the app is ready; what it reports goes to the
+ *  daemon over the pair. */
+function startBrowser(): void {
+  const send = (method: string, params: unknown) => {
+    const c = pair?.client;
+    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${err instanceof Error ? err.message : String(err)}`));
+  };
+  browser = createBrowserHost({
+    computer: hostname().replace(/\.local$/, ""),
+    report: (events) => send("browser.report", { events }),
+    hold: (id, held) => send("browser.hold", { id, held }),
+    assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
+  });
+  void browser.start().catch((err) => log(`browser: start failed: ${err instanceof Error ? err.message : String(err)}`));
+}
+
+function browserHost(): BrowserHost {
+  if (browser === undefined) throw new Error("the browser isn't started");
+  return browser;
+}
+
+/** What the app watches in each of its own windows: the input the menu gate counts, hangs (R9), and the native views
+ *  placed in it. (The guards come from `web-contents-created`.) */
 function watchWindow(win: BrowserWindow): void {
-  guardContents(win.webContents, log);
   const id = win.id;
   win.webContents.on("before-input-event", (_event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") menus.input(id);
   });
-  win.on("closed", () => menus.forget(id));
+  win.webContents.on("unresponsive", () => hangs.unresponsive(id));
+  win.webContents.on("responsive", () => hangs.responsive(id));
+  win.on("closed", () => {
+    menus.forget(id);
+    hangs.responsive(id);
+    views.dropWindow(id);
+  });
 }
 
 /** The menu broker's last step: a native menu at the point, in the window the asking frame is in. A headless run

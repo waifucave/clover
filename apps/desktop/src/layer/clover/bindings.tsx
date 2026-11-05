@@ -53,7 +53,7 @@ export function Window(_: Props<Record<string, never>>) {
     }
   });
   const toggle = useCallback((id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id].slice(-2))), []);
-  const views = open.map((id) => ({ id, title: id === "session" ? "Session" : id.charAt(0).toUpperCase() + id.slice(1), content: <Spot name="panel" spotKey={id} props={{ app: id, session }} /> }));
+  const views = open.map((id) => ({ id, title: id === "session" ? "Session" : id.charAt(0).toUpperCase() + id.slice(1), content: <Spot name="panel" spotKey={id} props={{ app: id, session, bot: bot.id }} /> }));
   return (
     <SpotHints.Provider value={{ session: "bot" }}>
       <FWindow

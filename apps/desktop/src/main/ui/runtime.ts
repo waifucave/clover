@@ -87,6 +87,8 @@ export interface RuntimeOptions {
   /** Delivers a message to a bound document. */
   send?: (frame: { processId: number; routingId: number }, message: LayerMessage) => void;
   themes?: ThemeStore;
+  /** A mount's document, or the mount itself, is gone (its native views go with it). */
+  onGone?: (mount: string) => void;
 }
 
 export class LayerError extends Error {
@@ -557,6 +559,7 @@ export class UiRuntime {
 
   /** Drops a frame's document and everything under it, and issues a fresh single-use token for its next load. */
   private reissue(m: Mount): string {
+    this.opts.onGone?.(m.id);
     for (const id of [...m.children.values()]) this.drop(id);
     m.children.clear();
     if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
@@ -573,6 +576,7 @@ export class UiRuntime {
   private drop(id: string): void {
     const m = this.mounts.get(id);
     if (m === undefined) return;
+    this.opts.onGone?.(id);
     for (const child of m.children.values()) this.drop(child);
     if (m.token !== undefined) this.byToken.delete(m.token);
     if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
@@ -584,6 +588,7 @@ export class UiRuntime {
   sleep(frame: FrameRef, child: string): boolean {
     const m = this.childOf(frame, child);
     if (m.kind !== "frame" || m.tokenState === "asleep") return false;
+    this.opts.onGone?.(m.id);
     for (const id of [...m.children.values()]) this.drop(id);
     m.children.clear();
     if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
@@ -649,6 +654,11 @@ export class UiRuntime {
     return this.partIn(frame, mountId).plugin?.id ?? "core";
   }
 
+  /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). */
+  capabilitiesOf(frame: FrameRef, mountId: string): ReadonlySet<string> {
+    return this.partIn(frame, mountId).plugin?.capabilities ?? new Set();
+  }
+
   private partIn(frame: FrameRef, mountId: string): Mount {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);
@@ -688,6 +698,7 @@ export class UiRuntime {
       if (m.kind !== "frame" || m.frame === undefined || m.tokenState !== "bound") continue;
       if (alive(m.frame)) continue;
       gone.push(m.id);
+      this.opts.onGone?.(m.id);
       m.tokenState = "gone";
       this.byFrame.delete(m.frame.key);
       for (const id of [...m.children.values()]) this.drop(id);

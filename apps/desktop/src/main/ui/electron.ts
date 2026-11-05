@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
-import { checkMenu, menuPoint, openTarget, type MenuItem, type Rect } from "./brokers";
+import { checkMenu, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 
@@ -200,6 +200,8 @@ export interface IpcHooks {
   surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined;
   /** Opens a place in the main window for a part of the plugin `pluginId`. */
   open(pluginId: string, target: OpenTarget): Promise<void>;
+  /** Where a part's native view goes in the window (undefined: nowhere now); `used` when the person just used it. */
+  viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
   menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
 }
@@ -327,6 +329,34 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (point === undefined) throw new LayerError("no place for the menu");
     return hooks.menu(place.windowId, checked.items, point);
   });
+  // A native view's frame (the Clover Browser's live view): checked, clipped to the part's own frame, placed in the
+  // window by each document above it. Reports from one part go in order, so a late answer never moves a view back.
+  const viewSeq = new Map<string, number>();
+  on("clover:view-frame", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const name = str(a.name, 64);
+    if (mount === undefined || name === undefined || !/^[a-z][a-z0-9:-]*$/.test(name)) return;
+    if (!mayPlaceView(runtime.capabilitiesOf(s.frame, mount))) {
+      log(`layers: ${runtime.partOf(s.frame, mount)} may not place the ${name} view (it needs the browser capability)`);
+      return;
+    }
+    const used = a.used === true;
+    const key = `${mount}|${name}`;
+    const seq = (viewSeq.get(key) ?? 0) + 1;
+    viewSeq.set(key, seq);
+    const r = a.rect === null ? undefined : rect(a.rect);
+    if (r === undefined) {
+      hooks.viewFrame(s.windowId, mount, name, undefined, used);
+      return;
+    }
+    const place = runtime.placeOf(s.frame);
+    void Promise.all(place.steps.map((step) => askRect(step.parent, step.child))).then((chain) => {
+      if (viewSeq.get(key) !== seq) return;
+      const bounds = chain.some((c) => c === undefined) ? undefined : viewRect(r, chain as Rect[]);
+      hooks.viewFrame(place.windowId, mount, name, bounds, used);
+    });
+  });
   handle("clover:drag-offer", (event, a) => {
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
@@ -357,7 +387,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
 
   return () => {
     for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame"]) ipcMain.removeAllListeners(c);
   };
 }
 

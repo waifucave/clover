@@ -206,6 +206,10 @@ export interface LayerBridge {
   surfaceEnvironment(): Promise<SurfaceEnvironment | undefined>;
   /** Opens a place in the main window for the part `mount` (the `clover` tree's parts only, in 1.111.1). */
   open(mount: string, target: OpenTarget): Promise<void>;
+  /** Where the part `mount`'s native view `name` goes (the Clover Browser's live view): its rect in this document's
+   *  viewport, null when it has no place; `used` when the person just used it (ruling R8: the view the person used
+   *  last gets the live view). */
+  viewFrame(mount: string, name: string, rect: Rect | null, used?: boolean): void;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
   /** Claims a dropped grant for the part `mount`. */

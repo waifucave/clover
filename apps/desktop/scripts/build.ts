@@ -2,6 +2,8 @@
 //
 //   out/main/index.js            the main process, one ESM file for Electron's Node (electron stays external)
 //   out/main/preload.cjs         the one preload (sandboxed preloads are CommonJS)
+//   out/main/browser-viewport-preload.cjs, out/renderer/browser-viewport.html
+//                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`)
 //   out/main/tray.png, @2x       the menu-bar and tray icon
 //   out/renderer/core/           the window's core root: index.html, root.css, root.js
 //   out/renderer/layer/          what every plugin layer serves under /_clover/: React (vendor/), the UI API
@@ -10,7 +12,7 @@
 // The `clover` tree's children are found by their manifests under plugins/clover (wherever lane M's layout puts them),
 // so no script names a child's path. `bun run dev:app` runs the result unpackaged.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import type { BunPlugin } from "bun";
 
 const root = join(import.meta.dir, "..");
@@ -37,6 +39,23 @@ const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", 
 // ---- The main process and the preload ----
 await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked" }, "the main process");
 await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: join(out, "main"), target: "node", format: "cjs", external: ["electron"], naming: "[name].cjs" }, "the preload");
+
+// ---- The Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----
+{
+  const { BROWSER_ASSETS } = await import("../src/main/browser/assets");
+  const preloadOut = join(root, BROWSER_ASSETS.preload.out);
+  const built = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], minify: false });
+  if (!built.success || built.outputs.length !== 1) {
+    for (const l of built.logs) console.error(l);
+    console.error("build: the browser viewport's preload failed");
+    process.exit(1);
+  }
+  mkdirSync(dirname(preloadOut), { recursive: true });
+  writeFileSync(preloadOut, await built.outputs[0]!.text());
+  const htmlOut = join(root, BROWSER_ASSETS.html.out);
+  mkdirSync(dirname(htmlOut), { recursive: true });
+  cpSync(join(root, BROWSER_ASSETS.html.from), htmlOut);
+}
 
 // ---- The tray icon: a clover leaf, as a template image (macOS draws it in the menu bar's own colour) ----
 const LEAF = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g fill="#000">

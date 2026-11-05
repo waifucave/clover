@@ -569,6 +569,56 @@ export function useOpen(): (target: OpenTarget) => Promise<void> {
   return useCallback((target: OpenTarget) => rt().bridge.open(part.mount, target), [part.mount]);
 }
 
+/** How often a placed native view's frame is measured again, besides its resizes (a move with no resize). */
+export const VIEW_FRAME_POLL_MS = 250;
+
+/** Places a native view the core draws over this part (the Clover Browser's live view, `name` "browser"): the ref
+ *  callback goes on the element the view should cover, and the core keeps the view on it as it moves, resizes, hides
+ *  or goes. The core clips the view to this part's own frame, and only a plugin with the `browser` capability places
+ *  one. With two parts placing the same view, the one the person used last has it (ruling R8). Not in lane B's
+ *  declarations yet. */
+export function useViewFrame(name: string): (el: HTMLElement | null) => void {
+  const part = usePart();
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (el === null) return;
+    const bridge = rt().bridge;
+    let last = "";
+    const measure = (used = false) => {
+      const b = el.getBoundingClientRect();
+      const shown = b.width > 0 && b.height > 0 && document.visibilityState !== "hidden" && el.isConnected;
+      const rect = shown ? { x: b.x, y: b.y, width: b.width, height: b.height } : null;
+      const key = JSON.stringify(rect);
+      if (!used && key === last) return;
+      last = key;
+      bridge.viewFrame(part.mount, name, rect, used || undefined);
+    };
+    const onUse = () => measure(true);
+    const onChange = () => measure();
+    const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onChange);
+    resize?.observe(el);
+    window.addEventListener("resize", onChange);
+    document.addEventListener("scroll", onChange, true);
+    document.addEventListener("visibilitychange", onChange);
+    el.addEventListener("pointerdown", onUse, true);
+    el.addEventListener("keydown", onUse, true);
+    const poll = setInterval(onChange, VIEW_FRAME_POLL_MS);
+    // Placed: the newest place gets the view until the person uses another.
+    measure(true);
+    return () => {
+      resize?.disconnect();
+      window.removeEventListener("resize", onChange);
+      document.removeEventListener("scroll", onChange, true);
+      document.removeEventListener("visibilitychange", onChange);
+      el.removeEventListener("pointerdown", onUse, true);
+      el.removeEventListener("keydown", onUse, true);
+      clearInterval(poll);
+      bridge.viewFrame(part.mount, name, null);
+    };
+  }, [el, name, part.mount]);
+  return setEl;
+}
+
 /** Drags between parts through the core (the drag broker): `offer` returns a token for the drag's
  *  `DRAG_GRANT_TYPE`, `claim` turns a dropped token into the data, if this part's plugin may hold it. Not in lane B's
  *  declarations yet. */

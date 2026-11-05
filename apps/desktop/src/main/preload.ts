@@ -37,6 +37,7 @@ if (isRoot || isLayer) {
     surface: (request) => ipcRenderer.send("clover:surface", request),
     surfaceEnvironment: () => ipcRenderer.invoke("clover:surface-environment", {}),
     open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target }),
+    viewFrame: (mount, name, rect, used) => ipcRenderer.send("clover:view-frame", { mount, name, rect, used: used === true }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     onMessage: (listener) => {

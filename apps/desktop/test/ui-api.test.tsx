@@ -54,6 +54,7 @@ function fakeBridge(views: Record<string, SpotView>) {
     open: async (mount, target) => {
       calls.push({ op: "open", args: [mount, target] });
     },
+    viewFrame: (mount, name, rect, used) => calls.push({ op: "viewFrame", args: [mount, name, rect, used] }),
     dragOffer: async (mount, offer) => {
       calls.push({ op: "dragOffer", args: [mount, offer] });
       return { token: "g1" };
@@ -117,10 +118,11 @@ describe("the UI API in a layer", () => {
       const open = ui.useOpen();
       hooks.env = ui.useSurfaceEnvironment();
       hooks.open = () => open({ kind: "settings", section: "devices", item: "laptop" });
+      const viewRef = ui.useViewFrame("browser");
       hooks.menu = () => menu([{ id: "copy", label: "Copy" }], { x: 3, y: 4 });
       hooks.offer = () => drag.offer({ type: "text/plain", data: "a row" });
       hooks.claim = () => drag.claim("g1");
-      return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) });
+      return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
     ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar } }, sleepAfterMs: 30 });
   });
@@ -188,6 +190,25 @@ describe("the UI API in a layer", () => {
     expect(hooks.env).toMatchObject({ os: "macos", display: { workArea: { y: 37 }, notch: null } });
     await act(async () => fake.emit({ type: "surface-environment", environment: { os: "linux", session: "wayland", display: { bounds: { x: 0, y: 0, width: 800, height: 600 }, workArea: { x: 0, y: 0, width: 800, height: 600 }, notch: null } } }));
     expect(hooks.env).toMatchObject({ os: "linux", session: "wayland" });
+  });
+
+  test("a native view's frame: placed (as used), moved, used, and gone with its part", async () => {
+    const el = document.querySelector("[data-live-view]") as HTMLElement;
+    let box = { x: 10, y: 20, width: 300, height: 200 };
+    el.getBoundingClientRect = () => ({ ...box, top: box.y, left: box.x, right: box.x + box.width, bottom: box.y + box.height, toJSON: () => box }) as DOMRect;
+    const frames = () => fake.calls.filter((c) => c.op === "viewFrame");
+    // happy-dom lays nothing out: the first report saw no size, so it said "no place"; a measure finds the box.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, ui.VIEW_FRAME_POLL_MS + 20));
+    });
+    expect(frames().at(-1)!.args).toEqual(["m2", "browser", { x: 10, y: 20, width: 300, height: 200 }, undefined]);
+    box = { ...box, y: 40 };
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, ui.VIEW_FRAME_POLL_MS + 20));
+    });
+    expect(frames().at(-1)!.args[2]).toMatchObject({ y: 40 });
+    el.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(frames().at(-1)!.args).toEqual(["m2", "browser", { x: 10, y: 40, width: 300, height: 200 }, true]);
   });
 
   test("a frame away from the screen a while sleeps, keeping its place, and wakes with a fresh URL when it comes near", async () => {

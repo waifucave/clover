@@ -257,3 +257,83 @@ export function surfaceBounds(asked: unknown, display: { bounds: Rect; workArea:
   const cy = Math.round(Math.min(Math.max(area.y, y as number), area.y + area.height - size.height));
   return { x: cx, y: cy, ...size };
 }
+
+/** A native view's frame in the window: the rect the part reported in its own frame, clipped to that frame (a part
+ *  never places a view outside itself), then offset by each frame's place, outermost first. Undefined when nothing of
+ *  it is left. */
+export function viewRect(rect: Rect, chain: readonly Rect[]): Rect | undefined {
+  const own = chain[chain.length - 1];
+  if (own === undefined || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return undefined;
+  const x0 = Math.max(0, rect.x);
+  const y0 = Math.max(0, rect.y);
+  const x1 = Math.min(own.width, rect.x + rect.width);
+  const y1 = Math.min(own.height, rect.y + rect.height);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return undefined;
+  let dx = 0;
+  let dy = 0;
+  for (const r of chain) {
+    dx += r.x;
+    dy += r.y;
+  }
+  return { x: Math.round(x0 + dx), y: Math.round(y0 + dy), width: Math.round(x1 - x0), height: Math.round(y1 - y0) };
+}
+
+/** Who places the Clover Browser's live view: a part whose plugin has `browser`. */
+export function mayPlaceView(capabilities: ReadonlySet<string>): boolean {
+  return capabilities.has("browser");
+}
+
+export interface ViewTargetRef {
+  windowId: number;
+  bounds: Rect;
+}
+
+/** Where each named native view goes (ruling R8): every part that placed it reports its frame; the view follows the
+ *  one the person used last (a newly placed one counts as used), and goes nowhere while that one has no place. */
+export class ViewFrames {
+  private readonly frames = new Map<string, Map<string, { windowId: number; bounds?: Rect; usedAt: number }>>();
+  private readonly current = new Map<string, string>();
+  private tick = 0;
+
+  /** `changed(name, target)` hears each view's new target (undefined: none). */
+  constructor(private readonly changed: (name: string, target: ViewTargetRef | undefined) => void) {}
+
+  report(name: string, mount: string, windowId: number, bounds: Rect | undefined, used: boolean): void {
+    const byMount = this.frames.get(name) ?? new Map();
+    this.frames.set(name, byMount);
+    const was = byMount.get(mount);
+    byMount.set(mount, { windowId, ...(bounds !== undefined ? { bounds } : {}), usedAt: used || was === undefined ? ++this.tick : was.usedAt });
+    this.update(name);
+  }
+
+  /** A part, or its document, is gone: its frames go with it. */
+  drop(mount: string): void {
+    for (const [name, byMount] of this.frames) if (byMount.delete(mount)) this.update(name);
+  }
+
+  /** A window closed. */
+  dropWindow(windowId: number): void {
+    for (const [name, byMount] of this.frames) {
+      let any = false;
+      for (const [m, f] of byMount) if (f.windowId === windowId) any = byMount.delete(m) || any;
+      if (any) this.update(name);
+    }
+  }
+
+  /** The view's target now. */
+  target(name: string): ViewTargetRef | undefined {
+    const byMount = this.frames.get(name);
+    if (byMount === undefined) return undefined;
+    let best: { windowId: number; bounds?: Rect; usedAt: number } | undefined;
+    for (const f of byMount.values()) if (best === undefined || f.usedAt > best.usedAt) best = f;
+    return best?.bounds === undefined ? undefined : { windowId: best.windowId, bounds: best.bounds };
+  }
+
+  private update(name: string): void {
+    const t = this.target(name);
+    const key = JSON.stringify(t ?? null);
+    if (this.current.get(name) === key) return;
+    this.current.set(name, key);
+    this.changed(name, t);
+  }
+}

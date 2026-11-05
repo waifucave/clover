@@ -1,7 +1,8 @@
 // The host's brokers (S9 §3): menus as data placed by the core, drags as grants between parts, and where a surface
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
-import { MENU_INPUT_WINDOW_MS, MenuGate, THIRD_PARTY_SURFACE_MAX, mayOpen, openTarget, surfaceBounds, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { HangWatch } from "../src/main/hang";
+import { MENU_INPUT_WINDOW_MS, MenuGate, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -120,5 +121,58 @@ describe("lane G's surface host: a whole place on the screen, and places the app
     expect(openTarget({ kind: "url", url: "https://example.com" })).toBeUndefined();
     expect(mayOpen("clover/island")).toBe(true);
     expect(mayOpen("fixture-surface")).toBe(false);
+  });
+});
+
+describe("native views (the Clover Browser's live view, ruling R8)", () => {
+  test("a view's frame is clipped to the part's own frame, then placed in the window", () => {
+    const chain = [{ x: 0, y: 0, width: 1280, height: 820 }, { x: 900, y: 45, width: 380, height: 775 }];
+    expect(viewRect({ x: 0, y: 80, width: 380, height: 695 }, chain)).toEqual({ x: 900, y: 125, width: 380, height: 695 });
+    // A part can't put a view outside itself.
+    expect(viewRect({ x: -900, y: -45, width: 1280, height: 820 }, chain)).toEqual({ x: 900, y: 45, width: 380, height: 775 });
+    expect(viewRect({ x: 400, y: 0, width: 10, height: 10 }, chain)).toBeUndefined();
+    expect(mayPlaceView(new Set(["browser"]))).toBe(true);
+    expect(mayPlaceView(new Set())).toBe(false);
+  });
+
+  test("the view follows the place the person used last; a new place takes it; a place gone gives it back", () => {
+    const seen: [string, unknown][] = [];
+    const v = new ViewFrames((name, t) => seen.push([name, t]));
+    const a = { x: 900, y: 125, width: 380, height: 695 };
+    const b = { x: 500, y: 125, width: 380, height: 695 };
+    v.report("browser", "m1", 1, a, false);
+    expect(v.target("browser")).toEqual({ windowId: 1, bounds: a });
+    v.report("browser", "m2", 1, b, false);
+    expect(v.target("browser")).toEqual({ windowId: 1, bounds: b });
+    // Moving the first panel doesn't take the view back; using it does.
+    v.report("browser", "m1", 1, { ...a, y: 130 }, false);
+    expect(v.target("browser")?.bounds).toEqual(b);
+    v.report("browser", "m1", 1, { ...a, y: 130 }, true);
+    expect(v.target("browser")?.bounds).toEqual({ ...a, y: 130 });
+    // The panel with the view hides: the view goes nowhere, not to the other panel.
+    v.report("browser", "m1", 1, undefined, false);
+    expect(v.target("browser")).toBeUndefined();
+    v.drop("m1");
+    expect(v.target("browser")?.bounds).toEqual(b);
+    v.dropWindow(1);
+    expect(v.target("browser")).toBeUndefined();
+    expect(seen.map(([, t]) => (t === undefined ? "none" : (t as { bounds: { x: number } }).bounds.x))).toEqual([900, 500, 900, "none", 500, "none"]);
+  });
+});
+
+describe("a hang restarts the app into safe mode (ruling R9)", () => {
+  test("a window unresponsive for 15 s restarts it once; answering again in time doesn't", () => {
+    const timers = new Map<number, () => void>();
+    let n = 0;
+    const fake = { set: ((fn: () => void) => { timers.set(++n, fn); return n; }) as unknown as typeof setTimeout, clear: ((id: number) => timers.delete(id)) as unknown as typeof clearTimeout };
+    const restarted: number[] = [];
+    const w = new HangWatch((id) => restarted.push(id), fake);
+    w.unresponsive(1);
+    w.responsive(1);
+    expect(timers.size).toBe(0);
+    w.unresponsive(1);
+    w.unresponsive(2);
+    for (const fn of [...timers.values()]) fn();
+    expect(restarted).toEqual([1]);
   });
 });
