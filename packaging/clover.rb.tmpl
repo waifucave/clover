@@ -13,7 +13,7 @@ cask "clover" do
 
   url "https://github.com/waifucave/clover/releases/download/v#{version}/Clover-#{version}.dmg"
   name "Clover"
-  desc "Menu bar app for the Clover AI engine"
+  desc "Bot-first, endlessly moddable desktop agent platform"
   homepage "https://github.com/waifucave/clover"
 
   livecheck do
@@ -23,8 +23,27 @@ cask "clover" do
 
   depends_on arch: :arm64
 
+  # electron-updater updates the app and the daemon together (spec §3.1).
   auto_updates true
 
   app "Clover.app"
   binary "#{appdir}/Clover.app/Contents/Resources/clover-core", target: "clover"
+
+  # Login start is the daemon's (lane C: a launchd agent running clover-core supervise). The app turns it on at its
+  # first launch; uninstalling turns it off through the daemon's own command, as the user, before the app goes
+  # (packaging/installer-hooks.ts). Then Homebrew quits the app.
+  uninstall script: {
+              executable: "#{appdir}/Clover.app/Contents/Resources/clover-core",
+              args:       ["autostart", "disable"],
+              sudo:       false,
+            },
+            quit:   "com.waifucave.clover"
+
+  # ~/.clover is not here: it holds the user's bots, their history and their keys.
+  zap trash: [
+    "~/Library/Application Support/Clover",
+    "~/Library/Logs/Clover",
+    "~/Library/Preferences/com.waifucave.clover.plist",
+    "~/Library/Saved Application State/com.waifucave.clover.savedState",
+  ]
 end

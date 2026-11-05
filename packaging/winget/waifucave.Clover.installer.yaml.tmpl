@@ -1,0 +1,20 @@
+# winget's installer manifest for Clover: electron-builder's per-user NSIS installer (packaging/windows/installer.nsh
+# carries its uninstall hook). Windows ships unsigned at first (spec §13), so SmartScreen names no publisher.
+PackageIdentifier: waifucave.Clover
+PackageVersion: {{version}}
+InstallerType: nsis
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+UpgradeBehavior: install
+ReleaseDate: {{releaseDate}}
+Installers:
+  - Architecture: x64
+    InstallerUrl: {{url}}
+    InstallerSha256: {{sha256}}
+ManifestType: installer
+ManifestVersion: 1.10.0
