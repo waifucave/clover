@@ -70,9 +70,10 @@
     },
     {
       "name": "terminal",
-      "lets": "Open terminals on your computers and pass them the user's own key presses and pastes: a paste of several lines asks first",
+      "lets": "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only",
       "ok": "runs commands on your computers",
-      "warns": true
+      "warns": true,
+      "bundledOnly": true
     },
     {
       "name": "usage.read",
@@ -2294,7 +2295,15 @@
       "default": "#2F6FDF",
       "dark": "#4180E3",
       "follows": "system",
-      "doc": "The accent: controls, primary actions, the send button. It follows the OS accent."
+      "doc": "The accent as the OS gives it: focus, marks, a checkbox, small controls. Filled controls take `color.accent.fill`."
+    },
+    {
+      "name": "color.accent.fill",
+      "type": "color",
+      "default": "#2F6FDF",
+      "dark": "#3570D8",
+      "follows": "system",
+      "doc": "Filled controls: primary actions, the send button, a toggle's on state. The accent darkened in its own hue until white text reads at 4.5:1."
     },
     {
       "name": "color.accent.text",
@@ -2315,14 +2324,14 @@
       "type": "color",
       "default": "#FFFFFF",
       "follows": "auto",
-      "doc": "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."
+      "doc": "Labels and glyphs on `color.accent.fill`, at 4.5:1 or more (`auto` resolves it: white on the darkened fill)."
     },
     {
       "name": "color.accent.glyph",
       "type": "color",
       "default": "#FFFFFF",
       "follows": "auto",
-      "doc": "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."
+      "doc": "Glyphs on the raw `color.accent` (✓, a dot), at 3:1 or more (`auto` resolves it)."
     },
     {
       "name": "color.accent.ink",
@@ -3375,7 +3384,7 @@
       "capability": "terminal",
       "where": "ui"
     },
-    "terminal.write": {
+    "terminal.input": {
       "capability": "terminal",
       "where": "ui"
     },

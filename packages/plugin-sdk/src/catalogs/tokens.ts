@@ -22,14 +22,17 @@
 // (`systemPreferences.getAccentColor()` on macOS and Windows, `systemAccentFromOs`), again whenever the OS says it
 // changed; with no reading (Linux) the token keeps the theme's accent, the value the theme stack gives without
 // `"system"`, which is fixed and which G's contrast floors cover.
-// * A filled accent button with a text label (`SYSTEM_LABEL_FILLS`: the approve button) is the accent darkened in its
-//   own hue until white text reaches 4.5:1 on it (`fillForWhiteLabel`), so its label is always white, as the
-//   reference app draws it.
+// * Every filled accent control (`SYSTEM_LABEL_FILLS`) is the accent darkened in its own hue until white text reaches
+//   4.5:1 on it (`fillForWhiteLabel`), so its label is always white, as the reference app draws it: `color.accent.fill`
+//   for primary actions, the send button and a toggle's on state (it follows `color.accent` as resolved, the theme's
+//   or the OS's), and `card.approve.background`, which follows the OS itself, since `card.*` never derives from
+//   another token. `color.accent` stays the OS accent as given, for focus, marks and small controls.
 // * An ink on an accent (`AUTO_INKS`) may be `"auto"`, and is by default, which the core resolves in the current
 //   appearance against the accent as painted, any alpha flattened onto the control's background. A label ink (4.5:1)
 //   is white when white reaches 4.5:1, otherwise black (`LABEL_INK`). A glyph ink on a glyph-only control (✓, ↑, ✕;
 //   WCAG 1.4.11) is white at 3:1 or more, otherwise the theme's dark ink (`color.accent.ink`, `#111111` by default),
-//   so the OSes' default blues get white glyphs and a yellow accent never gets white.
+//   or black where that ink misses 3:1 too; so the OSes' default blues get white glyphs and a yellow accent never
+//   gets white.
 // Sealed frames take the resolved values like any token, and since no plugin changed anything, a new OS accent needs
 // no new OK. `resolveTokens` (formats/theme.ts) does all of this.
 //
@@ -84,11 +87,12 @@ export const TOKENS: readonly TokenInfo[] = [
   t("color.text.placeholder", "color", "#6D6D6D", "#9A9A9A", "A field's placeholder."),
   t("color.text.inverse", "color", "#FFFFFF", "#191919", "Text on a text-coloured fill."),
   // Accent and meaning.
-  t("color.accent", "color", "#2F6FDF", "#4180E3", "The accent: controls, primary actions, the send button. It follows the OS accent.", "system"),
+  t("color.accent", "color", "#2F6FDF", "#4180E3", "The accent as the OS gives it: focus, marks, a checkbox, small controls. Filled controls take `color.accent.fill`.", "system"),
+  t("color.accent.fill", "color", "#2F6FDF", "#3570D8", "Filled controls: primary actions, the send button, a toggle's on state. The accent darkened in its own hue until white text reads at 4.5:1.", "system"),
   t("color.accent.text", "color", "#1F5FCC", "#A7C4E6", "The accent carrying text, at 4.5:1 or more on the content plane."),
   t("color.accent.soft", "color", "#E8F0FC", "#1F2633", "A wash of the accent: a chosen chip, a highlighted mention."),
-  t("color.accent.contrast", "color", "#FFFFFF", undefined, "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it).", "auto"),
-  t("color.accent.glyph", "color", "#FFFFFF", undefined, "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it).", "auto"),
+  t("color.accent.contrast", "color", "#FFFFFF", undefined, "Labels and glyphs on `color.accent.fill`, at 4.5:1 or more (`auto` resolves it: white on the darkened fill).", "auto"),
+  t("color.accent.glyph", "color", "#FFFFFF", undefined, "Glyphs on the raw `color.accent` (✓, a dot), at 3:1 or more (`auto` resolves it).", "auto"),
   t("color.accent.ink", "color", "#111111", undefined, "The theme's dark ink for glyphs on an accent, where white falls short of 3:1."),
   t("color.attention", "color", "#C27C00", "#ECD575", "Needs you: a waiting card, a question for the user."),
   t("color.attention.text", "color", "#8A5A00", "#ECD575", "Attention carrying text."),
@@ -349,11 +353,13 @@ export const SYSTEM_ACCENT = "system";
 export const AUTO_INK = "auto";
 
 /** The tokens that may be `"system"`. */
-export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "color.focus", "card.approve.background", "island.accept", "pill.accept"];
+export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "color.accent.fill", "color.focus", "card.approve.background", "island.accept", "pill.accept"];
 
-/** Filled accent buttons with a text label: `"system"` there is the accent darkened in its own hue until white text
- *  reaches 4.5:1 (`fillForWhiteLabel`), so the label is always white. With the background it sits on. */
-export const SYSTEM_LABEL_FILLS: Readonly<Record<string, { background: string }>> = {
+/** Filled accent controls: `"system"` there is the accent darkened in its own hue until white text reaches 4.5:1
+ *  (`fillForWhiteLabel`), so the label is always white. With the background it sits on, and `from`, the token whose
+ *  resolved value it darkens (the OS accent when absent). */
+export const SYSTEM_LABEL_FILLS: Readonly<Record<string, { background: string; from?: string }>> = {
+  "color.accent.fill": { background: "color.surface", from: "color.accent" },
   "card.approve.background": { background: "card.background" },
 };
 
@@ -374,7 +380,7 @@ export interface AutoInk {
 /** The inks that may be `"auto"`. A sealed card's approve button holds a label or a glyph, so its ink takes the
  *  text floor; `card.*` resolves from `card.*` alone. */
 export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
-  "color.accent.contrast": { accent: "color.accent", background: "color.surface", floor: 4.5 },
+  "color.accent.contrast": { accent: "color.accent.fill", background: "color.surface", floor: 4.5 },
   "color.accent.glyph": { accent: "color.accent", background: "color.surface", floor: 3, darkInk: "color.accent.ink" },
   "card.approve.text": { accent: "card.approve.background", background: "card.background", floor: 4.5 },
   "island.accept.text": { accent: "island.accept", background: "island.surface", floor: 3, darkInk: "color.accent.ink" },
@@ -430,11 +436,13 @@ export function contrastRatio(a: string, b: string): number | undefined {
 }
 
 /** An `auto` ink: white when white reaches `floor` against the accent as painted (its alpha flattened onto
- *  `background`), otherwise `darkInk`; undefined when the accent or background isn't hex. */
+ *  `background`), otherwise `darkInk`, or black where `darkInk` misses the floor too (or isn't hex); undefined when
+ *  the accent or background isn't hex. */
 export function resolveAutoInk(accent: string, opts: { background: string; darkInk: string; floor: number }): string | undefined {
   const painted = flattenColor(accent, opts.background);
   if (painted === undefined) return undefined;
-  return contrastRatio("#FFFFFF", painted)! >= opts.floor ? "#FFFFFF" : opts.darkInk;
+  if (contrastRatio("#FFFFFF", painted)! >= opts.floor) return "#FFFFFF";
+  return (contrastRatio(opts.darkInk, painted) ?? 0) >= opts.floor ? opts.darkInk : "#000000";
 }
 
 function toHsl([r, g, b]: readonly number[]): [number, number, number] {
