@@ -1,7 +1,7 @@
 // The `external` capability server (Phase 8c Lane 3, Task 3.4) — plugin-contributed tools, forwarded
 // to the OWNING plugin over its existing RPC (the pre-8c `tool.register`/`plugin_tool_invoke` door,
 // `ipc/server.ts` + `plugins/supervisor.ts`'s `invoke()`), now advertised through a per-session
-// `mcp__winter__external__<tool>` server instead of the shared, name-mangled `plugin__<pluginId>__
+// `mcp__clover__external__<tool>` server instead of the shared, name-mangled `plugin__<pluginId>__
 // <tool>` registry entry that door still also writes (that write is untouched — Lane 3 owns
 // `plugins/*` GLUE, not the `tool.register` handler itself, which no lane touches in 8c).
 //
@@ -46,8 +46,8 @@ import { capabilityServer, type CapabilitySession } from "./server";
 
 /** One plugin-contributed tool, alive at session-build time. `name` is the BARE tool name the
  *  plugin declared (never the shared registry's `plugin__<pluginId>__<name>` form) — it becomes
- *  `mcp__winter__external__<name>` on the wire, the router's own `mcp__<server>__<tool>` convention
- *  (`capabilities/names.ts`'s header) applied to THIS server's name (`winter__external`) — qualified by
+ *  `mcp__clover__external__<name>` on the wire, the router's own `mcp__<server>__<tool>` convention
+ *  (`capabilities/names.ts`'s header) applied to THIS server's name (`clover__external`) — qualified by
  *  its plugin only when another plugin registers the same name (`externalToolNames`). */
 export interface ExternalToolSource {
   /** Which plugin owns this tool — carried for the invoke bridge and error messages, and part of the
@@ -62,7 +62,7 @@ export interface ExternalToolSource {
   /** Which session modes may see this tool. Absent ⇒ `["code"]` — the SAME restrictive default
    *  `ToolDefinition.modes` documents (a dynamically registered tool "stays code-only, matching
    *  their reachability today"); this is "the plugin's declared modes (default code)" the brief
-   *  asks for, expressed as data on the source rather than a static `WINTER_CAPABILITY_TOOLS` row
+   *  asks for, expressed as data on the source rather than a static `CLOVER_CAPABILITY_TOOLS` row
    *  (impossible here: tool names are runtime-defined per plugin, not a fixed enumerable set). */
   modes?: Mode[];
   /** Forwards this call to the OWNING plugin over its existing RPC — the caller's job to bind to
@@ -87,14 +87,14 @@ export interface ExternalCapabilityDeps {
   tools?(session: CapabilitySession): readonly ExternalToolSource[];
 }
 
-/** The capability tool prefix every external tool's wire name carries (`mcp__winter__external__`). */
-const EXTERNAL_WIRE_PREFIX_LENGTH = "mcp__winter__external__".length;
+/** The capability tool prefix every external tool's wire name carries (`mcp__clover__external__`). */
+const EXTERNAL_WIRE_PREFIX_LENGTH = "mcp__clover__external__".length;
 /** The longest wire name a qualified name may take (the strictest provider's function-name limit). */
 const WIRE_NAME_MAX = 64;
 
 /**
  * WS-27 — each source's advertised name, UNIQUE within the server. A tool name no other plugin also
- * registers keeps its bare name (so a saved rule naming `mcp__winter__external__<tool>` keeps matching).
+ * registers keeps its bare name (so a saved rule naming `mcp__clover__external__<tool>` keeps matching).
  * When several plugins register the same tool name — two marketplaces' same-named plugins, or two
  * different plugins — EVERY one of them is qualified by its owning plugin's spec (`"<name>@<marketplace>"`):
  * `<tool>__<spec with each run of other characters as "_">`, e.g. `search__notes_acme`. A registered tool

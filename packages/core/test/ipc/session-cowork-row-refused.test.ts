@@ -7,13 +7,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, ERR, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
-import { rpcFromWinterRefusal, startIpcServer, type InternalSessionCreator } from "../../src/ipc/server";
+import { LineDecoder, encodeLine, ERR, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
+import { rpcFromCloverRefusal, startIpcServer, type InternalSessionCreator } from "../../src/ipc/server";
 import { CoworkError } from "../../src/cowork/types";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import { WinterLegRefusal, type WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import { CloverLegRefusal, type CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 import { planAndApplySwitch } from "../../src/runtime-sdk/handoff";
 
 class TestClient {
@@ -53,7 +53,7 @@ class TestClient {
 const UNSUPPORTED_CODE = { code: "unsupported_topology" };
 
 /** A driver table; `ensure` and `leg` are the knobs. Nothing else may be reached. */
-function table(opts: { ensure: WinterSessionDrivers["ensure"]; leg: ReturnType<WinterSessionDrivers["legOf"]> }): WinterSessionDrivers {
+function table(opts: { ensure: CloverSessionDrivers["ensure"]; leg: ReturnType<CloverSessionDrivers["legOf"]> }): CloverSessionDrivers {
   const never = (): never => { throw new Error("not reached by this test"); };
   return {
     legForNewSession: never, legOf: () => opts.leg, assertAvailable: () => {}, create: never,
@@ -65,17 +65,17 @@ describe("a stored cowork row is refused by the doors that would run it", () => 
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(winter: WinterSessionDrivers, withHandoff = false, extra: Record<string, unknown> = {}) {
+  async function boot(clover: CloverSessionDrivers, withHandoff = false, extra: Record<string, unknown> = {}) {
     const home = mkdtempSync(join(tmpdir(), "winter-cowork-row-"));
     const store = new SessionStore(home);
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const socketPath = join(home, "core.sock");
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winter, winterHome: home,
+      socketPath, serverVersion: "test", tokens: authority, store, clover, cloverHome: home,
       ...extra,
       ...(withHandoff ? { handoff: { planAndApplySwitch: (sessionId: string, model: string | null, confirmLossy: boolean) =>
-        planAndApplySwitch({ runtime: {} as never, winter, records: { get: () => undefined } as never, store, settings: () => null }, sessionId, model, confirmLossy) } } : {}),
+        planAndApplySwitch({ runtime: {} as never, clover, records: { get: () => undefined } as never, store, settings: () => null }, sessionId, model, confirmLossy) } } : {}),
     });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
@@ -105,7 +105,7 @@ describe("a stored cowork row is refused by the doors that would run it", () => 
   });
 
   test("recorded row: the driver table's typed refusal maps to INVALID_PARAMS + data.code, never INTERNAL", async () => {
-    const refusing = async (): Promise<never> => { throw new WinterLegRefusal("unsupported_topology", "Cowork unavailable"); };
+    const refusing = async (): Promise<never> => { throw new CloverLegRefusal("unsupported_topology", "Cowork unavailable"); };
     const { store, c } = await boot(table({ ensure: refusing, leg: "winter" }));
     const id = coworkRow(store);
     await c.request(METHODS.sessionAttach, { sessionId: id, fromSeq: 0 });
@@ -207,7 +207,7 @@ describe("a stored cowork row is refused by the doors that would run it", () => 
   });
 
   // L1: the store-level guard's `CoworkError` becomes the numeric RPC error, not an uncaught string-coded Error.
-  test("the store guard's CoworkError maps to INVALID_PARAMS + data.code (rpcFromWinterRefusal), reached through the internal creator", async () => {
+  test("the store guard's CoworkError maps to INVALID_PARAMS + data.code (rpcFromCloverRefusal), reached through the internal creator", async () => {
     let creator: InternalSessionCreator | undefined;
     const { store } = await boot(table({ ensure: async () => undefined, leg: "winter" }), false, { onSessionCreator: (c: InternalSessionCreator) => { creator = c; } });
     // The daemon's own doors create through this: a cowork mode smuggled past its type reaches `SessionStore.createSession`.
@@ -218,14 +218,14 @@ describe("a stored cowork row is refused by the doors that would run it", () => 
     expect(store.list()).toEqual([]);
 
     let mapped: any;
-    try { rpcFromWinterRefusal(thrown); } catch (err) { mapped = err; }
+    try { rpcFromCloverRefusal(thrown); } catch (err) { mapped = err; }
     expect(mapped).toMatchObject({ code: ERR.INVALID_PARAMS, message: "Cowork unavailable", data: { code: "unsupported_topology" } });
     // Another CoworkError code keeps the Cowork doors' own numeric mapping.
     let denied: any;
-    try { rpcFromWinterRefusal(new CoworkError("authority_denied")); } catch (err) { denied = err; }
+    try { rpcFromCloverRefusal(new CoworkError("authority_denied")); } catch (err) { denied = err; }
     expect(denied).toMatchObject({ code: ERR.UNAUTHORIZED, message: "Cowork request refused", data: { code: "authority_denied" } });
     // And anything that is not a refusal is still rethrown untouched.
     const other = new Error("boom");
-    expect(() => rpcFromWinterRefusal(other)).toThrow(other);
+    expect(() => rpcFromCloverRefusal(other)).toThrow(other);
   });
 });

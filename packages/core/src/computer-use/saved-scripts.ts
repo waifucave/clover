@@ -69,7 +69,7 @@ export class SavedScripts {
     let daemonTotal = this.daemonBytes() - (old === undefined ? 0 : sizeOf(old)) + bytes;
     while (daemonTotal > this.daemonMaxBytes) {
       const victim = this.leastRecentlyUsedOther(sessionId);
-      if (victim === undefined) return { refused: "Winter is holding too many saved scripts right now — try again later" };
+      if (victim === undefined) return { refused: "Clover is holding too many saved scripts right now — try again later" };
       daemonTotal -= this.sessionBytes(this.bySession.get(victim)!);
       this.bySession.delete(victim);
       this.evicted.add(victim);

@@ -15,7 +15,7 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); for (const h
 const boot = "12345678-1234-1234-1234-123456789abc";
 const caps: CapabilityCeiling = { toolClasses: ["execute", "write", "read"], hostServices: ["git.publish"], connectors: [], network: "internet" };
 function fixture(kind: "folder" | "githubRepository" = "githubRepository") {
-  const home = mkdtempSync(join(tmpdir(), "winter-context-plan-")); roots.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-context-plan-")); roots.push(home);
   const db = openRuntimeStateDb(home); databases.push(db);
   let mint = 0; const records = new CoworkRepository(db, () => "2026-10-13T00:00:00.000Z", prefix => prefix === "home" ? "home-fixture" : `${prefix}_${++mint}`);
   const selection = (kind: "folder" | "githubRepository", suffix = "one"): SourceSelection => kind === "folder"

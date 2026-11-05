@@ -4,7 +4,7 @@
 // scripting id of a window IS its window-server id), NEVER Safari's front window — the user's own window may be in front.
 // A bound window Safari cannot find, or one that is not a browser window, is `NoWindow`; nothing falls back.
 // `openWindow(url)` makes a window of the agent's own (found by the one new id) for when the user wants Safari itself —
-// the agent's own browsing belongs in Winter's built-in browser (`browsers.open`).
+// the agent's own browsing belongs in Clover's built-in browser (`browsers.open`).
 import { AutomationFailure } from "../../errors";
 import { SAFARI_GUIDE } from "../guides/safari";
 import type { AdapterScope, AppAdapter } from "../types";
@@ -38,7 +38,7 @@ export function checkBound(scope: AdapterScope, result: string | null): string |
   return result;
 }
 
-const TAB_ROW = "my winterText(URL of t) & winterTAB & my winterText(name of t)";
+const TAB_ROW = "my cloverText(URL of t) & cloverTAB & my cloverText(name of t)";
 
 export const safariAdapter: AppAdapter = {
   bundleIds: ["com.apple.Safari", "com.apple.SafariTechnologyPreview"],
@@ -57,7 +57,7 @@ export const safariAdapter: AppAdapter = {
           "set i to 0",
           "repeat with t in (tabs of w)",
           "  set i to i + 1",
-          `  set out to out & i & winterTAB & (i = cur) & winterTAB & ${TAB_ROW} & winterLF`,
+          `  set out to out & i & cloverTAB & (i = cur) & cloverTAB & ${TAB_ROW} & cloverLF`,
           "end repeat",
           "return out",
         ], { handlers: ["text"] })));
@@ -72,7 +72,7 @@ export const safariAdapter: AppAdapter = {
       async run(scope) {
         const result = checkBound(scope, await scope.applescript(appScript(scope.app.bundleId, [
           ...boundBrowserWindow(scope.window()),
-          "return \"URL:\" & my winterText(URL of ct)",
+          "return \"URL:\" & my cloverText(URL of ct)",
         ], { handlers: ["text"] })));
         return (result ?? "").replace(/^URL:/, "").trim();
       },
@@ -88,7 +88,7 @@ export const safariAdapter: AppAdapter = {
         const result = checkBound(scope, await scope.applescript(appScript(scope.app.bundleId, [
           ...boundBrowserWindow(scope.window()),
           ...(o.tab === undefined ? [] : [`if ${o.tab} > (count of tabs of w) then return "NOTAB"`]),
-          `return "TEXT:" & my winterText(text of ${of})`,
+          `return "TEXT:" & my cloverText(text of ${of})`,
         ], { handlers: ["text"] }), { timeoutMs: 20_000 }));
         if ((result ?? "").trim() === "NOTAB") throw bad(`the bound window has no tab ${String(o.tab)} — tabs() lists them`);
         return (result ?? "").replace(/^TEXT:/, "");
@@ -143,18 +143,18 @@ export const safariAdapter: AppAdapter = {
           "  if before does not contain (contents of i) then set end of fresh to (contents of i)",
           "end repeat",
           "if (count of fresh) is not 1 then return \"AMBIGUOUS\"",
-          "return \"WINDOW:\" & ((item 1 of fresh) as text) & winterTAB & (frontAfter as text)",
+          "return \"WINDOW:\" & ((item 1 of fresh) as text) & cloverTAB & (frontAfter as text)",
         ]), { timeoutMs: 15_000 });
         const [head, frontAfter] = (result ?? "").trim().split("\t");
         const r = head ?? "";
         if (r === "FRONTMOST") throw new AutomationFailure("NeedsForeground", `${scope.app.name} is the app the user is using right now, and a new window would take their keyboard focus — ask the user, or work in the bound window. Nothing was done.`);
         const id = Number(r.replace(/^WINDOW:/, ""));
         if (!r.startsWith("WINDOW:") || !Number.isInteger(id) || id <= 0) {
-          throw new AutomationFailure("NoWindow", `a new ${scope.app.name} window was made, but Winter could not tell which one it is (another window appeared at the same moment) — bind it by its title with apps.open("${scope.app.name}", { window: "<title>" })`);
+          throw new AutomationFailure("NoWindow", `a new ${scope.app.name} window was made, but Clover could not tell which one it is (another window appeared at the same moment) — bind it by its title with apps.open("${scope.app.name}", { window: "<title>" })`);
         }
         if (frontAfter?.trim() === "true") {
           // The user switched to Safari while the window was being made: it may now hold their keyboard focus.
-          scope.notice(`${scope.app.name} became the app the user is using while Winter made its new window (id ${id}) — that window may now have their keyboard focus. Tell the user, and don't type in ${scope.app.name} until they have answered.`);
+          scope.notice(`${scope.app.name} became the app the user is using while Clover made its new window (id ${id}) — that window may now have their keyboard focus. Tell the user, and don't type in ${scope.app.name} until they have answered.`);
           return { window: id, frontmostAfter: true as const };
         }
         scope.say(`opened a new ${scope.app.name} window of your own (id ${id}) — bind it with apps.open("${scope.app.name}", { window: ${id} })`);

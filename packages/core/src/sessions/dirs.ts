@@ -8,7 +8,7 @@ import { basename, dirname, isAbsolute, join, sep } from "node:path";
  * This model replaces the single optional `cwd`. `dirs[0]` is the PRIMARY by
  * POSITION (not a flag): today's `cwd` — the shell's starting directory, the recents anchor,
  * SP4's "move to CLI opens here". Entries `1..n` are ADDED directories. Each entry locks
- * independently the moment Winter successfully writes inside it (spec §1) — reading never locks,
+ * independently the moment Clover successfully writes inside it (spec §1) — reading never locks,
  * and a locked entry can never be changed or removed for the session's lifetime (enforced at the
  * T2 domain setter, not here — this file is the data shape and path canonicalization only).
  */
@@ -31,7 +31,7 @@ function expandTilde(p: string): string {
 
 /**
  * WS-21 round 3: a session's cwd as STORED from now on — canonical, because it is the transcript key both
- * legs use (the Winter child keys by `realpath(cwd)`, the official store key derives from the canonical
+ * legs use (the Clover child keys by `realpath(cwd)`, the official store key derives from the canonical
  * cwd). `canonicalizeDirPath`, except that a spelling it refuses (relative) is kept as given: no door may
  * turn an odd cwd into a crash. `session.create`, `session.dispatch`, `session.setCwd` and a promoted
  * `session.setDirs` entry come through here; `SessionStore.createSession` itself still stores verbatim

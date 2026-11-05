@@ -1,9 +1,9 @@
 // ComputerV2 wake triggers (2026-10-12) — the terminal's words for them. A trigger is announced by the persisted
 // `wake_armed`/`wake_ended` pair; the session is then woken by a daemon-written `user_message` under
-// `clientName: "computer-wake"` whose text is for the MODEL (a `<computer-wake>` block). The TUI and `winter -p` never
+// `clientName: "computer-wake"` whose text is for the MODEL (a `<computer-wake>` block). The TUI and `clover -p` never
 // show that text as the user's: they say, as a note, what happened — built from the pair, never from the message.
 // (The Mac app says the same with its own copy, `WakeWords.swift`.)
-import { COMPUTER_WAKE_CLIENT_NAME } from "@yanlinglabs/winter-protocol";
+import { COMPUTER_WAKE_CLIENT_NAME } from "@waifucave/clover-protocol";
 
 export { COMPUTER_WAKE_CLIENT_NAME };
 
@@ -30,9 +30,9 @@ export function waitingWords(w: ArmedWakeFacts): string {
 export function endedWords(w: ArmedWakeFacts, reason: string): string {
   const t = w.targetLabel || "the app";
   const el = w.elementLabel;
-  if (reason === "lost") return `${t} went away while Winter waited`;
+  if (reason === "lost") return `${t} went away while Clover waited`;
   if (reason === "expired") return `the wait for ${waitingWords(w)} ran out`;
-  if (reason === "restart") return `Winter restarted while it waited for ${waitingWords(w)}`;
+  if (reason === "restart") return `Clover restarted while it waited for ${waitingWords(w)}`;
   switch (w.condition) {
     case "clicked": return `you clicked ${el ?? "it"} in ${t}`;
     case "submitted": return `you submitted ${el ?? "a form"} in ${t}`;
@@ -45,7 +45,7 @@ export function endedWords(w: ArmedWakeFacts, reason: string): string {
   }
 }
 
-/** Why Winter stopped waiting, for an ending that wakes NOBODY (`wake_ended.woken` false): "ran out" for a silent
+/** Why Clover stopped waiting, for an ending that wakes NOBODY (`wake_ended.woken` false): "ran out" for a silent
  *  expiry, else the reason as it is ("cancelled", "disabled"). Whether an ending wakes the session is `woken`'s to
  *  say — never the reason's (an `expired` wakes only when the model asked). */
 export function stoppedWords(reason: string): string {

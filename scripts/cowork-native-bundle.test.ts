@@ -1,5 +1,5 @@
 // N2 S7B part 2: the bundle gate (pure), the manifest the embed phase writes, the dev stage and the verify gate, over stand-in binaries in scratch directories.
-// Nothing here runs a launcher or a worker, signs with a real identity, or touches the Keychain, the notary, /Applications or any running Winter.
+// Nothing here runs a launcher or a worker, signs with a real identity, or touches the Keychain, the notary, /Applications or any running Clover.
 import { afterEach, describe, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -154,10 +154,10 @@ describe("the release choice: inputs or an explicit omit", () => {
   describe("the embed phase under each choice (ad hoc, scratch)", () => {
     const run = (env: Record<string, string>, built: string, inputs = standIns()) => spawnSync("bash", [join(REPO, "scripts", "embed-cowork-native.sh")], {
       encoding: "utf8", timeout: 120_000,
-      env: { ...process.env, CONFIGURATION: "Release", BUILT_PRODUCTS_DIR: built, CONTENTS_FOLDER_PATH: "Winter.app/Contents", EXPANDED_CODE_SIGN_IDENTITY: "-", DEVELOPMENT_TEAM: "37N77U9RSZ",
+      env: { ...process.env, CONFIGURATION: "Release", BUILT_PRODUCTS_DIR: built, CONTENTS_FOLDER_PATH: "Clover.app/Contents", EXPANDED_CODE_SIGN_IDENTITY: "-", DEVELOPMENT_TEAM: "37N77U9RSZ",
         COWORK_LAUNCHER_BINARY: inputs.launcher, COWORK_WORKER_BINARY: inputs.worker, ...env },
     });
-    const contents = (built: string) => join(built, "Winter.app", "Contents");
+    const contents = (built: string) => join(built, "Clover.app", "Contents");
     test("omit removes a stale pair and pins file and succeeds; with nothing stale it is a no-op", () => {
       const built = scratch();
       expect(run({}, built).status).toBe(0);

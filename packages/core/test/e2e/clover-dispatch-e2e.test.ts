@@ -1,4 +1,4 @@
-// P8b Task 17 Step 1 — DISPATCH ON THE WINTER LEG, end to end, on the BUILT binary.
+// P8b Task 17 Step 1 — DISPATCH ON THE CLOVER LEG, end to end, on the BUILT binary.
 //
 // WS-23 (ruling R1): the dispatch singleton now runs EMBEDDED — a Bun Worker inside the daemon, observed
 // through `daemon.embedded` by its backend session id — and the mint asserts that NO `winter` process
@@ -6,16 +6,16 @@
 // in-process child engine of the dispatch runtime (it lives in the same Worker).
 //
 // A real `startDaemon` in a temp home whose settings carry NO `winterLeg` block (the engine is
-// retired: every mode is the Winter leg), a real NDJSON client, the real `winter` child
-// `WINTER_RUNTIME_EXECUTABLE` names (skipped when unset; required under WINTER_RUNTIME_REQUIRE_BINARY=1).
+// retired: every mode is the Clover leg), a real NDJSON client, the real `winter` child
+// `CLOVER_RUNTIME_EXECUTABLE` names (skipped when unset; required under CLOVER_RUNTIME_REQUIRE_BINARY=1).
 // Every model is a `winter-test/<double>`; nothing reaches the network.
 //
-//   (a) `session.dispatch` mints the singleton ON THE WINTER LEG by default; dispatch respects its
+//   (a) `session.dispatch` mints the singleton ON THE CLOVER LEG by default; dispatch respects its
 //       approval mode (user ruling 2026-10-17, reversing P8b-7 for dispatch): under `auto` the `tooluse`
 //       double's unclassified `test_tool` → an `approval_requested` on the dispatch log, and a Deny over
 //       `approval.respond` is the tool_result; under `ask` an Allow lets the call run
 //   (b) the `subagent` double spawns a child → `thread_started`/`thread_completed`, the child's own
-//       frames on its thread, and a `PersistedWinterChild` row (`runtime_children`) that survives a
+//       frames on its thread, and a `PersistedCloverChild` row (`runtime_children`) that survives a
 //       simulated RESTART; after the restart the same singleton resumes (no second dispatch session,
 //       `resumed === true`) and the double, seeing its earlier spawn in the transcript, spawns nothing
 //   (c) a dispatch `session.send` while a turn runs is HELD (P8b-5/39): its `user_message` lands with
@@ -25,7 +25,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import type { RuntimeStateWiring } from "../../src/runtime-state";
@@ -82,7 +82,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* already closed */ } }
 }
 
-const REAL_HOMES = [join(homedir(), ".winter"), join(homedir(), ".winter-dev")];
+const REAL_HOMES = [join(homedir(), ".clover"), join(homedir(), ".clover-dev")];
 function walkHome(dir: string, describe: (rel: string, st: Stats) => string): string {
   if (!existsSync(dir)) return `${dir}: absent`;
   const lines: string[] = [];
@@ -106,18 +106,18 @@ const projectsSignature = (home: string): string => walkHome(join(home, "project
 /** THIS file's surviving children only: a `winter` process whose command line names this file's own home (its
  *  `--config-json` carries the daemon's sandbox paths under it) — never a stray from another run, which would
  *  fail every file's check at once. */
-const winterSurvivors = (bin: string, home: string): string[] =>
+const cloverSurvivors = (bin: string, home: string): string[] =>
   Bun.spawnSync(["ps", "-axww", "-o", "pid=,command="]).stdout.toString().split("\n").map((l) => l.trim()).filter((l) => l.replace(/^\d+\s+/, "").startsWith(bin) && l.includes(home));
 /** `pgrep -f` takes a REGEX. The npm platform binary's path carries `+` and `.`
  *  (`…/@yanlinglabs+winter-agent-sdk-darwin-arm64@0.0.35/…`), so an unescaped path matched nothing and
- *  every child scan came back empty whenever `$WINTER_RUNTIME_EXECUTABLE` was unset. */
+ *  every child scan came back empty whenever `$CLOVER_RUNTIME_EXECUTABLE` was unset. */
 const pgrepLiteral = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const winterChildren = (bin: string): string[] =>
+const cloverChildren = (bin: string): string[] =>
   Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", pgrepLiteral(bin)]).stdout.toString().trim().split("\n").filter(Boolean);
 const types = (events: SessionEvent[]): string[] => events.map((e) => e.type);
 const TURN = ["user_message", "turn_started", "tool_call", "tool_result", "assistant_message", "turn_completed", "approval_requested", "thread_started", "thread_completed", "agent_error"];
 
-describeWithWinterBinary("dispatch on the Winter leg — the built binary through a real daemon", (bin) => {
+describeWithWinterBinary("dispatch on the Clover leg — the built binary through a real daemon", (bin) => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let rt: RuntimeStateWiring;
@@ -159,13 +159,13 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
    *  FIXED PIN, `DISPATCH_MODEL`), so the test writes the store directly — the one door the driver
    *  honours over the pin — and the model is re-read when the child reopens. */
   const switchDouble = async (model: string): Promise<void> => {
-    await daemon!.winter.get(sid)?.end();
+    await daemon!.clover.get(sid)?.end();
     daemon!.sessions.setModel(sid, model);
   };
 
   beforeAll(async () => {
     for (const h of REAL_HOMES) { signaturesBefore.set(h, homeSignature(h)); projectsBefore.set(h, projectsSignature(h)); }
-    home = mkdtempSync(join(tmpdir(), "winter-dispatch-e2e-"));
+    home = mkdtempSync(join(tmpdir(), "clover-dispatch-e2e-"));
     mkdirSync(home, { recursive: true });
     writeSettings();
     await bootDaemon();
@@ -176,20 +176,20 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     const stopping = daemon?.stop();
     daemon = undefined;
     await stopping;
-    for (const pid of winterChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
+    for (const pid of cloverChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
     rmSync(home, { recursive: true, force: true });
   });
 
-  test("(a) session.dispatch mints the singleton on the Winter leg BY DEFAULT; dispatch respects its policy: an unclassified tool under auto/ask → a real card, answered over approval.respond", async () => {
-    expect(daemon!.winter.legForNewSession("dispatch")).toBe("winter");
-    expect(daemon!.winter.legForNewSession("chat")).toBe("winter");   // Task 17 Step 4: every mode
-    expect(daemon!.winter.legForNewSession("code")).toBe("winter");
-    const before = winterChildren(bin);
+  test("(a) session.dispatch mints the singleton on the Clover leg BY DEFAULT; dispatch respects its policy: an unclassified tool under auto/ask → a real card, answered over approval.respond", async () => {
+    expect(daemon!.clover.legForNewSession("dispatch")).toBe("winter");
+    expect(daemon!.clover.legForNewSession("chat")).toBe("winter");   // Task 17 Step 4: every mode
+    expect(daemon!.clover.legForNewSession("code")).toBe("winter");
+    const before = cloverChildren(bin);
     const minted = await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {});
     expect(minted.created).toBe(true);
     sid = minted.sessionId;
     // WS-23: embedded — one Worker for the singleton, and no `winter` process.
-    expect(winterChildren(bin).filter((p) => !before.includes(p))).toEqual([]);
+    expect(cloverChildren(bin).filter((p) => !before.includes(p))).toEqual([]);
     expect(daemon!.embedded.live()).toEqual([rt.records.get(sid)!.backendSessionId!]);
     const rec = rt.records.get(sid);
     expect(sessionLegOf(rec)).toBe("winter");
@@ -197,7 +197,7 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     expect(daemon!.sessions.meta(sid)).toMatchObject({ mode: "dispatch", approvalPolicy: "auto", origin: "dispatch" });
     const again = await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {});
     expect(again).toEqual({ sessionId: sid, created: false });
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     expect(driver.state).toBe("live");
     expect(driver.mode).toBe("dispatch");
     // the pin: the singleton was minted on DISPATCH_MODEL (no per-session override exists)
@@ -205,7 +205,7 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
 
     await switchDouble("winter-test/tooluse");
     await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
-    // (1) under `auto` — the SHIPPED dispatch policy, which is Winter's `default` mode since P8b-7
+    // (1) under `auto` — the SHIPPED dispatch policy, which is Clover's `default` mode since P8b-7
     // was amended (review F1): the unclassified call reaches THE BRIDGE, whose gate fails closed to
     // "ask" for an unclassified tool under every policy — and a dispatch session now CARDS it, on its
     // own log, exactly as code does (user ruling 2026-10-17). (Before F1 the classifier blocked it.)
@@ -231,11 +231,11 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     expect(res.output).toContain("The user denied this test_tool action");
     expect(res.output).not.toContain("never prompts");
     expect(log.filter((e) => e.type === "approval_resolved")).toEqual([expect.objectContaining({ callId: card.callId, approved: false })]);
-    // (2) under `ask` (Winter's `default` mode, the bridge's door): a card again, and an Allow lets the
+    // (2) under `ask` (Clover's `default` mode, the bridge's door): a card again, and an Allow lets the
     // call RUN (the double's tool is unregistered, so the tool_result is the child's own fallback). The
     // `tooluse` double scripts ONE tool round per child process, so the child is reopened (the policy
     // is re-read from the store on reopen; the live `setPermissionMode` path is the driver unit test's).
-    await daemon!.winter.get(sid)!.end();
+    await daemon!.clover.get(sid)!.end();
     await client.call(METHODS.sessionSetPolicy, { sessionId: sid, policy: "ask" });
     const evCount = client.events.length;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "use the tool again" });
@@ -267,7 +267,7 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     await client.waitFor((e) => client.events.indexOf(e) >= evCount && e.type === "turn_completed" && e.sessionId === sid);
     await Bun.sleep(100);
     const log = daemon!.sessions.read(sid);
-    expect(daemon!.winter.get(sid)!.init?.tools).not.toContain("Agent");
+    expect(daemon!.clover.get(sid)!.init?.tools).not.toContain("Agent");
     const refused = [...log].reverse().find((e) => e.type === "tool_result") as { output: string; isError: boolean } | undefined;
     expect(refused).toMatchObject({ isError: true });
     // Refused twice over: `Agent` is outside `Options.tools`, and (the fail-closed review fix) dispatch's
@@ -281,7 +281,7 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     expect(log.filter((e) => e.type === "agent_error")).toEqual([]);
     const childRows = rt.children.list(sid);
     expect(childRows.every((r) => r.status !== "completed")).toBe(true);
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     expect(driver.generation).toBe(4);   // minted (1), tooluse under auto (2), tooluse under ask (3), subagent under auto (4)
 
     // the simulated restart
@@ -292,13 +292,13 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     await bootDaemon();
     expect(rt.children.list(sid).every((r) => r.status !== "completed")).toBe(true);
     expect(sessionLegOf(rt.records.get(sid))).toBe("winter");
-    expect(daemon!.winter.get(sid)).toBeUndefined();   // never cold-resumed at boot
+    expect(daemon!.clover.get(sid)).toBeUndefined();   // never cold-resumed at boot
     // the singleton is the same session, and the first RPC resumes it
     expect(await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {})).toEqual({ sessionId: sid, created: false });
     await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     const ev2 = client.events.length;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "again" });
-    const resumed = daemon!.winter.get(sid)!;
+    const resumed = daemon!.clover.get(sid)!;
     expect(resumed.resumed).toBe(true);
     expect(resumed.generation).toBe(5);
     await client.waitFor((e) => client.events.indexOf(e) >= ev2 && e.type === "turn_completed" && e.sessionId === sid);
@@ -312,10 +312,10 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
 
   test("(c) a dispatch session.send while a turn runs is HELD (P8b-5/39): user_message with no turn_started; an interrupt leaves it owed", async () => {
     await switchDouble("winter-test/hang");
-    const driver0 = daemon!.winter.get(sid);
+    const driver0 = daemon!.clover.get(sid);
     const evCount = client.events.length;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang please" });
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     expect(driver0 === undefined || driver0 === driver).toBe(true);
     await Bun.sleep(400);
     expect(driver.turnRunning).toBe(true);
@@ -333,14 +333,14 @@ describeWithWinterBinary("dispatch on the Winter leg — the built binary throug
     await driver.end();
   }, 40_000);
 
-  test("(d) home isolation: ~/.winter and ~/.winter-dev untouched (names; projects/ size+mtime), and no dist/winter survives", async () => {
+  test("(d) home isolation: ~/.clover and ~/.clover-dev untouched (names; projects/ size+mtime), and no dist/winter survives", async () => {
     if (daemon !== undefined) await stopDaemon();
     for (const h of REAL_HOMES) {
       expect(homeSignature(h)).toBe(signaturesBefore.get(h)!);
       expect(projectsSignature(h)).toBe(projectsBefore.get(h)!);
     }
     const t0 = Date.now();
-    while (winterSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
-    expect(winterSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
+    while (cloverSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
+    expect(cloverSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
   });
 });

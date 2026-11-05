@@ -19,7 +19,7 @@ const writeSkill = (root: string, dir: string, description: string): void => {
 
 const saved: Record<string, string | undefined> = {};
 beforeAll(() => {
-  const fake = tmp("winter-skills21-gh-");
+  const fake = tmp("clover-skills21-gh-");
   writeFileSync(join(fake, ".gitconfig"), "");
   for (const [k, v] of Object.entries({ GIT_CONFIG_GLOBAL: join(fake, ".gitconfig"), XDG_CONFIG_HOME: join(fake, ".config") })) { saved[k] = process.env[k]; process.env[k] = v; }
 });
@@ -27,8 +27,8 @@ afterAll(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefin
 afterEach(() => { setRunHomeSupportForTests(undefined); _clearRepoRootCacheForTests(); });
 
 function fixture() {
-  const home = tmp("winter-skills21-h-");
-  const repo = tmp("winter-skills21-r-");
+  const home = tmp("clover-skills21-h-");
+  const repo = tmp("clover-skills21-r-");
   Bun.spawnSync(["git", "-C", repo, "init", "-q"]);
   const nested = join(repo, "pkg", "deep");
   mkdirSync(nested, { recursive: true });
@@ -42,11 +42,11 @@ describe("SkillStore.list precedence", () => {
     setRunHomeSupportForTests(true);
     const { home, repo, nested, trust } = fixture();
     writeSkill(join(storeHomeFor(home), "skills"), "shared", "from user");
-    writeSkill(join(repo, ".winter", "skills"), "shared", "from repo root");
-    writeSkill(join(repo, ".winter", "skills"), "rootonly", "root skill");
-    writeSkill(join(nested, ".winter", "skills"), "near", "nearest wins");
-    writeSkill(join(repo, ".winter", "skills"), "near", "farther loses");
-    const list = new SkillStore({ winterHome: home, trust }).list({ cwd: nested });
+    writeSkill(join(repo, ".clover", "skills"), "shared", "from repo root");
+    writeSkill(join(repo, ".clover", "skills"), "rootonly", "root skill");
+    writeSkill(join(nested, ".clover", "skills"), "near", "nearest wins");
+    writeSkill(join(repo, ".clover", "skills"), "near", "farther loses");
+    const list = new SkillStore({ cloverHome: home, trust }).list({ cwd: nested });
     const by = Object.fromEntries(list.map((s) => [s.name, s]));
     expect(by.shared!.description).toBe("from user");
     expect(by.shared!.source).toBe("user");
@@ -58,19 +58,19 @@ describe("SkillStore.list precedence", () => {
     setRunHomeSupportForTests(false);
     const { home, repo, trust } = fixture();
     writeSkill(join(storeHomeFor(home), "skills"), "shared", "from user");
-    writeSkill(join(repo, ".winter", "skills"), "shared", "from project");
-    const by = Object.fromEntries(new SkillStore({ winterHome: home, trust }).list({ cwd: repo }).map((s) => [s.name, s]));
+    writeSkill(join(repo, ".clover", "skills"), "shared", "from project");
+    const by = Object.fromEntries(new SkillStore({ cloverHome: home, trust }).list({ cwd: repo }).map((s) => [s.name, s]));
     expect(by.shared!.description).toBe("from project");
   });
 
   test("an untrusted project contributes nothing on either build", () => {
     for (const on of [true, false]) {
       setRunHomeSupportForTests(on);
-      const home = tmp("winter-skills21-h-");
-      const repo = tmp("winter-skills21-r-");
-      writeSkill(join(repo, ".winter", "skills"), "sneaky", "x");
+      const home = tmp("clover-skills21-h-");
+      const repo = tmp("clover-skills21-r-");
+      writeSkill(join(repo, ".clover", "skills"), "sneaky", "x");
       const trust = new TrustStore(join(home, "trust.json"));
-      expect(new SkillStore({ winterHome: home, trust }).list({ cwd: repo }).map((s) => s.name)).not.toContain("sneaky");
+      expect(new SkillStore({ cloverHome: home, trust }).list({ cwd: repo }).map((s) => s.name)).not.toContain("sneaky");
     }
   });
 });
@@ -80,25 +80,25 @@ describe("SkillStore.list precedence", () => {
 describe("R.3 residual: skills.list from a linked worktree of a trusted repo", () => {
   test("the worktree's own project skills are listed (from its top and from inside it); the main checkout's are not", () => {
     setRunHomeSupportForTests(true);
-    const home = tmp("winter-skills21-r3p-h-");
-    const main = tmp("winter-skills21-r3p-main-");
+    const home = tmp("clover-skills21-r3p-h-");
+    const main = tmp("clover-skills21-r3p-main-");
     const git = (args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
     git(["init", "-q"]);
     git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"]);
-    const wt = join(tmp("winter-skills21-r3p-wt-"), "wt");
+    const wt = join(tmp("clover-skills21-r3p-wt-"), "wt");
     git(["worktree", "add", "-q", "-b", `r3p-${Math.random().toString(16).slice(2)}`, wt]);
-    writeSkill(join(wt, ".winter", "skills"), "wtskill", "the worktree's own");
-    writeSkill(join(main, ".winter", "skills"), "mainskill", "the main checkout's");
+    writeSkill(join(wt, ".clover", "skills"), "wtskill", "the worktree's own");
+    writeSkill(join(main, ".clover", "skills"), "mainskill", "the main checkout's");
     const nested = join(wt, "pkg");
     mkdirSync(nested, { recursive: true });
     const trust = new TrustStore(join(home, "trust.json"));
     trust.trust(main);
     for (const cwd of [wt, nested]) {
-      const names = new SkillStore({ winterHome: home, trust }).list({ cwd }).map((x) => x.name);
+      const names = new SkillStore({ cloverHome: home, trust }).list({ cwd }).map((x) => x.name);
       expect({ cwd, wt: names.includes("wtskill"), main: names.includes("mainskill") }).toEqual({ cwd, wt: true, main: false });
     }
     // from the MAIN checkout nothing changes
-    const fromMain = new SkillStore({ winterHome: home, trust }).list({ cwd: main }).map((x) => x.name);
+    const fromMain = new SkillStore({ cloverHome: home, trust }).list({ cwd: main }).map((x) => x.name);
     expect({ main: fromMain.includes("mainskill"), wt: fromMain.includes("wtskill") }).toEqual({ main: true, wt: false });
   });
 });
@@ -107,7 +107,7 @@ describe("sessionAvailability after the handover's retirement (L4 request 2)", (
   test("a run-home build: user/self/project skills load in sessions (the run folder carries them); builtin does not, and says why", () => {
     setRunHomeSupportForTests(true);
     try {
-      const store = new SkillStore({ winterHome: mkdtempSync(join(tmpdir(), "winter-sa-")), trust: { isTrusted: () => false } as never });
+      const store = new SkillStore({ cloverHome: mkdtempSync(join(tmpdir(), "clover-sa-")), trust: { isTrusted: () => false } as never });
       for (const source of ["user", "self", "project"] as const) expect(store.sessionAvailability({ name: "x", source })).toEqual({ loadsInSessions: true });
       // R.1 ruling 3: the router stages sdk/skills, sdk/skills/self and trusted-project skills — never the
       // daemon's own builtin tier, and neither runtime ships it.
@@ -121,7 +121,7 @@ describe("sessionAvailability after the handover's retirement (L4 request 2)", (
   test("router 0.0.11: they don't, and say why", () => {
     setRunHomeSupportForTests(false);
     try {
-      const store = new SkillStore({ winterHome: mkdtempSync(join(tmpdir(), "winter-sa-")), trust: { isTrusted: () => false } as never });
+      const store = new SkillStore({ cloverHome: mkdtempSync(join(tmpdir(), "clover-sa-")), trust: { isTrusted: () => false } as never });
       const r = store.sessionAvailability({ name: "x", source: "user" });
       expect(r.loadsInSessions).toBe(false);
       expect(r.sessionNote).toContain("no door");

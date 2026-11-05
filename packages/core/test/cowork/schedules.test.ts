@@ -8,7 +8,7 @@ import { openRuntimeStateDb, type RuntimeStateDb } from "../../src/runtime-state
 import { CoworkRepository } from "../../src/cowork/repository";
 import { CoworkSchedules, nextCoworkScheduleTime } from "../../src/cowork/schedules";
 import type { CoworkScheduleDispatchInput, CoworkScheduleDispatchOutcome, CoworkScheduleDispatchPort, CoworkScheduleStartResult } from "../../src/cowork/schedule-dispatch";
-import type { CoworkScheduleDefinition } from "@yanlinglabs/winter-protocol";
+import type { CoworkScheduleDefinition } from "@waifucave/clover-protocol";
 const homes: string[] = [], handles: RuntimeStateDb[] = [];
 const caps = { toolClasses: ["read", "write"], hostServices: [], connectors: [], network: "internet" as const };
 afterEach(() => { handles.splice(0).forEach(db => db.close()); homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); });
@@ -34,7 +34,7 @@ function due(f: Fixture, definition = f.definition) {
 }
 const durable = (f: Fixture, occurrenceId: string) => f.db.db.query("SELECT state,reason,claim_token FROM cowork_schedule_occurrences WHERE occurrence_id=?").get(occurrenceId) as { state: string; reason: string | null; claim_token: string | null };
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "winter-schedules-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-schedules-")); homes.push(home);
   const db = openRuntimeStateDb(home); handles.push(db); const records = new CoworkRepository(db);
   const made = records.create({ principalId: "fixture", requestId: "workspace" }, { ownership: "project", title: "Fixture", ceiling: caps, sources: [{ kind: "folder", label: "fixture", access: "read-write", detail: { grantRef: "fixture-grant", rootIdentity: "fixture-root" } }] });
   let time = 0, revoked = false, branch = "feature/example";
@@ -520,7 +520,7 @@ test("anti-wiring: the dispatch port is a type-only import of schedules.ts, has 
   const typesTree = parse(module), kinds = typesTree.statements.map(statement => ts.SyntaxKind[statement.kind]);
   expect([...new Set(kinds)].sort()).toEqual(["ImportDeclaration", "InterfaceDeclaration", "TypeAliasDeclaration"]);
   expect(typesTree.statements.filter(ts.isImportDeclaration).every(statement => statement.importClause?.isTypeOnly === true)).toBe(true);
-  expect(typesTree.statements.filter(ts.isImportDeclaration).map(statement => (statement.moduleSpecifier as ts.StringLiteral).text).sort()).toEqual(["./types", "@yanlinglabs/winter-protocol"]);
+  expect(typesTree.statements.filter(ts.isImportDeclaration).map(statement => (statement.moduleSpecifier as ts.StringLiteral).text).sort()).toEqual(["./types", "@waifucave/clover-protocol"]);
   // 3. No implementation of the port anywhere in src (a class implementing it, or a value annotated with it).
   // Exactly three files may name the port type: the owner, the types module and the door port. Any other implementation would have to
   // name it (or be a structural object, which the bans on driver verbs leave with nothing to call), so this list is the single-implementation pin.

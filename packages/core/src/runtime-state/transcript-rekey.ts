@@ -1,5 +1,5 @@
 // WS-21 round 3 (Important): THE CANONICAL-CWD RE-KEY. Both legs now key a session's transcript by the
-// REALPATH of its cwd (L2 O-1: the Winter child keys by `realpath(cwd)`, the official store key derives from
+// REALPATH of its cwd (L2 O-1: the Clover child keys by `realpath(cwd)`, the official store key derives from
 // the canonical cwd), but a session made before that — any 0.116 session whose cwd went through a symlink
 // (`/tmp/app` → `/private/tmp/app`) — has its files under the RAW cwd's key, where neither leg looks any
 // more: its history would be silently lost. `moveTranscriptFiles` carries ONE session's files to the
@@ -46,7 +46,7 @@ export function transcriptEntriesOf(dir: string, backendSessionId: string): stri
  * WS-23 (fix round 2): what would make a move between the two keys REFUSE before anything is touched —
  * a link at the store, either key, or (for a destination that does not exist yet) its nearest existing
  * ancestor, or a destination that resolves outside the store. `undefined` = nothing in the way. The one
- * check both the move itself and `winter doctor`'s repair run, so the doctor can never report a
+ * check both the move itself and `clover doctor`'s repair run, so the doctor can never report a
  * session fixed that the next resume would refuse again.
  */
 export function transcriptMoveObstruction(projectsDir: string, fromKey: string, toKey: string): string | undefined {

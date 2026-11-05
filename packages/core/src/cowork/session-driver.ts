@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { query as agentQuery, type CanUseTool, type Options, type PermissionResult } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { createProjector, type Projector } from "../projector";
 import type { CheckpointStore } from "../projector/types";
 import type { WinterRuntimeSdk } from "../runtime-sdk/create";
-import { WinterLegRefusal } from "../runtime-sdk/session-driver";
+import { CloverLegRefusal } from "../runtime-sdk/session-driver";
 import { mainTurnOpenInLog } from "../sessions/turn-origins";
-import { startWinterSession, unconsumedUserMessages, type WinterIncarnation, type WinterSession, type WinterSessionDeps, type WinterSessionRecords } from "../runtime-sdk/winter-session";
+import { startCloverSession, unconsumedUserMessages, type CloverIncarnation, type CloverSession, type CloverSessionDeps, type CloverSessionRecords } from "../runtime-sdk/clover-session";
 import type { SessionHub } from "../sessions/hub";
 import type { SessionStore } from "../sessions/store";
 import { turnOriginIndexFor } from "../sessions/turn-origin-index";
@@ -27,7 +27,7 @@ import { CoworkError, type CapabilityCeiling, type CoworkConversation, type Work
 
 /*
  * Cowork session door D3: the Cowork driver table. One SOURCE-located conversation per guest incarnation (N2), driven by
- * the ordinary `WinterSession` over the host agent SDK's `query()`, whose runtime process is the guest's: the supervisor
+ * the ordinary `CloverSession` over the host agent SDK's `query()`, whose runtime process is the guest's: the supervisor
  * (`guest-runtime.ts`) admits the launch, and its channel (`runtime-channel.ts`) is the incarnation's runtime class.
  *
  * NOTHING HERE IS REACHABLE IN PRODUCTION. Every Cowork verb refuses `provider_unavailable` unless a provider route, a
@@ -49,7 +49,7 @@ import { CoworkError, type CapabilityCeiling, type CoworkConversation, type Work
  *     permission answers (agent SDK `linux-host-query-profile.ts` `checkLinuxHostQueryFrame`); anything else is a guest
  *     refusal that ends the runtime. So model, policy and compaction changes, an interrupt (the host SDK's carries
  *     `{scope: "turn"}`), images and files refuse typed HERE, and every permission answer is cut to the closed shape.
- *   - it never enters the router's directory (`WinterSession.attachMessaging` skips "cowork") and never idles out.
+ *   - it never enters the router's directory (`CloverSession.attachMessaging` skips "cowork") and never idles out.
  */
 
 export interface CoworkSessionDriverDeps {
@@ -64,12 +64,12 @@ export interface CoworkSessionDriverDeps {
   readonly offer?: CoworkGuestRuntimeOffer;
   readonly approvals?: CoworkApprovalPort;
   /** 8a's session records, when the session has a runtime row (D4). Absent: generations count in memory. */
-  readonly sessionRecords?: WinterSessionRecords;
+  readonly sessionRecords?: CloverSessionRecords;
   /** The host agent SDK's `query` (test seam; the default is the SDK's own). */
   readonly query?: typeof agentQuery;
   /** Test seam for the backend identity minter (default: a UUID). */
   readonly mintBackendSessionId?: () => string;
-  /** Test seam for `WINTER_SESSION_END_GRACE_MS`. */
+  /** Test seam for `CLOVER_SESSION_END_GRACE_MS`. */
   readonly endGraceMs?: number;
   readonly log?: (line: string) => void;
   /** #92 N3: cold resume. Absent (every production composition, pinned): a conversation with a recorded backend refuses
@@ -115,7 +115,7 @@ export function coworkAcknowledgeMountedShares(records: Pick<CoworkRepository, "
 }
 
 const unsupported = (): never => { throw new CoworkError("unsupported_topology"); };
-const shutdownRefusal = (): WinterLegRefusal => new WinterLegRefusal("daemon_shutting_down", "Winter is shutting down; no session can start now");
+const shutdownRefusal = (): CloverLegRefusal => new CloverLegRefusal("daemon_shutting_down", "Clover is shutting down; no session can start now");
 
 /** A guest permission answer in the host-query profile's closed shape: `{behavior: "allow", updatedInput}` or
  *  `{behavior: "deny", message, interrupt?}`. Saved-rule updates and decision classifications never reach the guest. */
@@ -139,7 +139,7 @@ interface Admitted { readonly binding: CoworkConversation; readonly source: Work
 interface Entry {
   readonly sessionId: string;
   readonly workspaceId: string;
-  readonly session: WinterSession;
+  readonly session: CloverSession;
   readonly handle: CoworkLegSession;
   run: CoworkGuestRun | undefined;
   closed: boolean;
@@ -278,7 +278,7 @@ export function createCoworkSessionDrivers(deps: CoworkSessionDriverDeps): Cowor
     };
 
     let claimedInBatch = 0;
-    const projectorFor = (inc: WinterIncarnation): Projector => createProjector({
+    const projectorFor = (inc: CloverIncarnation): Projector => createProjector({
       sessionId, mode: "cowork", generation: inc.generation, winterSessionId: sessionId, runtimeKind: "winter-agent",
       nextSeq: () => deps.store.lastSeq(sessionId) + (++claimedInBatch),
       onToolResults: callIds => { for (const callId of callIds) bridge?.withdrawPending(callId); },
@@ -309,7 +309,7 @@ export function createCoworkSessionDrivers(deps: CoworkSessionDriverDeps): Cowor
     };
     // Only the agent SDK's own `query` (the runtime process is the guest's); no router selection, run home or messaging.
     const runtime = { sdk: { query: (input: Parameters<typeof agentQuery>[0]) => { const q = sdkQuery(input); liveQuery = q; return heldGated ? coworkTapHeldInputs(q, reconcileHeldInputs) : q; } }, trackQuery: () => {}, untrack: () => {} } as unknown as WinterRuntimeSdk;
-    const sessionDeps: WinterSessionDeps = {
+    const sessionDeps: CloverSessionDeps = {
       sessionId, backendSessionId, mode: "cowork", runtime,
       options: ({ abort }) => start(abort),
       spawnRefusal: () => (shuttingDown ? shutdownRefusal() : undefined),
@@ -330,7 +330,7 @@ export function createCoworkSessionDrivers(deps: CoworkSessionDriverDeps): Cowor
       ...(deps.endGraceMs === undefined ? {} : { endGraceMs: deps.endGraceMs }),
       log,
     };
-    const session = startWinterSession(sessionDeps);
+    const session = startCloverSession(sessionDeps);
     /** A conversation whose one incarnation was consumed and is not live has nothing to append to: refuse before the log. */
     const usable = (): void => {
       if (entry.closed || (entry.consumed && session.state !== "live")) throw new CoworkError("cold_resume_unavailable");

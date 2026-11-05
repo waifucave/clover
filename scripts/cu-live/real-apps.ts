@@ -63,7 +63,7 @@ export function realAppsPreflight(root: string, log: (l: string) => void): RealA
   writeFileSync(join(dir, "note.txt"), "First line of the temp note.\n");
   writeFileSync(join(dir, FOLDER, "alpha.txt"), "a\n");
   writeFileSync(join(dir, FOLDER, "beta.txt"), "b\n");
-  writeFileSync(join(dir, "doc.pdf"), minimalPdf("Winter CU live PDF"));
+  writeFileSync(join(dir, "doc.pdf"), minimalPdf("Clover CU live PDF"));
   const before = new Map(APPS.map((a) => [a.name, running(a.name)] as const));
   const open = (args: string[]): void => { const r = spawnSync("open", args, { encoding: "utf8" }); if (r.status !== 0) throw new Error(`open ${args.join(" ")}: ${r.stderr}`); };
   // Not the folder: Finder may put an `open`ed folder in a TAB of the user's own window (on any Space) — the Finder
@@ -139,11 +139,11 @@ const te = await apps.open("com.apple.TextEdit", { window: "note.txt" });
 const area = (await te.find({ role: "text area" }, { emit: false }))[0];
 if (!area) throw new Error("no text area");
 await te.select(area.ref, "temp note.", { caret: "end" });
-await te.type(" Appended ✓ by Winter.", { into: area.ref });
+await te.type(" Appended ✓ by Clover.", { into: area.ref });
 const value = (await te.find({ role: "text area" }, { emit: false }))[0]?.value ?? "";
 report({ value });
 await closeOwn(te);`,
-    verify: (ctx) => [okRun(ctx), check("the note holds the appended text", String(ctx.facts.value ?? "").includes("temp note. Appended ✓ by Winter."), String(ctx.facts.value))],
+    verify: (ctx) => [okRun(ctx), check("the note holds the appended text", String(ctx.facts.value ?? "").includes("temp note. Appended ✓ by Clover."), String(ctx.facts.value))],
   },
   {
     name: "Finder: a temp folder — read its items", group: "real-apps", timeoutMs: 45_000,

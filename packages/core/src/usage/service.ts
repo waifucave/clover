@@ -17,7 +17,7 @@ import {
 import { planWindowKey, staleness, type PlanReading, type PlanStatusWindow, type PlanWindow } from "./plan";
 import type { UsagePricer } from "./pricing";
 
-// The usage service (`docs/claude/usage.md`): records Winter's own turns as they end, ingests the user's Codex and
+// The usage service (`docs/claude/usage.md`): records Clover's own turns as they end, ingests the user's Codex and
 // Claude Code usage ON DEMAND (when a Usage surface asks — no watcher, no timer: an idle daemon does nothing), reads
 // the plans (Codex, Claude Code, Antigravity) through their source ladders, keeps the user's one-shot plan alarms (every
 // plan read judges them; a background beat reads the plans — `startBackground`), and answers the `usage.*` RPCs.
@@ -30,7 +30,7 @@ export interface UsageTracking { codex: boolean; claudeCode: boolean; antigravit
 export interface UsageServiceDeps {
   db: UsageDb;
   pricer: UsagePricer;
-  /** LIVE: which external sources the user lets Winter read (`settings.usage`). */
+  /** LIVE: which external sources the user lets Clover read (`settings.usage`). */
   tracking: () => UsageTracking;
   /** `<CODEX_HOME>` (undefined = no Codex install to read). */
   codexHome?: string;
@@ -44,8 +44,8 @@ export interface UsageServiceDeps {
   agyExecutable?: () => string | undefined;
   /** The user's OpenCode (`opencode`); absent = not on this Mac. */
   opencodeExecutable?: () => string | undefined;
-  /** Winter's own codex-oauth `rate_limit_event` windows (status only) — the Codex plan's last rung. */
-  winterCodexWindows: () => PlanStatusWindow[];
+  /** Clover's own codex-oauth `rate_limit_event` windows (status only) — the Codex plan's last rung. */
+  cloverCodexWindows: () => PlanStatusWindow[];
   /** The directory each probe's own fresh, empty cwd is made in (`<home>/usage`): a probe runs where no project config
    *  loads, and exactly its own directory is removed after it. */
   probeRoot: () => string;
@@ -141,7 +141,7 @@ function differs(s: SyntheticRow, r: UsageRecordInput): boolean {
     || Math.abs((s.cacheSavingsUsd ?? 0) - (r.cacheSavingsUsd ?? 0)) > 1e-9;
 }
 
-/** Where Claude Code's `/stats` history keeps its own state in `ingest_files` (`sourceState`): when Winter first and last
+/** Where Claude Code's `/stats` history keeps its own state in `ingest_files` (`sourceState`): when Clover first and last
  *  read the transcripts in full, the spans between reads too far apart, and the per-day estimates. */
 export const CLAUDE_STATS_STATE_KEY = "claude-code:stats-history";
 /** A complete read's time is written at most this often (a gap is measured in weeks). */
@@ -278,7 +278,7 @@ async function within(p: Promise<unknown>, ms: number): Promise<void> {
   if (timer !== undefined) clearTimeout(timer);
 }
 
-export interface WinterTurnRow {
+export interface CloverTurnRow {
   model: string;
   canonicalModel?: string;
   provider?: string;
@@ -312,7 +312,7 @@ export interface UsageModelRow extends UsageTotals {
   source: UsageSource;
   provider: string;
   model: string;
-  /** `list` (the runtime's own price), `estimate` (Winter's list-price estimate), `reported` (the other app's own
+  /** `list` (the runtime's own price), `estimate` (Clover's list-price estimate), `reported` (the other app's own
    *  figure — OpenCode), `mixed`, or `unknown`. */
   costBasis: "list" | "estimate" | "reported" | "mixed" | "unknown";
 }
@@ -422,11 +422,11 @@ export class UsageService {
     this.now = deps.now ?? Date.now;
   }
 
-  // ── Winter's own turns ─────────────────────────────────────────────────────────────────────────
+  // ── Clover's own turns ─────────────────────────────────────────────────────────────────────────
 
   /** A projected turn's per-model rows (`onTurnUsage`). A runtime-priced row keeps its price (`list`); an unpriced
-   *  one (a subscription row) gets Winter's list-price estimate at its API twin, or none. */
-  recordWinterTurn(sessionId: string, mode: string | undefined, sourceId: string, rows: readonly WinterTurnRow[]): void {
+   *  one (a subscription row) gets Clover's list-price estimate at its API twin, or none. */
+  recordCloverTurn(sessionId: string, mode: string | undefined, sourceId: string, rows: readonly CloverTurnRow[]): void {
     const at = this.now();
     const records: UsageRecordInput[] = rows.map((r) => {
       const slash = r.model.indexOf("/");
@@ -524,7 +524,7 @@ export class UsageService {
   }
 
   /**
-   * Claude Code's transcripts were just read (`complete`: all of them, no chunk left). Note when Winter FIRST read them —
+   * Claude Code's transcripts were just read (`complete`: all of them, no chunk left). Note when Clover FIRST read them —
    * on a DB from before this note, the oldest file read-state (a file read once and never grown since keeps the time of
    * its first read) — and, when no complete read happened for longer than Claude Code's retention (the daemon not
    * running, the tracking switch off), the days that may have been emptied in between.
@@ -545,7 +545,7 @@ export class UsageService {
     if (dirty) this.saveStatsState(h);
   }
 
-  /** Which days Winter's Claude Code transcript rows may not hold in full (`StatsCoverage`). */
+  /** Which days Clover's Claude Code transcript rows may not hold in full (`StatsCoverage`). */
   private coverage(): StatsCoverage {
     const h = this.statsState();
     const earliest = this.deps.db.earliestReal("claude-code");
@@ -556,7 +556,7 @@ export class UsageService {
     };
   }
 
-  /** Winter's transcript totals (all four kinds) per model on each partial day, keyed like the estimates. An index seek
+  /** Clover's transcript totals (all four kinds) per model on each partial day, keyed like the estimates. An index seek
    *  per span: partial days hold few transcript rows (most of theirs are gone). */
   private partialRealTotals(c: StatsCoverage): Map<string, number> {
     const spans: Array<[number, number]> = [];
@@ -592,8 +592,8 @@ export class UsageService {
 
   /**
    * Backfill Claude Code's history from its own `/stats` cache (`usage/claude-stats.ts`) for the days its transcripts may
-   * no longer hold in full — the PARTIAL days (`StatsCoverage`): before Winter first read them less Claude Code's
-   * retention, before the first transcript day, and any span Winter was away longer than the retention.
+   * no longer hold in full — the PARTIAL days (`StatsCoverage`): before Clover first read them less Claude Code's
+   * retention, before the first transcript day, and any span Clover was away longer than the retention.
    *  - After a COMPLETE transcript read, the cache refreshes the estimates (`refreshEstimates`) — parsed only when its
    *    mtime or size changed, re-estimated only when it or the coverage changed (never merely because a day passed).
    *    The estimates live in the usage DB: a day the cache stops listing or shrinks keeps its estimate.
@@ -638,7 +638,7 @@ export class UsageService {
   }
 
   /** Where the Claude Code history came from (the Usage window's footnote): its first day, and the first day after the
-   *  partial ones — the later of the first transcript day and the day after Winter's first read less the retention;
+   *  partial ones — the later of the first transcript day and the day after Clover's first read less the retention;
    *  with no transcripts at all, the day after the last imported day. */
   history(): UsageHistory {
     const span = this.deps.db.syntheticSpan("claude-code");
@@ -838,7 +838,7 @@ export class UsageService {
     return { ...r, windows: r.windows.map((w) => ({ ...w, ...staleness(r.at, w.windowMinutes, w.resetsAt, this.now()) })) };
   }
 
-  /** The Codex plan: Codex's app-server → the newest rollout's `rate_limits` → Winter's own codex-oauth report. Every
+  /** The Codex plan: Codex's app-server → the newest rollout's `rate_limits` → Clover's own codex-oauth report. Every
    *  answer judges the plan's alarms. `minAgeMs`: a fast beat's own floor for a fresh spawn (below the throttle). */
   async codexPlan(minAgeMs?: number): Promise<PlanReading> {
     return this.answered(await this.readCodexPlan(minAgeMs));
@@ -846,7 +846,7 @@ export class UsageService {
 
   private async readCodexPlan(minAgeMs?: number): Promise<PlanReading> {
     if (!this.deps.tracking().codex) return { provider: "codex", source: "disabled", windows: [] };
-    // Not on this Mac: no slot at all (user 2026-10-18), whatever an old rollout or Winter's own sign-in could say.
+    // Not on this Mac: no slot at all (user 2026-10-18), whatever an old rollout or Clover's own sign-in could say.
     if (this.deps.codexExecutable() === undefined) return { provider: "codex", source: "not-installed", windows: [] };
     const now = this.now();
     const every = minAgeMs ?? this.deps.codexAppServerEveryMs ?? 60_000;
@@ -882,8 +882,8 @@ export class UsageService {
     }
     const best = newerReading(kept, fromRollout);
     if (best !== undefined) return this.judged(best);
-    const winter = this.deps.winterCodexWindows();
-    if (winter.length > 0) return { provider: "codex", source: "winter-codex-oauth", windows: [], statusOnly: winter, at: Math.max(...winter.map((w) => w.at)) };
+    const clover = this.deps.cloverCodexWindows();
+    if (clover.length > 0) return { provider: "codex", source: "winter-codex-oauth", windows: [], statusOnly: clover, at: Math.max(...clover.map((w) => w.at)) };
     return { provider: "codex", source: "none", windows: [] };
   }
 
@@ -955,7 +955,7 @@ export class UsageService {
     if (!this.deps.tracking().antigravity) return { provider: "antigravity", source: "disabled", windows: [] };
     if (this.deps.agyExecutable?.() === undefined) return { provider: "antigravity", source: "not-installed", windows: [] };
     const now = this.now();
-    // A run killed at Winter's own deadline (agy ignored its `--print-timeout`) backs off for hours, not minutes — a
+    // A run killed at Clover's own deadline (agy ignored its `--print-timeout`) backs off for hours, not minutes — a
     // beat's floor never shortens that.
     const every = this.agyCache?.failure === "timeout" ? (this.deps.agyTimeoutBackoffMs ?? AGY_TIMEOUT_BACKOFF_MS) : (minAgeMs ?? this.deps.agyCliEveryMs ?? 300_000);
     if (this.agyRun !== undefined) {

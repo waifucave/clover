@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the daemon side of Winter.app's BROWSER LINK (spine §5): the four `browserLink.*` requests the
+// ComputerV2 Phase 2 — the daemon side of Clover.app's BROWSER LINK (spine §5): the four `browserLink.*` requests the
 // app makes, and the link's lifetime. The app opens a dedicated harness connection (clientName "browser-link") once
 // its main connection is up, attaches, and keeps it for its life; the daemon writes `browserLink.command`
 // notifications on it and the app answers each with `browserLink.result`, streams the subscribed events in batches
@@ -8,12 +8,12 @@
 // HARNESS ROLE ONLY (the IPC server checks it before calling here), never in the remote or plugin allowlists. A second
 // attach replaces the first: the older connection is told `browserLink.detached { reason: "replaced" }` and the daemon
 // stops using it. When the link's connection closes, every command in flight fails `disconnected` and the built-in
-// browser reads "Winter isn't running".
+// browser reads "Clover isn't running".
 import { randomBytes } from "node:crypto";
 import {
   BROWSER_LINK_FEATURES, BrowserLinkAttachParams, BrowserLinkDownloadParams, BrowserLinkEventsParams, BrowserLinkHeadlessParams, BrowserLinkResultParams,
   BrowserLinkTabGoneParams, METHODS,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import type { BrowserBackendRegistry } from "../registry";
 import { BROWSER_LINK_PROTOCOL, CefTransport, type CefTransportOptions, type HeadlessShowParams, type HeadlessTabRow, type LinkPeer } from "./cef-transport";
 
@@ -55,7 +55,7 @@ export class BrowserLink {
 
   constructor(private readonly deps: BrowserLinkDeps) {}
 
-  /** Is Winter.app's link up now? */
+  /** Is Clover.app's link up now? */
   get connected(): boolean { return this.current !== undefined && this.current.transport.connected; }
 
   /** Feature `headless`: the app's panel as a viewer, while the link is up and the app named the feature. */
@@ -69,8 +69,8 @@ export class BrowserLink {
   /** Why there is no headless viewer now (for the model's sentence), or undefined when there is one. */
   headlessViewerMissing(): string | undefined {
     const c = this.current;
-    if (c === undefined || !c.transport.connected) return "Winter isn't running — ask the user to open Winter";
-    if (!c.transport.appFeatures.has("headless")) return "this Winter's app can't show a headless tab — ask the user to update Winter";
+    if (c === undefined || !c.transport.connected) return "Clover isn't running — ask the user to open Clover";
+    if (!c.transport.appFeatures.has("headless")) return "this Clover's app can't show a headless tab — ask the user to update Clover";
     return undefined;
   }
 
@@ -123,7 +123,7 @@ export class BrowserLink {
 
   private async headlessAction(p: { sessionId: string; tabId?: string | undefined; action: string }): Promise<Record<string, unknown>> {
     const h = this.deps.headless;
-    if (h === undefined) throw new BrowserLinkRpcError("headless_unavailable", "Winter's headless browser is not available");
+    if (h === undefined) throw new BrowserLinkRpcError("headless_unavailable", "Clover's headless browser is not available");
     if (p.action === "list") return { tabs: await h.list(p.sessionId) };
     if (p.tabId === undefined) throw new BrowserLinkRpcError("invalid_params", `${p.action} names a tab`);
     await h.act(p.sessionId, p.tabId, p.action as "watch" | "takeOver" | "handBack" | "done" | "stopWaiting" | "close");
@@ -133,8 +133,8 @@ export class BrowserLink {
   private attach(conn: object, peer: LinkPeer, p: { protocol: number; appVersion: string; pid: number; features?: string[] | undefined }): { linkId: string; protocol: number; features: string[] } {
     if (p.protocol !== BROWSER_LINK_PROTOCOL) {
       this.deps.registry.noteUnavailable({
-        family: "winter", name: "Winter (built-in)",
-        reason: p.protocol < BROWSER_LINK_PROTOCOL ? "Winter's app is older than its daemon — ask the user to update Winter" : "Winter's app is newer than its daemon — ask the user to update Winter",
+        family: "winter", name: "Clover (built-in)",
+        reason: p.protocol < BROWSER_LINK_PROTOCOL ? "Clover's app is older than its daemon — ask the user to update Clover" : "Clover's app is newer than its daemon — ask the user to update Clover",
       });
       throw new BrowserLinkRpcError("protocol_mismatch", `the browser link speaks protocol ${BROWSER_LINK_PROTOCOL}, not ${p.protocol}`, { code: "protocol_mismatch", expected: BROWSER_LINK_PROTOCOL });
     }
@@ -150,9 +150,9 @@ export class BrowserLink {
     // The features both sides name are the ones used.
     const ours: readonly string[] = BROWSER_LINK_FEATURES;
     transport.appFeatures = new Set((p.features ?? []).filter((f) => ours.includes(f)));
-    const reg = this.deps.registry.register(transport, { family: "winter", name: "Winter (built-in)", instanceKey: "winter" });
+    const reg = this.deps.registry.register(transport, { family: "winter", name: "Clover (built-in)", instanceKey: "winter" });
     this.current = { linkId, conn, peer, transport, unregister: reg.unregister };
-    this.deps.log?.(`computer-use: Winter's browser link attached (app ${p.appVersion.slice(0, 40)}, pid ${p.pid}${transport.appFeatures.size > 0 ? `, ${[...transport.appFeatures].join(", ")}` : ""})`);
+    this.deps.log?.(`computer-use: Clover's browser link attached (app ${p.appVersion.slice(0, 40)}, pid ${p.pid}${transport.appFeatures.size > 0 ? `, ${[...transport.appFeatures].join(", ")}` : ""})`);
     return { linkId, protocol: BROWSER_LINK_PROTOCOL, features: [...ours] };
   }
 
@@ -169,7 +169,7 @@ export class BrowserLink {
     this.current = undefined;
     c.transport.close();
     c.unregister();
-    this.deps.log?.("computer-use: Winter's browser link closed");
+    this.deps.log?.("computer-use: Clover's browser link closed");
   }
 
   /** Daemon stop. */

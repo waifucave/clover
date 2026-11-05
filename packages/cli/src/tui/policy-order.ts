@@ -1,4 +1,4 @@
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 
 /** The shift+tab approval-policy cycle order (SP-policies): `plan` (most restrictive — you must
  *  approve a plan before anything mutates) → `bypass` (least — auto-approve everything); the cycler

@@ -9,7 +9,7 @@ import { storeHomeFor } from "./paths";
  * one memory dir per git repo (worktrees resolve to the SAME dir as their main checkout), a plain
  * cwd when not a repo at all, and a settings override that replaces the computation entirely.
  *
- * Deliberately has NO knowledge of `Settings` (the zod type) — callers pass a plain `{ winterHome,
+ * Deliberately has NO knowledge of `Settings` (the zod type) — callers pass a plain `{ cloverHome,
  * directory? }` bag, same "getter/plain-deps, not the settings shape" convention engine.ts's
  * EngineConfig getters already follow (e.g. `reviewerAllow: () => settings?.reviewer?.allow`).
  */
@@ -144,14 +144,14 @@ export function sanitizeProjectKey(absPath: string): string {
 }
 
 export interface MemoryDirOptions {
-  /** The DAEMON home (`<home>`, never `<home>/sdk`). The store lives in `storeHomeFor(winterHome)`
+  /** The DAEMON home (`<home>`, never `<home>/sdk`). The store lives in `storeHomeFor(cloverHome)`
    *  (WS-21: `<home>/sdk` on a run-home build, `<home>` before it) and every function here applies
    *  that itself. */
-  winterHome: string;
+  cloverHome: string;
   /** `settings.memory.directory` — an absolute or `~/`-relative override that REPLACES the
-   *  computed `~/.winter/projects/<key>/memory` path entirely (CC's own "relocatable directory"
+   *  computed `~/.clover/projects/<key>/memory` path entirely (CC's own "relocatable directory"
    *  setting) — no further per-project nesting under it. Empty/whitespace-only is treated as
-   *  absent (a settings.json with `"directory": ""` must not resolve to `winterHome` itself). */
+   *  absent (a settings.json with `"directory": ""` must not resolve to `cloverHome` itself). */
   directory?: string;
   /**
    * P8b-17 — THE LIVE PATH AND THE MIGRATION MOVE TOGETHER.
@@ -190,7 +190,7 @@ function resolveOverride(opts: MemoryDirOptions): string | null {
 export function memoryDirFor(cwd: string, opts: MemoryDirOptions): string {
   const override = resolveOverride(opts);
   if (override) return override;
-  return join(storeHomeFor(opts.winterHome), "projects", memoryProjectKeyFor(cwd, opts), "memory");
+  return join(storeHomeFor(opts.cloverHome), "projects", memoryProjectKeyFor(cwd, opts), "memory");
 }
 
 /**
@@ -219,38 +219,38 @@ export function memoryProjectKeyFor(cwd: string, opts: MemoryDirOptions): string
  * NO PRODUCTION CALLER YET, DELIBERATELY (review r1, M-3): every live MEMDIR read today is keyed by
  * a cwd and reaches the same answer through `relocatedKey`, which the daemon wires to the migration's
  * manifest — the same rows the record's re-key commits with. This is the record-keyed door for the
- * caller that HAS a record in hand, which Task 16 decides for the Winter session path.
+ * caller that HAS a record in hand, which Task 16 decides for the Clover session path.
  */
 export function memoryDirForRecord(record: { memoryProjectKey: string }, opts: MemoryDirOptions): string {
   const override = resolveOverride(opts);
   if (override) return override;
-  return join(storeHomeFor(opts.winterHome), "projects", record.memoryProjectKey, "memory");
+  return join(storeHomeFor(opts.cloverHome), "projects", record.memoryProjectKey, "memory");
 }
 
 /**
  * The "no project" bucket (T2, design doc's "facts that don't map to a project → a sensible
- * default location"): `~/.winter/projects/_global/memory`, the SAME `projects/<key>/memory` shape
+ * default location"): `~/.clover/projects/_global/memory`, the SAME `projects/<key>/memory` shape
  * `memoryDirFor` uses, with a reserved key (`_global`) `sanitizeProjectKey` can never itself
  * produce (its output always starts with a sanitized absolute-path segment, never `_`) — so this
  * can't collide with any real project's directory. Two consumers share it: T2's migration
  * importer (legacy USER-scope facts, which were never tied to a repo, land here) and the
  * memory.* RPC rewire (ipc/server.ts) when a caller passes no `cwd` (the CLI's `scope:"user"`,
- * no `--project`, never did) — so a fact migrated here is immediately visible to `winter memory
+ * no `--project`, never did) — so a fact migrated here is immediately visible to `clover memory
  * list` with no flags, no coincidence.
  */
 export function globalMemoryDirFor(opts: MemoryDirOptions): string {
   const override = resolveOverride(opts);
   if (override) return override;
-  return join(storeHomeFor(opts.winterHome), "projects", "_global", "memory");
+  return join(storeHomeFor(opts.cloverHome), "projects", "_global", "memory");
 }
 
 /** Dreaming (Phase 7b): the shared assistant-memory bucket under
- *  `<storeHomeFor(winterHome)>/projects/_assistant/memory`. Reserved key like `_global`
+ *  `<storeHomeFor(cloverHome)>/projects/_assistant/memory`. Reserved key like `_global`
  *  (sanitizeProjectKey can never emit a leading underscore). Chat and dispatch reach it through
  *  ContextAssembler's `memoryBucket: "assistant"` branch; a workdir-less Code session reaches the
  *  same bucket through `workdirLess` (see runtime-sdk/system-prompt.ts). Cowork wiring is future work.
  *  DELIBERATELY ignores the `memory.directory` relocation override to keep the shared assistant
  *  bucket separate from ordinary project memory. */
-export function assistantMemoryDirFor(opts: { winterHome: string }): string {
-  return join(storeHomeFor(opts.winterHome), "projects", "_assistant", "memory");
+export function assistantMemoryDirFor(opts: { cloverHome: string }): string {
+  return join(storeHomeFor(opts.cloverHome), "projects", "_assistant", "memory");
 }

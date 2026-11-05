@@ -11,12 +11,12 @@ import {
 import { AutomationFailure } from "../../src/computer-use/errors";
 
 function fixture() {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "winter-dl-")));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-dl-")));
   const cwd = join(base, "project");
   const home = join(base, "home");
   mkdirSync(cwd);
   mkdirSync(home);
-  const tmpDir = join(base, "winter-session-s1");
+  const tmpDir = join(base, "clover-session-s1");
   const roots: DownloadRoots = { cwd, tmpDir, home, denyWrite: [join(cwd, "vendor-locked")] };
   const stage = (content: string): string => {
     const dir = newStagingDir(home, "s1");
@@ -77,7 +77,7 @@ describe("planDownload", () => {
       expect(refusal(() => planDownload("conf/settings.json", "x", f.roots))).toMatch(/can't be named settings\.json/);
       expect(refusal(() => planDownload("vendor-locked/a.txt", "x", f.roots))).toMatch(/sandbox's protected list/);
       const inHome = { ...f.roots, cwd: f.base };
-      expect(refusal(() => planDownload("home/x.txt", "x", inHome))).toMatch(/inside Winter's own home/);
+      expect(refusal(() => planDownload("home/x.txt", "x", inHome))).toMatch(/inside Clover's own home/);
       expect(refusal(() => planDownload(42, "x", f.roots))).toMatch(/other: download\(\)'s to is a path/);
       expect(refusal(() => planDownload("a.txt", "x", { ...f.roots, cwd: undefined }))).toMatch(/no working directory/);
     } finally { f.done(); }
@@ -99,9 +99,9 @@ describe("placeDownload", () => {
       expect(second.name).toBe("report (2).csv");
       if (process.platform === "darwin") {
         const q = spawnSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", first.path], { encoding: "utf8" });
-        expect(q.stdout.trim()).toMatch(/^0083;[0-9a-f]+;Winter;$/);
+        expect(q.stdout.trim()).toMatch(/^0083;[0-9a-f]+;Clover;$/);
       }
-      expect(quarantineValue(0x5f5e100 * 1000)).toBe("0083;5f5e100;Winter;");
+      expect(quarantineValue(0x5f5e100 * 1000)).toBe("0083;5f5e100;Clover;");
     } finally { f.done(); }
   });
 

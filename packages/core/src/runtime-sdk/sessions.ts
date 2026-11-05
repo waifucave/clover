@@ -10,15 +10,15 @@
 //     a reuser whose `deleteSession(id)` deleted a WINTER session. `{ brand: CORE_BRAND }`, applied
 //     last and not overridable, fixes that.
 //
-//  2. WHICH HOME. The brand does NOT fix this. With a Winter brand and no `WINTER_HOME` in the
-//     environment, `listSessions()` / `deleteSession(id)` resolve `~/.winter` — the user's live
+//  2. WHICH HOME. The brand does NOT fix this. With a Clover brand and no `CLOVER_HOME` in the
+//     environment, `listSessions()` / `deleteSession(id)` resolve `~/.clover` — the user's live
 //     daily driver — from any test, CLI subcommand or lane that called them without thinking. A doc
-//     comment is not a fence, so THERE IS NO DOOR HERE THAT TAKES NO HOME: `winterSessions(home)` is
+//     comment is not a fence, so THERE IS NO DOOR HERE THAT TAKES NO HOME: `cloverSessions(home)` is
 //     the only export, and `home` is a required argument.
 //
 // `packages/core` therefore never imports the nine from the SDK directly; it calls
-// `winterSessions(home)` with the daemon's own `WINTER_HOME`, which under `CORE_BRAND` is the same
-// directory Winter would resolve for itself.
+// `cloverSessions(home)` with the daemon's own `CLOVER_HOME`, which under `CORE_BRAND` is the same
+// directory Clover would resolve for itself.
 import {
   deleteSession as sdkDeleteSession,
   forkSession as sdkForkSession,
@@ -36,44 +36,44 @@ import { storeHomeFor } from "../agent/paths";
 /**
  * What a caller may still say. `SessionQueryOptions` is not exported by the SDK, and two of its
  * three fields are deliberately absent here: `brand` is this module's to supply, and `winterHome`
- * is `winterSessions`'s required argument rather than an option a caller can forget.
+ * is `cloverSessions`'s required argument rather than an option a caller can forget.
  */
-export interface WinterSessionOptions {
+export interface CloverSessionOptions {
   /** A session's own directory, when the caller already knows it. */
   directory?: string;
 }
 
-/** Every one of the nine, bound to one home and to Winter's brand. */
-export interface WinterSessionFunctions {
-  listSessions: (opts?: WinterSessionOptions) => ReturnType<typeof sdkListSessions>;
-  getSessionInfo: (sessionId: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkGetSessionInfo>;
-  getSessionMessages: (sessionId: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkGetSessionMessages>;
-  renameSession: (sessionId: string, name: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkRenameSession>;
-  tagSession: (sessionId: string, tags: string[], opts?: WinterSessionOptions) => ReturnType<typeof sdkTagSession>;
-  deleteSession: (sessionId: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkDeleteSession>;
-  forkSession: (sessionId: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkForkSession>;
-  listSubagents: (sessionId: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkListSubagents>;
-  getSubagentMessages: (sessionId: string, agentId: string, opts?: WinterSessionOptions) => ReturnType<typeof sdkGetSubagentMessages>;
+/** Every one of the nine, bound to one home and to Clover's brand. */
+export interface CloverSessionFunctions {
+  listSessions: (opts?: CloverSessionOptions) => ReturnType<typeof sdkListSessions>;
+  getSessionInfo: (sessionId: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkGetSessionInfo>;
+  getSessionMessages: (sessionId: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkGetSessionMessages>;
+  renameSession: (sessionId: string, name: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkRenameSession>;
+  tagSession: (sessionId: string, tags: string[], opts?: CloverSessionOptions) => ReturnType<typeof sdkTagSession>;
+  deleteSession: (sessionId: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkDeleteSession>;
+  forkSession: (sessionId: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkForkSession>;
+  listSubagents: (sessionId: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkListSubagents>;
+  getSubagentMessages: (sessionId: string, agentId: string, opts?: CloverSessionOptions) => ReturnType<typeof sdkGetSubagentMessages>;
 }
 
 /**
- * THE ONLY DOOR. `home` is the daemon's `WINTER_HOME` (`dirs.home` / `resolveWinterHome()`); pass a
+ * THE ONLY DOOR. `home` is the daemon's `CLOVER_HOME` (`dirs.home` / `resolveCloverHome()`); pass a
  * temp dir in a test.
  *
  * Both bindings are applied by this function and neither is reachable past it: `winterHome` is
  * this build's store home `storeHomeFor(home)` (WS-21), and `brand` is `CORE_BRAND`. A caller's `directory` still passes through — that is a
  * within-home hint, not a home.
  *
- * CLAUDE.md's standing rule still binds the CALLERS of `deleteSession`: a Winter session is never
+ * CLAUDE.md's standing rule still binds the CALLERS of `deleteSession`: a Clover session is never
  * deleted except by the empty-session reaper and the once-per-lifetime cleaner. This module only
  * guarantees that when one IS deleted, the store it is deleted from is the right product's, in the
  * right home.
  */
-export function winterSessions(home: string): WinterSessionFunctions {
+export function cloverSessions(home: string): CloverSessionFunctions {
   // WS-21: the store lives where this build's runtimes write it — `<home>/sdk` once the linked router
   // applies run homes, `<home>` before that (`storeHomeFor`).
   const storeHome = storeHomeFor(home);
-  const at = (opts?: WinterSessionOptions): { directory?: string; winterHome: string; brand: typeof CORE_BRAND } =>
+  const at = (opts?: CloverSessionOptions): { directory?: string; winterHome: string; brand: typeof CORE_BRAND } =>
     ({ ...opts, winterHome: storeHome, brand: CORE_BRAND });
   return {
     listSessions: (opts) => sdkListSessions(at(opts)),

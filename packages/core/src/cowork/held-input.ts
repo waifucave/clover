@@ -9,7 +9,7 @@ import { CoworkError } from "./types";
  *
  * GATED. A Cowork driver exposes these verbs only when (a) the runtime offered `held-input-v1` in its capability (an older
  * runtime refuses an unknown control subtype and that refusal is a hard stop) and (b) a host supplied
- * `CoworkSessionDriverDeps.heldInput`, which no production composition does (pinned structurally). The winter host SDK
+ * `CoworkSessionDriverDeps.heldInput`, which no production composition does (pinned structurally). The clover host SDK
  * (0.0.53) has no verbs yet: the query is read STRUCTURALLY, and a query without them refuses `unsupported_topology`.
  *
  * Literals mirror the SDK's (`packages/sdk/src/options.ts` on agent-sdk #43); a drift test pins them.

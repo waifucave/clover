@@ -1,12 +1,12 @@
 // Winter Phase 8c (P8c-6, ruling): "engine-era sessions become continuable by IMPORT." An
 // engine-era `RuntimeSessionRecord` (§17's boot backfill: `runtimeKind: "winter-agent"`, no
-// `backendSessionId` — `leg.ts`'s `sessionLegOf` reads that as `"engine"`) has no Winter transcript
+// `backendSessionId` — `leg.ts`'s `sessionLegOf` reads that as `"engine"`) has no Clover transcript
 // to resume, ever — P8b-22's refusal is permanent for that record AS IT STANDS. This module is the
 // other half of that refusal: `session.send` on such a session (the ONE call site, `ipc/server.ts`)
 // converts the session's own `SessionEvent` log into Claude-dialect entries and appends them as a
-// NEW backend transcript UNDER THE SAME WINTER SESSION ID, so the record can then genuinely resume on
-// the Winter leg — never a resume of the ORIGINAL (there is nothing to resume), and never a new
-// Winter session (the id, title and every other Winter-side fact survive untouched).
+// NEW backend transcript UNDER THE SAME CLOVER SESSION ID, so the record can then genuinely resume on
+// the Clover leg — never a resume of the ORIGINAL (there is nothing to resume), and never a new
+// Clover session (the id, title and every other Clover-side fact survive untouched).
 //
 // WHAT NEVER CROSSES THIS DOOR. `reasoning_item` events are DROPPED, unconditionally — they carry
 // opaque provider state (`itemJson`, CLAUDE.md's own "session JSONL is its only sink" rule) that
@@ -18,7 +18,7 @@
 //
 // THE COALESCING RULE. A real Claude turn is not "one event, one transcript entry" — a single
 // assistant turn may emit narration text AND one or more tool calls together, and the tools that ran
-// answer together before the model speaks again. Winter's own log records those as SEPARATE events
+// answer together before the model speaks again. Clover's own log records those as SEPARATE events
 // (one `assistant_message` for the text, one `tool_call` per call, one `tool_result` per call), so a
 // literal one-entry-per-event conversion would write consecutive same-role dialect entries — two
 // "assistant" entries in a row with nothing from the "user" side between them, which is not the
@@ -30,19 +30,19 @@
 // genuine `user_message` always flushes first (it is a real user turn, never merged with a synthetic
 // tool-result batch) and becomes its own plain-text entry.
 //
-// FIELD SHAPES ARE THE WINTER RUNTIME'S OWN (`../../winter-agent-sdk/packages/runtime/src/store/
+// FIELD SHAPES ARE THE CLOVER RUNTIME'S OWN (`../../clover-sdk/packages/runtime/src/store/
 // dialect.ts`'s `DialectEntryBase`/`userEntry`/`assistantEntry`, and `ContentBlock`'s `tool_use`/
 // `tool_result` shapes, `engine.ts:265-297`) — mirrored here rather than imported (the sibling repo
 // is read-only for 8c, Global Constraints: "neither sibling repo is modified"). `error` (not
 // Anthropic's `is_error`) is the tool_result marker that shape defines; a `tool_result` this module
-// writes carries it only when Winter's own `isError` was true, matching the ContentBlock's own
+// writes carries it only when Clover's own `isError` was true, matching the ContentBlock's own
 // "optional, set only when true" contract.
 //
 // THE WRITER-LEASE DISCOVERY (measured, real-binary e2e). `WinterCompatibilitySessionStore.append()`
 // (`packages/sdk/src/store/session-store.ts`) unconditionally `acquireLease`s the session's
 // `<projectKey>/<sessionId>.lock` on every call — durably, keyed by the CALLING PROCESS's pid, with
 // no public release door (`leases.ts`'s exported surface is `isPidAlive`/`readLeaseInfo`/
-// `acquireLease` only). Every ordinary Winter session's ONLY writer is its own spawned child, so
+// `acquireLease` only). Every ordinary Clover session's ONLY writer is its own spawned child, so
 // same-pid re-entry has always made this invisible; THIS door is the first host-process (daemon)
 // writer, and the daemon does not exit after writing — so without doing anything about it, the
 // child `session-driver.ts` spawns moments later to actually run the imported session would resume
@@ -61,7 +61,7 @@ import { randomUUID } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { WinterCompatibilitySessionStore, transcriptProjectKey, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { MAIN_THREAD } from "../projector";
 import { modelTextOf } from "../sessions/model-text";
 import { RuntimeSessionRecords, type RuntimeSessionState } from "../runtime-state/records";
@@ -69,11 +69,11 @@ import { sessionLegOf } from "./leg";
 import { canonicalCwd, storeHomeFor, storeProjectsDir } from "../agent/paths";
 
 export interface ConvertEngineEraLogOpts {
-  /** The Winter session id — becomes the dialect entries' OWN `sessionId` field is the BACKEND id
+  /** The Clover session id — becomes the dialect entries' OWN `sessionId` field is the BACKEND id
    *  (see `backendSessionId` below); this is carried only for callers that want it in scope. */
   sessionId: string;
   /** The fresh backend transcript uuid the converted log is written under (`Options.resume`'s
-   *  target on the session's very next Winter-leg incarnation). */
+   *  target on the session's very next Clover-leg incarnation). */
   backendSessionId: string;
   cwd: string;
   /** The engine/producer version stamped onto every entry (`DialectEntryBase.version`) — informational
@@ -188,7 +188,7 @@ export interface ImportLegacySessionStore {
 }
 
 export interface ImportLegacyDeps {
-  /** The daemon's `WINTER_HOME` — same value every other Winter-leg door in this package takes. */
+  /** The daemon's `CLOVER_HOME` — same value every other Clover-leg door in this package takes. */
   home: string;
   /** The product session's own event log + metadata. */
   store: {
@@ -198,7 +198,7 @@ export interface ImportLegacyDeps {
   records: RuntimeSessionRecords;
   /** Test seam: defaults to `new WinterCompatibilitySessionStore({ winterHome: home })`. */
   compatStore?: ImportLegacySessionStore;
-  /** The Winter SDK version to stamp on converted entries. Defaults to `"unknown"` — informational
+  /** The Clover SDK version to stamp on converted entries. Defaults to `"unknown"` — informational
    *  only (see `ConvertEngineEraLogOpts.version`'s own note). */
   version?: string;
 }
@@ -234,14 +234,14 @@ export class ImportLegacySessionError extends Error {
 
 /**
  * P8c-6's whole mechanism: convert `sessionId`'s engine-era log, append it as a fresh backend
- * transcript, and patch the SAME record so it resumes on the Winter leg from here on.
+ * transcript, and patch the SAME record so it resumes on the Clover leg from here on.
  *
  * NEVER MINTS A NEW RECORD. `records.create` is `session.create`'s door; this function only ever
- * `transition()`s the row that already exists — the Winter session id, its title, its working
+ * `transition()`s the row that already exists — the Clover session id, its title, its working
  * directories and every other product-level fact are untouched. Idempotent is NOT claimed: calling
  * this twice on the same (now-imported) record throws, because the record is no longer `"engine"`
  * leg — `ipc/server.ts`'s own call site only ever reaches this once, on the `session_predates_
- * winter_leg` branch.
+ * clover_leg` branch.
  */
 /**
  * m2 (whole-branch review): TWO concurrent `session.send`s on the SAME engine-era session both
@@ -284,7 +284,7 @@ async function doImport(deps: ImportLegacyDeps, sessionId: string): Promise<{ ba
   const cwd = meta.cwd ?? deps.home;
   // THE PROJECT KEY MUST MATCH WHAT THE RESUMED CHILD WILL RESOLVE FROM ITS OWN `cwd` AT OPEN TIME
   // (`session-driver.ts`'s `assemble()` passes `cwd` into `Options`, never a project key — the
-  // Winter runtime derives its own from `cwd`) — so this recomputes it fresh from the LIVE cwd via
+  // Clover runtime derives its own from `cwd`) — so this recomputes it fresh from the LIVE cwd via
   // the identical function `session-driver.ts` uses, rather than trusting `record.transcriptProjectKey`
   // (the key at the ORIGINAL 8a backfill time, which a later `session.setDirs` could have moved on
   // from).

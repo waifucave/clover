@@ -393,7 +393,7 @@ describe("the answer's edges (review L2, L4, L5, L6)", () => {
 
   test("near the run's end: refused up front when too little is left; the stop never runs past what is left", async () => {
     let runs = 0;
-    // A page whose tool ignores its signal (nothing settles it): only Winter's own bounds end the wait.
+    // A page whose tool ignores its signal (nothing settles it): only Clover's own bounds end the wait.
     const deaf = { getTools: async () => [{ window: FAKE_TOP_WINDOW, origin: "https://shop.example.com", name: "deaf", description: "x" }], executeTool: () => { runs++; return new Promise(() => {}); } };
     const { r, p } = await opened("winter", { mc: deaf as unknown as FakeModelContext });
     const scope = r.scope as { timeLeft: () => number; clampWait: (ms: number) => number };

@@ -1,4 +1,4 @@
-// WS-21 L3.7 (spec §8): `winter doctor`'s shared-runtime-home section — read-only, never throwing,
+// WS-21 L3.7 (spec §8): `clover doctor`'s shared-runtime-home section — read-only, never throwing,
 // counts and paths only.
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { runMigrationC } from "../../src/migration/migrate-c";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { RuntimeSessionRecords } from "../../src/runtime-state/records";
 
-const tmpHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "winter-sdkdoc-")));
+const tmpHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-sdkdoc-")));
 
 describe("sdkHomeDoctorLines", () => {
   test("a fresh home: the new layout, nothing else", () => {
@@ -51,7 +51,7 @@ describe("sdkHomeDoctorLines", () => {
     expect(text).toContain("settings split:");
     expect(text).toContain("untranslated rules: 1");
     expect(text).toContain('approved rules: 2 project(s) still have "in this project" answers');
-    expect(text).toContain("winter migrate-project");
+    expect(text).toContain("clover migrate-project");
     expect(text).toContain(`quarantined run roots: 1 kept`);
     expect(text).not.toContain("Bash(make)"); // counts and paths, never the rules themselves
   });

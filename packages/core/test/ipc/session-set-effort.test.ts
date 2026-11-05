@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, SESSION_EFFORT_MAX_CHARS, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, SESSION_EFFORT_MAX_CHARS, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { clientEfforts, effortsForModel } from "../../src/ipc/sync";
 import { REASONING_EFFORTS } from "../../src/settings";
@@ -69,7 +69,7 @@ describe("session.setEffort round-trip RPC (provider-correctness T4)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(opts: { liveModel?: () => string } = {}): Promise<{ store: SessionStore; socketPath: string; harnessToken: string; remoteToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-set-effort-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-set-effort-rpc-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -334,7 +334,7 @@ describe("session.setEffort round-trip RPC (provider-correctness T4)", () => {
   // is a real level the endpoint refuses per-model; `HIGH`/`turbo` are simply not levels.
   //
   // `ultra` USED TO BE IN THIS LIST and is deliberately no longer — provider-correctness T5 landed
-  // the Winter-level tier the earlier note anticipated, so `ultra` is now ADMITTED here (for code
+  // the Clover-level tier the earlier note anticipated, so `ultra` is now ADMITTED here (for code
   // sessions) as a selector that is translated to `max` before any request is built, never by
   // adding it to `effortsForModel`. Its new truth — accepted for code, refused for chat/dispatch —
   // is pinned in its own describe block below; the other three must stay here.
@@ -422,7 +422,7 @@ describe("session.setEffort round-trip RPC (provider-correctness T4)", () => {
 // proves the ADD COLUMN loop is idempotent on a database that already has it.
 describe("store.setEffort: the effort column is durable and its migration is idempotent", () => {
   test("an effort set on one SessionStore instance is still there after close + reopen", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-effort-column-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-effort-column-"));
     const first = new SessionStore(home);
     const sessionId = first.createSession("global");
     first.setEffort(sessionId, "xhigh");
@@ -439,7 +439,7 @@ describe("store.setEffort: the effort column is durable and its migration is ide
 });
 
 // ================================================================================================
-// provider-correctness T5 — `ultra`, a WINTER-LEVEL tier admitted at THIS handler.
+// provider-correctness T5 — `ultra`, a CLOVER-LEVEL tier admitted at THIS handler.
 //
 // This is the door, and the FIRST of the tier's two enforcements (the second is `resolveSel`, which
 // keeps a tier that got in some other way — a fork, a hand-edited index — inert on a non-code
@@ -455,7 +455,7 @@ describe("session.setEffort admits the ultra tier for CODE sessions only (provid
   afterEach(() => { stop2?.(); stop2 = undefined; });
 
   async function boot2(opts: { liveModel?: () => string } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-set-effort-ultra-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-set-effort-ultra-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -507,7 +507,7 @@ describe("session.setEffort admits the ultra tier for CODE sessions only (provid
   });
 
   // DISPATCH: the blanket pin refuses `ultra` too, but with the PIN message, not
-  // assertEffortSelectable's "Winter-level tier offered on code sessions only" one — and unlike
+  // assertEffortSelectable's "Clover-level tier offered on code sessions only" one — and unlike
   // chat, EVERY wire effort is refused as well (dispatch can't set an effort at all, tier or
   // otherwise; chat only loses the tier). This is the contrast the comment above promises.
   test("a DISPATCH session refuses `ultra` (and every wire effort) with the PIN message, not the tier-specific one", async () => {
@@ -609,7 +609,7 @@ describe("session.create carries an effort, validated exactly as session.setEffo
   afterEach(() => { stop3?.(); stop3 = undefined; });
 
   async function boot3(opts: { liveModel?: () => string } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-create-effort-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-create-effort-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));

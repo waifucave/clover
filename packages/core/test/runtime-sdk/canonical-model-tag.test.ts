@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConnWriter, LineDecoder, METHODS, ModelTagSchema, PROTOCOL_VERSION, SessionSetModelParams, SyncPushParams, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ConnWriter, LineDecoder, METHODS, ModelTagSchema, PROTOCOL_VERSION, SessionSetModelParams, SyncPushParams, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { RuntimeChildren } from "../../src/runtime-state/children";
 import { buildLiveModelResolver } from "../../src/providers/manager";
 import { startIpcServer } from "../../src/ipc/server";
@@ -67,7 +67,7 @@ describe("canonicalModelTag — the rule", () => {
 
 describe("layer 1 — the live settings view (never the file)", () => {
   test("provider.model, pins, reviewer.model, titles.model and runtimes.advisorModel canonicalize; the stored file does not change", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-canon-settings-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-canon-settings-"));
     const path = join(home, "settings.json");
     saveSettings(path, Settings.parse({
       schemaVersion: 3, provider: { model: OLD },
@@ -97,7 +97,7 @@ describe("layer 1 — the live settings view (never the file)", () => {
 
 describe("layer 2 — the runtime-state row decoder and the sessions.model column", () => {
   test("model_ref, selection_json's modelRef and the session's model read canonical; the rows keep what was written", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-canon-rows-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-canon-rows-"));
     const rs = openRuntimeStateDb(home);
     rs.db.run(`INSERT INTO runtime_sessions (winter_session_id, runtime_kind, provider_id, model_ref, backend_root, transcript_project_key, memory_project_key, temp_project_key,
       transcript_health, compatibility_level, conformance_corpus_version, version_provenance, created_at, updated_at, state, selection_json)
@@ -143,7 +143,7 @@ describe("layer 3 — the protocol request parse", () => {
 // Review M3: the remaining raw-settings readers and the children rows canonicalize too.
 describe("review M3: the remaining read paths", () => {
   test("runtime_children's model_ref / requested / effective models read canonical; the row keeps what was written", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-canon-children-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-canon-children-"));
     const rs = openRuntimeStateDb(home);
     new RuntimeChildren(rs).upsert({
       parentWinterSessionId: "s_p", childId: "c1", agentType: "general", providerId: "deepseek", modelRef: OLD,
@@ -158,7 +158,7 @@ describe("review M3: the remaining read paths", () => {
   });
 
   test("the provider's live model re-read goes through the live settings view", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-canon-manager-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-canon-manager-"));
     const path = join(home, "settings.json");
     saveSettings(path, Settings.parse({ schemaVersion: 3, provider: { model: OLD } }));
     setCatalogKeysForTests(REFRESHED);
@@ -167,14 +167,14 @@ describe("review M3: the remaining read paths", () => {
   });
 
   test("settings.modelRoles and settings.setModelRole answer canonical tags", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-canon-roles-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-canon-roles-"));
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, pins: { dream: OLD } }));
     setCatalogKeysForTests([...REFRESHED, "codex-oauth/gpt-5.6-sol", "codex-oauth/gpt-5.6-luna", "codex-oauth/gpt-5.6-terra"]);
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home });
     try {
       const c = await rpcClient(socketPath);
       await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "cli" });

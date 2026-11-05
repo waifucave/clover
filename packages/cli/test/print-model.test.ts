@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Settings } from "@yanlinglabs/winter-core";
-import { METHODS } from "@yanlinglabs/winter-protocol";
-import { WinterClient } from "../src/client";
+import type { Settings } from "@waifucave/clover-core";
+import { METHODS } from "@waifucave/clover-protocol";
+import { CloverClient } from "../src/client";
 import { PRINT_USAGE, checkPrintModelOffline, createPrintSession, parsePrintArgs, type PrintModel } from "../src/print-model";
 
-// `winter -p --model <providerId>/<modelId>`: a one-shot model choice for the session `-p` creates.
+// `clover -p --model <providerId>/<modelId>`: a one-shot model choice for the session `-p` creates.
 // The pure pieces (argv parse, offline tag check) are table-tested; the daemon-facing step
 // (`sync.config` list check, then `session.create`) runs against a recorded-calls fake client, the same
 // double shape as cli-verb-gates.test.ts; and the bad-flag exits are proven through the real entry point
@@ -70,14 +70,14 @@ describe("checkPrintModelOffline — the checks that need no daemon", () => {
     expect(checkPrintModelOffline("codex-oauth/terra")).toEqual({ ok: true, model: { tag: TERRA, catalogRow: true } });
   });
 
-  test("a bare (unqualified) id is refused, naming the tag and pointing at `winter model`", () => {
+  test("a bare (unqualified) id is refused, naming the tag and pointing at `clover model`", () => {
     const r = checkPrintModelOffline("gpt-5.6-terra");
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.message).toContain('--model "gpt-5.6-terra"');
     expect(r.message).toContain("provider-qualified tag");
     expect(r.message).toContain("<providerId>/<modelId>");
-    expect(r.message).toContain("`winter model`");
+    expect(r.message).toContain("`clover model`");
     expect(r.message).not.toContain("\n");
   });
 
@@ -91,7 +91,7 @@ describe("checkPrintModelOffline — the checks that need no daemon", () => {
     expect(r).toEqual({ ok: false, message: expect.stringContaining(`--model "codex-oauth/totally-made-up-model-xyz": unknown model 'totally-made-up-model-xyz' for provider codex-oauth`) });
   });
 
-  test("the unstated sentinel and a winter-test double are shaped like tags but never a user's choice", () => {
+  test("the unstated sentinel and a clover-test double are shaped like tags but never a user's choice", () => {
     for (const tag of ["unstated/unstated", "winter-test/echo"]) {
       const r = checkPrintModelOffline(tag);
       expect(r.ok).toBe(false);
@@ -130,7 +130,7 @@ function makeClient(opts: { models?: unknown; syncConfigError?: Error } = {}) {
       creates.push({ scope, opts: o });
       return { sessionId: "s_new", trusted: true };
     },
-  } as unknown as Pick<WinterClient, "request" | "createSession">;
+  } as unknown as Pick<CloverClient, "request" | "createSession">;
   return { client, requests, creates };
 }
 
@@ -153,7 +153,7 @@ describe("createPrintSession — the sync.config list check, then session.create
     expect(r.message).toContain(`--model "${TERRA}"`);
     expect(r.message).toContain("not in this daemon's model list");
     expect(r.message).toContain("provider codex-oauth");
-    expect(r.message).toContain("`winter model`");
+    expect(r.message).toContain("`clover model`");
     expect(r.message).not.toContain("\n");
     expect(creates).toEqual([]);
   });
@@ -163,7 +163,7 @@ describe("createPrintSession — the sync.config list check, then session.create
     const r = await createPrintSession(client, { cwd: "/work", approvalPolicy: "ask", model: terra });
     expect(r.ok).toBe(false);
     expect(!r.ok && r.message).toContain("offers no models yet");
-    expect(!r.ok && r.message).toContain("winter credentials set codex-oauth");
+    expect(!r.ok && r.message).toContain("clover credentials set codex-oauth");
     expect(creates).toEqual([]);
   });
 
@@ -196,11 +196,11 @@ describe("createPrintSession — the sync.config list check, then session.create
   });
 });
 
-describe("WinterClient.createSession — the model rides session.create", () => {
+describe("CloverClient.createSession — the model rides session.create", () => {
   // The client's constructor needs a socket; the method only needs `request` and the prototype's `validated`.
-  const clientRecording = (): { client: WinterClient; sent: Array<{ method: string; params: Record<string, unknown> }> } => {
+  const clientRecording = (): { client: CloverClient; sent: Array<{ method: string; params: Record<string, unknown> }> } => {
     const sent: Array<{ method: string; params: Record<string, unknown> }> = [];
-    const client = Object.create(WinterClient.prototype) as WinterClient;
+    const client = Object.create(CloverClient.prototype) as CloverClient;
     (client as unknown as { request: unknown }).request = async (method: string, params: Record<string, unknown>) => {
       sent.push({ method, params });
       return { sessionId: "s_1", trusted: false };
@@ -217,17 +217,17 @@ describe("WinterClient.createSession — the model rides session.create", () => 
   });
 });
 
-// The real entry point. A bad `--model` is refused BEFORE `connect()` -- which would launch Winter.app on a
-// down daemon -- so these need no daemon: WINTER_HOME is a fresh temp dir with no socket, and
-// WINTER_NO_AUTOLAUNCH is set as a belt (a regression that connected would fail with a different message).
-describe("winter -p --model — refusals through the real entry point", () => {
+// The real entry point. A bad `--model` is refused BEFORE `connect()` -- which would launch Clover.app on a
+// down daemon -- so these need no daemon: CLOVER_HOME is a fresh temp dir with no socket, and
+// CLOVER_NO_AUTOLAUNCH is set as a belt (a regression that connected would fail with a different message).
+describe("clover -p --model — refusals through the real entry point", () => {
   const cliDir = join(import.meta.dir, "..");
-  const home = mkdtempSync(join(tmpdir(), "winter-print-model-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-print-model-"));
 
   const runMain = async (...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> => {
     const proc = Bun.spawn(["bun", "src/main.ts", ...args], {
       cwd: cliDir,
-      env: { ...process.env, WINTER_HOME: home, WINTER_NO_AUTOLAUNCH: "1" },
+      env: { ...process.env, CLOVER_HOME: home, CLOVER_NO_AUTOLAUNCH: "1" },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -240,21 +240,21 @@ describe("winter -p --model — refusals through the real entry point", () => {
   test("`--model` with no tag: the usage line, exit 1", async () => {
     const r = await runMain("-p", "hello", "--model");
     expect(r.exitCode).toBe(1);
-    expect(r.stderr).toBe(`${PRINT_USAGE} — --model needs a model tag. Run \`winter model\` to list the models you can use.\n`);
+    expect(r.stderr).toBe(`${PRINT_USAGE} — --model needs a model tag. Run \`clover model\` to list the models you can use.\n`);
     expect(r.stdout).toBe("");
   }, 30_000);
 
   test("a bare id: refused naming the tag, exit 1, nothing connected", async () => {
     const r = await runMain("-p", "hello", "--model", "gpt-5.6-terra");
     expect(r.exitCode).toBe(1);
-    expect(r.stderr).toBe('--model "gpt-5.6-terra" is not a provider-qualified tag — use "<providerId>/<modelId>". Run `winter model` to list the models you can use.\n');
+    expect(r.stderr).toBe('--model "gpt-5.6-terra" is not a provider-qualified tag — use "<providerId>/<modelId>". Run `clover model` to list the models you can use.\n');
     expect(r.stdout).toBe("");
   }, 30_000);
 
   test("an unknown model under a real provider: refused, exit 1", async () => {
     const r = await runMain("-p", "--model", "codex-oauth/totally-made-up-model-xyz", "hello");
     expect(r.exitCode).toBe(1);
-    expect(r.stderr).toBe("--model \"codex-oauth/totally-made-up-model-xyz\": unknown model 'totally-made-up-model-xyz' for provider codex-oauth. Run `winter model` to list the models you can use.\n");
+    expect(r.stderr).toBe("--model \"codex-oauth/totally-made-up-model-xyz\": unknown model 'totally-made-up-model-xyz' for provider codex-oauth. Run `clover model` to list the models you can use.\n");
   }, 30_000);
 
   test("`--model <tag>` with no prompt: the usage line, exit 1 (the tag is never taken for the prompt)", async () => {

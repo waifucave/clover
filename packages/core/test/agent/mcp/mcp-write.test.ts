@@ -1,4 +1,4 @@
-// `winter mcp add/remove` (CLI parity with `claude mcp add/remove`) — the ONE validated write door
+// `clover mcp add/remove` (CLI parity with `claude mcp add/remove`) — the ONE validated write door
 // (`src/agent/mcp/mcp-write.ts`) both `ipc/server.ts`'s `mcp.add`/`mcp.remove` RPC handlers and the
 // CLI's no-daemon fallback share. Pure functions, no I/O — the daemon-live path (RPC + real
 // settings.json) is covered separately in `test/ipc/mcp-add-remove-get.test.ts`.
@@ -29,15 +29,15 @@ describe("validateMcpServerName", () => {
     expect(validateMcpServerName("my server!")).toMatch(/letters, numbers, hyphens, and underscores/);
   });
   test("refuses the bare brand name", () => {
-    expect(validateMcpServerName("winter")).toMatch(/reserved/);
+    expect(validateMcpServerName("clover")).toMatch(/reserved/);
   });
   test("refuses every daemon-owned capability server name", () => {
     for (const key of ["sessions", "computer", "browser", "office", "research", "lsp", "external"]) {
-      expect(validateMcpServerName(`winter__${key}`)).toMatch(/reserved/);
+      expect(validateMcpServerName(`clover__${key}`)).toMatch(/reserved/);
     }
   });
   test("does not refuse a name that merely CONTAINS a reserved segment", () => {
-    expect(validateMcpServerName("my-winter__browser-fork")).toBeUndefined();
+    expect(validateMcpServerName("my-clover__browser-fork")).toBeUndefined();
   });
 });
 
@@ -48,7 +48,7 @@ describe("addUserMcpServer / removeUserMcpServer", () => {
   });
 
   test("refuses a reserved name before ever touching mcpServers", () => {
-    expect(() => addUserMcpServer(baseSettings(), "winter__browser", { type: "stdio", command: "x" }))
+    expect(() => addUserMcpServer(baseSettings(), "clover__browser", { type: "stdio", command: "x" }))
       .toThrow(/reserved/);
   });
 
@@ -99,7 +99,7 @@ describe("addProjectMcpServer / removeProjectMcpServer (operate on the RAW `mcpS
   });
 
   test("refuses a reserved or invalid name the same way as user scope", () => {
-    expect(() => addProjectMcpServer({}, "winter", { command: "x" })).toThrow(/reserved/);
+    expect(() => addProjectMcpServer({}, "clover", { command: "x" })).toThrow(/reserved/);
     expect(() => addProjectMcpServer({}, "bad name!", { command: "x" })).toThrow(/letters, numbers, hyphens, and underscores/);
   });
 
@@ -129,23 +129,23 @@ describe("addProjectMcpServer / removeProjectMcpServer (operate on the RAW `mcpS
 describe("WS-27 review 7: write order and honest results", () => {
   const base = { schemaVersion: 3 as const, provider: { model: "codex-oauth/gpt-5.6-sol" } };
   function home(servers: Record<string, unknown>, settings: Record<string, unknown> = {}): string {
-    const h = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-write-r7-")));
+    const h = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-write-r7-")));
     mkdirSync(join(h, "sdk"), { recursive: true });
-    writeFileSync(join(h, "sdk", ".winter.json"), JSON.stringify({ mcpServers: servers }));
+    writeFileSync(join(h, "sdk", ".clover.json"), JSON.stringify({ mcpServers: servers }));
     saveSettings(join(h, "settings.json"), Settings.parse({ ...base, ...settings }));
     return h;
   }
 
   test("remove reports the server removed even when clearing its permissions fails afterwards", () => {
-    const h = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-write-r7-")));
+    const h = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-write-r7-")));
     mkdirSync(join(h, "sdk"), { recursive: true });
-    writeFileSync(join(h, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf" } } }));
+    writeFileSync(join(h, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf" } } }));
     mkdirSync(join(h, "settings.json"));   // unreadable as a settings file
     const r = removeMcpServerForgettingPermissions({ home: h, scope: "user" }, "cf", {});
     expect(r.removed).toBe(true);
     expect(r.permissionsCleared).toBe(false);
     expect(r.permissionsNote).toContain("could not be cleared");
-    expect(JSON.parse(readFileSync(join(h, "sdk", ".winter.json"), "utf8")).mcpServers).toEqual({});
+    expect(JSON.parse(readFileSync(join(h, "sdk", ".clover.json"), "utf8")).mcpServers).toEqual({});
   });
 
   test("a live-names probe that throws keeps the permissions (cannot tell → in use)", () => {
@@ -159,8 +159,8 @@ describe("WS-27 review 7: write order and honest results", () => {
     const h = home({ cf: { type: "stdio", command: "cf" } }, { mcp: { toolPermissions: { cf: { "*": "deny" } } } });
     writeFileSync(join(h, "sdk", "settings.json"), JSON.stringify({ permissions: { deny: ["mcp__cf__x"] } }));
     const sdkDir = join(h, "sdk");
-    // Make the scope write fail after the checks: sdk/.winter.json's directory refuses new files (atomic write).
-    const original = readFileSync(join(sdkDir, ".winter.json"), "utf8");
+    // Make the scope write fail after the checks: sdk/.clover.json's directory refuses new files (atomic write).
+    const original = readFileSync(join(sdkDir, ".clover.json"), "utf8");
     const settingsJson = readFileSync(join(sdkDir, "settings.json"), "utf8");
     chmodSync(sdkDir, 0o500);
     try {
@@ -168,7 +168,7 @@ describe("WS-27 review 7: write order and honest results", () => {
     } finally {
       chmodSync(sdkDir, 0o700);
     }
-    expect(readFileSync(join(sdkDir, ".winter.json"), "utf8")).toBe(original);
+    expect(readFileSync(join(sdkDir, ".clover.json"), "utf8")).toBe(original);
     expect(readFileSync(join(sdkDir, "settings.json"), "utf8")).toBe(settingsJson);
     expect(JSON.parse(readFileSync(join(h, "settings.json"), "utf8")).mcp.toolPermissions).toEqual({ cf: { "*": "deny" } });
   });
@@ -180,7 +180,7 @@ describe("WS-27 review 7: write order and honest results", () => {
     const s = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
     expect(s.mcp.toolPermissions).toEqual({ cf2: { "*": "deny" } });
     expect(s.mcp.disabled).toEqual(["cf2"]);
-    expect(Object.keys(JSON.parse(readFileSync(join(h, "sdk", ".winter.json"), "utf8")).mcpServers)).toEqual(["a", "cf2"]);
+    expect(Object.keys(JSON.parse(readFileSync(join(h, "sdk", ".clover.json"), "utf8")).mcpServers)).toEqual(["a", "cf2"]);
   });
 });
 

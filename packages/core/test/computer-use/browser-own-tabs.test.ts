@@ -14,7 +14,7 @@ async function failure(p: Promise<unknown>): Promise<Error> {
 const keyOf = (t: TabHandle): string => t.id.split(":")[1]!;
 
 describe("viewport()", () => {
-  test("emulates a screen size on a tab Winter opened; null clears it; the size is checked", async () => {
+  test("emulates a screen size on a tab Clover opened; null clears it; the size is checked", async () => {
     const h = harness();
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "chrome" }) as TabHandle;
@@ -67,7 +67,7 @@ describe("viewport()", () => {
 });
 
 describe("mute()", () => {
-  test("mutes and unmutes a tab Winter opened in the user's browser; refuses a user's tab; an older extension or the built-in browser says so", async () => {
+  test("mutes and unmutes a tab Clover opened in the user's browser; refuses a user's tab; an older extension or the built-in browser says so", async () => {
     const h = harness();
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "chrome" }) as TabHandle;
@@ -119,7 +119,7 @@ describe("keep({ group })", () => {
     const w = await h.engine.global(r.scope, "browsers.open", { url: "https://w.example/" }) as TabHandle;
     await h.engine.primitive(r.scope, w.targetId, "keep", { group: "Trip" });
     expect(r.text()).toContain("kept — but this Winter for Chrome is too old to put it in a group");
-    expect(r.text()).toContain("kept — Winter's built-in browser has no tab groups");
+    expect(r.text()).toContain("kept — Clover's built-in browser has no tab groups");
     r.end();
   });
 });
@@ -167,7 +167,7 @@ describe("browsers.windows() and the tab rows' facts", () => {
     const ar = asks.run();
     const pending = asks.engine.global(ar.scope, "browsers.windows", { browser: "chrome" });
     await new Promise((res) => setTimeout(res, 10));
-    expect(asks.cards.map((c) => c.summary)).toEqual(["Allow Winter to use Google Chrome (com.google.Chrome)?"]);
+    expect(asks.cards.map((c) => c.summary)).toEqual(["Allow Clover to use Google Chrome (com.google.Chrome)?"]);
     ar.end();
     await pending.catch(() => undefined);
   });

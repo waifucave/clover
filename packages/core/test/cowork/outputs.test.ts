@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { COWORK_RPC, COWORK_FILE_CHUNK_MAX_BYTES } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, COWORK_FILE_CHUNK_MAX_BYTES } from "@waifucave/clover-protocol";
 import { openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION, downgradeCoworkRuntimeStateToV7 } from "../../src/runtime-state/db";
 import { CoworkError, type CoworkErrorCode } from "../../src/cowork/types";
 import { CoworkWorkspaceService } from "../../src/cowork/service";

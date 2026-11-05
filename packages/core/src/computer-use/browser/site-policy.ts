@@ -4,7 +4,7 @@
 // navigation.
 //
 //   session policy                         a listed host
-//   ask / accept-edits / plan              a daemon-raised card ("Allow Winter to use <host> in <browser>? It is on
+//   ask / accept-edits / plan              a daemon-raised card ("Allow Clover to use <host> in <browser>? It is on
 //                                          the dangerous-domains list.", once / this session); a standing
 //                                          `WebFetch(domain:…)` allow rule counts as the approval
 //   auto / bypass / dont-ask, chat         hard block (`NotAllowed`)
@@ -34,7 +34,7 @@ export function siteRow(facts: Pick<SessionFacts, "policy" | "mode">): "card" | 
 }
 
 export function siteCardSummary(host: string, browserName: string): string {
-  return `Allow Winter to use ${host} in ${browserName}? It is on the dangerous-domains list.`;
+  return `Allow Clover to use ${host} in ${browserName}? It is on the dangerous-domains list.`;
 }
 
 /** Does one of the user's saved allow rules (`WebFetch(domain:<host>)`) cover this URL? */
@@ -51,7 +51,7 @@ export function ruleAllowsSite(rules: readonly string[], url: string): boolean {
 export interface SiteFloorDeps {
   /** The user-added half of the dangerous-domain list for a project (the daemon's own getter). */
   dangerousDomainsAdded?(cwd?: string): readonly string[] | undefined;
-  /** The user's saved allow rules that apply at `cwd` (claude's grammar and Winter's — `WebFetch(domain:…)`). */
+  /** The user's saved allow rules that apply at `cwd` (claude's grammar and Clover's — `WebFetch(domain:…)`). */
   savedAllowRules?(cwd?: string): readonly string[];
 }
 
@@ -107,14 +107,14 @@ export async function ensureSiteAllowed(scope: TabRunScope, approvals: SiteAppro
   const res = await scope.siteCard(siteCardSummary(host, browserName));
   scope.live();
   if (!res.approved) {
-    throw new AutomationFailure("NotAllowed", `The user did not allow Winter to use ${host} (it is on the dangerous-domains list). Don't retry — ask the user what to do instead.`);
+    throw new AutomationFailure("NotAllowed", `The user did not allow Clover to use ${host} (it is on the dangerous-domains list). Don't retry — ask the user what to do instead.`);
   }
   approvals.approve(scope.sessionId, scope.runId, host, res.optionId === "session" ? "session" : "once");
 }
 
 /** The primitives that still work on a tab sitting on an unapproved listed host: leaving it, reading where it is,
  *  answering the page dialog that may be holding it (Phase 3), and handing it to the user (the user acts there, not
- *  Winter). */
+ *  Clover). */
 export const BLOCKED_TAB_PRIMITIVES: ReadonlySet<string> = new Set(["back", "close", "url", "title", "dialog", "answerDialog", "waitForUser"]);
 
 /** The sentence naming them, for the model: "back(), close(), …, and waitForUser()". */

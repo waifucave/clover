@@ -165,7 +165,7 @@ export interface RtOps {
   // ── Phase 3 ──
   /** One element by id, or the element at a point (an iframe there answers `{ frame }` — look inside it). */
   inspect: { arg: { id?: RtId; x?: number; y?: number }; result: RtInspect | { frame: RtId } | null };
-  /** The document (or `id`'s subtree) as markup: scripts, field values, secrets and Winter's overlay left out. */
+  /** The document (or `id`'s subtree) as markup: scripts, field values, secrets and Clover's overlay left out. */
   html: { arg: { id?: RtId; maxChars: number }; result: { html: string; cut: boolean } };
   /** The page's images, media, stylesheets and scripts (http(s); a data: one summarized). */
   assets: { arg: { kinds: string[]; max: number }; result: Array<{ kind: string; url: string }> };
@@ -197,6 +197,6 @@ export interface RtOps {
 export type RtOp = keyof RtOps;
 
 /** The function every call runs (the engine sends it as `functionDeclaration`). */
-export const PAGE_RUNTIME_CALL = "function (op, arg) { return globalThis.__winterRuntime.call(op, arg, this); }";
+export const PAGE_RUNTIME_CALL = "function (op, arg) { return globalThis.__cloverRuntime.call(op, arg, this); }";
 /** The global the runtime installs itself under, in the isolated world only (the page never sees it). */
-export const PAGE_RUNTIME_GLOBAL = "__winterRuntime";
+export const PAGE_RUNTIME_GLOBAL = "__cloverRuntime";

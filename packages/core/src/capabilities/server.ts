@@ -1,4 +1,4 @@
-// The ONE piece of machinery every Winter capability server is built out of (P8b Tasks 6-7).
+// The ONE piece of machinery every Clover capability server is built out of (P8b Tasks 6-7).
 //
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ONE IMPLEMENTATION, TWO DOORS — and the door is the `ToolDefinition` itself
@@ -15,11 +15,11 @@
 //     parity is BY CONSTRUCTION rather than by a test that has to keep noticing.
 //   * `callTool` runs `registry.execute(...)` — the same zod validation, the same invalid-argument
 //     WORDING, the same `MAX_OUTPUT` truncation, the same throw→`isError` conversion. A refusal on
-//     the Winter leg reads identically to a refusal on the engine, including chat's read-only
+//     the Clover leg reads identically to a refusal on the engine, including chat's read-only
 //     `browser` refusal, which is a per-mode SCHEMA failure and not a prose message.
 //
 // A private registry rather than the shared one because the shared one is a live, daemon-global
-// object the plugin supervisor and `tool.register` RPC write into (Winter map §5.6): a capability
+// object the plugin supervisor and `tool.register` RPC write into (Clover map §5.6): a capability
 // server must advertise exactly its own tools and nothing a plugin happened to add.
 //
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -33,14 +33,14 @@
 // `server` / `tool` / `arguments` and nothing else.
 //
 // The first cut of this file answered that with a daemon-wide "currently bound session" slot. That
-// was WRONG, and the reason is worth keeping written down: the slot is per-DAEMON, so two Winter
+// was WRONG, and the reason is worth keeping written down: the slot is per-DAEMON, so two Clover
 // sessions running turns concurrently cross-attribute — and because `ctx.mode` comes from the same
 // slot and is what resolves `browser`'s `argsByMode`, a CHAT session's call landing while a CODE
 // session was bound would have been handed the full interact verb set. The read-only subset would
 // have been bypassed silently.
 //
-// The fix needs no router change, because 8b is Winter-leg-only (P8b-1) and the router forwards a
-// caller's own `Options.mcpServers` straight through to the Winter leg: the daemon builds the
+// The fix needs no router change, because 8b is Clover-leg-only (P8b-1) and the router forwards a
+// caller's own `Options.mcpServers` straight through to the Clover leg: the daemon builds the
 // capability servers FOR ONE SESSION and passes them on that session's own `Options`. Identity is a
 // closure, not a lookup; `mode` cannot be another session's; and there is no unbound state to
 // refuse — `capabilityServer(spec, session)` takes a non-optional `CapabilitySession`, so "no
@@ -48,7 +48,7 @@
 import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
 import type { ComputerUseService } from "../agent/computer-use";
 import { ToolRegistry, type ToolContentItem, type ToolContext, type ToolDefinition } from "../agent/tools/registry";
-import { WINTER_CAPABILITY_TOOLS, capabilityServerName, capabilityToolName, type CapabilityToolFacts, type SessionMode } from "./names";
+import { CLOVER_CAPABILITY_TOOLS, capabilityServerName, capabilityToolName, type CapabilityToolFacts, type SessionMode } from "./names";
 
 /**
  * Everything a capability call needs to know about WHO is calling. Fixed for the life of the
@@ -58,7 +58,7 @@ import { WINTER_CAPABILITY_TOOLS, capabilityServerName, capabilityToolName, type
  * (`builtinDeferral`, `loadedTools`, `deferThreshold`) and its tool-access sets
  * (`allowTools`/`excludeTools`). Handed a context with `builtinDeferral: true`, this file's private
  * registry would refuse `browser`/`list_sessions`/`computer` with "load its schema via ToolSearch
- * first" — a rule that exists for the ENGINE's prompt budget and means nothing to a spawned Winter
+ * first" — a rule that exists for the ENGINE's prompt budget and means nothing to a spawned Clover
  * child, which was handed the tool list up front. So the session driver supplies identity only, and
  * the `ToolContext` is BUILT here with those fields left unset.
  *
@@ -66,7 +66,7 @@ import { WINTER_CAPABILITY_TOOLS, capabilityServerName, capabilityToolName, type
  * (updating `signal` at each turn boundary, say) works without rebuilding the servers.
  */
 export interface CapabilitySession {
-  /** Winter's own session id — what every emitted event is scoped to. */
+  /** Clover's own session id — what every emitted event is scoped to. */
   sessionId: string;
   /** THIS session's mode. Resolves `argsByMode` (chat's read-only `browser` subset) exactly as the
    *  engine does, and decides which schema `listTools()` advertises. */
@@ -90,14 +90,14 @@ export interface CapabilitySession {
    * Also told about every image a call stages (tests observe it here). The image itself no longer needs
    * it: since 2026-10-07 each call collects what it stages (`ctx.attachImage`) and returns it as an MCP
    * `image` item beside the text (`resultWithImages`), which agent SDK 0.0.53+ hands the model as an
-   * image block. Before, nothing staged it on the Winter leg and Computer/Browser screenshots never
+   * image block. Before, nothing staged it on the Clover leg and Computer/Browser screenshots never
    * reached the model at all — only a line saying one had been captured.
    */
   attachImage?: (dataUrl: string) => void;
   /**
    * A HUMAN authorized THIS call's navigation to a dangerous-list domain (browser.ts's Task-5
    * seam). Absent/false = no approval, which is the fail-closed answer for every call the daemon
-   * has not explicitly stamped — including every Winter-leg call until Task 8's approval bridge
+   * has not explicitly stamped — including every Clover-leg call until Task 8's approval bridge
    * stamps it. Never settable from tool ARGUMENTS: it is a context field precisely so the model
    * cannot write it.
    */
@@ -106,7 +106,7 @@ export interface CapabilitySession {
    *  capability reads the daemon's single holder instead. */
   computerUse?: ComputerUseService;
   /** The capability server KEYS this incarnation built — set by the session driver AFTER the build, for
-   *  the session's hooks (`hooks.ts`'s `capabilityKeys`): only these keys' `mcp__winter__<key>__*` names
+   *  the session's hooks (`hooks.ts`'s `capabilityKeys`): only these keys' `mcp__clover__<key>__*` names
    *  are the daemon's own on a live call. Absent before the build. */
   capabilityKeys?: ReadonlySet<string>;
   // `exaKeyPresent` lived here until 2026-10-01, for the `research` server's `Search`. `Search` is the
@@ -150,14 +150,14 @@ export interface CapabilityServerSpec {
  * NOT enforce `modes` (mode there resolves `argsFor` and deferral only; the engine's mode gate is
  * `namesForMode`, which runs at ADVERTISEMENT time), so nothing downstream would have caught it.
  *
- * The source of truth is `WINTER_CAPABILITY_TOOLS`, deliberately: it is the same table Task 9 derives
+ * The source of truth is `CLOVER_CAPABILITY_TOOLS`, deliberately: it is the same table Task 9 derives
  * `CAPABILITY_TOOL_MODES` from, so the two gates cannot disagree — and `names.test.ts` pins every
  * row of it against the real `ToolDefinition`s, so the table cannot drift from the tools either.
  * A tool absent from the table falls back to the registry's own documented default (`["code"]`),
  * which is the restrictive answer; `wire-names.test.ts` proves the absent case is unreachable.
  */
 function factsFor(serverKey: string, def: ToolDefinition): CapabilityToolFacts | undefined {
-  return (WINTER_CAPABILITY_TOOLS as Readonly<Record<string, CapabilityToolFacts>>)[capabilityToolName(serverKey, def.name)];
+  return (CLOVER_CAPABILITY_TOOLS as Readonly<Record<string, CapabilityToolFacts>>)[capabilityToolName(serverKey, def.name)];
 }
 
 function modesFor(serverKey: string, def: ToolDefinition): readonly SessionMode[] {

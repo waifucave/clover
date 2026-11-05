@@ -4,4 +4,4 @@
 // entrypoint, `src/embedded-worker.ts`, imports only that pre-built bundle. See that file for why.
 //
 // One import: the daemon package's own entry, which is the SDK's Worker half of the bridge.
-import "@yanlinglabs/winter-core/embedded-worker";
+import "@waifucave/clover-core/embedded-worker";

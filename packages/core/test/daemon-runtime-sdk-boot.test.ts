@@ -1,10 +1,10 @@
-// P8b Task 5: the Winter runtime handle, wired into a REAL daemon boot.
+// P8b Task 5: the Clover runtime handle, wired into a REAL daemon boot.
 //
 // The thing under test is the BOOT ORDER and the SHUTDOWN ORDER, so every test here calls
 // `startDaemon` against a temp home rather than `createWinterRuntimeSdk` directly (the unit tests in
 // `test/runtime-sdk/create.test.ts` do that): that the handle is built after the runtime spine and
 // gets ITS directory store, that a spine which would not open costs durability and nothing else,
-// and that teardown ends the Winter sessions while the stores they write into are still open.
+// and that teardown ends the Clover sessions while the stores they write into are still open.
 //
 // No child process is spawned anywhere here — no `sdk.query()`, no real `winter` binary.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -54,16 +54,16 @@ function entryFor(sessionId: string): RuntimeDirectoryEntry {
   };
 }
 
-describe("daemon boot — the Winter handle", () => {
+describe("daemon boot — the Clover handle", () => {
   test("a booted daemon carries a defined handle, and it reads the SPINE's directory store", async () => {
     await withTempHome(async (home) => {
       const d = await boot(home);
       const handle = d.runtimeSdk;
       expect(handle).toBeDefined();
       if (handle === undefined) return;
-      // The brand reached the router: this handle speaks Winter, not Winter.
-      expect(handle.sdk.brand.mcpServerName).toBe("winter");
-      expect(handle.sdk.brand.homeDirName).toBe(".winter");
+      // The brand reached the router: this handle speaks Clover, not Clover.
+      expect(handle.sdk.brand.mcpServerName).toBe("clover");
+      expect(handle.sdk.brand.homeDirName).toBe(".clover");
       expect(handle.sdk.messaging).toBeDefined();
 
       // THE WIRE THAT MATTERS: a row written through 8a's own store is visible through the router's
@@ -77,12 +77,12 @@ describe("daemon boot — the Winter handle", () => {
 
   test("spawnHookFor on a real daemon refuses code in the typed way when no binary is configured; chat and dispatch are embedded", async () => {
     await withTempHome(async (home) => {
-      const before = process.env.WINTER_RUNTIME_EXECUTABLE;
-      // P9a fix wave (M1 class): a dev checkout now HAS a winter on the ladder's last rung (the
+      const before = process.env.CLOVER_RUNTIME_EXECUTABLE;
+      // P9a fix wave (M1 class): a dev checkout now HAS a clover on the ladder's last rung (the
       // installed platform package), so "nothing configured" is no longer a refusal in this tree.
       // An EXPLICIT env path that is missing on disk is the deterministic refusal (P8b-2: an explicit
       // path is authoritative and never falls through) — the daemon's own answer, no ambient tree.
-      process.env.WINTER_RUNTIME_EXECUTABLE = join(home, "missing-winter");
+      process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
       try {
         const d = await boot(home);
         // WS-23: asked of CODE — chat and dispatch run embedded and resolve no binary (below).
@@ -99,8 +99,8 @@ describe("daemon boot — the Winter handle", () => {
         }
         expect(d.embedded.live()).toEqual([]);
       } finally {
-        if (before === undefined) delete process.env.WINTER_RUNTIME_EXECUTABLE;
-        else process.env.WINTER_RUNTIME_EXECUTABLE = before;
+        if (before === undefined) delete process.env.CLOVER_RUNTIME_EXECUTABLE;
+        else process.env.CLOVER_RUNTIME_EXECUTABLE = before;
       }
     });
   });
@@ -126,7 +126,7 @@ describe("daemon boot — the Winter handle", () => {
       expect(said.some((l) => l.startsWith("runtime-state: runtime state unavailable") && l.includes("RuntimeStateUnavailableError"))).toBe(true);
       // …(ii) and the ROUTER says nothing, because it constructed fine. This half is the one that
       // would catch a future change turning a degraded spine into a dead router.
-      expect(said.filter((l) => l.startsWith("runtime-sdk: winter runtime sdk unavailable"))).toEqual([]);
+      expect(said.filter((l) => l.startsWith("runtime-sdk: clover runtime sdk unavailable"))).toEqual([]);
 
       const rt = d.runtimeState;
       expect("unavailable" in rt).toBe(true);
@@ -149,7 +149,7 @@ describe("daemon boot — the Winter handle", () => {
 // `RuntimeSdkOptions.capabilities` is handle-wide and construction-time, which is exactly what a
 // per-session capability set must not be: `callTool(name, args)` carries no session identity, so a
 // shared instance would have to look one up — and a daemon-wide slot cross-attributes the moment two
-// Winter sessions run turns concurrently. Because `ctx.mode` comes from the same place and resolves
+// Clover sessions run turns concurrently. Because `ctx.mode` comes from the same place and resolves
 // `browser`'s read-only chat subset, that is a security bug, not only an identity one.
 //
 // So the handle is built with `capabilities: []` (proved below through the router's own per-query
@@ -179,7 +179,7 @@ describe("daemon boot — the capability servers (Tasks 6-7, P8b-36)", () => {
     await withTempHome(async (home) => {
       const d = await boot(home);
       expect(d.runtimeSdk).toBeDefined();
-      for (const key of ["winter__sessions", "winter__browser", "winter__office", "winter__research", "winter__web", "winter__computer"]) {
+      for (const key of ["clover__sessions", "clover__browser", "clover__office", "clover__research", "clover__web", "clover__computer"]) {
         expect(handleHoldsCapability(d, key), `${key} is on the handle and should not be`).toBe(false);
       }
     });
@@ -192,18 +192,18 @@ describe("daemon boot — the capability servers (Tasks 6-7, P8b-36)", () => {
       // KEYED BY NAME — the record IS `Options.mcpServers`' shape, and the child derives each tool's
       // wire name from the key, so the key set is the thing to assert. Computer use is default-ON
       // (2026-10-07) and this temp home does not turn it off, so a computer server is present — since
-      // ComputerV2 (2026-10-08) `winter__computer_v2`, the old `winter__computer` only with
+      // ComputerV2 (2026-10-08) `clover__computer_v2`, the old `clover__computer` only with
       // `computerUse.legacyComputer` — plus
       // `external` (Phase 8c Lane 3, Task 3.4), which is ALWAYS present (kept, advertising zero tools,
       // same "inert not absent" contract every other capability server already follows) since this
       // daemon boot wires no `CapabilityDeps.external`.
       expect(Object.keys(servers)).toEqual([
-        "winter__sessions", "winter__computer_v2", "winter__browser", "winter__office",
-        // `winter__web` was here until 2026-09-18 (`web_fetch`/`web_search` retired in favour of the
-        // runtime child's own `WebFetch`/`WebSearch`), and `winter__research` until 2026-10-01 (`Search`
+        "clover__sessions", "clover__computer_v2", "clover__browser", "clover__office",
+        // `clover__web` was here until 2026-09-18 (`web_fetch`/`web_search` retired in favour of the
+        // runtime child's own `WebFetch`/`WebSearch`), and `clover__research` until 2026-10-01 (`Search`
         // is the agent SDK's built-in now).
-        "winter__lsp",   // fix wave F7: the `lsp` capability server
-        "winter__external",   // Phase 8c Lane 3 Task 3.4: plugin-contributed tools (none wired here)
+        "clover__lsp",   // fix wave F7: the `lsp` capability server
+        "clover__external",   // Phase 8c Lane 3 Task 3.4: plugin-contributed tools (none wired here)
       ]);
       for (const [key, s] of Object.entries(servers)) {
         // The invariant N1 exists to make unrepresentable: key === the config's own name.
@@ -224,7 +224,7 @@ describe("daemon boot — the capability servers (Tasks 6-7, P8b-36)", () => {
       // Default-ON since 2026-10-07, so the meaningful setting is the explicit opt-out.
       writeFileSync(join(home, "settings.json"), JSON.stringify({ computerUse: { enabled: false } }));
       const d = await boot(home);
-      expect(Object.keys(d.buildSessionCapabilities(session()))).not.toContain("winter__computer");
+      expect(Object.keys(d.buildSessionCapabilities(session()))).not.toContain("clover__computer");
     });
   });
 
@@ -234,7 +234,7 @@ describe("daemon boot — the capability servers (Tasks 6-7, P8b-36)", () => {
       const code = d.buildSessionCapabilities(session({ sessionId: "s_code", mode: "code" }));
       const chat = d.buildSessionCapabilities(session({ sessionId: "s_chat", mode: "chat" }));
       const browserOf = (servers: Readonly<Record<string, { instance: unknown }>>): WinterMcpServerInstance =>
-        servers["winter__browser"]!.instance as WinterMcpServerInstance;
+        servers["clover__browser"]!.instance as WinterMcpServerInstance;
       // Both alive at once; the chat one advertises the READ-ONLY browser schema, the code one the
       // full schema. Nothing is shared between them.
       const codeSchema = JSON.stringify(browserOf(code).listTools()[0]!.inputSchema);

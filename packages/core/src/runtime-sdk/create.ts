@@ -1,6 +1,6 @@
 // THE ONE `createRuntimeSdk` handle for the whole daemon (P8b Task 5).
 //
-// Everything on the Winter leg goes through this object: every session's `query()`, the global
+// Everything on the Clover leg goes through this object: every session's `query()`, the global
 // messaging router, the runtime directory. It is built ONCE at boot (`daemon.ts`, between the
 // runtime spine and the tool registry) and disposed ONCE at shutdown — the router's own
 // `dispose()` is a use-after-shutdown latch and nothing more (surface map §1.11), so ending the
@@ -16,8 +16,8 @@
 //  2. `trackQuery`/`untrack`/`dispose` — G-14's ordering. Every live `Query` ends BEFORE the router
 //     disposes and, in `daemon.ts`, before the 8a spine closes: a draining child's last frames
 //     write delivery receipts into `runtime-state.db`, and a closed store loses them.
-//  3. The settings-derived options. Winter's hard rule is that no setting may require a restart, but
-//     `createRuntimeSdk` takes PLAIN VALUES for retention (Winter map §8.3). The door this file uses
+//  3. The settings-derived options. Clover's hard rule is that no setting may require a restart, but
+//     `createRuntimeSdk` takes PLAIN VALUES for retention (Clover map §8.3). The door this file uses
 //     to keep it live is a getter-backed retention object (the router reads the property at recovery
 //     time, not at construction), noted at its definition.
 //
@@ -25,23 +25,23 @@
 // it (the peer import and its version guard, the executable ladder, the credential seam, the advisor
 // resolver, the capability-schema bridge, the handoff participants) is gone.
 import { existsSync } from "node:fs";
-import * as winter from "@yanlinglabs/winter-agent-sdk";
+import * as clover from "@yanlinglabs/winter-agent-sdk";
 import type { McpSdkServerConfigWithInstance, SpawnClaudeCodeProcess } from "@yanlinglabs/winter-agent-sdk";
 import { createRuntimeSdk as createRouterSdk, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "@yanlinglabs/winter-runtime-sdk";
 import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectoryStore, RuntimeSdk, RuntimeSdkOptions, RuntimeSelection, SelectionInput, SelectionRefusal } from "@yanlinglabs/winter-runtime-sdk";
 import type { PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { SecretStore } from "../auth/secret-store";
 import { retentionFromSettings } from "../runtime-state/retention";
-import { winterOptionsFromSettings, type Settings } from "../settings";
+import { cloverOptionsFromSettings, type Settings } from "../settings";
 import { buildCoreBrand } from "./brand";
 import { explicitRuntimeVersionNote, resolveWinterExecutable, winterBinaryVersion, type WinterExecutableUnavailable } from "./executable";
 import { EmbeddedRuntimeUnavailable, embeddedVersionCheck, runsEmbedded, type EmbeddedSessionHost } from "./embedded";
 import { credentialPresenceFrom } from "./keychain";
 import { familyListingFromCatalog } from "./provider-selection";
-import { splitTag, WINTER_TEST_PREFIX } from "./model-tag";
+import { splitTag, CLOVER_TEST_PREFIX } from "./model-tag";
 import { releaseAllHeld } from "./messaging";
 import { daemonResolveEndpoint } from "../providers/registry";
-import { REQUIRED_WINTER_AGENT_SDK, WINTER_PEER_VERSIONS } from "./versions";
+import { REQUIRED_WINTER_AGENT_SDK, CLOVER_PEER_VERSIONS } from "./versions";
 import type { RecoveryReport, RunHomeFor, RunHomeOutcome } from "@yanlinglabs/winter-runtime-sdk";
 import { runHomeHandleOf } from "./run-home-support";
 import { HostCodeExecutionService, HostCodeUnavailable, type HostCodeOutputTransportFactory } from "./host-code-broker";
@@ -85,7 +85,7 @@ export const SHUTDOWN_QUERY_GRACE_MS = 300;
  *  `defaultSpawn` on path (a) (code); path (b) (chat, dispatch — WS-23's embedded Worker) fills it in
  *  here and nowhere else, and `pathToClaudeCodeExecutable` is then only a label (the SDK hands it to
  *  the hook as `command` and resolves nothing). */
-export interface WinterSpawnHook {
+export interface CloverSpawnHook {
   pathToClaudeCodeExecutable: string;
   spawnClaudeCodeProcess?: SpawnClaudeCodeProcess;
   /** The runtime version this hook will run, when known: the pin for the version-locked rungs (embedded,
@@ -96,7 +96,7 @@ export interface WinterSpawnHook {
 }
 
 export interface WinterRuntimeSdkDeps {
-  /** The daemon's `WINTER_HOME`. Winter's home is the SAME directory under `CORE_BRAND`. */
+  /** The daemon's `CLOVER_HOME`. Clover's home is the SAME directory under `CORE_BRAND`. */
   home: string;
   /** THE LIVE settings holder — never a boot snapshot. `null` on a daemon whose settings.json
    *  would not parse (the daemon runs with the agent disabled rather than refusing to start). */
@@ -106,7 +106,7 @@ export interface WinterRuntimeSdkDeps {
    *  its own in-memory store: messaging works for this process's lifetime, receipts are not
    *  durable. That is a degraded daemon, never a dead one. */
   directoryStore?: RuntimeDirectoryStore;
-  /** Tasks 6–7's capability servers, handle-wide. `[]` is valid and is what the daemon passes: Winter's
+  /** Tasks 6–7's capability servers, handle-wide. `[]` is valid and is what the daemon passes: Clover's
    *  capability servers ride each session's own `Options.mcpServers` instead (P8b-36). */
   capabilities: readonly McpSdkServerConfigWithInstance[];
   /**
@@ -116,7 +116,7 @@ export interface WinterRuntimeSdkDeps {
    * asks the attached handle's facet first; with no handle and no declaration it answers `unknown`,
    * and since the router's D2 an unknown class FAILS CLOSED — the message is held rather than
    * delivered under a guessed class. That is correct for a live session whose class this process
-   * genuinely cannot read, and wrong for a session Winter itself launched and then parked: its
+   * genuinely cannot read, and wrong for a session Clover itself launched and then parked: its
    * approval policy is a fact the daemon has.
    *
    * UNWIRED IN TASK 12 ON PURPOSE: the per-session policy lives with the session driver, which is
@@ -180,7 +180,7 @@ export interface WinterRuntimeSdk {
    * (a version-locked set that does not agree, or no embedded host wired). Returns the typed error
    * rather than throwing and NEVER falls back to the other topology — a session refuses at create.
    */
-  spawnHookFor(mode: SessionMode): WinterSpawnHook | WinterExecutableUnavailable | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable;
+  spawnHookFor(mode: SessionMode): CloverSpawnHook | WinterExecutableUnavailable | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable;
   readonly codeExecution?: HostCodeExecutionService;
   /** Complete, versioned file/context coverage; Read/Write-only capability is insufficient. */
   protectedEmbeddedPathsAvailable?(): boolean;
@@ -189,7 +189,7 @@ export interface WinterRuntimeSdk {
    * the router returns BY IDENTITY — "the persisted selection wins", never re-decided). Builds
    * `SelectionInput` from the pinned catalog (`familyListingFromCatalog`, no live query needed) and
    * this process's credential presence. WS-23: there is no official runtime to route to, so the input
-   * says so (`hasClaudePeer: false`) and every family — Claude included — selects the Winter runtime.
+   * says so (`hasClaudePeer: false`) and every family — Claude included — selects the Clover runtime.
    * Never throws — the router's own `SelectionRefusedError` is unwrapped into the `SelectionRefusal`
    * value its own `refusal` field carries.
    */
@@ -201,7 +201,7 @@ export interface WinterRuntimeSdk {
    * must be idempotent. `abort` is the session's `AbortController` — the same one its `Options`
    * carry — and it is what makes G-14's "aborts stragglers" true rather than delegated: if `end`
    * has not resolved when the grace expires, `dispose()` calls `abort.abort()` itself. That matters
-   * because Winter's `Query` has NO `close()`: once this process stops holding the session, nothing
+   * because Clover's `Query` has NO `close()`: once this process stops holding the session, nothing
    * can reach the child again, and the cost G-14 names is a leaked child surviving the daemon.
    *
    * Registering after `dispose()` has run is refused (and the query aborted immediately) rather
@@ -262,7 +262,7 @@ function retentionFrom(settings: () => Settings | null | undefined): RuntimeDire
  * Await `end()`, but never longer than `ms` — and when the budget runs out, ABORT.
  *
  * G-14's wording is "closes queues, awaits iterations with a bounded grace, aborts stragglers", and
- * the abort is the half that cannot be delegated: Winter's `Query` has no `close()`, so a child
+ * the abort is the half that cannot be delegated: Clover's `Query` has no `close()`, so a child
  * that outlives this function is unreachable for the rest of the process's life and then survives
  * it. `abort.abort()` is the session's own controller — the one its `Options` carry — so the child
  * sees a cancelled turn and exits rather than being orphaned mid-turn.
@@ -291,25 +291,25 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
   });
   // test-keychain-isolation fix: built from `deps.home` — the daemon's ACTUAL home — rather than
   // reusing the frozen, env-only `CORE_BRAND` singleton. `CORE_BRAND` resolves its `keychainService`
-  // once at module load from `WINTER_HOME`/`WINTER_PROFILE` env vars alone, which a daemon booted
+  // once at module load from `CLOVER_HOME`/`CLOVER_PROFILE` env vars alone, which a daemon booted
   // via `startDaemon({ home })` (every real-binary e2e test) never sets — so the singleton could
-  // never see `deps.home` and therefore could never honour `WINTER_KEYCHAIN_SERVICE`'s default-home
-  // guard for it. This IS the value the router hands to a spawned Winter child (`brand.keychainService`
+  // never see `deps.home` and therefore could never honour `CLOVER_KEYCHAIN_SERVICE`'s default-home
+  // guard for it. This IS the value the router hands to a spawned Clover child (`brand.keychainService`
   // seeds the child's OWN Bun.secrets read, including the D30 advisor default fallback with no
-  // explicit `authRef` — see `mode-options.ts`'s `buildWinterOptions` header), so it is the one that
+  // explicit `authRef` — see `mode-options.ts`'s `buildCloverOptions` header), so it is the one that
   // must be home-aware.
   const homeAwareBrand = buildCoreBrand(undefined, deps.home);
-  // WS-23: THE WINTER PEER ALONE. The official `claude` peer, its executable, its credential seam, its
+  // WS-23: THE CLOVER PEER ALONE. The official `claude` peer, its executable, its credential seam, its
   // advisor resolver, its capability bridge and its handoff participants are gone with the leg they
-  // served; the router routes every family to the Winter runtime (`hasClaudePeer: false` below).
+  // served; the router routes every family to the Clover runtime (`hasClaudePeer: false` below).
   const sdk = factory({
-    peers: { winter: { ...winter, query: (input) => {
+    peers: { winter: { ...clover, query: (input) => {
       // Covers both ordinary session queries and the router's own cold-resume path.
       codeExecution.assertQueryOptions(input.options);
-      return winter.query(input);
+      return clover.query(input);
     } } },
     // P8b-4: host-declared, and the ONLY probe that answers inside a compiled `$bunfs` binary.
-    peerVersions: { winterAgentSdk: WINTER_PEER_VERSIONS.winterAgentSdk },
+    peerVersions: { winterAgentSdk: CLOVER_PEER_VERSIONS.winterAgentSdk },
     // R-1. Resolved once here, through the injected peer's own `resolveBrand`.
     brand: homeAwareBrand,
     // 8a's durable store when the spine opened; the router's in-memory default when it did not.
@@ -317,8 +317,8 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
     capabilities: deps.capabilities,
     // §1.6: this is what fills `SeamContext.winterHome`, so the session store `reviewSwitch` reads and
     // `reconcileRootForRecovery` writes resolve under the daemon's OWN home — without it they fall back
-    // to `resolveWinterHome(undefined, brand)`, which is `~/.winter` for a daemon booted on a temp home
-    // with no `WINTER_HOME` in its environment, i.e. every test. A `requireRunHome` router refuses to
+    // to `resolveCloverHome(undefined, brand)`, which is `~/.clover` for a daemon booted on a temp home
+    // with no `CLOVER_HOME` in its environment, i.e. every test. A `requireRunHome` router refuses to
     // construct without it.
     handoff: {
       winterHome: deps.home,
@@ -330,13 +330,13 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
       // (`providers/registry.ts`), memoised for the process's life.
       resolveEndpoint: daemonResolveEndpoint(),
     },
-    // G-12. The WINTER adapter's `permissionClass` (Task 12) fails inbound delivery closed without it.
+    // G-12. The CLOVER adapter's `permissionClass` (Task 12) fails inbound delivery closed without it.
     //
     // CARRY FOR TASKS 13/16: `directory` carries `retention` and nothing else, so the router's own
     // `RuntimeDirectoryRecoveryHooks` (`revalidateProcessIdentity`, `reattachSupervised`) stay
     // unset and its `recoverDirectory` reattaches nothing. That is correct — 8a owns recovery, and its
-    // twelve steps have already run by the time this handle exists — but the day a Winter child must
-    // be re-adopted across a daemon restart (`PersistedWinterChild`, P8b-15), this is the door those
+    // twelve steps have already run by the time this handle exists — but the day a Clover child must
+    // be re-adopted across a daemon restart (`PersistedCloverChild`, P8b-15), this is the door those
     // hooks come through.
     messaging: {
       directory: { retention: retentionFrom(deps.settings) },
@@ -353,7 +353,7 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
     const credentials = await credentialPresenceFrom(deps.secrets);
     // WS-20: `requested.model` is ALWAYS a provider-qualified tag now — the router (0.0.8+)
     // refuses a bare id typed (`bare-model-id`) — so `requested.provider` is sent alongside it,
-    // split from the SAME tag, never independently guessed. Skipped for the winter-test double
+    // split from the SAME tag, never independently guessed. Skipped for the clover-test double
     // (not a catalog tag at all) and when no model is named yet.
     //
     // `splitTag` THROWS on anything not shaped like "<providerId>/<modelId>" — a bare id reaching
@@ -362,7 +362,7 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
     // `bare-model-id` refusal, never an uncaught `TypeError`. Caught here and passed through as a
     // bare `model` with no `provider` — the SAME shape `selectRuntime` itself treats as
     // provider-less — so the router is the one that refuses it, not this function pre-empting it.
-    const requestedModel = input.model === undefined || input.model.startsWith(WINTER_TEST_PREFIX)
+    const requestedModel = input.model === undefined || input.model.startsWith(CLOVER_TEST_PREFIX)
       ? {}
       : (() => {
           try {
@@ -376,7 +376,7 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
       requested: requestedModel,
       families: familyListingFromCatalog(),
       credentials,
-      // WS-23: no official runtime exists, so a Claude model routes to the Winter runtime (the router's
+      // WS-23: no official runtime exists, so a Claude model routes to the Clover runtime (the router's
       // own `R-7b-1-no-peer` rule) — never to a peer this daemon cannot launch.
       hasClaudePeer: false,
       // claude.ai subscription auth never shipped, and the one runtime left never takes it (D28).
@@ -410,7 +410,7 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
         await releaseAllHeld(sdk, deps.directoryStore, deps.log);
       },
     },
-    spawnHookFor(mode: SessionMode): WinterSpawnHook | WinterExecutableUnavailable | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable {
+    spawnHookFor(mode: SessionMode): CloverSpawnHook | WinterExecutableUnavailable | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable {
       if (mode === "code") {
         try { codeExecution.assertReady(deps.home); }
         catch (error) {
@@ -433,10 +433,10 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
         // and it keeps the refusal at the one topology site rather than a boot flag someone must read.
         const versionRefusal = embeddedVersionCheck();
         if (versionRefusal !== undefined) return versionRefusal;
-        return { pathToClaudeCodeExecutable: "winter-embedded", spawnClaudeCodeProcess: codeExecution.trustEmbeddedSpawn((options) => embedded.spawn(options), () => embedded.supportsProtectedPaths?.() === true), runtimeVersion: REQUIRED_WINTER_AGENT_SDK };
+        return { pathToClaudeCodeExecutable: "clover-embedded", spawnClaudeCodeProcess: codeExecution.trustEmbeddedSpawn((options) => embedded.spawn(options), () => embedded.supportsProtectedPaths?.() === true), runtimeVersion: REQUIRED_WINTER_AGENT_SDK };
       }
       const resolution = resolveWinterExecutable({
-        setting: winterOptionsFromSettings(deps.settings()).winterExecutable,
+        setting: cloverOptionsFromSettings(deps.settings()).winterExecutable,
         env: process.env,
         execPath: process.execPath,
         home: deps.home,

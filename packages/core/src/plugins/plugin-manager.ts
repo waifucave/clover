@@ -1,16 +1,16 @@
 // WS-21 (spec §5.2, Contract B): the daemon's door onto the agent SDK's plugin-management API
-// (`@yanlinglabs/winter-agent-sdk`'s `plugins/manage.ts`: `winter plugin` = `claude plugin`).
+// (`@yanlinglabs/winter-agent-sdk`'s `plugins/manage.ts`: `clover plugin` = `claude plugin`).
 //
 // Everything here IS the SDK's: the same functions, types and `PluginManagerError` class, re-exported
 // so every daemon/CLI call site imports one module. Two things are the daemon's own and are layered
 // on top, because the SDK deliberately leaves them to its host:
 //
-//  1. F21 — a `local`-scope write lands in `<root>/.winter/settings.local.json`, a PERSONAL overlay
+//  1. F21 — a `local`-scope write lands in `<root>/.clover/settings.local.json`, a PERSONAL overlay
 //     that must never be committed (claude parity; `agent/git-exclude.ts`'s own header). The SDK's
 //     `manage.ts` says outright that it does not do this ("F21 … is NOT implemented here"), so every
 //     local-scope `installPlugin`/`uninstallPlugin`/`setPluginEnabled` is followed here by the same
 //     best-effort `ensureGlobalGitExclude(root)` L3's `agent/saved-answers.ts` uses. `project` scope
-//     writes the team-shared `.winter/settings.json` (meant to be committed) and `user` scope never
+//     writes the team-shared `.clover/settings.json` (meant to be committed) and `user` scope never
 //     touches a project tree, so neither needs it.
 //
 //  2. A pure LIST never fails over a scope it cannot resolve. `listPlugins` reads every installed
@@ -29,8 +29,8 @@ export {
 } from "@yanlinglabs/winter-agent-sdk";
 export type { InstalledPlugin, MarketplaceInfo, PluginListing, PluginManagerOptions, PluginScope } from "@yanlinglabs/winter-agent-sdk";
 
-/** F21: after a successful `local`-scope write, keep `<root>/.winter/settings.local.json` out of git.
- *  `dirname(dirname(path))` recovers `<root>` from the two-level `.winter/settings.local.json` suffix
+/** F21: after a successful `local`-scope write, keep `<root>/.clover/settings.local.json` out of git.
+ *  `dirname(dirname(path))` recovers `<root>` from the two-level `.clover/settings.local.json` suffix
  *  every `settingsPathFor` implementation uses. Best-effort, never throws (`ensureGlobalGitExclude`'s
  *  own contract): a cosmetic excludes write never fails the plugin operation. */
 function excludeLocalSettings(o: PluginManagerOptions, scope: PluginScope): void {

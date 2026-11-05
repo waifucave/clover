@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider, ProviderEvent, TurnRequest } from "../../src/providers/types";
 import { FakeProvider } from "../../src/agent/fake-provider";
-import { SessionEvent } from "@yanlinglabs/winter-protocol";
+import { SessionEvent } from "@waifucave/clover-protocol";
 import { SessionStore } from "../../src/sessions/store";
 import { Settings, pinsFor, ownProviderFor } from "../../src/settings";
 import { splitTag } from "../../src/runtime-sdk/model-tag";
@@ -22,7 +22,7 @@ import {
 // clock (the T5/T6 precedent), and every judgment runs against FakeProvider.
 
 function freshStore(): { home: string; store: SessionStore } {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-cleaner-test-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-cleaner-test-")));
   return { home, store: new SessionStore(home) };
 }
 
@@ -264,7 +264,7 @@ describe("SessionCleaner — the happy path (session-activity-hygiene T7)", () =
     expect(req.instructions).toBe(CLEANER_INSTRUCTION);
     const content = (req.input[0] as { content: string }).content;
     expect(content).toContain("[user] hey");
-    expect(content).toContain("[winter] Hi! What can I do for you?");
+    expect(content).toContain("[clover] Hi! What can I do for you?");
     store.close();
   });
 
@@ -290,7 +290,7 @@ describe("SessionCleaner — the happy path (session-activity-hygiene T7)", () =
     // The judge saw the WHOLE exchange, both roles, before answering.
     const content = (provider.requests[0]!.input[0] as { content: string }).content;
     expect(content).toContain("[user] What's the difference between a rebase and a merge");
-    expect(content).toContain("[winter] A merge preserves both histories");
+    expect(content).toContain("[clover] A merge preserves both histories");
     expect(store.list().some((r) => r.sessionId === id)).toBe(true);
     expect(store.judgedAt(id)).toBe(agedNow());
     expect(cleanerLines(home)).toEqual([]);
@@ -816,7 +816,7 @@ describe("SessionCleaner — strict verdict parsing (ANY deviation ⇒ keep, NO 
   test("role-health (2026-09-18): a provider error records pins.cleaner under the tag that ran; a later success clears it; kept/unstamped is unchanged", async () => {
     const { home, store } = freshStore();
     junkSession(store);
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-cleaner-rh-home-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-cleaner-rh-home-")));
     const failing = new FakeProvider([[{ type: "error", code: "auth", message: "401" }]]);
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     const expectedTag = `${ownProviderFor(null)}/${splitTag(pinsFor(null).cleaner).modelId}`;
@@ -1152,7 +1152,7 @@ describe("renderTranscript (the ~4 KB head+tail cap)", () => {
       { type: "assistant_message", sessionId: "s", threadId: "main", text: "hello", seq: 5, ts: 0 },
     ];
     const rendered = renderTranscript(events);
-    expect(rendered).toBe("[user] hi\n[tool] read\n[winter] hello");
+    expect(rendered).toBe("[user] hi\n[tool] read\n[clover] hello");
     // Tool ARGUMENTS and OUTPUT never reach the judge — it only needs to know work happened.
     expect(rendered).not.toContain("SECRET CONTENTS");
     expect(rendered).not.toContain("/etc/passwd");
@@ -1205,7 +1205,7 @@ describe("hasUserSetTitle — the title rail is vacuous today, by verification (
   // THE OBLIGATION, written down where it will be read: this test is the tripwire for whoever
   // builds a user set-title mechanism. `SessionTitledEvent` is `{type, threadId, title}` — it
   // carries no source field, so the day a user can name a session, the event needs a discriminator
-  // AND `hasUserSetTitle` needs to read it. Until then, a title is Winter's own guess about a
+  // AND `hasUserSetTitle` needs to read it. Until then, a title is Clover's own guess about a
   // session, never the user's investment in one, and must not spare it from judgment.
   test("the event schema still carries no source discriminator — the reason the rail cannot be honest yet", () => {
     const titled: any = { type: "session_titled", sessionId: "s", threadId: "main", title: "t", seq: 1, ts: 0 };

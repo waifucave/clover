@@ -5,7 +5,7 @@
 //   1. a provider-changing `session.setModel` whose history does not fit the target's window ASKS —
 //      `handoff_confirmation_required`, carrying the review's `fit` ({fits, estimatedTokens, window});
 //   2. confirmed (`confirmLossy`), the switch applies at once, and the live child COMPACTS ON ITS SOURCE
-//      MODEL first (`runtime-sdk/handoff.ts`'s `compactFirst` → `WinterSession.compact`), announcing it in
+//      MODEL first (`runtime-sdk/handoff.ts`'s `compactFirst` → `CloverSession.compact`), announcing it in
 //      the transcript (`continuity_warning`, warning `switch_compaction`) — the model being left pays for
 //      the summary;
 //   3. the child is then replaced, and the next turn goes to the TARGET, resuming from the compacted
@@ -20,7 +20,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openaiChatFake, openaiResponsesFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";

@@ -1,6 +1,6 @@
 // ComputerV2 — WAKE TRIGGERS: the in-page WATCHER, one source for both of its homes.
 //
-//  - the page runtime (`main.ts`) installs it in the frame's isolated "winter" world (the CDP path: Winter's built-in
+//  - the page runtime (`main.ts`) installs it in the frame's isolated "winter" world (the CDP path: Clover's built-in
 //    browser, a Winter for Chrome older than 1.2.0, and a watched element inside a child frame). Its events wait in a
 //    queue the engine long-polls (`watchWait`), each answered by acknowledgement, so an answer lost on the way is
 //    sent again;
@@ -22,15 +22,15 @@
 // counts on the `click` itself (a press only on the release over the element: a press dragged off it is no press); a
 // submit or a change also needs a trusted pointer or key event of the user's on the submitter or in the form (in the
 // field) within about a second before it (`cause`, reported with it) — a page script's own `requestSubmit()` (an
-// autosave, Turbo) or `execCommand()` has none; transient user activation is not enough (it lasts seconds, and Winter's
+// autosave, Turbo) or `execCommand()` has none; transient user activation is not enough (it lasts seconds, and Clover's
 // own CDP input grants it). Enter counts as a press only where it submits implicitly: in a text-like field or on a
-// submit button, never on a link or a `type=button`. Winter's own CDP input is trusted too — the DAEMON drops what lands
-// (or whose `cause` lands) while Winter's input to the tab is in flight or within 500 ms after it. State conditions
+// submit button, never on a link or a `type=button`. Clover's own CDP input is trusted too — the DAEMON drops what lands
+// (or whose `cause` lands) while Clover's input to the tab is in flight or within 500 ms after it. State conditions
 // (appeared, gone, titled) report a false→true transition; one already true at the first install refuses the arm
 // ("met"). A page that stops other listeners from its own capture listener on the window, registered before the
 // watcher's, can starve it of the user's events (a stated residual: the wait then ends by expiry or by the model).
 //
-// While armed the user can SEE that Winter waits: a ring around the watched element and a small pill at the page's
+// While armed the user can SEE that Clover waits: a ring around the watched element and a small pill at the page's
 // bottom left, in a closed shadow root under one `<winter-wake-overlay>` element that takes no pointer event (the page
 // runtime leaves it out of its tree walk and hit tests). The pill's words are the daemon's (fixed per kind, naming
 // only the element's own label). Watchers of one page in different worlds (the debugger path's, the extension's, a
@@ -69,7 +69,7 @@ export interface WatchSpec {
   text?: string;
   /** titled. */
   title?: string;
-  /** navigated: the model's words the tab's address must come to contain — matched where the address is known (Winter
+  /** navigated: the model's words the tab's address must come to contain — matched where the address is known (Clover
    *  for Chrome matches them itself: nothing of an address beyond its site and path leaves it). */
   url?: string;
   /** submitted with no element: any form of the page. */
@@ -81,7 +81,7 @@ export interface WatchSpec {
   /** Epoch ms: the watcher removes itself a little after it, if nobody did. */
   expiresAt: number;
   /** What a state condition already true at install means: "refuse" (the first arm — nothing to wait for), "baseline"
-   *  (a document Winter's own navigation loaded: the state is the new baseline) or "fire" (a new document the user or
+   *  (a document Clover's own navigation loaded: the state is the new baseline) or "fire" (a new document the user or
    *  the page brought: a transition). */
   initial: "refuse" | "baseline" | "fire";
 }
@@ -182,7 +182,7 @@ export function wakeWatcher(arg: WatcherArg): unknown {
     wait(a: { ack: number; maxMs: number; world?: string; live?: string[] }): Promise<WatchWaitResult>;
     alive(): string[];
   };
-  const KEY = "__winterWake";
+  const KEY = "__cloverWake";
   const g = globalThis as unknown as Record<string, unknown>;
   let api = g[KEY] as Api | undefined;
   if (api === undefined) {
@@ -304,7 +304,7 @@ export function wakeWatcher(arg: WatcherArg): unknown {
         const c = el.closest("form");
         return c instanceof HTMLFormElement ? c : undefined;
       };
-      // A field Winter never watches (the daemon refused one at arm; a container's own fields are skipped too).
+      // A field Clover never watches (the daemon refused one at arm; a container's own fields are skipped too).
       const secure = (el: Element): boolean => {
         if (el instanceof HTMLInputElement && el.type.toLowerCase() === "password") return true;
         const tokens = (el.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
@@ -705,7 +705,7 @@ export function wakeWatcher(arg: WatcherArg): unknown {
           if (spec.kind === "changed" && el !== undefined) w.value = valueOf(el);
           const m = met(w, true);
           if (m === true && spec.initial === "refuse") return { ok: false, reason: "met" };
-          // A new document (not Winter's own doing) that already shows it: that is the transition.
+          // A new document (not Clover's own doing) that already shows it: that is the transition.
           w.last = m === true && spec.initial === "fire" ? false : m;
           watches.set(spec.watchId, w);
           install();

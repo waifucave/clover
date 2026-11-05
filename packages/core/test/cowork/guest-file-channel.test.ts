@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { getEventListeners } from "node:events";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { COWORK_FILE_CHUNK_DEFAULT_BYTES, COWORK_FILE_CHUNK_MAX_BYTES, CoworkOutputPath } from "@yanlinglabs/winter-protocol";
+import { COWORK_FILE_CHUNK_DEFAULT_BYTES, COWORK_FILE_CHUNK_MAX_BYTES, CoworkOutputPath } from "@waifucave/clover-protocol";
 import { GUEST_RUNTIME_TRANSPORT_LIMITS } from "../../src/cowork/guest-runtime";
 import * as channel from "../../src/cowork/guest-file-channel";
 import {

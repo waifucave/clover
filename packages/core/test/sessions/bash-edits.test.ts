@@ -47,7 +47,7 @@ describe("bashEditedPaths: what counts as a write", () => {
   });
 
   test("cp into a directory that EXISTS is dest/<source name>", () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-bash-edits-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-bash-edits-"));
     try {
       mkdirSync(join(dir, "lib"));
       expect(paths("cp a.ts lib", dir)).toEqual([join(dir, "lib", "a.ts")]);

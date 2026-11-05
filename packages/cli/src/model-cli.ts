@@ -1,9 +1,9 @@
-// Pure/isolatable logic behind `winter model ...`, split out of main.ts so it can be
+// Pure/isolatable logic behind `clover model ...`, split out of main.ts so it can be
 // unit-tested without going through the top-level `if (import.meta.main)` dispatch. Mirrors
 // plugin-cli.ts's split: main.ts owns the I/O (loadSettings/saveSettings/connect), this file
 // owns the parse/validate decisions.
-import { REASONING_EFFORTS, rowForTag, isModelTag, modelTagIsKnown, splitTag, UNSTATED_TAG, WINTER_TEST_PREFIX, internalEligibleProviderIds } from "@yanlinglabs/winter-core";
-import type { Settings } from "@yanlinglabs/winter-core";
+import { REASONING_EFFORTS, rowForTag, isModelTag, modelTagIsKnown, splitTag, UNSTATED_TAG, CLOVER_TEST_PREFIX, internalEligibleProviderIds } from "@waifucave/clover-core";
+import type { Settings } from "@waifucave/clover-core";
 
 export type ModelCliAction =
   | { kind: "show" }
@@ -17,10 +17,10 @@ export type ModelCliAction =
   | { kind: "clearAdvisor" }
   | { kind: "usageError"; message: string };
 
-const USAGE = "usage: winter model [<tag>] [--effort <level>] [--confirm]  |  winter model --effort <level>  |  winter model --advisor <tag|auto>";
+const USAGE = "usage: clover model [<tag>] [--effort <level>] [--confirm]  |  clover model --effort <level>  |  clover model --advisor <tag|auto>";
 
 /**
- * Parses `winter model`'s argv tail (everything after "model" — i.e. `process.argv.slice(3)`).
+ * Parses `clover model`'s argv tail (everything after "model" — i.e. `process.argv.slice(3)`).
  * Forms:
  *   []                          -> show
  *   ["--effort", level]         -> setEffort (effort-only change)
@@ -51,7 +51,7 @@ export function parseModelArgs(args: string[]): ModelCliAction {
 
   // `--confirm` (2026-09-16): the one-shot lossy-handoff confirmation for the ATTACHED session's
   // `session.setModel` (`confirmLossy: true` on that call only, never stored). Accepted anywhere
-  // after the slug; `winter model` (no session) ignores it.
+  // after the slug; `clover model` (no session) ignores it.
   const confirmLossy = args.includes("--confirm");
   const rest = args.slice(1).filter((a) => a !== "--confirm");
   const confirm = confirmLossy ? { confirmLossy: true } : {};
@@ -115,7 +115,7 @@ export function modelDisplayWithHint(tag: string): string {
  *  hand yet still gets the shape/provider-pinned checks; only the model-membership check needs it
  *  (for the BYO-endpoint leniency). Returns an error message, or undefined when the tag is valid. */
 export function validateModelTag(tag: string, settings?: Settings): string | undefined {
-  if (tag === UNSTATED_TAG || tag.startsWith(WINTER_TEST_PREFIX)) {
+  if (tag === UNSTATED_TAG || tag.startsWith(CLOVER_TEST_PREFIX)) {
     return `invalid model "${tag}" — must be a provider-qualified tag "<providerId>/<modelId>"`;
   }
   let providerId: string;
@@ -134,10 +134,10 @@ export function validateModelTag(tag: string, settings?: Settings): string | und
   return undefined;
 }
 
-/** `settings.provider.model` may name ANY catalog provider, and since 2026-09-19 so may Winter's own
+/** `settings.provider.model` may name ANY catalog provider, and since 2026-09-19 so may Clover's own
  *  background jobs — they run on whichever ELIGIBLE provider has a credential
  *  (`internalEligibleProviderIds`, core's settings.ts), independently of this field. So the note is now
- *  only about the ZERO-SETUP case: when the chosen provider is one Winter's jobs cannot be driven over
+ *  only about the ZERO-SETUP case: when the chosen provider is one Clover's jobs cannot be driven over
  *  (a first-party Claude row, or an adapter family the daemon cannot use), those jobs fall back to
  *  another credentialed provider rather than following this model — worth saying once, never a refusal
  *  and never a claim that anything is inert. `undefined` when the provider IS eligible (nothing to say).
@@ -145,7 +145,7 @@ export function validateModelTag(tag: string, settings?: Settings): string | und
 export function internalProviderNote(tag: string): string | undefined {
   const { providerId } = splitTag(tag);
   if (internalEligibleProviderIds().has(providerId)) return undefined;
-  return `note: Winter's own background jobs (titles, the bash safety reviewer, dreaming, the session cleaner) can't run on ${providerId} — they'll use whichever provider you have a usable credential for instead. Your sessions are unaffected.`;
+  return `note: Clover's own background jobs (titles, the bash safety reviewer, dreaming, the session cleaner) can't run on ${providerId} — they'll use whichever provider you have a usable credential for instead. Your sessions are unaffected.`;
 }
 
 /** Validates a reasoning-effort slug against REASONING_EFFORTS (settings.ts — the wire-valid
@@ -156,7 +156,7 @@ export function internalProviderNote(tag: string): string | undefined {
 export function validateEffort(effort: string, tag?: string): string | undefined {
   if (!(REASONING_EFFORTS as readonly string[]).includes(effort)) return `invalid effort "${effort}" — must be one of: ${REASONING_EFFORTS.join(", ")}`;
   // 2026-09-17: the MODEL decides — a row that declares no vocabulary takes no effort; a row that
-  // declares one accepts only its members (plus "none", Winter's unset).
+  // declares one accepts only its members (plus "none", Clover's unset).
   if (tag === undefined) return undefined;
   const row = rowForTag(tag);
   if (row === undefined) return undefined; // unknown to the catalog (BYO): unconstrained
@@ -197,7 +197,7 @@ export interface ModelListingRow {
   supportsImages?: boolean;
 }
 
-/** WS-20: `winter model` (show) / `/model` (headless fallback)'s catalogue listing — grouped by
+/** WS-20: `clover model` (show) / `/model` (headless fallback)'s catalogue listing — grouped by
  *  provider (first-appearance order, matching the daemon's own catalog order), each row marked
  *  `"  * "` when it is the CURRENT tag else `"    "`, labelled by facing name (falling back to the
  *  bare modelId when the row fills no family slot) with the modelId always shown alongside in

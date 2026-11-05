@@ -1,5 +1,5 @@
 {
-  "name": "winter-monorepo",
+  "name": "clover-monorepo",
   "private": true,
   "type": "module",
   "engines": {
@@ -7,7 +7,7 @@
   },
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
-    "protocol:generate": "pnpm --filter @yanlinglabs/winter-protocol generate",
+    "protocol:generate": "pnpm --filter @waifucave/clover-protocol generate",
     "version:sync": "bun run scripts/sync-version.ts",
     "version:bump": "bun run scripts/bump-version.ts",
     "version:bump:feature": "bun run scripts/bump-version.ts --feature",

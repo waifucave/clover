@@ -1,5 +1,5 @@
-// `winter migrate-project` (P9c Task M step 9) — converts ONE project's legacy instructions file /
-// project directory to their Winter-named counterparts. Content is untouched prose EXCEPT the
+// `clover migrate-project` (P9c Task M step 9) — converts ONE project's legacy instructions file /
+// project directory to their Clover-named counterparts. Content is untouched prose EXCEPT the
 // legacy project directory's own `settings.json`, whose string values go through `rekeySettings`
 // (same as the daemon-home migrator). Uses `git mv` when the paths are tracked inside a git work
 // tree (so history/blame survive the rename); a plain `fs.renameSync` otherwise.
@@ -15,8 +15,8 @@ import { localScopeKeyFor } from "../runtime-sdk/run-home-input";
 import { homeFenceFor } from "../runtime-sdk/home-fence";
 import { homeFenceTarget } from "../runtime-sdk/control-plane";
 
-export const WINTER_INSTRUCTIONS_FILE = "WINTER.md";
-export const WINTER_PROJECT_DIR = ".winter";
+export const CLOVER_INSTRUCTIONS_FILE = "CLOVER.md";
+export const CLOVER_PROJECT_DIR = ".clover";
 
 export class ProjectMigrationRefused extends Error {
   constructor(
@@ -30,14 +30,14 @@ export class ProjectMigrationRefused extends Error {
 
 export interface ProjectMigrationStep {
   /** WS-21 (spec §8, "repos are never touched automatically"): `mcp` moves the repo-root `.mcp.json` to
-   *  `.winter/mcp.json` (the only project MCP file read now); `approved-rules` writes the daemon's old
+   *  `.clover/mcp.json` (the only project MCP file read now); `approved-rules` writes the daemon's old
    *  "Allow … in this project" record for this project, and `local-rules` the legacy
-   *  `.winter/permissions.local.json`, into `.winter/settings.local.json` in claude's grammar. */
+   *  `.clover/permissions.local.json`, into `.clover/settings.local.json` in claude's grammar. */
   kind: "instructions" | "dir" | "mcp" | "approved-rules" | "local-rules";
   from: string;
   to: string;
   method: "git-mv" | "rename" | "merge";
-  /** `approved-rules` / `local-rules`: the Winter-grammar rules merged. */
+  /** `approved-rules` / `local-rules`: the Clover-grammar rules merged. */
   rules?: string[];
 }
 
@@ -45,10 +45,10 @@ export interface ProjectMigrationPlan {
   dir: string;
   gitTracked: boolean;
   steps: ProjectMigrationStep[];
-  /** The Winter home whose approved-rules record was read (the `approved-rules` step needs it to refuse
+  /** The Clover home whose approved-rules record was read (the `approved-rules` step needs it to refuse
    *  saving into the home itself). */
-  winterHome?: string;
-  /** Where `.winter/settings.local.json` lives: the canonical git root (F17), else the project root. */
+  cloverHome?: string;
+  /** Where `.clover/settings.local.json` lives: the canonical git root (F17), else the project root. */
   rulesRoot?: string;
   /** Preview of what the legacy project dir's `settings.json` string values would rewrite to — computed even when
    *  `steps` is empty for neither file/dir, so `--status`-style tooling can show it independent of
@@ -75,63 +75,63 @@ function isGitTracked(dir: string, relPath: string): boolean {
 }
 
 /** Plans (never mutates disk) converting `dir`'s legacy instructions file / project directory to
- *  their Winter-named counterparts. Throws `ProjectMigrationRefused("both_exist")` the moment
+ *  their Clover-named counterparts. Throws `ProjectMigrationRefused("both_exist")` the moment
  *  either pair has BOTH names present — resolving that is the operator's call, never automatic. */
 /** The daemon's old approved-rules record for `projectRoot` — the live `<home>/permissions` record, or
  *  (after Migration C archived it) the newest archived copy. Read through `ApprovedProjectRules`, so a
  *  linked record reads as nothing. */
-function approvedRulesFor(winterHome: string, projectRoot: string): { rules: string[]; file: string } | undefined {
-  const live = new ApprovedProjectRules({ winterHome, log: () => {} });
+function approvedRulesFor(cloverHome: string, projectRoot: string): { rules: string[]; file: string } | undefined {
+  const live = new ApprovedProjectRules({ cloverHome, log: () => {} });
   const liveRules = live.rulesFor(projectRoot);
   if (liveRules.length > 0) return { rules: liveRules, file: live.file() };
   let archives: string[] = [];
   try {
-    archives = readdirSync(join(winterHome, "migration"))
+    archives = readdirSync(join(cloverHome, "migration"))
       .filter((n) => n.startsWith("c-")).sort().reverse()
-      .map((n) => join(winterHome, "migration", n, "archive"));
+      .map((n) => join(cloverHome, "migration", n, "archive"));
   } catch { archives = []; }
   for (const archiveHome of archives) {
     if (!existsSync(join(archiveHome, "permissions", "projects.json"))) continue;
-    const archived = new ApprovedProjectRules({ winterHome: archiveHome, log: () => {} });
+    const archived = new ApprovedProjectRules({ cloverHome: archiveHome, log: () => {} });
     const rules = archived.rulesFor(projectRoot);
     if (rules.length > 0) return { rules, file: archived.file() };
   }
   return undefined;
 }
 
-/** `.winter/permissions.local.json`'s `allow`, read without following a link; `[]` for anything else. */
+/** `.clover/permissions.local.json`'s `allow`, read without following a link; `[]` for anything else. */
 function localRulesFile(root: string): string[] {
-  const path = join(root, WINTER_PROJECT_DIR, "permissions.local.json");
+  const path = join(root, CLOVER_PROJECT_DIR, "permissions.local.json");
   try {
-    if (lstatSync(join(root, WINTER_PROJECT_DIR)).isSymbolicLink() || lstatSync(path).isSymbolicLink()) return [];
+    if (lstatSync(join(root, CLOVER_PROJECT_DIR)).isSymbolicLink() || lstatSync(path).isSymbolicLink()) return [];
     const raw = JSON.parse(readFileSync(path, "utf8")) as { allow?: unknown };
     return Array.isArray(raw.allow) ? raw.allow.filter((r): r is string => typeof r === "string") : [];
   } catch { return []; }
 }
 
-export function planProjectMigration(dir: string, opts: { winterHome?: string } = {}): ProjectMigrationPlan {
-  assertProjectContent(dir, opts.winterHome);
+export function planProjectMigration(dir: string, opts: { cloverHome?: string } = {}): ProjectMigrationPlan {
+  assertProjectContent(dir, opts.cloverHome);
   const legacyInstructions = join(dir, LEGACY_INSTRUCTIONS_FILE);
-  const winterInstructions = join(dir, WINTER_INSTRUCTIONS_FILE);
+  const cloverInstructions = join(dir, CLOVER_INSTRUCTIONS_FILE);
   const legacyDir = join(dir, LEGACY_PROJECT_DIR);
-  const winterDir = join(dir, WINTER_PROJECT_DIR);
+  const cloverDir = join(dir, CLOVER_PROJECT_DIR);
   const gitTracked = isGitWorkTree(dir);
   const steps: ProjectMigrationStep[] = [];
 
   if (existsSync(legacyInstructions)) {
-    if (existsSync(winterInstructions)) {
-      throw new ProjectMigrationRefused("both_exist", `both ${LEGACY_INSTRUCTIONS_FILE} and ${WINTER_INSTRUCTIONS_FILE} exist in ${dir} — resolve manually, then re-run`);
+    if (existsSync(cloverInstructions)) {
+      throw new ProjectMigrationRefused("both_exist", `both ${LEGACY_INSTRUCTIONS_FILE} and ${CLOVER_INSTRUCTIONS_FILE} exist in ${dir} — resolve manually, then re-run`);
     }
     const tracked = gitTracked && isGitTracked(dir, LEGACY_INSTRUCTIONS_FILE);
-    steps.push({ kind: "instructions", from: legacyInstructions, to: winterInstructions, method: tracked ? "git-mv" : "rename" });
+    steps.push({ kind: "instructions", from: legacyInstructions, to: cloverInstructions, method: tracked ? "git-mv" : "rename" });
   }
 
   if (existsSync(legacyDir)) {
-    if (existsSync(winterDir)) {
-      throw new ProjectMigrationRefused("both_exist", `both ${LEGACY_PROJECT_DIR} and ${WINTER_PROJECT_DIR} exist in ${dir} — resolve manually, then re-run`);
+    if (existsSync(cloverDir)) {
+      throw new ProjectMigrationRefused("both_exist", `both ${LEGACY_PROJECT_DIR} and ${CLOVER_PROJECT_DIR} exist in ${dir} — resolve manually, then re-run`);
     }
     const tracked = gitTracked && isGitTracked(dir, LEGACY_PROJECT_DIR);
-    steps.push({ kind: "dir", from: legacyDir, to: winterDir, method: tracked ? "git-mv" : "rename" });
+    steps.push({ kind: "dir", from: legacyDir, to: cloverDir, method: tracked ? "git-mv" : "rename" });
   }
 
   let settingsChanges: RekeyChange[] = [];
@@ -146,37 +146,37 @@ export function planProjectMigration(dir: string, opts: { winterHome?: string } 
     }
   }
 
-  // WS-21: the repo-root `.mcp.json` → `.winter/mcp.json` (claude's `.mcp.json` format, unchanged).
+  // WS-21: the repo-root `.mcp.json` → `.clover/mcp.json` (claude's `.mcp.json` format, unchanged).
   const rootMcp = join(dir, ".mcp.json");
-  const winterMcp = join(winterDir, "mcp.json");
+  const cloverMcp = join(cloverDir, "mcp.json");
   if (existsSync(rootMcp)) {
-    if (existsSync(winterMcp) || existsSync(join(legacyDir, "mcp.json"))) {
-      throw new ProjectMigrationRefused("both_exist", `both .mcp.json and ${WINTER_PROJECT_DIR}/mcp.json exist in ${dir} — resolve manually, then re-run`);
+    if (existsSync(cloverMcp) || existsSync(join(legacyDir, "mcp.json"))) {
+      throw new ProjectMigrationRefused("both_exist", `both .mcp.json and ${CLOVER_PROJECT_DIR}/mcp.json exist in ${dir} — resolve manually, then re-run`);
     }
     const tracked = gitTracked && isGitTracked(dir, ".mcp.json");
-    steps.push({ kind: "mcp", from: rootMcp, to: winterMcp, method: tracked ? "git-mv" : "rename" });
+    steps.push({ kind: "mcp", from: rootMcp, to: cloverMcp, method: tracked ? "git-mv" : "rename" });
   }
 
   // WS-21 (spec §4.3): saved "in this project" answers into the tier the runtimes read.
   const rulesRoot = localScopeKeyFor(dir); // review I5: the local tier's one key
-  const settingsLocal = join(rulesRoot, WINTER_PROJECT_DIR, "settings.local.json");
-  if (opts.winterHome !== undefined) {
-    const approved = approvedRulesFor(opts.winterHome, repoRootFor(dir));
+  const settingsLocal = join(rulesRoot, CLOVER_PROJECT_DIR, "settings.local.json");
+  if (opts.cloverHome !== undefined) {
+    const approved = approvedRulesFor(opts.cloverHome, repoRootFor(dir));
     if (approved !== undefined) steps.push({ kind: "approved-rules", from: approved.file, to: settingsLocal, method: "merge", rules: approved.rules });
   }
   const local = localRulesFile(rulesRoot);
-  if (local.length > 0) steps.push({ kind: "local-rules", from: join(rulesRoot, WINTER_PROJECT_DIR, "permissions.local.json"), to: settingsLocal, method: "merge", rules: local });
+  if (local.length > 0) steps.push({ kind: "local-rules", from: join(rulesRoot, CLOVER_PROJECT_DIR, "permissions.local.json"), to: settingsLocal, method: "merge", rules: local });
 
-  return { dir, gitTracked, steps, settingsChanges, rulesRoot, ...(opts.winterHome === undefined ? {} : { winterHome: opts.winterHome }) };
+  return { dir, gitTracked, steps, settingsChanges, rulesRoot, ...(opts.cloverHome === undefined ? {} : { cloverHome: opts.cloverHome }) };
 }
 
 /** Executes a plan from `planProjectMigration`. Throws `ProjectMigrationRefused("nothing_to_migrate")`
  *  for an empty plan (nothing here to convert) rather than silently succeeding. */
 export function runProjectMigration(plan: ProjectMigrationPlan): { skippedRules: string[] } {
-  assertProjectContent(plan.dir, plan.winterHome);
+  assertProjectContent(plan.dir, plan.cloverHome);
   for (const step of plan.steps) {
-    assertProjectContent(step.from, plan.winterHome);
-    assertProjectContent(step.to, plan.winterHome);
+    assertProjectContent(step.from, plan.cloverHome);
+    assertProjectContent(step.to, plan.cloverHome);
   }
   const skippedRules: string[] = [];
   if (plan.steps.length === 0) {
@@ -189,7 +189,7 @@ export function runProjectMigration(plan: ProjectMigrationPlan): { skippedRules:
       // own project is the trust.
       for (const rule of step.rules ?? []) {
         try {
-          saveAnswerInProject({ root: plan.rulesRoot ?? plan.dir, winterHome: plan.winterHome ?? "/nonexistent-winter-home", trusted: true }, rule);
+          saveAnswerInProject({ root: plan.rulesRoot ?? plan.dir, cloverHome: plan.cloverHome ?? "/nonexistent-clover-home", trusted: true }, rule);
         } catch (err) {
           if (!(err instanceof SavedAnswerRefused)) throw err;
           skippedRules.push(rule); // no claude spelling that is not wider — reported, never widened
@@ -197,15 +197,15 @@ export function runProjectMigration(plan: ProjectMigrationPlan): { skippedRules:
       }
       continue;
     }
-    if (step.kind === "mcp") mkdirSync(join(plan.dir, WINTER_PROJECT_DIR), { recursive: true });
+    if (step.kind === "mcp") mkdirSync(join(plan.dir, CLOVER_PROJECT_DIR), { recursive: true });
     if (step.method === "git-mv") execFileSync("git", ["mv", step.from, step.to], { cwd: plan.dir });
     else renameSync(step.from, step.to);
   }
-  const winterSettingsPath = join(plan.dir, WINTER_PROJECT_DIR, "settings.json");
-  if (existsSync(winterSettingsPath)) {
+  const cloverSettingsPath = join(plan.dir, CLOVER_PROJECT_DIR, "settings.json");
+  if (existsSync(cloverSettingsPath)) {
     try {
-      const { out } = rekeySettings(JSON.parse(readFileSync(winterSettingsPath, "utf8")));
-      writeFileSync(winterSettingsPath, `${JSON.stringify(out, null, 2)}\n`);
+      const { out } = rekeySettings(JSON.parse(readFileSync(cloverSettingsPath, "utf8")));
+      writeFileSync(cloverSettingsPath, `${JSON.stringify(out, null, 2)}\n`);
     } catch {
       /* unreadable/unparsable settings.json survives the move verbatim, untouched */
     }
@@ -218,7 +218,7 @@ export function runProjectMigration(plan: ProjectMigrationPlan): { skippedRules:
 function assertProjectContent(path: string, home?: string): void {
   // The CLI supplies its owning home. Library-only previews without one must never probe the user's
   // default/live home; registered coordinator homes still bind via the common fence registry.
-  const full = homeFenceFor(home ?? process.env.WINTER_HOME ?? "/nonexistent-winter-home");
+  const full = homeFenceFor(home ?? process.env.CLOVER_HOME ?? "/nonexistent-clover-home");
   const storage = { dirs: [...(full.coworkRoots ?? []), ...(full.readDirs ?? []), ...(full.coordinationDir ? [full.coordinationDir] : [])], files: [], segments: [],
     coworkRoots: full.coworkRoots, coordinationDir: full.coordinationDir, controlEntries: full.controlEntries, readDirs: full.readDirs };
   if (homeFenceTarget(path, process.cwd(), storage)) throw new ProjectMigrationRefused("control_storage", "migrate-project cannot rename or rewrite Cowork backing storage or host coordination; select explicit project content in its owning filesystem");

@@ -2,12 +2,12 @@
 // Hooks tab): a claude-format plugin's hooks live in TWO possible places:
 //   - `hooks/hooks.json` -- claude's own file, WRAPPED in a top-level `hooks` key:
 //     `{hooks: {<Event>: [{matcher?, hooks: [{type, command?, ...}]}]}}`;
-//   - a plugin manifest's (`.claude-plugin/plugin.json`, or Winter's own manifest dir) OWN inline
+//   - a plugin manifest's (`.claude-plugin/plugin.json`, or Clover's own manifest dir) OWN inline
 //     `hooks` field -- the SAME inner shape, `{<Event>: [{matcher?, hooks: [...]}]}`, already
 //     unwrapped (it's a field ACCESS on the manifest object, not a standalone file with its own
 //     top-level "hooks" key).
-// EITHER can carry hooks, and a claude-format plugin with no `winter-plugin.json` at all still has
-// them -- unlike `plugin.list`'s `extras` (winter-plugin.json-only, absent otherwise), this field is
+// EITHER can carry hooks, and a claude-format plugin with no `clover-plugin.json` at all still has
+// them -- unlike `plugin.list`'s `extras` (clover-plugin.json-only, absent otherwise), this field is
 // read from BOTH sources and reported whenever EITHER has something, per the fix round 2 ruling:
 // "Load both, as claude does."
 //

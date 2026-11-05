@@ -14,7 +14,7 @@ import type { SessionRow } from "../../src/sessions/store";
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); });
 function fixture(legacyHome = false) {
-  const home = mkdtempSync(join(tmpdir(), "winter-project-messaging-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-project-messaging-"));
   if (legacyHome) {
     openRuntimeStateDb(home).close();
     downgradeCoworkRuntimeStateToV7(home);

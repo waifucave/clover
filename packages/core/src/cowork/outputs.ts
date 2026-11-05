@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, fstatSync, readSync, realpathSync, type BigIntStats } from "node:fs";
 import { join } from "node:path";
-import { COWORK_FILE_CHUNK_MAX_BYTES, CoworkOutputPath, type CoworkParams } from "@yanlinglabs/winter-protocol";
+import { COWORK_FILE_CHUNK_MAX_BYTES, CoworkOutputPath, type CoworkParams } from "@waifucave/clover-protocol";
 import { AT_FDCWD, FdError, mkdirAt, openDirAt } from "../computer-use/browser/fd-fs";
 import { CoworkAuthority, type CoworkGrantResolver, type CoworkPrincipal } from "./authority";
 import { type CoworkCommittedSessions, CoworkRepository } from "./repository";

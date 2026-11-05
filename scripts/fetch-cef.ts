@@ -1,7 +1,7 @@
 /**
  * Vendors CEF (Chromium Embedded Framework)'s prebuilt macOS arm64 distribution into
  * apple/Winter/vendor/cef/ (gitignored -- ~332MB uncompressed). Run once after cloning, or
- * whenever CEF_VERSION below is deliberately bumped. `apple/Winter/project.yml`'s Winter target
+ * whenever CEF_VERSION below is deliberately bumped. `apple/Winter/project.yml`'s Clover target
  * carries a preBuildScripts check that fails the Xcode build loudly, naming this exact command,
  * if the vendored tree is missing.
  *
@@ -22,7 +22,7 @@
  * standard adds are `tests/` (cefsimple/cefclient/ceftests sample sources -- read for Task 1's
  * spike/pump research, but Plan B1 explicitly VENDORS the ~100 lines of pump code it needs
  * into WinterCEF rather than depending on `tests/` living on disk) and a second `Debug/`
- * framework copy Winter never ships. Nothing downstream of this script -- the wrapper build,
+ * framework copy Clover never ships. Nothing downstream of this script -- the wrapper build,
  * the ObjC++ bridge, the app's own headers -- touches `tests/`. So minimal is the only artifact
  * this script, or any future contributor, needs: 125MB compressed instead of 284MB.
  *
@@ -91,7 +91,7 @@ const COPY_DIRS = ["Release", "include", "libcef_dll"];
 // being skipped. Both are licence obligations, not conveniences (panel-cef Task 5): CEF and
 // Chromium are BSD-3-Clause, whose binary-redistribution clause requires the copyright notice
 // and disclaimer to travel "with the distribution", so apple/Winter/project.yml copies both of
-// these into Winter.app/Contents/Resources/Licenses/ and scripts/release.ts gates their presence
+// these into Clover.app/Contents/Resources/Licenses/ and scripts/release.ts gates their presence
 // in the built artifact. LICENSE.txt was previously copied best-effort (`if (existsSync(src))`);
 // a silently-skipped licence file is exactly the failure a licence gate must not have, so the
 // copy below now fails closed for every entry here.
@@ -230,7 +230,7 @@ console.log(
 // Download, verify, extract, place. Everything transient lives under one temp dir that is
 // always removed on the way out, success or failure (mirrors apple/WinterKit/vendor/fetch-iroh.sh).
 // ---------------------------------------------------------------------------
-const tmp = mkdtempSync(join(tmpdir(), "winter-cef-"));
+const tmp = mkdtempSync(join(tmpdir(), "clover-cef-"));
 // fail() calls process.exit(), which does NOT unwind the stack -- the `finally` below never
 // runs on that path (release.ts's signAppcastEnclosure documents the same trap). Every fail()
 // called from inside this try must go through here first, or a failure leaks up to ~125MB of
@@ -312,13 +312,13 @@ try {
   }
   for (const f of COPY_FILES) {
     const src = join(distRoot, f);
-    // Fail closed, not best-effort: these are the BSD-3-Clause notices Winter.app must ship
+    // Fail closed, not best-effort: these are the BSD-3-Clause notices Clover.app must ship
     // (see COPY_FILES). A missing one here would otherwise surface as an app-bundle build
     // failure much later, or -- worse, before Task 5 added the downstream gates -- as a
     // silently unattributed release.
     if (!existsSync(src)) {
       failTmp(
-        `extracted ${ARTIFACT_TYPE} distribution is missing "${f}" -- Winter.app is required to\n` +
+        `extracted ${ARTIFACT_TYPE} distribution is missing "${f}" -- Clover.app is required to\n` +
           `ship this notice (BSD-3-Clause binary redistribution). CEF's top-level layout may have\n` +
           `changed upstream; do not work around this by dropping the file from COPY_FILES.`,
       );

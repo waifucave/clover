@@ -4,13 +4,13 @@
 // MANDATORY approval for a `WebFetch` whose target is lexically private — ahead of the permission
 // mode, ahead of allow rules, even under `bypassPermissions` — and hands `canUseTool` nothing to
 // branch on (no `matchedAskRule`, no `blockedPath`, only a free-form `decisionReason` the bridge
-// deliberately does not act on). Winter's gate classifies `web_fetch` as `NETWORK` and answers
+// deliberately does not act on). Clover's gate classifies `web_fetch` as `NETWORK` and answers
 // `allow` under every policy, which is the user's standing "public web reads never nag" posture. The
 // two together answered the SDK's mandatory ask with a SILENT YES:
 //
 //     policy=plan/ask/accept-edits/auto/bypass  ->  {"behavior":"allow"}   events=0
 //
-// so a Winter child reached `192.168.1.1`, `127.0.0.1` and `*.local` with no card, no event and no
+// so a Clover child reached `192.168.1.1`, `127.0.0.1` and `*.local` with no card, no event and no
 // record — on the official leg too, where claude's own per-domain cards land on this same bridge and
 // no `Options.web` (and therefore no `privateAddressPolicy`) is sent at all.
 //
@@ -22,7 +22,7 @@
 // gets one fixed typed deny. Public hosts stay free at the gate, unchanged.
 import { test, expect, describe } from "bun:test";
 import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate, type SessionApprovalPolicy } from "../../src/agent/gate";
@@ -172,7 +172,7 @@ describe("the bridge: a private WebFetch target never resolves silently", () => 
     expect(h.events).toEqual([]);
   });
 
-  // The never-prompting context. On the Winter leg the SDK's own `privateAddressPolicy: "deny"`
+  // The never-prompting context. On the Clover leg the SDK's own `privateAddressPolicy: "deny"`
   // refuses it one layer down; on the OFFICIAL leg this is the only floor, because that leg is
   // sent no `Options.web` at all.
   for (const ctxCase of [
@@ -243,7 +243,7 @@ describe("the private-address card mints no standing rule", () => {
   test("the card offers no rule-bearing option, even when the SDK suggests WebFetch(domain:<host>)", async () => {
     // Per the 0.0.17 changelog an exact-host allow rule is standing consent for that host WHEREVER
     // IT RESOLVES and turns the private-address check off for it permanently — which no card wording
-    // asks for, and which `approval.respond` would also append to `.winter/permissions.local.json`.
+    // asks for, and which `approval.respond` would also append to `.clover/permissions.local.json`.
     const h = harness({ mode: "code", policy: "ask" });
     const p = h.canUse("WebFetch", { url: "http://192.168.1.1/admin", prompt: "what" }, ctx(SDK_SUGGESTION));
     expect(h.events).toHaveLength(1);

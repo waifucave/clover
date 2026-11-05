@@ -1,13 +1,13 @@
 name: 💡 Feature request
-description: Suggest something Winter should be able to do.
+description: Suggest something Clover should be able to do.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Check the [roadmap](https://github.com/yanlingLabs/winter#roadmap) first — a fair bit is
+        Check the [roadmap](https://github.com/waifucave/clover#roadmap) first — a fair bit is
         already planned. If your idea is more of an open question than a request, the
-        [discussions](https://github.com/yanlingLabs/winter/discussions) board is a better home.
+        [discussions](https://github.com/waifucave/clover/discussions) board is a better home.
 
   - type: textarea
     id: problem
@@ -20,14 +20,14 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: What would you like Winter to do?
+      label: What would you like Clover to do?
     validations:
       required: true
 
   - type: dropdown
     id: area
     attributes:
-      label: Which part of Winter?
+      label: Which part of Clover?
       multiple: true
       options:
         - Chat mode

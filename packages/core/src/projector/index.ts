@@ -1,4 +1,4 @@
-import { TRANSIENT_EVENT_TYPES, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { TRANSIENT_EVENT_TYPES, type SessionEvent } from "@waifucave/clover-protocol";
 import {
   MAIN_THREAD, asApiRetryFrame, asAssistantFrame, asInitFrame, asResultFrame, asStreamEventFrame,
   asUserFrame, assistantText, deltaText, hasToolResults, threadIdOf, toolCalls, toolResults, userText, type UserFrame,
@@ -47,7 +47,7 @@ export type {
  * Conversation, terminal and idempotency (Task 10); children, the task graph, error classes and the
  * observed-never-persisted families (Task 11).
  *
- * One projector per live Winter session. It is driven by the host's `for await (const m of query)`
+ * One projector per live Clover session. It is driven by the host's `for await (const m of query)`
  * loop: every wire message goes through `accept`, and whatever comes back is appended (or, for a
  * transient, broadcast) by the caller, in order.
  *
@@ -118,7 +118,7 @@ const HOST_TODO_STATUSES: ReadonlySet<string> = new Set(["pending", "in_progress
 /**
  * `system/init` → how to find this session's own `modelUsage` row (0.0.17, P-B1).
  *
- * `winter_provider` is the Winter runtime's own init EXTENSION (`engine.ts`'s `buildSdkInitMessage`),
+ * `winter_provider` is the Clover runtime's own init EXTENSION (`engine.ts`'s `buildSdkInitMessage`),
  * and its `modelKey` is documented to ALWAYS equal the ledger's row key. It is absent for a session
  * with no resolved provider identity (a `winter-test/*` double) and on the official leg, where
  * `init.model` and the `modelUsage` keys are the same vendor id — so `key` falls back to `init.model`
@@ -215,7 +215,7 @@ class ProjectorImpl implements Projector {
    *  task terminal frame names them (`acceptTaskFrame`). */
   private readonly backgroundChildren = new Set<string>();
   /** Background-task id → child threadId, learned from `system/task_started.tool_use_id` and from a
-   *  Winter async result's `taskId` — the only correlator a `task_updated` patch carries. */
+   *  Clover async result's `taskId` — the only correlator a `task_updated` patch carries. */
   private readonly taskToThread = new Map<string, string>();
   /** `TaskCreate`/`TaskUpdate` calls awaiting their `tool_result`, keyed by the call's `tool_use.id`
    *  — cleared as soon as the result resolves (see `applyTodoResult`). */
@@ -400,10 +400,10 @@ class ProjectorImpl implements Projector {
   }
 
   /**
-   * Only the Winter leg holds a mid-turn push's `turn_started` (C2). The retired official leg's child
+   * Only the Clover leg holds a mid-turn push's `turn_started` (C2). The retired official leg's child
    * was claude, which folds a message that arrives mid-turn INTO the running turn (a `queued_command`
    * attachment at the next tool round — no terminal of its own) WITHOUT telling the host, so a held
-   * announcement there would have been released by a terminal that is not its own. The Winter runtime
+   * announcement there would have been released by a terminal that is not its own. The Clover runtime
    * folds the same way since agent SDK 0.0.44 but SAYS so (`system/host_input_folded`), which is what
    * lets the hold stay exact here (`acceptFold`). A projector built with any other `runtimeKind` keeps
    * the push-time announcement; since WS-23 the driver builds none.
@@ -512,7 +512,7 @@ class ProjectorImpl implements Projector {
       ]);
     }
 
-    // WS-23 review r1 I-3: `system/continuity_warning` -- what the conversation lost, or what Winter did to
+    // WS-23 review r1 I-3: `system/continuity_warning` -- what the conversation lost, or what Clover did to
     // it (a lossy switch, a summary before a switch to a smaller model, reasoning state that could not
     // be saved, a resume-time loss). The user must SEE it: persisted as `continuity_warning` on its
     // thread, keyed by the frame's uuid so a replay appends it once. `detail` is the runtime's own prose
@@ -550,8 +550,8 @@ class ProjectorImpl implements Projector {
       ]);
     }
 
-    // 2026-10-07: a COMPACTION is something Winter did to the conversation, so the user sees it as a
-    // `continuity_warning` -- the variant's own contract ("what Winter did to it"; an open `warning`
+    // 2026-10-07: a COMPACTION is something Clover did to the conversation, so the user sees it as a
+    // `continuity_warning` -- the variant's own contract ("what Clover did to it"; an open `warning`
     // kind a client renders by its `text`, no table), so every client shows it with no protocol change.
     // `compacted` from the runtime's `system/compact_boundary` (a `/compact`, an auto or overflow
     // compaction, a switch's), `compaction_failed` from its `system/status` failure pair. Before this the
@@ -724,7 +724,7 @@ class ProjectorImpl implements Projector {
       const sourceId = `rs:${this.backendSessionId ?? this.winterSessionId}:${turn}`;
       const rounds = this.roundsThisTurn;
       // P8b-30: an UNPRICED catalog row emits no `modelUsage` at all (the measured case for every
-      // `winter-test/*` double, and real for any row Winter cannot price). `turn_completed`'s
+      // `winter-test/*` double, and real for any row Clover cannot price). `turn_completed`'s
       // schema makes `inputTokens`/`outputTokens` REQUIRED and `contextTokens` OPTIONAL, so the
       // required pair reports 0 and the optional field is OMITTED rather than zero-filled — an
       // absent field reads as "not known", a zero reads as "measured, and it was nothing", and
@@ -836,7 +836,7 @@ class ProjectorImpl implements Projector {
    *   task_updated       → a terminal `patch.status` closes the thread its `task_id` maps to
    *   task_progress      → observed only
    *
-   * No `task_type` filter: Winter says `agent` and Claude Code says `local_agent`, and matching on
+   * No `task_type` filter: Clover says `agent` and Claude Code says `local_agent`, and matching on
    * the projector's own child maps already excludes bash/workflow/monitor frames (and a foreground
    * agent's late notification — Claude Code emits one for sync agents too — whose thread closed at
    * its tool_result). The claim key `tc:<threadId>` is stable across a replay, so a second terminal
@@ -1038,16 +1038,16 @@ class ProjectorImpl implements Projector {
    * and the name the transcript records cannot drift apart, which they could while the projector
    * carried its own copy (that private stand-in is deleted).
    */
-  private renameTool(winterName: string): string {
-    const host = hostToolNameFor(winterName);
+  private renameTool(cloverName: string): string {
+    const host = hostToolNameFor(cloverName);
     if (host !== undefined) return host;
-    if (!this.loggedToolNames.has(winterName)) {
-      this.loggedToolNames.add(winterName);
-      this.deps.log.debug?.("[projector] no host name for a Winter tool — passing it through", {
-        sessionId: this.deps.sessionId, tool: winterName,
+    if (!this.loggedToolNames.has(cloverName)) {
+      this.loggedToolNames.add(cloverName);
+      this.deps.log.debug?.("[projector] no host name for a Clover tool — passing it through", {
+        sessionId: this.deps.sessionId, tool: cloverName,
       });
     }
-    return winterName;
+    return cloverName;
   }
 
   /** Commit the previous message's mark — by now the caller has had its chance to append. */
@@ -1077,7 +1077,7 @@ class ProjectorImpl implements Projector {
   }
 
   /**
-   * Hook rows, `rate_limit_event`, `auth_status`, status/compaction rows and every Winter-only
+   * Hook rows, `rate_limit_event`, `auth_status`, status/compaction rows and every Clover-only
    * extension message (P8b-8, P8b-21): observed, never persisted, and logged through
    * `hooks.ts`'s PER-FAMILY FIELD ALLOWLIST — a type, a subtype and a handful of named scalars.
    * Never `JSON.stringify(msg)`: `system/reasoning_summary` carries a foreign model's reasoning

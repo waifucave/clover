@@ -6,7 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpLoginResult, McpSetClientSecretResult, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpLoginResult, McpSetClientSecretResult, type WritableSocket } from "@waifucave/clover-protocol";
 import { canonicalMcpServerUrl, createMemoryMcpOAuthStore, decodeMcpOAuthClientSecretItem, encodeMcpOAuthClientRecord, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
@@ -79,17 +79,17 @@ describe("the MCP sign-in doors (WS-25)", () => {
   let cleanup: Array<() => void> = [];
   afterEach(() => { for (const f of cleanup.reverse()) f(); cleanup = []; });
 
-  async function boot(opts: { userServers?: Record<string, unknown>; project?: { servers: Record<string, unknown>; trusted: boolean }; loginTtlMs?: number; winter?: unknown } = {}) {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-oauth-")));
+  async function boot(opts: { userServers?: Record<string, unknown>; project?: { servers: Record<string, unknown>; trusted: boolean }; loginTtlMs?: number; clover?: unknown } = {}) {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-oauth-")));
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: opts.userServers ?? {} }));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: opts.userServers ?? {} }));
     const trust = new TrustStore(join(home, "trust.json"));
     let projectDir: string | undefined;
     if (opts.project !== undefined) {
-      projectDir = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-oauth-proj-")));
-      mkdirSync(join(projectDir, ".winter"), { recursive: true });
-      writeFileSync(join(projectDir, ".winter", "mcp.json"), JSON.stringify({ mcpServers: opts.project.servers }));
+      projectDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-oauth-proj-")));
+      mkdirSync(join(projectDir, ".clover"), { recursive: true });
+      writeFileSync(join(projectDir, ".clover", "mcp.json"), JSON.stringify({ mcpServers: opts.project.servers }));
       if (opts.project.trusted) trust.trust(projectDir);
     }
     const oauthStore = createMemoryMcpOAuthStore();
@@ -100,9 +100,9 @@ describe("the MCP sign-in doors (WS-25)", () => {
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, mcp, trust,
+      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, mcp, trust,
       mcpOAuth: { store: oauthStore, ...(opts.loginTtlMs !== undefined ? { loginTtlMs: opts.loginTtlMs } : {}) },
-      ...(opts.winter !== undefined ? { winter: opts.winter as never } : {}),
+      ...(opts.clover !== undefined ? { clover: opts.clover as never } : {}),
     });
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness);
@@ -200,9 +200,9 @@ describe("the MCP sign-in doors (WS-25)", () => {
   test("mcp.setClientSecret: the DERIVED account, bound to the user server's own issuer; never echoed; the sign-in then uses it", async () => {
     const port = freePort();
     const SECRET = "pre-registered-SECRET-value-xyz";
-    const fx = fixture({ dcr: false, preregistered: [{ clientId: "winter-gh", clientSecret: SECRET, redirectUris: [`http://127.0.0.1:${port}/callback`] }] });
+    const fx = fixture({ dcr: false, preregistered: [{ clientId: "clover-gh", clientSecret: SECRET, redirectUris: [`http://127.0.0.1:${port}/callback`] }] });
     const { c, oauthStore } = await boot({
-      userServers: { gh: { type: "http", url: fx.mcpUrl, oauth: { clientId: "winter-gh", clientSecretRef: { kind: "keychain" }, callbackPort: port } } },
+      userServers: { gh: { type: "http", url: fx.mcpUrl, oauth: { clientId: "clover-gh", clientSecretRef: { kind: "keychain" }, callbackPort: port } } },
     });
     const errSpy = spyOn(console, "error");
     try {
@@ -316,11 +316,11 @@ describe("the MCP sign-in doors (WS-25)", () => {
     let releaseIdle!: () => void;
     const idleGate = new Promise<void>((r) => { releaseIdle = r; });
     const sessions: Array<Record<string, unknown>> = [];
-    const winter = { list: () => sessions };
-    const { c, store } = await boot({ userServers: { linear: { type: "http", url: fx.mcpUrl }, unrelated: { type: "http", url: `${fx.origin}/elsewhere` } }, winter });
+    const clover = { list: () => sessions };
+    const { c, store } = await boot({ userServers: { linear: { type: "http", url: fx.mcpUrl }, unrelated: { type: "http", url: `${fx.origin}/elsewhere` } }, clover });
     const idle = store.createSession("u", { cwd: tmpdir() });
     const busy = store.createSession("u", { cwd: tmpdir() });
-    // Each double answers like `WinterSession.mcpServerNamesFor` (its live incarnation's own names, compared
+    // Each double answers like `CloverSession.mcpServerNamesFor` (its live incarnation's own names, compared
     // canonically) -- the busy one names the server differently, so the door must use each session's own name.
     const namesAt = (names: Record<string, string>) => (url: string): string[] =>
       Object.entries(names).filter(([, u]) => canonicalMcpServerUrl(u) === canonicalMcpServerUrl(url)).map(([n]) => n);

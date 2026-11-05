@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { HelperClient } from "../../src/computer-use/helper-client";
@@ -132,7 +132,7 @@ describe("the desktop-switch prompt (policy)", () => {
 
   test("the question names the app, its bundle id and the reason — never more; the act's reason is the daemon's words", () => {
     expect(desktopVisitCardSummary(NOTES, "to read the chart")).toBe(
-      "Switch to Notes's desktop for a moment? Notes (com.apple.Notes) — to read the chart. Winter brings you back right after; with no answer within a minute, it switches.");
+      "Switch to Notes's desktop for a moment? Notes (com.apple.Notes) — to read the chart. Clover brings you back right after; with no answer within a minute, it switches.");
     expect(desktopVisitActReason(NOTES, "click")).toBe("to click in Notes, which it accepts only with its window on screen");
     expect(desktopVisitActReason(NOTES, "type", "Fill in\nthe‮form")).toBe("to type in Notes, which it accepts only with its window on screen (Fill in the form)");
     expect(desktopVisitActReason(NOTES, "type", "x".repeat(400)).length).toBe(200);
@@ -265,9 +265,9 @@ describe("the desktop-switch prompt (policy)", () => {
     expect(cardsOf(chat.events)).toEqual([]);
   });
 
-  test("the floors hold first: Winter itself and the system's authentication surfaces are never visited", async () => {
+  test("the floors hold first: Clover itself and the system's authentication surfaces are never visited", async () => {
     const w = policyWorld();
-    await expect(w.policy.askDesktopVisit(newRunGrants("s1"), { bundleId: "com.winter.app", name: "Winter" }, "r")).rejects.toThrow("Winter never controls itself");
+    await expect(w.policy.askDesktopVisit(newRunGrants("s1"), { bundleId: "com.winter.app", name: "Winter" }, "r")).rejects.toThrow("Clover never controls itself");
     await expect(w.policy.askDesktopVisit(newRunGrants("s1"), { bundleId: "com.apple.SecurityAgent", name: "SecurityAgent" }, "r")).rejects.toThrow("authentication surface");
     expect(cardsOf(w.events)).toEqual([]);
   });
@@ -276,7 +276,7 @@ describe("the desktop-switch prompt (policy)", () => {
 describe("the helper panel adapter (wiring)", () => {
   test("prompt.desktopVisit carries its OWN call id and the card's deadline; closing it cancels only that call", async () => {
     const fake = new FakeHelper();
-    const helper = new HelperClient({ home: mkdtempSync(join(tmpdir(), "winter-cu-panel-")), profile: "dev", launchAllowed: true, transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier });
+    const helper = new HelperClient({ home: mkdtempSync(join(tmpdir(), "clover-cu-panel-")), profile: "dev", launchAllowed: true, transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier });
     const panel = helperDesktopPanel(helper, () => {});
     const shown = panel.show({ promptId: "cu_aaaaaaaaaaaa", sessionId: "s1", app: "Notes", bundleId: "com.apple.Notes", reason: "r", timeoutMs: 60_000, expiresAt: 1_781_270_060_000 });
     while (fake.prompts.length === 0) await new Promise((r) => setTimeout(r, 5));
@@ -299,7 +299,7 @@ describe("the result's words for a closed visit", () => {
   test("one line per visit — its time away and how many actions ran in it; a failed return is a notice; a user who took over is left be", () => {
     expect(visitLine("Safari", { ms: 2_400, actions: 5, returned: true })).toEqual({ line: "moved the user to Safari's desktop for 2.4 s (5 actions) and back" });
     expect(visitLine("Safari", { ms: 420, actions: 1, returned: true })).toEqual({ line: "moved the user to Safari's desktop for 420 ms (1 action) and back" });
-    expect(visitLine("Safari", { ms: 700, actions: 2, returned: false, userMoved: true }).line).toContain("they took over during it, so Winter left them where they went");
+    expect(visitLine("Safari", { ms: 700, actions: 2, returned: false, userMoved: true }).line).toContain("they took over during it, so Clover left them where they went");
     expect(visitLine("Safari", { ms: 2_200, actions: 1, returned: false }).notice).toContain("could NOT bring them back");
   });
 });
@@ -310,7 +310,7 @@ const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
 
 function world(opts: { policy?: SessionApprovalPolicy; facts?: Partial<SessionFacts>; apps?: Record<string, unknown>; promptMs?: number; panel?: boolean; attended?: boolean; answer?: (c: Card, b: ApprovalBroker, fake: FakeHelper) => void } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-cu-desktop-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cu-desktop-"));
   const fake = new FakeHelper();
   const approvals = new ApprovalBroker();
   const events: NewSessionEvent[] = [];
@@ -568,7 +568,7 @@ describe("ComputerV2: the desktop switch end to end", () => {
     };
     const r = await w.run("const notes = await apps.open('Notes')\nawait notes.click(14)\nawait notes.click(15)");
     expect(r.isError).toBe(false);
-    expect(cardsOf(w.events).map((c) => c.onTimeout ?? c.summary.slice(0, 22))).toEqual(["Allow Winter to use No", "allow", "Winter needs to bring "]);
+    expect(cardsOf(w.events).map((c) => c.onTimeout ?? c.summary.slice(0, 22))).toEqual(["Allow Clover to use No", "allow", "Clover needs to bring "]);
     expect(w.fake.calls("target.act").map((a) => [a.desktopVisit, a.allowForeground])).toEqual([[undefined, false], [true, false], [true, false], [true, true]]);
     // Unattended: the rung-4 card is never raised, so that act fails NeedsForeground — the allowance did not widen it.
     const w2 = world({ policy: "ask", attended: false, answer: (c, b) => b.resolve(c.sessionId, c.callId, true, "orb", c.summary.startsWith("Allow") ? "session" : "switch") });
@@ -589,7 +589,7 @@ describe("ComputerV2: the desktop switch end to end", () => {
     const v = openVisits(w.fake, { ms: 2_400, returned: false });
     w.fake.handlers["target.act"] = (p) => { v.enter(p); return { rung: 4, inVisit: true }; };
     const r = await w.run("const notes = await apps.open('Notes')\nawait notes.click(14)");
-    const at = r.content.findIndex((c) => c.type === "text" && c.text.startsWith("Winter moved the user to Notes's desktop and could NOT bring them back"));
+    const at = r.content.findIndex((c) => c.type === "text" && c.text.startsWith("Clover moved the user to Notes's desktop and could NOT bring them back"));
     expect(at).toBeGreaterThanOrEqual(0);
     expect(w.logs.some((l) => l.includes("WARNING desktop visit v1") && l.includes("NOT returned"))).toBe(true);
     await new Promise((res) => setTimeout(res, 20));
@@ -599,7 +599,7 @@ describe("ComputerV2: the desktop switch end to end", () => {
     const mv = openVisits(moved.fake, { ms: 700, returned: false, userMoved: true });
     moved.fake.handlers["target.act"] = (p) => { mv.enter(p); return { rung: 4, inVisit: true }; };
     const r2 = await moved.run("const notes = await apps.open('Notes')\nawait notes.click(14)");
-    expect(text(r2)).toContain("they took over during it, so Winter left them where they went");
+    expect(text(r2)).toContain("they took over during it, so Clover left them where they went");
     expect(text(r2)).not.toContain("could NOT bring them back");
     await new Promise((res) => setTimeout(res, 20));
     // A user left where they went was NOT returned (8e).

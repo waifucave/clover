@@ -1,4 +1,4 @@
-// The managed copy of Winter-shipped skills (`migration/builtin-skills.ts`): one test per seeding rule, the
+// The managed copy of Clover-shipped skills (`migration/builtin-skills.ts`): one test per seeding rule, the
 // failure postures (nothing here ever throws or blocks boot), that the embedded text IS the builtin file, and
 // that the daemon's boot hook runs it (and only on a build whose router applies run homes).
 import { afterEach, describe, expect, test } from "bun:test";
@@ -10,7 +10,7 @@ import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { BUILTIN_SEEDED_SKILLS, builtinSkillsRecordPath, seedBuiltinSkills, seededSkillPath, sha256Hex } from "../../src/migration/builtin-skills";
 import { setRunHomeSupportForTests } from "../../src/runtime-sdk/run-home-support";
 
-const newHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "winter-builtin-skills-")));
+const newHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-builtin-skills-")));
 const V1 = "---\nname: computer-use\ndescription: v1\n---\nversion one\n";
 const V2 = "---\nname: computer-use\ndescription: v2\n---\nversion two\n";
 const skill = (text: string) => [{ name: "computer-use", text }] as const;
@@ -37,7 +37,7 @@ describe("seedBuiltinSkills", () => {
     expect(r.lines).toHaveLength(1);
   });
 
-  test("seeded, the copy untouched and the shipped text changed: a newer Winter updates it and records the new hash", () => {
+  test("seeded, the copy untouched and the shipped text changed: a newer Clover updates it and records the new hash", () => {
     const home = newHome();
     run(home, V1);
     const r = run(home, V2);

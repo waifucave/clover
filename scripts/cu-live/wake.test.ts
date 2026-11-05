@@ -18,7 +18,7 @@ const ctx = (over: Partial<VerifyContext> & { wake?: WakeObservation }): VerifyC
 const WAKE_TEXT = [
   "<computer-wake>",
   "A wake trigger you set has ended.",
-  "- wk_0123456789ab fired at 12:41: the user <screen-data id=\"r9\">clicked button “Submit” in Winter CU Fixture — Fixture Form</screen-data>.",
+  "- wk_0123456789ab fired at 12:41: the user <screen-data id=\"r9\">clicked button “Submit” in Clover CU Fixture — Fixture Form</screen-data>.",
   "</computer-wake>",
 ].join("\n");
 const woke: WakeObservation = { ringWindows: 2, ringGone: true, clicked: true, message: WAKE_TEXT, clientName: "computer-wake", ms: 1_200 };
@@ -36,7 +36,7 @@ describe("the wake group", () => {
     // The user brings the WATCHED window forward, not just the app: the ring is drawn only while it is the front one.
     expect(WAKE_SCENARIOS[0]!.wake).toEqual({ userClicks: "Submit", window: "Fixture Form", withinMs: WAKE_WITHIN_MS });
     expect(WAKE_SCENARIOS[0]!.code).toContain("wakeWhen({ clicked: submit.ref }");
-    // The converse: a REAL click carrying Winter's own mark (never an accessibility press, which sends no mouse event),
+    // The converse: a REAL click carrying Clover's own mark (never an accessibility press, which sends no mouse event),
     // then a cleanup turn that cancels the trigger.
     expect(WAKE_SCENARIOS[1]!.wake).toEqual({ userClicks: "Submit", window: "Fixture Form", stamp: "winter", withinMs: NO_WAKE_MS, cleanup: "await WAKE_CONVERSE.cancel();\nreport({ cancelled: true });" });
     expect(WAKE_SCENARIOS[1]!.code).not.toContain(".click(");
@@ -69,12 +69,12 @@ describe("the wake group", () => {
     expect(failing(wakeFiredChecks(ctx({ isError: true, wake: woke })))).toEqual(["the trigger was armed on Submit"]);
   });
 
-  test("the converse: a click carrying Winter's own mark never wakes the session", () => {
+  test("the converse: a click carrying Clover's own mark never wakes the session", () => {
     const quietWake: WakeObservation = { ringWindows: 2, clicked: true, cleanedUp: true, ringGone: true };
     const quiet = ctx({ wake: quietWake });
     expect(failing(noWakeChecks(quiet))).toEqual([]);
-    expect(failing(noWakeChecks({ ...quiet, wake: { ...quietWake, message: WAKE_TEXT, clientName: "computer-wake" } }))).toEqual(["Winter's own click never woke the session"]);
-    expect(failing(noWakeChecks({ ...quiet, events: [] }))).toEqual(["a real click carrying Winter's own mark reached Submit (the fixture's own log)"]);
+    expect(failing(noWakeChecks({ ...quiet, wake: { ...quietWake, message: WAKE_TEXT, clientName: "computer-wake" } }))).toEqual(["Clover's own click never woke the session"]);
+    expect(failing(noWakeChecks({ ...quiet, events: [] }))).toEqual(["a real click carrying Clover's own mark reached Submit (the fixture's own log)"]);
     expect(failing(noWakeChecks({ ...quiet, wake: { ...quietWake, cleanedUp: false } }))).toEqual(["the trigger was cancelled afterwards, and its ring went with it"]);
     expect(failing(noWakeChecks({ ...quiet, wake: { ...quietWake, ringWindows: 0 } }))).toEqual(["the ring and the pill were drawn while the fixture was in front"]);
   });

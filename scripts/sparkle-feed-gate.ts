@@ -3,7 +3,7 @@
  * update zip with an EPHEMERAL test key (never the production key), writes a local
  * appcast, serves it on localhost:8377, and prints the manual verification steps.
  *
- * Produces test bundles under out/sparkle-gate/ — quit any real Winter.app first.
+ * Produces test bundles under out/sparkle-gate/ — quit any real Clover.app first.
  *
  * Adaptation note (T6): the design brief pinned Sparkle 2.6.0, but Package.resolved (SPM)
  * resolved to 2.9.4 by the time this ran — the CLI dist MUST match the framework the app
@@ -28,7 +28,7 @@ const OUT = join(ROOT, "out", "sparkle-gate");
 const PORT = 8377;
 // Isolated Keychain account for the ephemeral test key — never the production signing
 // account (sub-project D generates that one separately, un-prefixed, for real releases).
-const TEST_KEY_ACCOUNT = "winter-sparkle-gate-test";
+const TEST_KEY_ACCOUNT = "clover-sparkle-gate-test";
 const sh = (cmd: string, cwd = ROOT) => execSync(cmd, { cwd, stdio: "pipe" }).toString();
 
 // 1. Sparkle CLI tools (generate_keys / sign_update) from the official dist archive.
@@ -43,8 +43,8 @@ if (!existsSync(join(TOOLS, "bin", "sign_update"))) {
 // launch's automatic check — the hands-off flow then never fires and the gate false-fails.
 // Delete the schedule + any skipped-version marker; deliberately KEEP SUAutomaticallyUpdate
 // (the automatic-download consent) so the silent path stays enabled.
-sh(`defaults delete com.winter.app SULastCheckTime 2>/dev/null || true`);
-sh(`defaults delete com.winter.app SUSkippedVersion 2>/dev/null || true`);
+sh(`defaults delete com.waifucave.clover SULastCheckTime 2>/dev/null || true`);
+sh(`defaults delete com.waifucave.clover SUSkippedVersion 2>/dev/null || true`);
 
 // 3. Ephemeral test keypair (isolated Keychain account; NOT the production key/account).
 rmSync(OUT, { recursive: true, force: true });
@@ -65,10 +65,10 @@ const vNext = nextVersion(vCur, "--patch");
 sh(`xcodegen generate`, join(ROOT, "apple", "Winter"));
 // COWORK_NATIVE=omit: this is a local update-feed rig, never released; it ships no Cowork native pair (the Embed phase then strips any and writes no pins file).
 sh(
-  `COWORK_NATIVE=omit xcodebuild -project Winter.xcodeproj -scheme Winter -destination 'platform=macOS' -configuration Release -derivedDataPath "${OUT}/dd" build`,
+  `COWORK_NATIVE=omit xcodebuild -project Winter.xcodeproj -scheme Clover -destination 'platform=macOS' -configuration Release -derivedDataPath "${OUT}/dd" build`,
   join(ROOT, "apple", "Winter"),
 );
-const builtApp = join(OUT, "dd", "Build", "Products", "Release", "Winter.app");
+const builtApp = join(OUT, "dd", "Build", "Products", "Release", "Clover.app");
 
 // 4. vCurrent and vNext test bundles: point at the local feed, bake the TEST public key,
 //    bump vNext, then ad-hoc re-sign (plist edits invalidate the signature).
@@ -81,15 +81,15 @@ const patch = (app: string, version: string) => {
   pb(`Set :CFBundleVersion ${version}`);
   sh(`codesign --force --deep --sign - "${app}"`);
 };
-const v1App = join(OUT, "v1", "Winter.app");
-const v2App = join(OUT, "v2", "Winter.app");
+const v1App = join(OUT, "v1", "Clover.app");
+const v2App = join(OUT, "v2", "Clover.app");
 cpSync(builtApp, v1App, { recursive: true });
 cpSync(builtApp, v2App, { recursive: true });
 patch(v1App, vCur);
 patch(v2App, vNext);
 
 // 5. Zip vNext + EdDSA-sign it with the test key.
-const zipName = `Winter-${vNext}.zip`;
+const zipName = `Clover-${vNext}.zip`;
 sh(`ditto -c -k --sequesterRsrc --keepParent "${v2App}" "${join(OUT, zipName)}"`);
 const sig = sh(`"${TOOLS}/bin/sign_update" -f "${keyFile}" "${join(OUT, zipName)}"`).trim();
 // sign_update prints: sparkle:edSignature="..." length="..."
@@ -110,7 +110,7 @@ writeFileSync(
   `<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>Winter (local gate)</title>
+    <title>Clover (local gate)</title>
     <item>
       <title>${vNext}</title>
       <sparkle:version>${vNext}</sparkle:version>
@@ -138,16 +138,16 @@ Sparkle gate rig ready — serving http://localhost:${PORT}/appcast.xml
   vNext    ${vNext}: advertised via the local appcast
 
 MANUAL GATE (also in docs/superpowers/notes/2026-07-15-sparkle-live-gate.md):
- 1. QUIT any real Winter.app (this rig must not fight it).
+ 1. QUIT any real Clover.app (this rig must not fight it).
  2. open "${v1App}" — menu bar appears; silent update check+download begins.
- 3. Make the daemon BUSY (winter CLI: a long-running prompt) before the download settles.
+ 3. Make the daemon BUSY (clover CLI: a long-running prompt) before the download settles.
  4. Watch the menu: "Update ready (${vNext}) — Restart Now" appears; app does NOT relaunch.
     *** THIS IS THE WITNESS-FIRES PROOF *** — it's the real Sparkle runtime invoking our
     shouldPostponeRelaunchForUpdate delegate hook (T4's postpone witness was silently never
     called until a review probe-compile caught it, a46a485; this step is the only
     real-runtime confirmation Sparkle actually calls it, not just that it compiles).
- 5. Let the turn finish → within ~30s Winter relaunches itself as ${vNext}.
- 6. Verify: menu-bar version, and \`winter\` handshake serverVersion == ${vNext} (daemon moved too).
+ 5. Let the turn finish → within ~30s Clover relaunches itself as ${vNext}.
+ 6. Verify: menu-bar version, and \`clover\` handshake serverVersion == ${vNext} (daemon moved too).
  7. Re-run once using the Restart Now override while busy (explicit intent wins).
 Ctrl-C to stop serving.
 `);

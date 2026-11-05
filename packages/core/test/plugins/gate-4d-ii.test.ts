@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import {
   createSupervisedInstance,
   installSampleEcho,
@@ -22,16 +22,16 @@ import {
  * WS-21 changes from the pre-WS-21 shape this test used to pin (spec §5, §5.4):
  *  - install+enable is itself the consent for a plugin's claude-native content — there is no more
  *    `plugin.enable {consent:true}` two-step; `plugin.install` already leaves the plugin ENABLED
- *    (Contract B's own `installPlugin`, `manage.ts`'s header). Only the WINTER EXTRA (the Tier-2
+ *    (Contract B's own `installPlugin`, `manage.ts`'s header). Only the CLOVER EXTRA (the Tier-2
  *    entry process, `permissions.exec`) still needs its own `plugin.setConsent` before
  *    `pluginSpawnEligible` — and so `hotApplyStart` — will ever fire.
  *  - `plugin.disable` no longer strips the consent record: consent is now orthogonal to the
- *    enabled/disabled toggle (a Winter-extra concern, spec §5.4), not fresh-consent-on-disable.
+ *    enabled/disabled toggle (a Clover-extra concern, spec §5.4), not fresh-consent-on-disable.
  *  - `plugin.uninstall` (Contract B's own name) removes the install record + `enabledPlugins` entry
  *    only — it never deletes the directory (a directory marketplace is read in place, F15/§5.2; this
  *    build has no network source to have cloned a copy of in the first place).
  *  - `plugin.list`'s result mirrors Contract B's `PluginListing` field-for-field (no `status`
- *    enrichment — that was a pre-WS-21, Winter-only addition with no room in the new schema); this
+ *    enrichment — that was a pre-WS-21, Clover-only addition with no room in the new schema); this
  *    gate checks hot-spawn/hot-stop directly against `inst.supervisor.status(spec)`, the SAME
  *    `PluginSupervisor` instance the RPC handlers reach through `hotApplyStart`/`hotApplyStop`.
  */
@@ -82,22 +82,22 @@ describe("4d-ii gate: over-the-wire plugin lifecycle (marketplace.add -> install
     "plugin.marketplace.add -> plugin.install (enabled, not yet spawn-eligible) -> plugin.setConsent -> plugin.enable hot-spawns a real child -> plugin.disable hot-stops -> plugin.uninstall clears the record",
     async () => {
       const pluginId = "sample-echo";
-      const home = mkdtempSync(join(tmpdir(), "winter-gate-4d-ii-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate-4d-ii-"));
       writeFileSync(join(home, "settings.json"), JSON.stringify({
         schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" },
       }));
       const socketPath = join(home, "core.sock");
 
       // A fixture plugin dir NOT yet anywhere under `home`'s own installed set: `installSampleEcho`
-      // copies examples/sample-echo into a THROWAWAY staging winterHome (its own registration there
-      // is unused) and rewrites its `@yanlinglabs/winter-plugin-sdk` import to an absolute path — reused here
+      // copies examples/sample-echo into a THROWAWAY staging cloverHome (its own registration there
+      // is unused) and rewrites its `@waifucave/clover-plugin-sdk` import to an absolute path — reused here
       // purely for that copy-and-rewrite. The returned dir IS the one-plugin directory marketplace's
       // own root (`source: "."`, see supervised-fixtures.ts's own header) — `plugin.marketplace.add`
       // below is the ONLY thing that registers it against this test's real `home`.
-      const srcHome = mkdtempSync(join(tmpdir(), "winter-gate-4d-ii-src-"));
+      const srcHome = mkdtempSync(join(tmpdir(), "clover-gate-4d-ii-src-"));
       const marketplaceDir = installSampleEcho(srcHome, pluginId);
 
-      const inst: SupervisedInstance = await createSupervisedInstance({ home, socketPath, plugins: true, wireWinterHome: true });
+      const inst: SupervisedInstance = await createSupervisedInstance({ home, socketPath, plugins: true, wireCloverHome: true });
 
       const tokens = await inst.authority.ensureTokens();
       const harness = await TestClient.connect(socketPath);

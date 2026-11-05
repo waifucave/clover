@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import type { WinterProfile } from "../profile";
+import type { CloverProfile } from "../profile";
 
 export type MigrationEntryStatus = "copied" | "skipped" | "rekeyed" | "rebuilt";
 
@@ -42,7 +42,7 @@ export interface MigrationManifest {
   finishedAt?: string;
   legacyHome: string;
   home: string;
-  profile: WinterProfile;
+  profile: CloverProfile;
   status: "in-progress" | "complete" | "rolled-back";
   entries: MigrationFileEntry[];
   keychain: MigrationKeychainEntry[];

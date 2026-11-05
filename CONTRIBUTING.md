@@ -1,10 +1,10 @@
-# Contributing to Winter
+# Contributing to Clover
 
 Thanks for wanting to help. This document is the practical stuff: how to get a working build, how to
 run the tests, and the handful of rules that will save you a wasted afternoon.
 
-**Before anything nontrivial, [open an issue](https://github.com/yanlingLabs/winter/issues) or start a
-[discussion](https://github.com/yanlingLabs/winter/discussions).** Winter has a lot of load-bearing
+**Before anything nontrivial, [open an issue](https://github.com/waifucave/clover/issues) or start a
+[discussion](https://github.com/waifucave/clover/discussions).** Clover has a lot of load-bearing
 structure that isn't obvious from a diff, and it's much easier to point you at it before you write
 the code than after.
 
@@ -14,7 +14,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 
 - [What you need](#what-you-need)
 - [First build](#first-build)
-- [Running Winter in development](#running-winter-in-development)
+- [Running Clover in development](#running-clover-in-development)
 - [The dev/dist split — read this one](#the-devdist-split--read-this-one)
 - [Tests](#tests)
 - [Changing the protocol](#changing-the-protocol)
@@ -28,8 +28,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 | **macOS 26+**, Apple silicon | The deployment target. There is no legacy compatibility path — see [rules](#rules-that-bite). |
 | **[Bun](https://bun.sh) ≥ 1.3** | The runtime. TypeScript runs directly; there is no build step in dev. |
 | **pnpm** | Orchestrates the workspaces. `bun install` is what you actually run. |
-| **Xcode 26+** | Only if you're touching Swift. |
-| **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** | `brew install xcodegen`. The `.xcodeproj` is generated from `apple/Winter/project.yml`; the pbxproj is not the source of truth. |
+| **Xcode 26+** | Only if you're touching the Swift packages the iPhone app uses (`apple/WinterKit`, `apple/WinterProtocol`). |
 
 TypeScript-only contributions (the daemon, the CLI, tools, providers) need nothing from the Xcode
 column.
@@ -37,35 +36,22 @@ column.
 ## First build
 
 ```sh
-git clone https://github.com/yanlingLabs/winter.git
-cd winter
+git clone https://github.com/waifucave/clover.git
+cd clover
 bun install
 ```
 
-That's the whole TypeScript setup. For the **Mac app**, three large artifacts are fetched rather
-than committed — the Xcode build fails loudly and names the fix command if any is missing, but you
-may as well get them out of the way first:
+That's the whole TypeScript setup. The Swift packages the iPhone app uses fetch one large artifact
+rather than committing it:
 
 ```sh
-bun run cef:fetch                      # Chromium Embedded Framework  (~332 MB, SHA1-pinned)
-bun run monaco:fetch                   # Monaco editor                (~14 MB, sha512-pinned)
 ./apple/WinterKit/vendor/fetch-iroh.sh  # iroh transport xcframework   (~133 MB, checksum-pinned)
 ```
 
-Then generate and build:
+The Mac app under `apple/Winter` is retired: it stays in the repo for reference and is not built.
+Clover's own desktop app comes with the plan's app phase ([docs/clover-plan.md](docs/clover-plan.md)).
 
-```sh
-cd apple/Winter
-xcodegen generate
-xcodebuild -project Winter.xcodeproj -scheme Winter -destination 'platform=macOS' \
-  -derivedDataPath build/DerivedData build
-```
-
-**Always pass an explicit `-derivedDataPath`.** `xcodegen generate` mints a new DerivedData hash each
-time, and without this you will eventually test a days-old binary and lose hours to it. This has
-happened; it is in the repo's scar tissue.
-
-## Running Winter in development
+## Running Clover in development
 
 ```sh
 cd packages/cli
@@ -74,40 +60,43 @@ bun src/main.ts -p "hello"        # one-shot prompt, another terminal
 bun src/main.ts                   # interactive TUI (Code mode)
 ```
 
-Useful CLI surface while developing: `winter status`, `winter ping`, `winter sessions`,
-`winter agents`, `winter watch <sessionId>`, `winter bg list <session>`, `winter plugin list`.
+Useful CLI surface while developing: `clover status`, `clover ping`, `clover sessions`,
+`clover agents`, `clover watch <sessionId>`, `clover bg list <session>`, `clover plugin list`.
 
 ## The dev/dist split — read this one
 
-Winter ships as two separate installs that must never be confused:
+Clover keeps two separate installs that must never be confused:
 
 | | Distribution | Development |
 | --- | --- | --- |
-| App | `Winter.app` | `Winter Dev.app` (Debug build) |
-| Bundle id | `com.winter.app` | `com.winter.app.dev` |
-| Home | `~/.winter` | `~/.winter-dev` |
-| Keychain service | `com.winter.core` | `com.winter.core.dev` |
-| Command | `winter` | `winter-dev` |
+| Bundle id | `com.waifucave.clover` | `com.waifucave.clover.dev` |
+| Home | `~/.clover` | `~/.clover-dev` |
+| Keychain service | `com.waifucave.clover.core` | `com.waifucave.clover.core.dev` |
+| Command | `clover` | `clover-dev` |
 
-**Never launch the distribution app during development.** It's somebody's daily driver, updated by
-Sparkle; a locally-launched copy under the same bundle id is indistinguishable from it in the menu
-bar and defeats the entire split. The same goes for local Release builds — build them, don't run
-them.
+**Never launch a distribution install during development**, and never Winter's: `Winter.app`, with
+its `~/.winter` home and `com.winter.core` Keychain, is somebody's daily driver, updated by Sparkle. A
+locally launched copy under the same bundle id is indistinguishable from it in the menu bar and
+defeats the entire split. The same goes for local Release builds — build them, don't run them.
 
-Two traps worth stating outright:
+Two rules worth stating outright:
 
-1. **Plain `winter` is the distribution CLI.** With a dead socket it *auto-launches the dist app*.
-   Use `winter-dev`, or a temporary `WINTER_HOME` with a manually-spawned daemon:
+1. **Plain `clover` is the distribution CLI** (and plain `winter` is Winter's). With a dead socket
+   it *auto-launches the dist app*.
+   Use `clover-dev` and `bun run dev:daemon` (the signed dev binary on `~/.clover-dev`), or a daemon
+   from the checkout on a throwaway home and a throwaway Keychain service:
 
    ```sh
-   WINTER_HOME=~/.winter-dev WINTER_PROFILE=dev bun src/main.ts daemon run
+   cd packages/cli
+   CLOVER_HOME="$(mktemp -d)" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch bun src/main.ts daemon run
    ```
 
-2. **Debug builds don't embed `winter-core`.** "Winter Dev" cannot spawn its own daemon — start the
-   dev daemon *first* or the orb just shows disconnected.
+   Never run a daemon or the CLI from the checkout under plain `bun` on `~/.clover-dev`: after the
+   dev daemon's one-time `--transition`, the dev Keychain items trust only the signed dev binary,
+   and plain `bun` is prompted for every one.
 
-And: **after any change under `packages/`, restart the daemon, not just the app.** An app-only
-relaunch is a silent no-op for daemon code.
+2. **After any change under `packages/`, restart the daemon**, not just a client. A client-only
+   relaunch is a silent no-op for daemon code.
 
 ## Tests
 
@@ -144,8 +133,7 @@ changing a `SessionEvent` variant or an RPC method touches these, **in order**:
    fails until synced
 6. `apple/WinterKit` — has exhaustive `switch`es over event variants (the `seq`/`sessionId`
    accessors). A new variant breaks compilation **here**, not in WinterProtocol
-7. **Build WinterKit *and* the app** — not just `swift test` in WinterProtocol. That's the only way to
-   catch step 6
+7. **Build WinterKit** — not just `swift test` in WinterProtocol. That's the only way to catch step 6
 
 ### Adding a *field* is more dangerous than adding a variant
 
@@ -170,12 +158,12 @@ never pass either one; a security test pins that.
 
 ## Rules that bite
 
-- **Tests must never touch `~/.winter`.** Always point at a temp `WINTER_HOME`. Never kill or restart
-  a user's live daemon or app.
-- **No setting may ever require a daemon restart.** `~/.winter/settings.json` is watched and
+- **Tests must never touch `~/.clover`, or Winter's `~/.winter`.** Always point at a temp `CLOVER_HOME`.
+  Never kill or restart a user's live daemon or app.
+- **No setting may ever require a daemon restart.** `~/.clover/settings.json` is watched and
   hot-swapped atomically; feature code reads live getters. New settings follow that pattern — this
   is a product promise, not a preference.
-- **Secrets live in the Keychain.** `Bun.secrets`, service `com.winter.core`. Never on disk, never in
+- **Secrets live in the Keychain.** `Bun.secrets`, service `com.waifucave.clover.core`. Never on disk, never in
   a fixture, never in a log line.
 - **Provider `encrypted_content` / `reasoning_item.itemJson` is opaque.** The session JSONL is its
   only sink. Never log it, never write it into a model-readable transcript.
@@ -183,10 +171,11 @@ never pass either one; a security test pins that.
   it only via `bun run version:bump` (patch) / `version:bump:feature` / `version:bump:major` /
   `version:sync`. Never hand-edit a version in a `package.json` or plist.
 - **Minimum OS targets track the latest major Apple OS.** No legacy compatibility shims.
-- **`packages/core/src/providers/codex-config.ts` self-identifies as `originator: "winter"`.** That's
-  a deliberate terms-of-service decision. Don't "fix" it to a first-party value.
-- The Sparkle public key in `apple/Winter/project.yml` is the production key. Its private half exists
-  only in one login Keychain and is committed nowhere.
+- **Codex's `originator` is `"clover"`.** That's a deliberate terms-of-service decision. Don't "fix" it
+  to a first-party value. The value sent is `codexOriginator` in `packages/core/src/runtime-sdk/brand.ts`
+  (every session's brand, and the process-wide identity `runtime-sdk/process-identity.ts` installs).
+- The Sparkle public key in `apple/Winter/project.yml` is Winter's production key, which its live update
+  feed depends on. Its private half exists only in one login Keychain and is committed nowhere.
 
 ## Sending a pull request
 
@@ -194,7 +183,7 @@ never pass either one; a security test pins that.
 - **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) with a
   scope** — the repo's history is `feat(app):`, `fix(editor):`, `docs(brand):`, `perf(app):`,
   `chore(release):`. Match it.
-- **Explain *why* in the body.** Winter's code carries unusually heavy comments explaining why
+- **Explain *why* in the body.** Clover's code carries unusually heavy comments explaining why
   something is the way it is, because the alternative is somebody helpfully undoing it in six
   months. Write your PR description the same way.
 - **Run the tests for what you touched**, and say which ones you ran. If your change crosses the

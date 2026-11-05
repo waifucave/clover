@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpToolsResult, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpToolsResult, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -68,10 +68,10 @@ describe("mcp.tools / mcp.setToolPermission", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(opts: { settings?: Record<string, unknown>; sdkSettings?: Record<string, unknown>; connectorPermissions?: ConnectorPermissionSource } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-mcp-tools-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-mcp-tools-"));
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...opts.settings }));
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf-mcp" } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf-mcp" } } }, null, 2));
     if (opts.sdkSettings) writeFileSync(join(home, "sdk", "settings.json"), JSON.stringify(opts.sdkSettings, null, 2));
     const trust = new TrustStore(join(home, "trust.json"));
     const mcp = new McpManager({
@@ -85,7 +85,7 @@ describe("mcp.tools / mcp.setToolPermission", () => {
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
     const saved: unknown[] = [];
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, mcp, onConnectorPermissionsSaved: (next) => { saved.push(next.mcp?.toolPermissions); }, ...(opts.connectorPermissions ? { connectorPermissions: opts.connectorPermissions } : {}) });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, mcp, onConnectorPermissionsSaved: (next) => { saved.push(next.mcp?.toolPermissions); }, ...(opts.connectorPermissions ? { connectorPermissions: opts.connectorPermissions } : {}) });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "cli");
@@ -153,15 +153,15 @@ describe("mcp.tools / mcp.setToolPermission", () => {
     c.close();
   });
 
-  test("validation: the permission vocabulary, whitespace, Winter's own namespace, resetTools on one action", async () => {
+  test("validation: the permission vocabulary, whitespace, Clover's own namespace, resetTools on one action", async () => {
     const { home, c } = await boot();
     for (const params of [
       { server: "cf", tool: "x", permission: "always" },
       { server: "cf", tool: "x" },
       { server: "c f", tool: "x", permission: "deny" },
       { server: "cf", tool: "", permission: "deny" },
-      { server: "winter", tool: "x", permission: "deny" },
-      { server: "winter__research", tool: "*", permission: "deny" },
+      { server: "clover", tool: "x", permission: "deny" },
+      { server: "clover__research", tool: "*", permission: "deny" },
       { server: "cf", tool: "x", permission: "deny", resetTools: true },
     ]) {
       const r = await c.request(METHODS.mcpSetToolPermission, params);

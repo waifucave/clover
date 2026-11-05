@@ -41,7 +41,7 @@ export const RUNTIME_SWEEP_INTERVAL_MS = 60 * 60_000;
 /**
  * How long teardown waits for queued §16 deletions before it closes the handle anyway.
  *
- * MUST STAY UNDER THE APP'S GRACE PERIOD. `DaemonSupervisor.gracefulExitTimeout` (5.0 s since Winter
+ * MUST STAY UNDER THE APP'S GRACE PERIOD. `DaemonSupervisor.gracefulExitTimeout` (5.0 s since Clover
  * Phase 8d's P8d-6 — the quit runs behind `.terminateLater`, so macOS's own ~5 s window no longer binds;
  * `apple/Winter/Sources/App/DaemonSupervisor.swift`) is how long the app waits after SIGTERM before
  * escalating to SIGKILL — so a drain budgeted above that would be force-killed mid-drain, losing the
@@ -185,7 +185,7 @@ export async function startRuntimeState(deps: DaemonRuntimeStateDeps): Promise<D
     const self = { pid: process.pid, startedAt: processStartedAt(process.pid) };
     const leases = new RuntimeLeases(rs, self);
     const children = new RuntimeChildren(rs);
-    // P8b Task 13 fix r1 (F4): the sink `PersistedWinterChild.resumeContextRef` locates. Held here
+    // P8b Task 13 fix r1 (F4): the sink `PersistedCloverChild.resumeContextRef` locates. Held here
     // so a session deletion removes the child PROMPTS along with the child rows.
     const profiles = new ChildProfiles(home);
     const checkpoints = new ProjectionCheckpoints(rs);
@@ -213,13 +213,13 @@ export async function startRuntimeState(deps: DaemonRuntimeStateDeps): Promise<D
       probe: deps.recovery?.probe,
       tempScanRoot: deps.recovery?.tempScanRoot,
       // Major 1 fix: the SAME ladder `resolveWinterExecutable` (`runtime-sdk/executable.ts`) reads
-      // for `WINTER_RUNTIME_EXECUTABLE` — an explicit dep wins, then the env seam, and only then does
+      // for `CLOVER_RUNTIME_EXECUTABLE` — an explicit dep wins, then the env seam, and only then does
       // `recovery.ts`'s own default (`canonicalTempScanRoot()`/`os.tmpdir()`) apply. The env seam
       // exists so a daemon boot (which has no `recovery:` opts to thread through `startDaemon`) can
       // still be pointed at a throwaway root — the shared test helper (`test/runtime-state/support.ts`'s
       // `withTempHome`) sets it for the test's lifetime, which is what keeps every `startDaemon`-style
       // test from sweeping the developer's real tmpdir.
-      claudeResumeScanRoot: deps.recovery?.claudeResumeScanRoot ?? (process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT?.trim() || undefined),
+      claudeResumeScanRoot: deps.recovery?.claudeResumeScanRoot ?? (process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT?.trim() || undefined),
       ...(deps.recovery?.deferClaudeResumeSweep === true ? { deferClaudeResumeSweep: true } : {}),
       ...(deps.recovery?.listClaudeResumeStaging === undefined ? {} : { listClaudeResumeStaging: deps.recovery.listClaudeResumeStaging }),
     });

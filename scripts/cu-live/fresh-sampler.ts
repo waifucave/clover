@@ -1,4 +1,4 @@
-// The freshness measurement's SAMPLER, run inside `winter-core-live __helper-freshness <socket> <home> <params>`:
+// The freshness measurement's SAMPLER, run inside `clover-core-live __helper-freshness <socket> <home> <params>`:
 // the test daemon identity is the only one a live-test helper answers, so the captures come from this binary over
 // ONE connection, on a fixed schedule. Per tick it asks the helper for a still through its own off-Space path
 // (`test.capture` source `skylight`: SLSHWCaptureWindowListInRect, 0x800) and, while a phase has the stream on,

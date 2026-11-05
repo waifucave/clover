@@ -11,7 +11,7 @@ import type { PanelCommandOutcome } from "../../src/panel/commands";
 import type { PanelTabState } from "../../src/panel/store";
 import { browserCapability } from "../../src/capabilities/browser";
 import { computerCapability } from "../../src/capabilities/computer";
-import { WINTER_CAPABILITY_TOOLS } from "../../src/capabilities/names";
+import { CLOVER_CAPABILITY_TOOLS } from "../../src/capabilities/names";
 import { sessionsCapability } from "../../src/capabilities/sessions";
 import type { ListSessionsDeps } from "../../src/agent/tools/list-sessions";
 import type { CapabilitySession } from "../../src/capabilities/server";
@@ -30,10 +30,10 @@ function browserDeps(): BrowserToolDeps {
 
 describe("capability concurrency lanes", () => {
   test("Computer and Browser each declare their own lane; no other capability tool has one", () => {
-    const withLane = Object.entries(WINTER_CAPABILITY_TOOLS).filter(([, facts]) => "lane" in facts).map(([name, facts]) => [name, (facts as { lane: string }).lane]);
+    const withLane = Object.entries(CLOVER_CAPABILITY_TOOLS).filter(([, facts]) => "lane" in facts).map(([name, facts]) => [name, (facts as { lane: string }).lane]);
     expect(withLane).toEqual([
-      ["mcp__winter__computer__computer", "computer"],
-      ["mcp__winter__browser__browser", "browser"],
+      ["mcp__clover__computer__computer", "computer"],
+      ["mcp__clover__browser__browser", "browser"],
     ]);
     expect(computerCapability(session(), { computerUse: () => undefined }).toolLanes).toEqual({ computer: "computer" });
     expect(browserCapability(session(), { browser: browserDeps() }).toolLanes).toEqual({ browser: "browser" });

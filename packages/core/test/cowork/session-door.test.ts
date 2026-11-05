@@ -6,7 +6,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import type { CoworkScheduleDefinition, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { CoworkScheduleDefinition, SessionEvent } from "@waifucave/clover-protocol";
 import { CoworkAuthority, type CoworkPrincipal } from "../../src/cowork/authority";
 import { CoworkRepository } from "../../src/cowork/repository";
 import { coworkConversationCeiling } from "../../src/cowork/conversation-set";
@@ -36,7 +36,7 @@ const OFFER: CoworkGuestRuntimeOffer = { profile: "host-query-v1", readiness: ["
 const APPROVALS: CoworkApprovalPort = { canUseToolFor: () => { throw new Error("create must not build a bridge"); } };
 
 function world(opts: { ownership?: "standalone" | "project"; production?: boolean; ports?: Partial<Pick<CoworkSessionDoorDeps, "route" | "native" | "offer" | "approvals">>; principal?: (connection: CoworkConnection) => CoworkPrincipal | undefined; schedules?: CoworkScheduleDispatchView; sources?: number; stale?: number } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-d4-")), storeHome = mkdtempSync(join(tmpdir(), "winter-door-d4-store-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-door-d4-")), storeHome = mkdtempSync(join(tmpdir(), "clover-door-d4-store-"));
   const db: RuntimeStateDb = openRuntimeStateDb(home), records = new CoworkRepository(db), store = new SessionStore(storeHome), hub = new SessionHub(store);
   const made = records.create({ principalId: "fixture", requestId: "create" }, { ownership: opts.ownership ?? "project", title: "fixture", defaultPolicy: "ask", ceiling: CEILING, sources: Array.from({ length: opts.sources ?? 1 }, () => FOLDER) });
   const authority = new CoworkAuthority(records, { folder: () => ({ rootIdentity: "root", writable: true, revoked: false }), repository: () => undefined });
@@ -188,7 +188,7 @@ test("a found binding that does not match the request is request_conflict, never
 
 test("the repository's reservation rules, directly: a taken id is never reserved, a deleted workspace reserves nothing, and only a bound session completes or a pending one withdraws", () => {
   // A Project id the session store already holds is skipped for the next one the minter gives.
-  const home = mkdtempSync(join(tmpdir(), "winter-door-d4-repo-")), db = openRuntimeStateDb(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-d4-repo-")), db = openRuntimeStateDb(home);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   const ids = ["s_aaaaaaaaaaaa", "s_bbbbbbbbbbbb", "s_cccccccccccc"];
   const records = new CoworkRepository(db, undefined, undefined, () => ids.shift()!);
@@ -423,7 +423,7 @@ test("migration 19: the reservation table is Cowork authority with its constrain
 });
 
 test("migration 19 downgrades: an empty table rolls back with the rest; one reservation refuses both and survives", () => {
-  const empty = mkdtempSync(join(tmpdir(), "winter-door-d4-v19-")), populated = mkdtempSync(join(tmpdir(), "winter-door-d4-v19-"));
+  const empty = mkdtempSync(join(tmpdir(), "clover-door-d4-v19-")), populated = mkdtempSync(join(tmpdir(), "clover-door-d4-v19-"));
   cleanups.push(() => { rmSync(empty, { recursive: true, force: true }); rmSync(populated, { recursive: true, force: true }); });
   openRuntimeStateDb(empty).close();
   expect(downgradeCoworkRuntimeStateToV7(empty)).toEqual({ from: 21, to: 7 });

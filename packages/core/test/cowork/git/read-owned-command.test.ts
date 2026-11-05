@@ -9,7 +9,7 @@ import { OwnedGitReadCommandRunner } from "../../../src/cowork/git/read-owned-co
 import { parserFixtureCommand } from "./read-parser-fixture";
 const homes: string[] = [];
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
-function home() { const value = mkdtempSync(join(tmpdir(), "winter-git-owned-command-")); homes.push(value); return value; }
+function home() { const value = mkdtempSync(join(tmpdir(), "clover-git-owned-command-")); homes.push(value); return value; }
 const limits = { capacity: 1, wallMs: 100, outputBytes: 64, drainMs: 500 };
 function command(root: string, source: string) { return { file: process.execPath, args: ["--no-env-file", "-e", source], cwd: root, env: { PATH: "/usr/bin:/bin", HOME: root } }; }
 function kernelDead(child: ChildProcess) { expect(child.pid).toBeGreaterThan(0); expect(() => process.kill(child.pid!, 0)).toThrow(); }

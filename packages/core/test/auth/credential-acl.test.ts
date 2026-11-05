@@ -1,6 +1,6 @@
 // WS-27: the credential ACL migration (`auth/credential-acl.ts`) and the attributes-only enumeration under
 // it — against a THROWAWAY keychain FILE only (`security create-keychain` in a temp dir, deleted after),
-// never the login keychain, never `com.winter.core*`. Every item is created by this test process; an "old
+// never the login keychain, never `com.waifucave.clover.core*`. Every item is created by this test process; an "old
 // Always Allow grant" is simulated by creating the item with Calculator in its decrypt entry too. ACLs are
 // inspected with `security dump-keychain -a`, which prints access lists without decrypting anything.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -171,7 +171,7 @@ describe.skipIf(!darwin)("the credential ACL migration (throwaway keychain file)
     expect(JSON.parse(readFileSync(credentialAclMarkerPath(home), "utf8"))).toMatchObject({ v: 2, service: SERVICE, requirement: SELF, migrated: CREDENTIALS.length, skipped: 0 });
     expect(logs.join("\n")).not.toContain("v-");
     expect(migrate(keychainWith(), home)).toEqual({ kind: "current" });
-    // Another service's marker is not this one's; nor is another binary's (a differently signed winter-core).
+    // Another service's marker is not this one's; nor is another binary's (a differently signed clover-core).
     expect(migrateCredentialAcl({ ...keychainWith(), service: OTHER_SERVICE }, undefined, home, SELF)).toMatchObject({ kind: "failed", reason: "no access list" });
     expect(migrate(keychainWith(), home, "identifier \"someone-else\"")).toMatchObject({ kind: "migrated", names: [...CREDENTIALS].sort() });
     clean();

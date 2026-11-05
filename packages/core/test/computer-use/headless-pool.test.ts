@@ -33,7 +33,7 @@ const pools: HeadlessPool[] = [];
 afterEach(() => { for (const p of pools.splice(0)) p.stop(); });
 
 function rig(o: { mode?: string; verify?: boolean; memory?: number | ((r: Rig, pid: number) => number); idleExitMs?: number; enabledPollMs?: number; missing?: boolean; sendTimeoutMs?: number; closeSettleMs?: number } = {}): Rig {
-  const home = mkdtempSync(join(tmpdir(), "winter-headless-home-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-headless-home-"));
   const log = join(home, "fake.log");
   const metrics: PrimitiveMetric[] = [];
   const logs: string[] = [];
@@ -45,7 +45,7 @@ function rig(o: { mode?: string; verify?: boolean; memory?: number | ((r: Rig, p
   const deps: HeadlessPoolDeps = {
     home,
     enabled: () => enabled.on,
-    resolve: () => (o.missing === true ? { missing: "Winter's headless browser is missing — reinstall Winter" } : { engine: "winter", app: "/fake/Winter Headless.app", executable: "/fake/Winter Headless.app/Contents/MacOS/Winter Headless", requirement: "fake requirement" }),
+    resolve: () => (o.missing === true ? { missing: "Clover's headless browser is missing — reinstall Clover" } : { engine: "winter", app: "/fake/Winter Headless.app", executable: "/fake/Winter Headless.app/Contents/MacOS/Winter Headless", requirement: "fake requirement" }),
     spawn: (_cmd, args) => { r.spawned++; return spawnEngineProcess("/bin/sh", ["-c", 'exec "$0" "$@" 0<&3 1>&4 3<&- 4>&-', process.execPath, FAKE, `--fake-mode=${o.mode ?? "normal"}`, `--fake-log=${log}`, ...args]); },
     verify: () => o.verify ?? true,
     memoryOf: (pid) => (typeof o.memory === "function" ? o.memory(r, pid) : o.memory ?? 100 * 1024 * 1024),
@@ -127,7 +127,7 @@ describe("the headless pool's engine", () => {
     expect(((await failure(r.pool.subscribe(t.tabKey, ["Not.anEvent"]))) as TransportError).code).toBe("not_allowed");
   }, 15_000); // its wait is bounded at 5 s by until: the test's own timeout must sit above it
 
-  test("an engine other than Winter's own is refused", async () => {
+  test("an engine other than Clover's own is refused", async () => {
     const r = rig();
     expect(((await failure(r.pool.createTab({ sessionId: "s1", url: "https://a.example/", engine: "chrome" }))) as TransportError).code).toBe("not_allowed");
     expect(r.spawned).toBe(0);
@@ -237,11 +237,11 @@ describe("the budget (8 per session, 24 in all, 3 GB of memory)", () => {
 });
 
 describe("the checks before anything is sent", () => {
-  test("a process that is not Winter's signed helper is killed and refused", async () => {
+  test("a process that is not Clover's signed helper is killed and refused", async () => {
     const r = rig({ verify: false });
     const e = await failure(r.pool.createTab({ sessionId: "s1", url: "https://a.example/" }));
     expect((e as AutomationFailure).kind).toBe("BrowserUnavailable");
-    expect(e.message).toMatch(/not signed by Winter — reinstall Winter/);
+    expect(e.message).toMatch(/not signed by Clover — reinstall Clover/);
     expect(r.pool.running).toBe(false);
     expect(r.commands().some((c) => c.op === "tab.ensure")).toBe(false);
   });
@@ -249,7 +249,7 @@ describe("the checks before anything is sent", () => {
   test("a helper of another protocol is refused", async () => {
     const r = rig({ mode: "bad-protocol" });
     const e = await failure(r.pool.createTab({ sessionId: "s1", url: "https://a.example/" }));
-    expect(e.message).toMatch(/another version of Winter/);
+    expect(e.message).toMatch(/another version of Clover/);
   });
 
   test("a helper that never says hello is refused in time", async () => {
@@ -262,7 +262,7 @@ describe("the checks before anything is sent", () => {
   test("missing, or turned off: not offered, with its reason, and nothing starts", async () => {
     const missing = rig({ missing: true });
     expect(missing.pool.connected).toBe(false);
-    expect(missing.pool.reason).toBe("Winter's headless browser is missing — reinstall Winter");
+    expect(missing.pool.reason).toBe("Clover's headless browser is missing — reinstall Clover");
     expect(((await failure(missing.pool.createTab({ sessionId: "s1", url: "https://a.example/" }))) as TransportError).code).toBe("disconnected");
     const off = rig();
     off.enabled.on = false;
@@ -396,7 +396,7 @@ describe("the helper's life", () => {
     expect(r.pool.tabCount()).toBe(2);
     await until("the helper told to close it", () => r.commands().some((c) => c.op === "tab.close" && c.params.tabId === stuck.tabKey));
     expect(r.commands().filter((c) => c.op === "tabs.live").length).toBe(1);
-    expect(r.logs.some((l) => l.includes(`a page in Winter's headless browser stopped answering (${HEADLESS_WEDGED_AFTER_TIMEOUTS} commands in a row timed out) — its tab closed (1); the browser itself still answers`))).toBe(true);
+    expect(r.logs.some((l) => l.includes(`a page in Clover's headless browser stopped answering (${HEADLESS_WEDGED_AFTER_TIMEOUTS} commands in a row timed out) — its tab closed (1); the browser itself still answers`))).toBe(true);
     expect(r.logs.some((l) => l.includes("restarting it"))).toBe(false);
     expect(r.metrics.some((m) => m.primitive === "headless.exit")).toBe(false);
   }, 20_000); // its 2 waits are bounded at 5 s each by until: the test's own timeout must sit above them
@@ -436,8 +436,8 @@ describe("the helper's life", () => {
     await Bun.sleep(50);
     const lines = r.logs.filter((l) => l.includes("tried to"));
     expect(lines).toEqual([
-      "computer-use: a page in Winter's headless browser tried to open a window — refused",
-      "computer-use: a page in Winter's headless browser tried to reach the local network — refused before anything was sent",
+      "computer-use: a page in Clover's headless browser tried to open a window — refused",
+      "computer-use: a page in Clover's headless browser tried to reach the local network — refused before anything was sent",
     ]);
     expect(r.pool.localNetworkRefusedAt("w-unknown")).toBeUndefined();
   }, 15_000); // its wait is bounded at 5 s by until: the test's own timeout must sit above it
@@ -469,7 +469,7 @@ describe("the helper's life", () => {
 
 describe("the pipe's process", () => {
   test("the helper's environment carries nothing of the daemon's but PATH, HOME and TMPDIR", () => {
-    expect(headlessHelperEnv({ PATH: "/opt/x", HOME: "/Users/u", TMPDIR: "/tmp/t/", ANTHROPIC_API_KEY: "k", WINTER_HOME: "/h", SSH_AUTH_SOCK: "/s" }))
+    expect(headlessHelperEnv({ PATH: "/opt/x", HOME: "/Users/u", TMPDIR: "/tmp/t/", ANTHROPIC_API_KEY: "k", CLOVER_HOME: "/h", SSH_AUTH_SOCK: "/s" }))
       .toEqual({ PATH: "/usr/bin:/bin", HOME: "/Users/u", TMPDIR: "/tmp/t/" });
     expect(headlessHelperEnv({})).toEqual({ PATH: "/usr/bin:/bin" });
   });
@@ -489,7 +489,7 @@ describe("the pipe's process", () => {
 
 describe("the boot sweep", () => {
   test("kills the helper an earlier daemon left (pid and start time both match) and clears the cache", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-headless-sweep-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-headless-sweep-"));
     mkdirSync(join(home, "run"), { recursive: true });
     mkdirSync(join(headlessCacheRoot(home), "abc"), { recursive: true });
     writeFileSync(headlessPidPath(home), JSON.stringify({ pid: 4242, startSec: 1000 }));
@@ -501,7 +501,7 @@ describe("the boot sweep", () => {
   });
 
   test("a pid reused since (another start time), or gone, is never killed", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-headless-sweep-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-headless-sweep-"));
     mkdirSync(join(home, "run"), { recursive: true });
     writeFileSync(headlessPidPath(home), JSON.stringify({ pid: 4242, startSec: 1000 }));
     const killed: number[] = [];

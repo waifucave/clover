@@ -1,4 +1,4 @@
-// **The web PRIMITIVES.** Winter's URL guard, its HTML→text conversion and its SSRF-guarded redirect
+// **The web PRIMITIVES.** Clover's URL guard, its HTML→text conversion and its SSRF-guarded redirect
 // loop — a library, not a tool surface.
 //
 // It USED to be the home of the `web_fetch`/`web_search` tool definitions as well. Both retired with
@@ -32,7 +32,7 @@ const MAX_REDIRECT_HOPS = 3;
  *
  * THE TOOL THAT READ IT IS GONE (2026-09-18) — `web_search` retired with the ruling above. The name
  * stays because a USER'S STORED KEY DOES NOT RETIRE WITH IT: `runtime-sdk/credentials.ts`'s
- * `web-search` row names this item so `credential.remove` / `winter credentials remove web-search`
+ * `web-search` row names this item so `credential.remove` / `clover credentials remove web-search`
  * can clear it, `auth/legacy-secret-names.ts` carries it through Migration B, and the CLI's
  * deprecated `--web-search-key` branch names it when it tells the user to remove rather than set.
  * Deleting the literal would orphan whatever is in a user's Keychain today with no door to it.
@@ -359,7 +359,7 @@ function rawAuthorityHost(raw: string): string | null {
   return host.normalize("NFKC").replace(/\u3002/g, ".").toLowerCase();
 }
 
-/** Winter's ONLY sanctioned network egress (spec 4g §4.3) — bash stays sandboxed (network denied).
+/** Clover's ONLY sanctioned network egress (spec 4g §4.3) — bash stays sandboxed (network denied).
  *  v1 SSRF posture: literal private/loopback/link-local hosts rejected; DNS-rebinding is out of
  *  scope (documented). Response bytes are DATA, never instructions.
  *
@@ -401,7 +401,7 @@ function rawAuthorityHost(raw: string): string | null {
  * WHY IT IS SEPARATE (2026-09-18, whole-branch review B1/M2): `runtime-sdk/approval-bridge.ts` has to
  * ask exactly this question and act on it — the agent SDK's own mandatory private-address ask arrives
  * at `canUseTool` with no machine-readable signal (no `matchedAskRule`, only a free-form
- * `decisionReason`), and Winter's gate classifies `web_fetch` as `NETWORK` and answers `allow`, so
+ * `decisionReason`), and Clover's gate classifies `web_fetch` as `NETWORK` and answers `allow`, so
  * without a host-side judgement of its own the bridge silently consents to a fetch of
  * `192.168.x.x`/`127.0.0.1`/`*.local` on BOTH legs. It must be the SAME judgement this file already
  * makes — a second range table would drift, and the drift would be silent and in the unsafe
@@ -413,7 +413,7 @@ function rawAuthorityHost(raw: string): string | null {
  * private" must get `undefined` for those, not a refusal it would turn into an approval card.
  *
  * PURELY LEXICAL, and that is the whole contract: no DNS, no sockets, no clock — a name that RESOLVES
- * into private space is not caught here (the Winter runtime's own executor re-checks after resolution;
+ * into private space is not caught here (the Clover runtime's own executor re-checks after resolution;
  * claude's does not — its design, and stated where the bridge acts on this).
  */
 export function privateAddressRefusal(raw: string): { host: string; reason: string } | undefined {
@@ -947,7 +947,7 @@ export function extractTitle(html: string): string {
 /** Reads a Response body up to `capBytes`, cancelling the underlying stream once the cap is hit —
  *  truncation happens DURING collection (never read-then-slice), so a multi-GB response can't OOM
  *  the daemon before the cap applies. Mirrors bash.ts's MAX_CAPTURE streaming-truncation pattern —
- *  Winter's only network egress gets the same discipline bash's output capture already has. */
+ *  Clover's only network egress gets the same discipline bash's output capture already has. */
 async function readCapped(res: Response, capBytes: number): Promise<{ text: string; bytesRead: number }> {
   if (!res.body) {
     const text = await res.text();
@@ -1208,7 +1208,7 @@ export type FollowWithResult =
   | { ok: false; kind: "refused" | "redirects" | "timeout" | "network" | "invalid" | "type" | "encoding"; error: string; url: string; contentType?: string };
 
 /** The page redirected somewhere it may not go — said without echoing the page's own choice of address. */
-const REDIRECT_REFUSED = "the page redirected to an address Winter won't read";
+const REDIRECT_REFUSED = "the page redirected to an address Clover won't read";
 
 /** The compressions the reader inflates itself (`decompress: false`: never the fetch's own, which inflates EAGERLY and
  *  so bounds nothing — a 3 KiB brotli body is gigabytes). */
@@ -1352,7 +1352,7 @@ export async function followRedirectsWith(startUrl: string, opts: FollowWithOpti
     }
     if (encoding !== "" && encoding !== "identity" && !DECODERS.has(encoding)) {
       try { await res.body?.cancel(); } catch { /* already closed */ }
-      return { ok: false, kind: "encoding", error: "the page is compressed in a way Winter doesn't read", url: current };
+      return { ok: false, kind: "encoding", error: "the page is compressed in a way Clover doesn't read", url: current };
     }
     let read: Awaited<ReturnType<typeof readDecodedCapped>>;
     try { read = await readDecodedCapped(res, encoding === "identity" ? "" : encoding, opts.maxBytes, opts.maxDecodedBytes); } catch (e) {

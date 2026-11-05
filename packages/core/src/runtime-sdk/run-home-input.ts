@@ -8,19 +8,23 @@
 //                                  project tier at all for an untrusted project (Q1)
 //   gitRoot                        the canonical `git rev-parse --show-toplevel` (the local tier's
 //                                  anchor, F17), cached per cwd
-//   mcpDisabled                    Winter's own `mcp.disabled` (it stayed in settings.json, §4.1)
-//   reservedMcpServerNames         every daemon capability-server name (`winter__<key>`)
+//   mcpDisabled                    Clover's own `mcp.disabled` (it stayed in settings.json, §4.1)
+//   reservedMcpServerNames         every daemon capability-server name (`clover__<key>`)
 //   memoryDir                      the ONE memory dir for this incarnation (§3.7): a code session's
 //                                  project MEMDIR (the `autoMemoryDirectory` override and the
 //                                  memory-key relocation honoured), the `_assistant` bucket for chat,
 //                                  dispatch and a workdir-less code session — the same rule the
 //                                  assembler's `memoryDirFor` has always applied.
+//   brand                          `CORE_BRAND`: the router spells the folder's names from it and refuses
+//                                  a run home built for a brand other than its own (absent means the
+//                                  SDK's default, which is not this daemon's)
 import { realpathSync } from "node:fs";
 import { sep } from "node:path";
 import type { TrustStore } from "../agent/trust";
 import { assistantMemoryDirFor, memoryDirFor, repoRootFor } from "../agent/memory-dir";
 import { sdkAutoMemory, type Settings } from "../settings";
 import type { RunHomeInput, RunLeg, RunMode } from "@yanlinglabs/winter-runtime-sdk";
+import { CORE_BRAND } from "./brand";
 
 export interface RunHomeInputDeps {
   /** The daemon's home. */
@@ -50,8 +54,8 @@ export interface RunHomeSessionFacts {
 }
 
 export function runHomeInputFor(deps: RunHomeInputDeps, s: RunHomeSessionFacts): RunHomeInput {
-  const projectMemory = deps.memoryDirFor ?? ((cwd: string) => memoryDirFor(cwd, { winterHome: deps.home, directory: sdkAutoMemory(deps.home).directory }));
-  const memoryDir = s.mode === "code" && s.workdirLess !== true ? projectMemory(s.cwd) : assistantMemoryDirFor({ winterHome: deps.home });
+  const projectMemory = deps.memoryDirFor ?? ((cwd: string) => memoryDirFor(cwd, { cloverHome: deps.home, directory: sdkAutoMemory(deps.home).directory }));
+  const memoryDir = s.mode === "code" && s.workdirLess !== true ? projectMemory(s.cwd) : assistantMemoryDirFor({ cloverHome: deps.home });
   return {
     home: deps.home,
     mode: s.mode,
@@ -65,6 +69,7 @@ export function runHomeInputFor(deps: RunHomeInputDeps, s: RunHomeSessionFacts):
     mcpDisabled: [...(deps.settings()?.mcp?.disabled ?? [])],
     reservedMcpServerNames: [...deps.reservedMcpServerNames],
     memoryDir,
+    brand: CORE_BRAND,
   };
 }
 
@@ -104,7 +109,7 @@ export function gitRootFor(cwd: string): string | null {
 // approved-rules record keep their `repoRootFor` keys.
 
 /**
- * Review I5 (controller ruling) — THE key of claude's LOCAL scope for a project: `sdk/.winter.json`'s
+ * Review I5 (controller ruling) — THE key of claude's LOCAL scope for a project: `sdk/.clover.json`'s
  * `projects[<key>]` (MCP servers) and the local settings tier's directory. Exactly what the run home reads:
  * `RunHomeInput.gitRoot` (`gitRootFor`, a linked worktree's OWN realpathed top-level — never `repoRootFor`,
  * which follows a worktree to its main checkout), else the realpathed cwd (the router's `gitRoot ?? cwd`
@@ -119,10 +124,10 @@ export function localScopeKeyFor(cwd: string): string {
 
 /**
  * R.3 I-1 + residual (controller rulings) — THE key of claude's PROJECT scope, `localScopeKeyFor`'s sibling:
- * the root a run home loads the project tier from (its walk's top: `WINTER.md`, rules, skills, commands,
+ * the root a run home loads the project tier from (its walk's top: `CLOVER.md`, rules, skills, commands,
  * output styles, agents, the project settings and MCP list) and where every project-scope reader and writer
- * resolves it (`winter mcp … --scope project` and `mcp.*`, plugin `--scope project`, the daemon's project
- * settings overlay, `.winter/mcp.json` readers, the skills walk) — and so the root every fence that protects
+ * resolves it (`clover mcp … --scope project` and `mcp.*`, plugin `--scope project`, the daemon's project
+ * settings overlay, `.clover/mcp.json` readers, the skills walk) — and so the root every fence that protects
  * what the run home loads uses too (`project-walk.ts`: the two cannot differ). The cwd's OWN git top
  * (`gitRootFor`), accepted only when it CONTAINS the cwd (`repoRootFor`'s own re-review M-b/N3 rule: a forged
  * `.git` file borrows no other project's root); else `repoRootFor(cwd)` (outside git: the cwd itself).

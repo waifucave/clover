@@ -3,17 +3,17 @@
 // bridge (`approval-bridge.ts` (5e)).
 //
 // PROTECTED (§7.2) — instructions the runtimes load into every future session: ANY project's
-// `.winter/{skills,commands,rules,output-styles}/**` at any depth, trusted or not (review C1 — the spec
+// `.clover/{skills,commands,rules,output-styles}/**` at any depth, trusted or not (review C1 — the spec
 // names the trusted project's; a later session loads a subdirectory's, and an untrusted project's once
-// trusted), `sdk/{skills,commands,rules,output-styles}/**` and `sdk/WINTER.md`. A write is a card in code and dispatch under every policy (but `dont-ask`, which declines it) and a typed deny in chat.
+// trusted), `sdk/{skills,commands,rules,output-styles}/**` and `sdk/CLOVER.md`. A write is a card in code and dispatch under every policy (but `dont-ask`, which declines it) and a typed deny in chat.
 // Three layers at once: this hook's `ask`, the router's flag-layer `permissions.ask` rules (the same
 // set, `protectedPathRules`), and the bridge, which never auto-allows one.
 //
 // STORE (§7.1) — `sdk/projects/**` is the runtimes' own transcript store: a tool never writes it,
 // except each project's `memory/` directory, which is the model's MEMDIR.
 //
-// READ (§7.1) — `sdk/.winter.json` (the user's MCP servers, whose stdio `env` may carry a key) and
-// the generated `.winter.json`/`.claude.json`/`.credentials.json` of any run folder or claude staging
+// READ (§7.1) — `sdk/.clover.json` (the user's MCP servers, whose stdio `env` may carry a key) and
+// the generated `.clover.json`/`.claude.json`/`.credentials.json` of any run folder or claude staging
 // root.
 //
 // The sdk tier is anchored at `sdkHomeFor(home)` — `<home>/sdk`, literally the router's `sdkHome` — not
@@ -33,15 +33,15 @@ import { projectWalk } from "./project-walk";
 export { projectWalk };
 
 /** The instructions file the sdk tier protects (the router's `brand.instructionsFile`). A project's own
- *  `<root>/WINTER.md` is deliberately NOT protected — claude treats `CLAUDE.md` as ordinary. */
-export const SDK_INSTRUCTIONS_FILE = "WINTER.md";
+ *  `<root>/CLOVER.md` is deliberately NOT protected — claude treats `CLAUDE.md` as ordinary. */
+export const SDK_INSTRUCTIONS_FILE = "CLOVER.md";
 /** The project dot-dir (the router's `brand.projectDirName`). */
-export const PROJECT_DIR_NAME = ".winter";
+export const PROJECT_DIR_NAME = ".clover";
 
 /**
  * Spec §7.2's protected set in claude's ABSOLUTE rule spelling (`//` + the absolute path; a subtree is
- * `<dir>/**`), in the router's order: the four sdk item dirs, `sdk/WINTER.md`, then — for a trusted
- * project only — the four `.winter/` item dirs of every directory on the project walk from `walk.cwd`
+ * `<dir>/**`), in the router's order: the four sdk item dirs, `sdk/CLOVER.md`, then — for a trusted
+ * project only — the four `.clover/` item dirs of every directory on the project walk from `walk.cwd`
  * (nearest first; L2 fix round 1, I2), or of the root alone when no walk is given. Built with the
  * daemon's own `fsRootAnchored` (ruling 2).
  *
@@ -76,11 +76,11 @@ function targetsOf(rules: readonly string[]): { dirs: string[]; files: string[] 
 
 /**
  * Review C1: every project's protected item directories, as path SEGMENTS matched at ANY depth and
- * regardless of trust — `<anything>/.winter/{skills,commands,rules,output-styles}/…`. The router loads the
- * `.winter/` items of every directory on a LATER session's walk (a subdirectory the model writes into
+ * regardless of trust — `<anything>/.clover/{skills,commands,rules,output-styles}/…`. The router loads the
+ * `.clover/` items of every directory on a LATER session's walk (a subdirectory the model writes into
  * today, a sibling package, a project the user trusts tomorrow), so protecting only this session's walk
  * left an auto-approved write that a later session loads. The same any-depth shape `PROJECT_FENCED_SEGMENTS`
- * gives `.winter/agents`. (`protectedPathsFor` keeps the router's literal set — its ask rules are the
+ * gives `.clover/agents`. (`protectedPathsFor` keeps the router's literal set — its ask rules are the
  * router's to widen.)
  */
 export const PROTECTED_PROJECT_SEGMENTS: readonly string[] = PROTECTED_ITEM_DIRS.map((kind) => `${PROJECT_DIR_NAME}/${kind}/`);
@@ -104,8 +104,8 @@ export type ProtectedWriteDecision = { decision: "ask" } | { decision: "deny"; r
  * reaches the bridge, which raises the card and relays it to its coordinator.
  *
  * Matched case-folded on the raw AND the canonical spelling of both the target and each protected path
- * (a write through a link into `.winter/skills`, or a realpath'd home), like the control-plane fence —
- * and, review C1, any project's `.winter/<kind>/` at any depth whatever `ctx.protected` names.
+ * (a write through a link into `.clover/skills`, or a realpath'd home), like the control-plane fence —
+ * and, review C1, any project's `.clover/<kind>/` at any depth whatever `ctx.protected` names.
  */
 export function protectedWriteDecision(
   toolName: string,
@@ -120,7 +120,7 @@ export function protectedWriteDecision(
 }
 
 export function protectedWriteDeniedMessage(toolName: string, path: string, mode: string): string {
-  return `${toolName} was not run — ${path} is a protected path (skills, commands, rules, output styles and WINTER.md are loaded into every future session), and a write to one needs the user's approval, which a ${mode} session never asks for.`;
+  return `${toolName} was not run — ${path} is a protected path (skills, commands, rules, output styles and CLOVER.md are loaded into every future session), and a write to one needs the user's approval, which a ${mode} session never asks for.`;
 }
 
 /** Every spelling of a directory this module compares against: literal and realpath, lowercased. */
@@ -172,12 +172,12 @@ export function storeWriteDenial(toolName: string, input: unknown, ctx: { home: 
 const READ_CLASS_TOOL_NAMES: ReadonlySet<string> = new Set(["Read", "Glob", "Grep", "read", "glob", "grep"]);
 const READ_PATH_FIELDS = ["file_path", "path", "filePath"] as const;
 /** The generated config files of a run folder or a claude staging root. */
-const RUN_CONFIG_FILES = [".winter.json", ".claude.json", ".credentials.json"] as const;
+const RUN_CONFIG_FILES = [".clover.json", ".claude.json", ".credentials.json"] as const;
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * Spec §7.1's read row, hook half: `sdk/.winter.json`, and `.winter.json`/`.claude.json`/`.credentials.json`
+ * Spec §7.1's read row, hook half: `sdk/.clover.json`, and `.clover.json`/`.claude.json`/`.credentials.json`
  * and (round 6) anything under `backups/` in any run folder (`<home>/cache/runs/<id>/`) or claude staging
  * root (`<tmp>/claude-resume-*`). A Grep ROOTED at a run folder or staging root itself, or at `<home>/sdk`
  * itself, is refused too — it would read them — and so is a Grep or Glob rooted in `backups/`; a search rooted
@@ -203,11 +203,11 @@ export function protectedReadDenial(toolName: string, input: unknown, ctx: { hom
   const isGrep = tool === "grep";
   for (const p of targets) {
     for (const t of targetSpellings(p, ctx.cwd ?? "")) {
-      const denied = sdkHomes.some((s) => t === `${s}/.winter.json`)
+      const denied = sdkHomes.some((s) => t === `${s}/.clover.json`)
         || containers.some((c) => new RegExp(`${c.source}/((${files})$|backups(/|$))`).test(t))
         || (isGrep && (sdkHomes.includes(t) || containers.some((c) => new RegExp(`${c.source}/?$`).test(t))));
       if (denied) {
-        return `${toolName} was not run — ${p} holds a runtime's generated configuration (MCP servers and their environment, account state), which no tool reads. ${basename(p) === ".winter.json" ? "Use `winter mcp list` to see the configured servers." : ""}`.trim();
+        return `${toolName} was not run — ${p} holds a runtime's generated configuration (MCP servers and their environment, account state), which no tool reads. ${basename(p) === ".clover.json" ? "Use `clover mcp list` to see the configured servers." : ""}`.trim();
       }
     }
   }

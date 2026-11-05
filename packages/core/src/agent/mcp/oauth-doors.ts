@@ -187,13 +187,13 @@ export class McpOAuthDoors {
     return entry === undefined ? undefined : { scope, entry };
   }
 
-  /** A TRUSTED project's `.winter/mcp.json` entry (an untrusted project is refused typed, never read). */
+  /** A TRUSTED project's `.clover/mcp.json` entry (an untrusted project is refused typed, never read). */
   private projectEntry(name: string, cwd: string, refuseUntrusted = true): AnyEntry | undefined {
     let dir = cwd;
     try { dir = realpathSync(cwd); } catch { /* a vanished cwd: its spelling */ }
     if (this.deps.trust === undefined || !projectScopeTrusted(dir, this.deps.trust)) {
       if (!refuseUntrusted) return undefined;
-      throw new McpOAuthDoorRefusal("mcp_project_untrusted", `the project at ${dir} is not trusted, so its MCP servers are not read (winter trust)`);
+      throw new McpOAuthDoorRefusal("mcp_project_untrusted", `the project at ${dir} is not trusted, so its MCP servers are not read (clover trust)`);
     }
     const read = readRawProjectMcpConfig(projectScopeRootFor(dir));
     if (read.kind !== "ok") return undefined;
@@ -429,7 +429,7 @@ export class McpOAuthDoors {
       }
     }
     if (user === undefined) {
-      throw new McpOAuthDoorRefusal("mcp_secret_needs_user_scope", `MCP server "${server.name}" comes from the ${server.scope} scope; a client secret is set only for a server in your user scope (winter mcp add -s user …), which decides where the secret may be sent`);
+      throw new McpOAuthDoorRefusal("mcp_secret_needs_user_scope", `MCP server "${server.name}" comes from the ${server.scope} scope; a client secret is set only for a server in your user scope (clover mcp add -s user …), which decides where the secret may be sent`);
     }
     if (user.oauth?.clientId === undefined) {
       throw new McpOAuthDoorRefusal("mcp_not_preregistered", `MCP server "${user.name}" is not configured as a pre-registered client (oauth.clientId), so it has no client secret`);

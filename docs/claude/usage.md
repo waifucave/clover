@@ -1,5 +1,7 @@
 # Usage and cost tracking
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching `packages/core/src/usage/`, the projector's `onTurnUsage`, the `usage.*` RPCs, `settings.usage`, `apple/Winter/Sources/Usage/`, or the island's Usage tab ([island](./island.md)).*
 
 Tokens and cost for every model — cache reads and writes kept apart, because the savings matter — from four sources: **Winter**'s own sessions, the user's own **Codex** (CLI and desktop app), the user's own **Claude Code** and the user's own **OpenCode**; plus the user's **plan windows** for Codex, Claude Code and **Antigravity** (Google's `agy`, successor to the Gemini CLI), and the **subscriptions** they enter. Everything is local: nothing is fetched by Winter from a provider, and no other app's credential is ever read — every other app reports itself through its own installed CLI.

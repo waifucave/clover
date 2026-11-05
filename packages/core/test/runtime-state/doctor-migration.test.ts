@@ -1,4 +1,4 @@
-// Phase 9c (Task M Step 10) — the `winter doctor` migration rows.
+// Phase 9c (Task M Step 10) — the `clover doctor` migration rows.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +9,7 @@ import { runMigrationB, planMigrationB } from "../../src/migration/migrate-b";
 
 const dirs: string[] = [];
 function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-doctor-migration-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-doctor-migration-"));
   dirs.push(d);
   return d;
 }
@@ -96,7 +96,7 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     const lines = formatMigrationDoctorLines(report);
     expect(lines[0]).toContain("complete");
     expect(lines[0]).toContain(legacyHome);
-    expect(lines.some((l) => l.includes("legacy home present"))).toBe(true);
+    expect(lines.some((l) => l.includes("legacy home present") && l.includes("kept as the rollback source"))).toBe(true);
     expect(lines.some((l) => l.includes("legacy keychain items remaining: 1 under com.example.legacy"))).toBe(true);
     expect(lines.join("\n")).not.toContain("sk-super-secret-value");
   });
@@ -123,10 +123,18 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     const reasonLine = lines.find((l) => l.includes("not pristine"));
     expect(reasonLine).toBeDefined();
     expect(reasonLine).toContain(join(home, "sessions", "index.db"));
-    // Advice and refusal must agree (fix wave C2) — the SAME instruction `planMigrationB`/
-    // `winter migrate` print, not the old `winter migrate --from` advice.
-    expect(reasonLine).toContain(`mv ${home} ${home}.bak`);
-    expect(reasonLine).not.toContain("winter migrate --from");
+    // C0 (review S2): no boot migrates, so no advice to restart; the explicit door and its rule instead.
+    expect(reasonLine).not.toContain("restart");
+    expect(reasonLine).toContain(`clover migrate --from ${legacyHome}`);
+    expect(reasonLine).toContain("pristine home");
+  });
+
+  test("C0 (review S2): with no legacy home named, only this home's record is reported — no legacy home looked at, no probe", async () => {
+    const parent = tempDir();
+    const report = await diagnoseMigration({ home: join(parent, "home") });
+    expect(report).toMatchObject({ status: "absent", legacyHomePresent: false, legacyKeychainRemaining: 0 });
+    expect(report.legacyHome).toBeUndefined();
+    expect(formatMigrationDoctorLines(report)).toEqual(["migration: absent"]);
   });
 
   test("review M2: absent + legacy home present + home IS pristine (OS noise only) — no not-pristine row at all", async () => {
@@ -179,7 +187,7 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     expect(report.status).toBe("in-progress");
     const lines = formatMigrationDoctorLines(report);
     expect(lines[0]).toContain("IN PROGRESS");
-    expect(lines[0]).toContain("winter migrate --resume");
-    expect(lines[0]).toContain("winter migrate --rollback");
+    expect(lines[0]).toContain("clover migrate --resume");
+    expect(lines[0]).toContain("clover migrate --rollback");
   });
 });

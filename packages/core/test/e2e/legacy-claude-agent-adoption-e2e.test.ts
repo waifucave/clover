@@ -1,5 +1,5 @@
 // WS-23 (ruling R2), end to end: a session the retired official `claude` leg created — a
-// `claude-agent` runtime record, the `claude` binary's own transcript — resumes on the Winter runtime
+// `claude-agent` runtime record, the `claude` binary's own transcript — resumes on the Clover runtime
 // through the REAL daemon and the REAL `winter` child, and the model is sent the history claude wrote.
 //
 // The bed is planted exactly as an upgrading home would hold it, BEFORE the daemon boots: the session
@@ -12,7 +12,7 @@
 // whose recorded request body is the proof that the prior turns were carried.
 //
 // `session-driver.test.ts`'s own WS-23 block pins the adoption's record rewrite, the re-key and every
-// typed refusal against a fake child; this file is the one proof that the Winter runtime itself reads
+// typed refusal against a fake child; this file is the one proof that the Clover runtime itself reads
 // what claude wrote.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
 import { anthropicFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -80,7 +80,7 @@ const PRIOR_ASSISTANT = "Noted: PAPAYA.";
 const TOOL_USE_ID = "toolu_legacy_ls_1";
 const THINKING_SIGNATURE = "sig-legacy-claude-1";
 
-describeWithWinterBinary("WS-23: a legacy claude-agent session resumes on the Winter runtime with claude's history", (winterBin) => {
+describeWithWinterBinary("WS-23: a legacy claude-agent session resumes on the Clover runtime with claude's history", (winterBin) => {
   let home: string;
   let cwd: string;
   let sessionId: string;
@@ -165,25 +165,25 @@ describeWithWinterBinary("WS-23: a legacy claude-agent session resumes on the Wi
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  test("the next turn runs on the Winter runtime, and the model is sent the turns claude wrote", async () => {
+  test("the next turn runs on the Clover runtime, and the model is sent the turns claude wrote", async () => {
     const d = daemon!;
     if ("unavailable" in d.runtimeState) throw d.runtimeState.unavailable;
-    expect(d.winter.legOf(sessionId)).toBe("official");
+    expect(d.clover.legOf(sessionId)).toBe("official");
 
     await client.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
     await client.call(METHODS.sessionSend, { sessionId, text: "which word did I ask you to remember?" });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sessionId);
 
-    // The record now names the Winter leg, on the SAME backend transcript.
+    // The record now names the Clover leg, on the SAME backend transcript.
     const record = d.runtimeState.records.get(sessionId)!;
     expect(record.runtimeKind).toBe("winter-agent");
     expect(record.selection.runtimeKind).toBe("winter-agent");
     expect(record.backendSessionId).toBe(backendId);
-    expect(d.winter.legOf(sessionId)).toBe("winter");
+    expect(d.clover.legOf(sessionId)).toBe("winter");
 
     // The history reached the model, in order: the user turn, the tool call and its paired result,
     // claude's closing text, then the new question. The signed thinking is replayed natively (same
-    // provider and model family — the Winter Anthropic adapter carries claude's signature through).
+    // provider and model family — the Clover Anthropic adapter carries claude's signature through).
     const bodies = fake.requests.filter((r) => r.path === "/v1/messages").map((r) => r.body);
     expect(bodies.length).toBeGreaterThan(0);
     const body = bodies.at(-1)!;
@@ -203,7 +203,7 @@ describeWithWinterBinary("WS-23: a legacy claude-agent session resumes on the Wi
     expect(transcript.slice(0, 6).map((l) => (JSON.parse(l) as { uuid?: string; type: string }).uuid ?? (JSON.parse(l) as { type: string }).type)).toEqual(["summary", "s-claude-0", "u-claude-1", "a-claude-1", "u-claude-2", "a-claude-2"]);
     expect(transcript.length).toBeGreaterThan(6);
     expect(transcript.slice(6).join("\n")).toContain("which word did I ask you to remember?");
-    // (The Winter runtime's provider-state sidecar, `<id>.provider-state.jsonl`, sits beside it — the
+    // (The Clover runtime's provider-state sidecar, `<id>.provider-state.jsonl`, sits beside it — the
     // same session's, not a second transcript.)
     expect(readdirSync(keyDir).filter((n) => n.endsWith(".jsonl") && !n.endsWith(".provider-state.jsonl"))).toEqual([`${backendId}.jsonl`]);
   }, 90_000);

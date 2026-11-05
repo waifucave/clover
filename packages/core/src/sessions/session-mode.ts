@@ -15,7 +15,7 @@
 // `mode === "chat" ? chat : code` ternary anywhere that a cowork row — or a mode from a newer daemon — can
 // reach and silently become Code.
 // The compile-time pin below makes adding a mode to the protocol a type error here until it is classified.
-import type { SessionMode as WireSessionMode } from "@yanlinglabs/winter-protocol";
+import type { SessionMode as WireSessionMode } from "@waifucave/clover-protocol";
 
 /** The modes a runtime child can be started for today. The one definition every runtime-facing
  *  `SessionMode` alias (`runtime-sdk/create.ts`, `agent/tools/registry.ts`, `projector/types.ts`) is
@@ -38,7 +38,7 @@ export const SESSION_MODES_CLASSIFIED: Equal<WireSessionMode, RunnableSessionMod
 
 /** Session door spine (D1). The modes a session DRIVER may hold: the runnable ones plus `cowork`, whose agent loop runs in
  *  a Linux guest the host only drives (docs/research/2026-10-18-cowork-session-door-design.md section 3). TYPE ONLY, and
- *  deliberately narrow: it is admitted where a session is DRIVEN (the Cowork driver table and, from D3, `WinterSessionDeps.mode`
+ *  deliberately narrow: it is admitted where a session is DRIVEN (the Cowork driver table and, from D3, `CloverSessionDeps.mode`
  *  and the projector's `mode`), NEVER where host `Options`, a prompt, a tool list, a run home or a hook is built — those
  *  keep `RunnableSessionMode`, so `cowork` still cannot reach any of them. No runtime list exists for it on purpose: a
  *  table keyed by every drivable mode would be exactly the place a Cowork entry could fall through to Code. */
@@ -84,7 +84,7 @@ export const COWORK_SESSION_UNSUPPORTED_MESSAGE = "Cowork unavailable";
 export const COWORK_SESSION_UNSUPPORTED_CODE = "unsupported_topology";
 /** The text for a stored mode that is neither runnable nor a name this protocol recognises. Fixed text: the
  *  stored value is never echoed (it can be anything a hand-edited index holds). */
-export const UNKNOWN_SESSION_MODE_UNSUPPORTED_MESSAGE = "This session's mode is not supported by this Winter";
+export const UNKNOWN_SESSION_MODE_UNSUPPORTED_MESSAGE = "This session's mode is not supported by this Clover";
 /** The message for refusing a stored mode that `isUnrunnableStoredMode` flagged. */
 export function unrunnableModeMessage(raw: string | null | undefined): string {
   return isUnrunnableSessionMode(raw) ? COWORK_SESSION_UNSUPPORTED_MESSAGE : UNKNOWN_SESSION_MODE_UNSUPPORTED_MESSAGE;

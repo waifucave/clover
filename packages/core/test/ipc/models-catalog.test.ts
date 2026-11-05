@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, ModelsCatalogResult } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, ModelsCatalogResult } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -65,7 +65,7 @@ describe("models.catalog", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-models-catalog-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-models-catalog-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -73,7 +73,7 @@ describe("models.catalog", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
@@ -142,7 +142,7 @@ describe("models.catalog", () => {
     expect(consoleProvider).toBeDefined();
     expect(consoleProvider.credentialSlotId).toBe("anthropic:console");
     expect(consoleProvider.authKinds).toEqual(["console-profile"]);
-    // …but a slot is NOT a "paste a key" door: the broker fills it from `winter login
+    // …but a slot is NOT a "paste a key" door: the broker fills it from `clover login
     // --anthropic-console`, so a picker offering "add a key" for it would send the user nowhere. The
     // door is decided from `authKinds` BEFORE the slot.
     expect(consoleProvider.credentialDoor).toBe("console-profile");
@@ -261,7 +261,7 @@ describe("models.catalog", () => {
     const result = await c.request(METHODS.modelsCatalog, {});
     const opus = result.result.models.find((m: any) => m.tag === "anthropic/claude-opus-5");
     expect(opus.efforts).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    // `"none"` is Winter's own unset, deliberately absent from the catalog — `sync.config`'s picker
+    // `"none"` is Clover's own unset, deliberately absent from the catalog — `sync.config`'s picker
     // prepends it as a UI convention; this surface carries catalog truth.
     expect(opus.efforts).not.toContain("none");
     // …and `defaultEffort` is independently optional: SDK 0.0.23 gave Opus 5 its documented default

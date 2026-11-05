@@ -1,6 +1,6 @@
 import { protectedHostStorageFences } from "./home-fence";
 import { assertDaemonPathAccess, readDaemonTextFile } from "./daemon-path-fence";
-// Phase 8c Lane 3, Tasks 3.2-3.4 — the Winter-leg `Options.hooks` wiring, gated on the P8c-7
+// Phase 8c Lane 3, Tasks 3.2-3.4 — the Clover-leg `Options.hooks` wiring, gated on the P8c-7
 // measurement (`test/runtime-sdk/hooks-measure.e2e.test.ts`: measured = YES — a real spawned
 // `winter` child round-trips `PreToolUse`/`PostToolUse` callbacks through the wrapper's stdio
 // "hook" control request, and a `PreToolUse` deny genuinely blocks the call). This module is the
@@ -15,11 +15,11 @@ import { assertDaemonPathAccess, readDaemonTextFile } from "./daemon-path-fence"
 //      `firePostTool` ran on both. Every `HookFacade.runFor` call here is wrapped so a throwing
 //      facade (review r1 MAJOR 1) degrades to "no verdict" rather than propagating into the child.
 //   2. The bash-safety reviewer (`agent/reviewer.ts`'s `BashReviewer`) — a `PreToolUse` group
-//      matched on `"Bash"`, gated to Winter's `auto` policy exactly as the retired engine gated it
+//      matched on `"Bash"`, gated to Clover's `auto` policy exactly as the retired engine gated it
 //      (`meta.approvalPolicy === "auto" && reviewerReady`, engine.ts:4547-4548): the reviewer is a
 //      GATE for auto-policy calls, never a second opinion layered under `ask`/`accept-edits`, whose
 //      human card already exists on this leg through the approval bridge.
-//   3. Diagnostics-after-edit (`agent/lsp/auto-diagnostics.ts`, ported to Winter's own tool
+//   3. Diagnostics-after-edit (`agent/lsp/auto-diagnostics.ts`, ported to Clover's own tool
 //      names/shapes at Task 3.2) — a `PostToolUse` group per file-mutating tool that appends the
 //      diagnostics block as `additionalContext`.
 //   4a. The DANGEROUS-DOMAIN FLOOR on the two web built-ins (2026-09-18, user ruling; §5 below) —
@@ -34,7 +34,7 @@ import { assertDaemonPathAccess, readDaemonTextFile } from "./daemon-path-fence"
 //      controller-owned `runtime-sdk/diff-attach.ts` seam (`attachFileDiff`/`takeFileDiff`).
 //
 // **`sessionHooksFor` is called ONCE PER SESSION**, at the same point `mode-options.ts`'s
-// `buildWinterOptions` builds that session's `Options` — mirroring how `WinterOptionsInput` itself
+// `buildCloverOptions` builds that session's `Options` — mirroring how `CloverOptionsInput` itself
 // is a one-shot, per-session builder input, not a daemon-wide facade re-consulted with a
 // `sessionId` parameter the way the retired engine's `cfg.hooks` was. `deps.sessionId`/`cwd`/
 // `roots`/`tmpDir`/`home` are therefore fixed for the life of the session; the settings-derived
@@ -44,10 +44,10 @@ import { assertDaemonPathAccess, readDaemonTextFile } from "./daemon-path-fence"
 // require a daemon restart") takes effect on this session's very next matching call, not just on
 // the next session.
 //
-// **One leg (WS-23).** This builder used to return the same groups twice — `winter` and `official`
+// **One leg (WS-23).** This builder used to return the same groups twice — `clover` and `official`
 // (fix wave M4, ruling P8c-19: the router's official leg merged them after its own containment
-// matchers). With the official `claude` leg retired the return value carries `winter` alone; the
-// `{ winter }` shape is kept so `session-driver.ts`'s `hooksFor(session).winter` wiring does not move.
+// matchers). With the official `claude` leg retired the return value carries `clover` alone; the
+// `{ clover }` shape is kept so `session-driver.ts`'s `hooksFor(session).clover` wiring does not move.
 import { lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
@@ -55,7 +55,7 @@ import type {
   HookCallback, HookCallbackMatcher, HookJSONOutput, Options,
   PostToolUseFailureHookInput, PostToolUseHookInput, PreToolUseHookInput,
 } from "@yanlinglabs/winter-agent-sdk";
-import type { FileDiffSummary } from "@yanlinglabs/winter-protocol";
+import type { FileDiffSummary } from "@waifucave/clover-protocol";
 import { SHIPPED_DANGEROUS_DOMAINS, dangerousHostMatch, dangerousUrlMatch, normalizeDangerousDomain } from "../agent/dangerous-domains";
 import { BashReviewer, ReviewerNoRunnableModel, bashLooksSafe, plainOpenUrls } from "../agent/reviewer";
 import type { SessionApprovalPolicy } from "../agent/gate";
@@ -88,10 +88,10 @@ export interface HookFacadeLike {
 }
 
 export interface SessionHooksDeps {
-  /** Winter's own session id — what a produced `fileDiff` is filed under (`diffs/store.ts`'s
+  /** Clover's own session id — what a produced `fileDiff` is filed under (`diffs/store.ts`'s
    *  `<home>/diffs/<sessionId>/` and `diff-attach.ts`'s pending map). */
   sessionId: string;
-  /** WINTER_HOME. Absent ⇒ the `fileDiff` producer is skipped entirely (mirrors the retired
+  /** CLOVER_HOME. Absent ⇒ the `fileDiff` producer is skipped entirely (mirrors the retired
    *  engine's `diffSink`-absent fast path in `diff-report.ts`'s `withFileDiff`) — there is nowhere
    *  to persist a patch without it. */
   home?: string;
@@ -167,7 +167,7 @@ export interface SessionHooksDeps {
   connectors?: ConnectorPermissionSource;
   /**
    * The capability server KEYS this incarnation built (`approval-bridge.ts`'s `CanUseToolDeps.capabilityKeys`
-   * has the rule): only their `mcp__winter__<key>__*` names are exempt from the connector-permission floor.
+   * has the rule): only their `mcp__clover__<key>__*` names are exempt from the connector-permission floor.
    * Absent: every key counts.
    */
   capabilityKeys?: () => ReadonlySet<string> | undefined;
@@ -220,7 +220,7 @@ function transformInput(next: Record<string, unknown>): HookJSONOutput {
  *  own process, over its RPC) and must never be allowed to kill a hook callback outright — an
  *  uncaught throw here would propagate out of the `HookCallback` itself, which the wrapper's own
  *  `makeHookHandler` turns into a transport-level `hook_threw` failure rather than a clean
- *  allow/deny (`index.js`'s own `console.error("winter: hook callback threw ...")` path) — the
+ *  allow/deny (`index.js`'s own `console.error("clover: hook callback threw ...")` path) — the
  *  WRONG failure mode for what is supposed to be an F2 fail-open observer/gate. Every call site
  *  below wraps its `runFor` in this so a facade crash degrades to "no plugin verdict" instead of
  *  wedging or erroring the tool call. Logs the error NAME only (never a message that could carry a
@@ -256,7 +256,7 @@ function failClosed(name: string, hook: HookCallback): HookCallback {
       return await hook(input, toolUseID, options);
     } catch (err) {
       console.error(`hooks: the ${name} threw (${err instanceof Error ? err.name : typeof err}); denying the call`);
-      return deny(`Denied: Winter's ${name} could not evaluate this call, and it fails closed -- the call was not allowed without its answer.`);
+      return deny(`Denied: Clover's ${name} could not evaluate this call, and it fails closed -- the call was not allowed without its answer.`);
     }
   };
 }
@@ -298,7 +298,7 @@ function pluginPreToolUseHook(deps: SessionHooksDeps): HookCallback {
 }
 
 /** `PostToolUse`, no matcher — observe-only (F2 fail-open: results are never consulted). Skipped
- *  entirely for a call the PreToolUse group already denied — Winter never runs the tool in that
+ *  entirely for a call the PreToolUse group already denied — Clover never runs the tool in that
  *  case, so `PostToolUse` never fires for it either (unlike the retired engine, which had to track
  *  `blockedCallIds` itself because ONE dispatch loop handled both ends; the SDK's own event
  *  ordering makes that bookkeeping unnecessary here). Fires only for a call that COMPLETED — a
@@ -365,12 +365,12 @@ function pluginPostToolUseFailureHook(deps: SessionHooksDeps): HookCallback {
 // every permission mode (agent SDK 0.0.17 `permissions/evaluator.ts` ~1657).
 //
 // Conservative on purpose: a substring match on the control-plane filenames (plus `trust.json`), on
-// any `.winter/agents`, and on every spelling of every fenced home path this file can predict — the
+// any `.clover/agents`, and on every spelling of every fenced home path this file can predict — the
 // literal home (and its realpath), `~`/`$HOME`/`${HOME}` for a home under the user's own,
-// `$WINTER_HOME`/`${WINTER_HOME}`, `<home basename>/…`, and a relative path after a `cd` into the home —
+// `$CLOVER_HOME`/`${CLOVER_HOME}`, `<home basename>/…`, and a relative path after a `cd` into the home —
 // over a normalised command (case, quotes, `//`, `/./`). R.3 C-1: and the variables WS-21 exports into
-// every child — `$WINTER_STORE_HOME` (`<home>/sdk`), `$WINTER_PLUGIN_CACHE_DIR`/`$CLAUDE_CODE_PLUGIN_CACHE_DIR`
-// (`<home>/sdk/plugins`), `$CLAUDE_CONFIG_DIR` and the Winter child's own `$WINTER_HOME` (a run folder
+// every child — `$CLOVER_STORE_HOME` (`<home>/sdk`), `$CLOVER_PLUGIN_CACHE_DIR`/`$CLAUDE_CODE_PLUGIN_CACHE_DIR`
+// (`<home>/sdk/plugins`), `$CLAUDE_CONFIG_DIR` and the Clover child's own `$CLOVER_HOME` (a run folder
 // under `<home>/cache`), braced or not. R.3 re-review B-1: and every command is also read with those variables (and
 // `$OUTDIR`) replaced by their absolute values, so a `..` after one — any depth, or through a `cd` chain —
 // lands on the literal path it names (`childPathVariableReadings`). `cache` and `plugins` are refused only in a
@@ -381,7 +381,7 @@ function pluginPostToolUseFailureHook(deps: SessionHooksDeps): HookCallback {
 
 /**
  * The command as the floor reads it (whole-branch review N2): lowercased (a default macOS volume is
- * case-insensitive), quotes stripped (`~/".winter"/…` is `~/.winter/…` to the shell), and `//`, `/./`
+ * case-insensitive), quotes stripped (`~/".clover"/…` is `~/.clover/…` to the shell), and `//`, `/./`
  * and `<seg>/..` collapsed. Static on purpose — a path the command BUILDS at run time is beyond it.
  */
 export function normaliseEscapeCommand(command: string): string {
@@ -398,13 +398,13 @@ export function normaliseEscapeCommand(command: string): string {
 
 /**
  * Every spelling of the home this check can predict, lowercased: the literal home and its realpath,
- * `~`/`$HOME`/`${HOME}` for a home under the user's own, `$WINTER_HOME`/`${WINTER_HOME}`, and the
+ * `~`/`$HOME`/`${HOME}` for a home under the user's own, `$CLOVER_HOME`/`${CLOVER_HOME}`, and the
  * home's basename (a command that `cd`s to its parent first).
  */
 function homePrefixes(home: string, opts: { basename?: boolean } = {}): string[] {
   const homes = new Set<string>([home]);
   try { homes.add(realpathSync(home).replace(/\/+$/, "")); } catch { /* not created yet: the literal spelling is the one a command could name */ }
-  const prefixes = new Set<string>(["$winter_home", "${winter_home}"]);
+  const prefixes = new Set<string>(["$clover_home", "${clover_home}"]);
   const userHome = homedir().replace(/\/+$/, "");
   for (const h of homes) {
     prefixes.add(h.toLowerCase());
@@ -438,25 +438,25 @@ interface FloorNeedle { needle: string; writeOnly: boolean }
 
 /**
  * R.3 C-1: the variables WS-21 exports into every child, which a child's Bash hands to its shell (the
- * whole `process.env`), lowercased as the floor reads them. `$WINTER_STORE_HOME` is `<home>/sdk` — the
- * shared runtime home, so a fenced `sdk/<x>` is also `$winter_store_home/<x>` (`floorNeedles`, and the
+ * whole `process.env`), lowercased as the floor reads them. `$CLOVER_STORE_HOME` is `<home>/sdk` — the
+ * shared runtime home, so a fenced `sdk/<x>` is also `$clover_store_home/<x>` (`floorNeedles`, and the
  * protected-kind and transcript-store passes in `escapeFloorHit`).
  */
-const STORE_HOME_VARIABLES: readonly string[] = ["$winter_store_home", "${winter_store_home}"];
+const STORE_HOME_VARIABLES: readonly string[] = ["$clover_store_home", "${clover_store_home}"];
 /**
  * …and the variables that name a WRITE-ONLY fenced directory as a whole, refused in a write-shaped
  * position and readable otherwise (plugin skills are read and run there): both plugin-cache variables
  * (`<home>/sdk/plugins`), `CLAUDE_CONFIG_DIR` (a run folder under `<home>/cache` whose `skills/` entries link
  * into `sdk/skills` and the trusted project's skills — the retired official child's variable, still refused
- * because a write through it costs nothing to stop), and the child's `WINTER_HOME` — which under a run home is ITS run folder,
- * not the daemon's home (the router sets it to `runHome.dir`); every other `$winter_home` spelling above still
+ * because a write through it costs nothing to stop), and the child's `CLOVER_HOME` — which under a run home is ITS run folder,
+ * not the daemon's home (the router sets it to `runHome.dir`); every other `$clover_home` spelling above still
  * reads it as the daemon's home, too.
  */
 const WRITE_ONLY_DIR_VARIABLES: readonly string[] = [
-  "$winter_plugin_cache_dir", "${winter_plugin_cache_dir}",
+  "$clover_plugin_cache_dir", "${clover_plugin_cache_dir}",
   "$claude_code_plugin_cache_dir", "${claude_code_plugin_cache_dir}",
   "$claude_config_dir", "${claude_config_dir}",
-  "$winter_home", "${winter_home}",
+  "$clover_home", "${clover_home}",
 ];
 
 /**
@@ -475,7 +475,7 @@ function floorNeedles(home: string): FloorNeedle[] {
     const spellings = r.length === 0 || r.startsWith("..") || isAbsolute(r)
       ? [p.toLowerCase()]
       : prefixes.map((pre) => `${pre}/${r}`.toLowerCase());
-    // R.3 C-1: `$WINTER_STORE_HOME` already points at `<home>/sdk` — its spelling drops that segment.
+    // R.3 C-1: `$CLOVER_STORE_HOME` already points at `<home>/sdk` — its spelling drops that segment.
     if (r === "sdk" || r.startsWith("sdk/")) {
       const storeRel = r.slice("sdk".length);
       for (const pre of STORE_HOME_VARIABLES) spellings.push(`${pre}${storeRel}`.toLowerCase());
@@ -493,7 +493,7 @@ function isMemoryPathRest(rest: string, underSdk: boolean): boolean {
 
 /**
  * Relative words after a `cd`/`pushd`, rewritten against the directory the command moved to (review
- * N2: `cd ~/.winter && cp x permissions/projects.json`). A `cd` to an absolute-looking target
+ * N2: `cd ~/.clover && cp x permissions/projects.json`). A `cd` to an absolute-looking target
  * (`/`, `~`, `$…`) sets it; a relative one extends it; flags and `k=v` words are left alone. Conservative
  * rather than exact: the command words themselves get the prefix too, which can only ADD matches.
  */
@@ -552,11 +552,11 @@ function writeContextStart(c: string): number {
 
 /**
  * Fix round 2 (controller ruling on SPEC CONCERN D): the protected item directories and agent definitions
- * of ANY project, at ANY depth and whatever its trust — `.winter/{skills,commands,rules,output-styles,
+ * of ANY project, at ANY depth and whatever its trust — `.clover/{skills,commands,rules,output-styles,
  * agents}` — as the TARGET of a write in a Bash command, sandboxed or not. A later session in a sibling
  * package loads them. Returns the segment named, or `undefined`. (R.3 I-4: the child's sandbox now fences
  * them at any depth under every working directory too — `childSandboxConfigFor`'s glob-shaped any-depth
- * `.winter/<kind>` entries — which covers the writes this static detector cannot see; this card stays for
+ * `.clover/<kind>` entries — which covers the writes this static detector cannot see; this card stays for
  * everything the seatbelt does not bind: an escape, and a directory outside the working directories.)
  *
  * Round 3, minor 10 — JUDGED PER SHELL SEGMENT (split on `;`, `&&`, `||`, `|`, `&` and newlines on the RAW
@@ -578,13 +578,13 @@ function writeContextStart(c: string): number {
  *
  * LINKS (WS-24). A write target is ALSO judged after resolving the links that already exist on its path —
  * relative targets against the session's `cwd` (`opts.cwd`; the hook input's own), `~` against the user's
- * home — so a link planted earlier (`ln -s ../.winter/skills s`, then later `echo … > s/x/SKILL.md`) no
+ * home — so a link planted earlier (`ln -s ../.clover/skills s`, then later `echo … > s/x/SKILL.md`) no
  * longer carries a write past the match. Component by component, the way the kernel walks it: each
  * existing component is realpathed (a `..` after a link climbs out of the link's TARGET), the first one
  * that does not exist yet ends the walk and the rest is appended as written. Both spellings are walked: the
  * normalised one and the shell's own, uncollapsed (`./s/x/../../rules` must climb out of `s`'s target, not
  * be folded to `./rules` first). With no `cwd` only absolute and `~` targets are resolved. And `ln` itself is
- * judged: a link whose SOURCE is (or resolves under) a protected path is a card, so `ln -s .winter/skills t
+ * judged: a link whose SOURCE is (or resolves under) a protected path is a card, so `ln -s .clover/skills t
  * && echo x > t/y.md` is caught at the `ln`; so are `cp -l`/`--link`/`-al`'s sources (hard links). Fix round 2:
  * a target that already exists as a HARD link (`nlink > 1`) is compared by inode against the files under the
  * protected directories (`ProtectedInodes`); a `cd` that could fail is judged both ways (a real shell stays
@@ -597,13 +597,13 @@ function writeContextStart(c: string): number {
  *
  * THE LIMITATION, the escape floor's own: a static match on the normalised text (case folded, quotes
  * stripped, `//`/`/./`/`..` collapsed, `cd` tracked), plus the links that exist on disk WHEN THE CALL IS
- * JUDGED. A path the command ASSEMBLES at run time (`$(…)`, its own variables — `d=.winter; touch
+ * JUDGED. A path the command ASSEMBLES at run time (`$(…)`, its own variables — `d=.clover; touch
  * $d/rules/x` —, a script it writes and then runs, an interpreter that joins the path from pieces) is beyond
  * its reach — `$(pwd)` included; so is a MULTI-HOP chain the same command builds (`ln -s s a && ln -s a b &&
  * echo x > b/y`, where `s` exists but `a` does not yet — the first `ln`'s source is judged, not what a later
  * hop resolves to), a hard link to a protected file living outside the walked directories (the inode scan
  * covers the cwd's walk, the target's own, and the store's `sdk/` kinds, bounded), an interpreter one-liner
- * that names its path THROUGH a link (`python3 -c "open('s/y.md','w')"`: only a literal `.winter/<kind>` in
+ * that names its path THROUGH a link (`python3 -c "open('s/y.md','w')"`: only a literal `.clover/<kind>` in
  * the code is seen), a `cd` into a link whose target the command itself changes, and a write whose path is
  * not in the command at all — `git apply x.patch`, `patch < x.diff`. The child's sandbox fence and the
  * path-fence hook bind what this cannot see.
@@ -761,10 +761,10 @@ function cpLinkOperands(raw: string): { norm: string[]; raw: string[] } {
 }
 
 /**
- * WS-24 fix round 2 (N-2): the inodes of the files under the protected directories — every `.winter/{skills,
+ * WS-24 fix round 2 (N-2): the inodes of the files under the protected directories — every `.clover/{skills,
  * commands,rules,output-styles,agents}` on the walk from the session's cwd (and from a target's own
  * directory) up to the user's home or the filesystem root, plus the store's `sdk/{skills,commands,rules,
- * output-styles}` when the Winter home is known — so a write to a file that is the SAME INODE as one of them
+ * output-styles}` when the Clover home is known — so a write to a file that is the SAME INODE as one of them
  * (a hard link, `hard.md`) is judged as a write there. Only consulted for a target that exists as a regular
  * file with more than one link (`nlink > 1`), so an ordinary write never scans anything; a hard-linked file
  * that matches nothing protected (node_modules' own) stays quiet. Built lazily, once per command (shared by
@@ -806,7 +806,7 @@ class ProtectedInodes {
     const userHome = homedir();
     let dir = from;
     for (let i = 0; i < 64; i += 1) {
-      for (const kind of ["skills", "commands", "rules", "output-styles", "agents"]) this.scanDir(join(dir, ".winter", kind), `.winter/${kind}`, 0);
+      for (const kind of ["skills", "commands", "rules", "output-styles", "agents"]) this.scanDir(join(dir, ".clover", kind), `.clover/${kind}`, 0);
       if (dir === userHome) break;
       const parent = dirname(dir);
       if (parent === dir) break;
@@ -881,13 +881,13 @@ function existingEntry(dir: string, name: string): string | undefined {
 }
 
 /** A protected segment inside ONE write target (a single word). */
-const PROTECTED_BASH_TARGET = /\.winter\/(?:skills|commands|rules|output-styles|agents)(?=\/|$)/;
+const PROTECTED_BASH_TARGET = /\.clover\/(?:skills|commands|rules|output-styles|agents)(?=\/|$)/;
 
 /** Round 3, minor 9: the interpreters whose one-liners count, their code flags, and a protected segment as
  *  code names it. */
 const INTERPRETERS = /^(?:python(?:\d+(?:\.\d+)?)?|node|bun|ruby|perl|deno)$/;
 const ONE_LINER_FLAG = /^(?:-[a-z]*[ce]|--eval|--print|-p)$/;
-const PROTECTED_IN_CODE = /\.winter\/(?:skills|commands|rules|output-styles|agents)(?![a-z0-9_.-])/;
+const PROTECTED_IN_CODE = /\.clover\/(?:skills|commands|rules|output-styles|agents)(?![a-z0-9_.-])/;
 
 /** git's subcommands that only read (round 3, minor 10). */
 const GIT_READ_SUBCOMMANDS: ReadonlySet<string> = new Set(["status", "log", "diff", "show", "blame", "ls-files", "grep"]);
@@ -934,7 +934,7 @@ function segmentWriteTargets(seg: string, includeMovedSources = false): string[]
     // WS-24 fix round 1 (I-2): `ln` CREATES a name for its source — a symlink or hard link whose source is
     // (or resolves under) a protected directory makes a later write through that name land there, so every
     // operand counts, the sources as well as the link's own name. (A symlink's relative source is judged
-    // from the cwd, not the link's directory — an approximation; `ln -s ../.winter/…` names the segment
+    // from the cwd, not the link's directory — an approximation; `ln -s ../.clover/…` names the segment
     // outright anyway.)
     if (verb === "ln") return [...targets, ...rest.filter((w) => !w.startsWith("-"))];
     if (DESTINATION_VERBS.has(verb)) {
@@ -999,13 +999,13 @@ function bashProtectedWriteHook(home?: string): HookCallback {
  * tests; the hook below is its one production caller besides the reviewer's own skip.
  *
  * Two classes (review N1): paths the model may not even read (`run`, `runtimes`) and the self-grant
- * stores (`permissions`, `agents`, `trust.json`, the control-plane filenames, any `.winter/agents`) are
+ * stores (`permissions`, `agents`, `trust.json`, the control-plane filenames, any `.clover/agents`) are
  * refused on ANY mention; `cache` and `plugins` — whose skill content the model is pointed at to read
  * and execute — only in a write-shaped position (after a redirect or a write verb).
  */
 export function escapeFloorHit(command: string, home: string | undefined, cwd?: string): string | undefined {
   // R.3 re-review B-1: the command as written, and once per reading of the child's path variables with each
-  // replaced by the absolute value the daemon knows — so `$WINTER_STORE_HOME/../agents`, `cd $OUTDIR &&
+  // replaced by the absolute value the daemon knows — so `$CLOVER_STORE_HOME/../agents`, `cd $OUTDIR &&
   // cd ../..` and every other depth collapse into the literal-path checks below (the normaliser folds
   // `<seg>/..` only after a `/`, which a variable lacks).
   const texts = home === undefined || home.length === 0
@@ -1020,27 +1020,27 @@ export function escapeFloorHit(command: string, home: string | undefined, cwd?: 
 
 /**
  * R.3 re-review B-1: the absolute values of the path variables a child's shell has, as the daemon knows them.
- * Two readings of `WINTER_HOME` — under a run home it is the child's run folder (`<home>/cache/runs/
+ * Two readings of `CLOVER_HOME` — under a run home it is the child's run folder (`<home>/cache/runs/
  * <run id>`; `CLAUDE_CONFIG_DIR` was the retired official child's), before one it was the daemon's home — and one of
- * everything else: `WINTER_STORE_HOME` = `<home>/sdk`, both plugin-cache variables = `<home>/sdk/plugins`,
+ * everything else: `CLOVER_STORE_HOME` = `<home>/sdk`, both plugin-cache variables = `<home>/sdk/plugins`,
  * `OUTDIR` = `<home>/outputs/<session id>` (the SDK's Bash has exported it since WS-12). A run id and a
  * session id are placeholders: only their DEPTH matters to a `..`. A run folder's `projects` is a link into
- * `sdk/projects` on the Winter leg, and the kernel resolves `..` physically, so `$WINTER_HOME/projects` reads
+ * `sdk/projects` on the Clover leg, and the kernel resolves `..` physically, so `$CLOVER_HOME/projects` reads
  * as the store's (whose MEMDIRs stay the model's own).
  */
 function childPathVariableReadings(home: string): Array<ReadonlyArray<readonly [string, string]>> {
   const sdk = join(home, "sdk");
   const runFolder = join(home, "cache", "runs", "_run_");
   const common: Array<readonly [string, string]> = [
-    ["WINTER_STORE_HOME", sdk],
-    ["WINTER_PLUGIN_CACHE_DIR", join(sdk, "plugins")],
+    ["CLOVER_STORE_HOME", sdk],
+    ["CLOVER_PLUGIN_CACHE_DIR", join(sdk, "plugins")],
     ["CLAUDE_CODE_PLUGIN_CACHE_DIR", join(sdk, "plugins")],
     ["CLAUDE_CONFIG_DIR", runFolder],
     ["OUTDIR", join(home, "outputs", "_session_")],
   ];
   return [
-    [["WINTER_HOME/projects", join(sdk, "projects")], ["WINTER_HOME", runFolder], ...common],
-    [["WINTER_HOME", home], ...common],
+    [["CLOVER_HOME/projects", join(sdk, "projects")], ["CLOVER_HOME", runFolder], ...common],
+    [["CLOVER_HOME", home], ...common],
   ];
 }
 
@@ -1067,7 +1067,7 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
     if (c.includes(bare)) return `a project's ${bare} directory`;
   }
   const writeStart = writeContextStart(c);
-  // WS-21 (spec §7.1), write-shaped only: a project's `.winter/mcp.json` and any `.winter/settings*.json`
+  // WS-21 (spec §7.1), write-shaped only: a project's `.clover/mcp.json` and any `.clover/settings*.json`
   // (the two claude tiers are already refused on any mention above), and a claude staging root.
   for (const re of PROJECT_WRITE_FENCED) {
     for (const m of c.matchAll(re)) if (m.index !== undefined && m.index > writeStart) return `a project's ${m[0]}`;
@@ -1092,29 +1092,29 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
       // (`<home>/computer-use-notes.txt`, `<home>/cache.bak`) is another path. A glob or anything else after it still
       // counts (`<home>/cache*` would expand to it).
       const extendsName = writeOnly && /[a-z0-9_.-]/.test(c.charAt(at + needle.length));
-      if (!extendsName && (!writeOnly || at > writeStart)) return "Winter's own state under its home";
+      if (!extendsName && (!writeOnly || at > writeStart)) return "Clover's own state under its home";
       at = c.indexOf(needle, at + 1);
     }
   }
   // R.3 C-1: a variable naming a write-only fenced directory as a whole (the plugin cache, a run folder) —
-  // refused in a write-shaped position, wherever under it the write lands. `$WINTER_HOMEDIR` is another
-  // variable (an unbraced name continues through `[a-z0-9_]`); the MEMDIR under the Winter child's run
-  // folder (`$WINTER_HOME/projects/<key>/memory`, a link into the store) stays the model's own.
+  // refused in a write-shaped position, wherever under it the write lands. `$CLOVER_HOMEDIR` is another
+  // variable (an unbraced name continues through `[a-z0-9_]`); the MEMDIR under the Clover child's run
+  // folder (`$CLOVER_HOME/projects/<key>/memory`, a link into the store) stays the model's own.
   for (const v of WRITE_ONLY_DIR_VARIABLES) {
     for (let at = c.indexOf(v); at >= 0; at = c.indexOf(v, at + 1)) {
       if (at <= writeStart) continue;
       if (!v.endsWith("}") && /[a-z0-9_]/.test(c.charAt(at + v.length))) continue;
       const rest = c.slice(at + v.length).split(/[\s;&|()<>]/, 1)[0] ?? "";
-      if ((v === "$winter_home" || v === "${winter_home}") && (isMemoryPathRest(rest, false) || isMemoryPathRest(rest, true))) continue;
-      return "Winter's own state under its home";
+      if ((v === "$clover_home" || v === "${clover_home}") && (isMemoryPathRest(rest, false) || isMemoryPathRest(rest, true))) continue;
+      return "Clover's own state under its home";
     }
   }
   // Review I7: the user tier's PROTECTED paths (spec §7.2), write-shaped — the shared runtime home's and
   // the old/compat spelling at the home's top level (a link into `sdk/` on a migrated home, the store
   // itself on router 0.0.11). A write tool gets a card for these; an unsandboxed command gets none.
-  // Round 3, minor 4: the WINTER.md needle is the HOME's own — a project's `.winter/WINTER.md` is ordinary
-  // (spec §7.2), and the home's bare basename (`.winter`) names a project's `.winter/` just as well. So the
-  // bare spelling counts for WINTER.md only when the command runs from the home's parent directory.
+  // Round 3, minor 4: the CLOVER.md needle is the HOME's own — a project's `.clover/CLOVER.md` is ordinary
+  // (spec §7.2), and the home's bare basename (`.clover`) names a project's `.clover/` just as well. So the
+  // bare spelling counts for CLOVER.md only when the command runs from the home's parent directory.
   const fullPrefixes = new Set([...homePrefixes(bareHome, { basename: false }), ...STORE_HOME_VARIABLES]);
   const fromHomeParent = isHomeParent(cwd, bareHome);
   // R.3 C-1: the store variable already names `<home>/sdk`, so its one base is the variable itself.
@@ -1125,13 +1125,13 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
   for (const { pre, bases } of protectedBases) {
     const instructionsNeedleHere = fullPrefixes.has(pre) || fromHomeParent;
     for (const base of bases) {
-      for (const needle of [...PROTECTED_KIND_NAMES.map((k) => `${base}/${k}`), ...(instructionsNeedleHere ? [`${base}/winter.md`] : [])]) {
+      for (const needle of [...PROTECTED_KIND_NAMES.map((k) => `${base}/${k}`), ...(instructionsNeedleHere ? [`${base}/clover.md`] : [])]) {
         for (let at = c.indexOf(needle); at >= 0; at = c.indexOf(needle, at + 1)) {
           if (at <= writeStart) continue;
-          // the bare basename names the home only as a word of its own (`proj/.winter/WINTER.md` is a project's)
-          if (!fullPrefixes.has(pre) && needle.endsWith("/winter.md") && !startsWord(c, at)) continue;
+          // the bare basename names the home only as a word of its own (`proj/.clover/CLOVER.md` is a project's)
+          if (!fullPrefixes.has(pre) && needle.endsWith("/clover.md") && !startsWord(c, at)) continue;
           const next = c.charAt(at + needle.length);
-          if (next === "" || next === "/" || /[\s;&|()<>]/.test(next)) return "a protected path (skills, commands, rules, output styles or WINTER.md)";
+          if (next === "" || next === "/" || /[\s;&|()<>]/.test(next)) return "a protected path (skills, commands, rules, output styles or CLOVER.md)";
         }
       }
     }
@@ -1139,7 +1139,7 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
   // …and the runtimes' transcript store, `sdk/projects`, write-shaped and OUTSIDE each project's
   // `memory/` (the model's MEMDIR, which it maintains itself).
   // Review M2: and under its compat-link spelling `<home>/projects` (a link into `sdk/projects` on a
-  // migrated home; the store itself on router 0.0.11). R.3 C-1: and `$WINTER_STORE_HOME/projects`.
+  // migrated home; the store itself on router 0.0.11). R.3 C-1: and `$CLOVER_STORE_HOME/projects`.
   const storeNeedles: string[][] = [
     ...homePrefixes(bareHome).map((pre) => [`${pre}/sdk/projects`, `${pre}/projects`]),
     ...STORE_HOME_VARIABLES.map((pre) => [`${pre}/projects`]),
@@ -1161,10 +1161,10 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
 /** WS-21 (spec §7.1): project files the escape floor refuses in a write-shaped position, matched on the
  *  normalised command. */
 const PROJECT_WRITE_FENCED: readonly RegExp[] = [
-  /\.winter\/mcp\.json/g,
-  /\.winter\/settings[^/\s;&|()<>]*\.json/g,
+  /\.clover\/mcp\.json/g,
+  /\.clover\/settings[^/\s;&|()<>]*\.json/g,
   // Review I7: any project's protected item directories, at any depth (review C1's shape).
-  /\.winter\/(?:skills|commands|rules|output-styles)(?=\/|[\s;&|()<>]|$)/g,
+  /\.clover\/(?:skills|commands|rules|output-styles)(?=\/|[\s;&|()<>]|$)/g,
 ];
 /** The protected item directory names (spec §7.2), as the lowercased floor matches them. */
 const PROTECTED_KIND_NAMES: readonly string[] = ["skills", "commands", "rules", "output-styles"];
@@ -1172,7 +1172,7 @@ const RESUME_STAGING_NEEDLE = "claude-resume-";
 
 export function escapeFloorDenial(hit: string): string {
   return `Bash was not run — a command that asks to run outside the sandbox (dangerouslyDisableSandbox) may not touch ${hit}. ` +
-    "Winter's control-plane files (permissions.local.json, settings.json, settings.local.json, trust.json, .winter.json, a project's .winter/mcp.json), agent definitions (.winter/agents) and its own state under its home (run, runtimes, plugins, permissions, cache, agents, and sdk/ — settings, MCP servers, agents, plugins and the transcript store outside memory/) are off-limits to unsandboxed commands under every approval mode. Run the command inside the sandbox, or ask the user to make this change.";
+    "Clover's control-plane files (permissions.local.json, settings.json, settings.local.json, trust.json, .clover.json, a project's .clover/mcp.json), agent definitions (.clover/agents) and its own state under its home (run, runtimes, plugins, permissions, cache, agents, and sdk/ — settings, MCP servers, agents, plugins and the transcript store outside memory/) are off-limits to unsandboxed commands under every approval mode. Run the command inside the sandbox, or ask the user to make this change.";
 }
 
 // ── 2b. The path fence (WS-21, spec §7.1 "hook" column, §7.2) ─────────────────────────────────
@@ -1180,7 +1180,7 @@ export function escapeFloorDenial(hit: string): string {
 // One PreToolUse hook for the write- and read-class tools, under every policy (a
 // PreToolUse answer is evaluated ahead of the permission mode — F16), in this order:
 //  1. the control-plane fence the bridge already applies at (2) — the three control-plane filenames,
-//     `mcp.json` and `settings*.json` under any `.winter/`, and every home-fenced path — as a hook too,
+//     `mcp.json` and `settings*.json` under any `.clover/`, and every home-fenced path — as a hook too,
 //     so it binds where the bridge is never consulted (a matching allow rule, bypass);
 //  2. `sdk/projects/**` outside each project's `memory/` (`storeWriteDenial`) — deny;
 //  3. the read row (`protectedReadDenial`) — deny;
@@ -1206,7 +1206,7 @@ function pathFenceHook(deps: SessionHooksDeps): HookCallback {
     const decision = protectedWriteDecision(toolName, toolInput, { mode: deps.mode ?? "code", protected: protectedPathsFor(home, root, { cwd }), cwd });
     if (decision === null) return allow();
     return decision.decision === "ask"
-      ? ask(`${toolName} writes a protected path (skills, commands, rules, output styles and WINTER.md load into every future session) — the user decides.`)
+      ? ask(`${toolName} writes a protected path (skills, commands, rules, output styles and CLOVER.md load into every future session) — the user decides.`)
       : deny(decision.reason);
   };
 }
@@ -1244,7 +1244,7 @@ function connectorPermissionHook(deps: SessionHooksDeps): HookCallback {
     switch (verdict) {
       case "deny": return deny(connectorDenialMessage(facts.server, facts.tool, { setting: facts.setting, policy }));
       case "allow": return allowExplicitly(facts.setting === "allow"
-        ? `${facts.tool} (the ${facts.server} connector) is set to "Always allow" in Winter's connector permissions.`
+        ? `${facts.tool} (the ${facts.server} connector) is set to "Always allow" in Clover's connector permissions.`
         : `${facts.tool} (the ${facts.server} connector) is marked read-only by its server.`);
       case "ask": return ask(connectorAskReason(facts.server, facts.tool, facts.setting));
       case "gate": return allow();
@@ -1254,7 +1254,7 @@ function connectorPermissionHook(deps: SessionHooksDeps): HookCallback {
 
 /** ComputerV2 (2026-10-08): the plain name and the MCP spelling of the script tool. */
 export const COMPUTER_V2_TOOL = "ComputerV2";
-const COMPUTER_V2_MCP_NAME = "mcp__winter__computer_v2__script";
+const COMPUTER_V2_MCP_NAME = "mcp__clover__computer_v2__script";
 
 /**
  * ComputerV2's EXPLICIT allow — every code/dispatch policy, `plan` and `dont-ask` included (R16: no card per
@@ -1282,7 +1282,7 @@ function computerV2AllowHook(deps: SessionHooksDeps): HookCallback {
  * DEFERRED and load only through `ToolSearch` — but a `dontAsk` child denies an unresolved call without ever
  * calling `canUseTool` ("dontAsk mode denies unmatched actions"), and `ToolSearch` is not in the runtime's own
  * silent-allow set, so in a `dont-ask` session NO deferred tool could be loaded at all (Browser, CronList, every
- * MCP tool, ComputerV2). Winter's gate has always classified `ToolSearch` READ_ONLY — allowed under every policy —
+ * MCP tool, ComputerV2). Clover's gate has always classified `ToolSearch` READ_ONLY — allowed under every policy —
  * so this states that to the child, under `dont-ask` only (every other policy reaches `canUseTool`, whose gate
  * answer is the same allow); the `WEB_BUILTIN_ALLOW_RULES` precedent, as a hook so dispatch is covered too. It
  * only loads schemas; whatever a loaded tool then does is decided on its own call.
@@ -1291,7 +1291,7 @@ function toolSearchDontAskHook(deps: SessionHooksDeps): HookCallback {
   return async (input) => {
     if (deps.mode === "chat" || deps.policy?.() !== "dont-ask") return allow();
     if ((input as PreToolUseHookInput).tool_name !== "ToolSearch") return allow();
-    return allowExplicitly("ToolSearch only loads deferred tools' schemas; Winter allows it under every policy.");
+    return allowExplicitly("ToolSearch only loads deferred tools' schemas; Clover allows it under every policy.");
   };
 }
 
@@ -1333,7 +1333,7 @@ function escapeFloorHook(deps: SessionHooksDeps): HookCallback {
  *  (`permissions/types.d.ts`), so "ask" is wire-expressible — the same "let a human decide" answer
  *  the retired engine's `ask`/`accept-edits` branch gave via a card
  *  (`engine.ts:4564-4572`: "reviewer, when ready, ANNOTATES the card's reason rather than gating").
- *  **Unmeasured**: whether Winter's approval bridge actually surfaces an `ask` PreToolUse decision
+ *  **Unmeasured**: whether Clover's approval bridge actually surfaces an `ask` PreToolUse decision
  *  as a card on THIS leg (vs. e.g. auto-denying an ask it cannot route) is not yet proven against a
  *  real child — carry: measure `ask` end-to-end (a real approval_requested reaching the phone/CLI)
  *  before relying on it as the sole safety net for a reviewer outage. */
@@ -1402,7 +1402,7 @@ function bashReviewerHook(deps: SessionHooksDeps): HookCallback {
       return allow();
     } catch (err) {
       // 2026-09-19 (review): STRUCTURAL vs TRANSIENT — see `ReviewerNoRunnableModel`'s own doc for the
-      // full argument. No provider Winter's own jobs can use is configured on this home, so there is no
+      // full argument. No provider Clover's own jobs can use is configured on this home, so there is no
       // review to be had and there never was one: `allow()`, exactly what this hook's own first line
       // answered when such a home had no `BashReviewer` at all. The reviewer has already logged the
       // state change once; nothing is logged per call here.
@@ -1420,7 +1420,7 @@ function bashReviewerHook(deps: SessionHooksDeps): HookCallback {
 
 // ── 3 & 4. Diagnostics-after-edit + the fileDiff producer ──────────────────────────────────────
 //
-// Both ride the SAME three file-mutating tools (`Edit`/`Write`/`NotebookEdit` — Winter 0.0.4 has
+// Both ride the SAME three file-mutating tools (`Edit`/`Write`/`NotebookEdit` — Clover 0.0.4 has
 // no `MultiEdit`, see `auto-diagnostics.ts`'s own port note) and the same file-path-arg mapping, so
 // it is declared once here rather than re-derived per feature.
 const DIFF_TOOL_FILE_PATH_ARG: Readonly<Record<string, string>> = { Edit: "file_path", Write: "file_path", NotebookEdit: "notebook_path" };
@@ -1498,7 +1498,7 @@ function fileDiffPostToolUseHook(deps: SessionHooksDeps, pending: Map<string, Pe
 }
 
 /** `PostToolUse`, matched per file-mutating tool — the SAME diagnostics-after-edit CC parity the
- *  retired engine ran (ported to Winter's own tool names/shapes in `auto-diagnostics.ts`). Skipped
+ *  retired engine ran (ported to Clover's own tool names/shapes in `auto-diagnostics.ts`). Skipped
  *  entirely (no LSP round trip at all) when `deps.lsp` was never wired, or when
  *  `autoDiagnosticsEnabled()` reads `false`. */
 function diagnosticsPostToolUseHook(deps: SessionHooksDeps): HookCallback {
@@ -1535,7 +1535,7 @@ function diagnosticsPostToolUseHook(deps: SessionHooksDeps): HookCallback {
 // `dangerousDomainsAdded` LIVE, where the child's `blockedDomains` is frozen at the spawn it was
 // built for until that session next incarnates. Its failure mode is closed (`failClosed`, WS-23).
 //
-// **WHY DENY AND NEVER ASK.** The spine lane measured that a Winter child's executor-level
+// **WHY DENY AND NEVER ASK.** The spine lane measured that a Clover child's executor-level
 // `blockedDomains` refuses a listed host even after an approved `ask` — so an `ask` here would raise
 // a card whose approval provably cannot take effect (and chat never prompts in the first place). A floor hit is a hard refusal in every mode; that is
 // the ruling ("dangerous domains are hard-blocked"), and `mode-options.ts`'s `webOptionsFor` says the
@@ -1580,7 +1580,7 @@ function effectiveDangerousDomains(deps: SessionHooksDeps): string[] {
  * model to fetch it, and a refusal string is read straight back into the model's context.
  */
 export function dangerousDomainFloorRefusal(host: string, matchedEntry: string): string {
-  return `refused by Winter's dangerous-domain safety floor: ${host} matches the blocked entry ${matchedEntry}. This is a hard block, not a permission prompt — no approval, policy or retry can allow it (the list is settings.permissions.dangerousDomains). Find another source, or ask the user to change that setting.`;
+  return `refused by Clover's dangerous-domain safety floor: ${host} matches the blocked entry ${matchedEntry}. This is a hard block, not a permission prompt — no approval, policy or retry can allow it (the list is settings.permissions.dangerousDomains). Find another source, or ask the user to change that setting.`;
 }
 
 /** `PreToolUse`, matched on `WebFetch` — the floor on the fetch's own target host.
@@ -1612,7 +1612,7 @@ function webFetchFloorHook(deps: SessionHooksDeps): HookCallback {
  *   `blocked_domains` only  `blocked_domains` = the floor ∪ the model's own (deduped).
  *   `allowed_domains`       the two lists are MUTUALLY EXCLUSIVE — claude refuses a call carrying
  *                           both outright (`Error: Cannot specify both allowed_domains and
- *                           blocked_domains in the same request`, and the Winter executor carries the
+ *                           blocked_domains in the same request`, and the Clover executor carries the
  *                           identical rule), so `blocked_domains` is NOT added. Floor-listed entries
  *                           are removed from the allow-list instead, and an allow-list that is
  *                           NOTHING BUT floor entries is a search that may only return blocked
@@ -1793,7 +1793,7 @@ function domainList(value: unknown): string[] | undefined {
  *  explicitly EMPTY array or one of only blank strings: the runtimes' own `stringArray` collapses
  *  those to "absent", so the floor may treat them the same way and inject into them.
  *
- *  JSON `null` IS ABSENT, measured rather than assumed: the Winter executor's own reader opens with
+ *  JSON `null` IS ABSENT, measured rather than assumed: the Clover executor's own reader opens with
  *  `value === undefined || value === null -> absent` (agent SDK 0.0.17, `tools/impl/web-search.ts`).
  *  Reading it as wrong-typed here would make the floor stand down for a call the tool would happily
  *  run unfiltered — the one direction this predicate must never get wrong. */
@@ -1832,8 +1832,8 @@ function webSearchInput(record: Record<string, unknown>, patch: { allowed_domain
   return out;
 }
 
-/** `{ winter }` — the session's hook groups, built ONCE from `deps` and the per-tool hook functions
- *  above. `winter` is `Options["hooks"]` from `@yanlinglabs/winter-agent-sdk`. (WS-23: the identical
+/** `{ clover }` — the session's hook groups, built ONCE from `deps` and the per-tool hook functions
+ *  above. `clover` is `Options["hooks"]` from `@yanlinglabs/winter-agent-sdk`. (WS-23: the identical
  *  `official` copy the retired official leg took is gone.)
  *
  *  Every hook function above is a safe, cheap no-op (`allow()`/`{}`) when its own dependency is
@@ -1841,7 +1841,7 @@ function webSearchInput(record: Record<string, unknown>, patch: { allowed_domain
  *  `Options.hooks` already requires the moment ANY group is registered for an event — and the
  *  plugin-hook groups (no matcher) are the one case that always needs to be live, since a plugin
  *  can be enabled on a running daemon between sessions with no restart. */
-export function sessionHooksFor(deps: SessionHooksDeps): { winter: Options["hooks"] | undefined } {
+export function sessionHooksFor(deps: SessionHooksDeps): { clover: Options["hooks"] | undefined } {
   const pending = new Map<string, PendingDiffSnapshot>();
 
   const preToolUse: FailClosedMatcher[] = [{ hooks: [pluginPreToolUseHook(deps)] }];
@@ -1858,7 +1858,7 @@ export function sessionHooksFor(deps: SessionHooksDeps): { winter: Options["hook
   // C3 round 3: the escape floor runs under EVERY policy, reviewer or none — see §2a. Its position
   // does not matter: a deny outranks every other hook answer, and the reviewer skips (never reviews,
   // never clears) a command this floor denies, whichever of the two runs first.
-  // Fix round 2: in the escape floor's own group, a Bash write under any `.winter/<kind>` is asked about,
+  // Fix round 2: in the escape floor's own group, a Bash write under any `.clover/<kind>` is asked about,
   // sandboxed or not (see `bashProtectedWriteHit`). An `ask` — the floor's deny, when both apply, outranks it.
   preToolUse.push({ matcher: "Bash", failClosed: true, hooks: [failClosed("sandbox-escape floor", escapeFloorHook(deps)), failClosed("protected-path Bash fence", bashProtectedWriteHook(deps.home))] });
   // WS-21 (spec §7.1, §7.2): the path fence — every policy. Unmatched (one callback per tool
@@ -1912,5 +1912,5 @@ export function sessionHooksFor(deps: SessionHooksDeps): { winter: Options["hook
   if (deps.audit) postToolUseFailure.push({ matcher: WEB_FLOOR_ANSWER_TOOL, hooks: [searchAuditHook(deps, true)] });
 
   const built: Options["hooks"] = { PreToolUse: preToolUse, PostToolUse: postToolUse, PostToolUseFailure: postToolUseFailure };
-  return { winter: built };
+  return { clover: built };
 }

@@ -9,14 +9,14 @@ import { UsageService } from "./service";
 import { resolveExecutable } from "./spawn-lines";
 
 // Boot wiring for usage tracking (`docs/claude/usage.md`). Where the user's other apps keep their files:
-//  - Codex: `$WINTER_USAGE_CODEX_HOME` (tests) → `$CODEX_HOME` → `~/.codex`;
-//  - Claude Code: `$WINTER_USAGE_CLAUDE_HOME` (tests) → `$CLAUDE_CONFIG_DIR` → `~/.claude`, and its `.claude.json`
-//    (`$WINTER_USAGE_CLAUDE_JSON` → `$CLAUDE_CONFIG_DIR/.claude.json` → `~/.claude.json`);
-//  - the executables: `$WINTER_USAGE_CODEX_EXECUTABLE` / `$WINTER_USAGE_CLAUDE_EXECUTABLE` /
-//    `$WINTER_USAGE_AGY_EXECUTABLE` / `$WINTER_USAGE_OPENCODE_EXECUTABLE` (authoritative: a missing path or "off" means none) → the usual install places
+//  - Codex: `$CLOVER_USAGE_CODEX_HOME` (tests) → `$CODEX_HOME` → `~/.codex`;
+//  - Claude Code: `$CLOVER_USAGE_CLAUDE_HOME` (tests) → `$CLAUDE_CONFIG_DIR` → `~/.claude`, and its `.claude.json`
+//    (`$CLOVER_USAGE_CLAUDE_JSON` → `$CLAUDE_CONFIG_DIR/.claude.json` → `~/.claude.json`);
+//  - the executables: `$CLOVER_USAGE_CODEX_EXECUTABLE` / `$CLOVER_USAGE_CLAUDE_EXECUTABLE` /
+//    `$CLOVER_USAGE_AGY_EXECUTABLE` / `$CLOVER_USAGE_OPENCODE_EXECUTABLE` (authoritative: a missing path or "off" means none) → the usual install places
 //    → `$PATH`.
-// Both test preloads point every `WINTER_USAGE_*` at nothing, so no test daemon ever reads or spawns the real ones, and
-// switch the background plan checks off (`WINTER_USAGE_BACKGROUND=off`).
+// Both test preloads point every `CLOVER_USAGE_*` at nothing, so no test daemon ever reads or spawns the real ones, and
+// switch the background plan checks off (`CLOVER_USAGE_BACKGROUND=off`).
 
 export interface UsageInjection {
   codexHome?: string | null;
@@ -38,7 +38,7 @@ export interface UsageInjection {
 }
 
 // The usual absolute install places, tried before `$PATH` (Homebrew, /usr/local, ~/.local, npm-global, the app bundle).
-// Functions, never module constants: every process of the `winter-core` binary loads this module — the sandboxed
+// Functions, never module constants: every process of the `clover-core` binary loads this module — the sandboxed
 // automation worker too, whose environment has no HOME and whose seatbelt refuses the user lookup, so a `homedir()`
 // at load throws there and the worker never starts.
 export const codexInstalls = (home = homedir()): string[] => [
@@ -79,11 +79,11 @@ export const USAGE_INERT: UsageInjection = Object.freeze({
   opencodeExecutable: null, catchUp: false, background: false,
 });
 
-/** The same for a daemon spawned as a process (`winter daemon run`, a compiled `winter-core`): its environment. */
+/** The same for a daemon spawned as a process (`clover daemon run`, a compiled `clover-core`): its environment. */
 export const USAGE_INERT_ENV: Readonly<Record<string, string>> = Object.freeze({
-  WINTER_USAGE_CODEX_HOME: "off", WINTER_USAGE_CLAUDE_HOME: "off", WINTER_USAGE_CLAUDE_JSON: "off",
-  WINTER_USAGE_CODEX_EXECUTABLE: "off", WINTER_USAGE_CLAUDE_EXECUTABLE: "off", WINTER_USAGE_AGY_EXECUTABLE: "off",
-  WINTER_USAGE_OPENCODE_EXECUTABLE: "off", WINTER_USAGE_BACKGROUND: "off", WINTER_USAGE_CATCH_UP: "off",
+  CLOVER_USAGE_CODEX_HOME: "off", CLOVER_USAGE_CLAUDE_HOME: "off", CLOVER_USAGE_CLAUDE_JSON: "off",
+  CLOVER_USAGE_CODEX_EXECUTABLE: "off", CLOVER_USAGE_CLAUDE_EXECUTABLE: "off", CLOVER_USAGE_AGY_EXECUTABLE: "off",
+  CLOVER_USAGE_OPENCODE_EXECUTABLE: "off", CLOVER_USAGE_BACKGROUND: "off", CLOVER_USAGE_CATCH_UP: "off",
 });
 
 function pick(injected: string | null | undefined, env: string | undefined, fallback: () => string | undefined): string | undefined {
@@ -114,9 +114,9 @@ export function createUsageService(opts: {
     return undefined;
   }
   const claudeConfigDir = env.CLAUDE_CONFIG_DIR !== undefined && env.CLAUDE_CONFIG_DIR.length > 0 ? env.CLAUDE_CONFIG_DIR : undefined;
-  const codexHome = pick(inj.codexHome, env.WINTER_USAGE_CODEX_HOME, () => env.CODEX_HOME || join(homedir(), ".codex"));
-  const claudeHome = pick(inj.claudeHome, env.WINTER_USAGE_CLAUDE_HOME, () => claudeConfigDir ?? join(homedir(), ".claude"));
-  const claudeJsonPath = pick(inj.claudeJsonPath, env.WINTER_USAGE_CLAUDE_JSON, () => claudeConfigDir !== undefined ? join(claudeConfigDir, ".claude.json") : join(homedir(), ".claude.json"));
+  const codexHome = pick(inj.codexHome, env.CLOVER_USAGE_CODEX_HOME, () => env.CODEX_HOME || join(homedir(), ".codex"));
+  const claudeHome = pick(inj.claudeHome, env.CLOVER_USAGE_CLAUDE_HOME, () => claudeConfigDir ?? join(homedir(), ".claude"));
+  const claudeJsonPath = pick(inj.claudeJsonPath, env.CLOVER_USAGE_CLAUDE_JSON, () => claudeConfigDir !== undefined ? join(claudeConfigDir, ".claude.json") : join(homedir(), ".claude.json"));
   const explicit = (injected: string | null | undefined, envValue: string | undefined): string | undefined =>
     injected !== undefined ? (injected ?? "off") : envValue;
   const probeRoot = join(opts.home, "usage");
@@ -127,11 +127,11 @@ export function createUsageService(opts: {
     ...(codexHome === undefined ? {} : { codexHome }),
     ...(claudeHome === undefined ? {} : { claudeHome }),
     ...(claudeJsonPath === undefined ? {} : { claudeJsonPath }),
-    codexExecutable: () => resolveExecutable("codex", explicit(inj.codexExecutable, env.WINTER_USAGE_CODEX_EXECUTABLE), [...codexInstalls(), ...packageManagerBins("codex")]),
-    claudeExecutable: () => resolveExecutable("claude", explicit(inj.claudeExecutable, env.WINTER_USAGE_CLAUDE_EXECUTABLE), [...claudeInstalls(), ...packageManagerBins("claude")]),
-    agyExecutable: () => resolveExecutable("agy", explicit(inj.agyExecutable, env.WINTER_USAGE_AGY_EXECUTABLE), [...agyInstalls(), ...packageManagerBins("agy")]),
-    opencodeExecutable: () => resolveExecutable("opencode", explicit(inj.opencodeExecutable, env.WINTER_USAGE_OPENCODE_EXECUTABLE), [...opencodeInstalls(), ...packageManagerBins("opencode")]),
-    winterCodexWindows: () => (opts.islandUsage?.windowsFor("codex-oauth") ?? []).map((w) => ({
+    codexExecutable: () => resolveExecutable("codex", explicit(inj.codexExecutable, env.CLOVER_USAGE_CODEX_EXECUTABLE), [...codexInstalls(), ...packageManagerBins("codex")]),
+    claudeExecutable: () => resolveExecutable("claude", explicit(inj.claudeExecutable, env.CLOVER_USAGE_CLAUDE_EXECUTABLE), [...claudeInstalls(), ...packageManagerBins("claude")]),
+    agyExecutable: () => resolveExecutable("agy", explicit(inj.agyExecutable, env.CLOVER_USAGE_AGY_EXECUTABLE), [...agyInstalls(), ...packageManagerBins("agy")]),
+    opencodeExecutable: () => resolveExecutable("opencode", explicit(inj.opencodeExecutable, env.CLOVER_USAGE_OPENCODE_EXECUTABLE), [...opencodeInstalls(), ...packageManagerBins("opencode")]),
+    cloverCodexWindows: () => (opts.islandUsage?.windowsFor("codex-oauth") ?? []).map((w) => ({
       ...(w.rateLimitType === undefined ? {} : { rateLimitType: w.rateLimitType }), status: w.status,
       ...(w.resetsAt === undefined ? {} : { resetsAt: w.resetsAt }), at: w.at,
     })),
@@ -150,7 +150,7 @@ export function createUsageService(opts: {
   // Code's transcripts are read before its own cleanup deletes them, Usage screen open or not. Unref'd timers (never
   // hold the daemon), a handful of wakeups a day; off with the env switch (tests, the idle-wakeups gate).
   const timers: ReturnType<typeof setTimeout>[] = [];
-  if (inj.catchUp !== false && env.WINTER_USAGE_CATCH_UP !== "off") {
+  if (inj.catchUp !== false && env.CLOVER_USAGE_CATCH_UP !== "off") {
     const run = (): void => { void service.catchUp().catch(() => { /* logged per pass; the next catch-up retries */ }); };
     const first = setTimeout(run, inj.catchUpFirstMs ?? USAGE_CATCH_UP_FIRST_MS);
     const every = setInterval(run, inj.catchUpEveryMs ?? USAGE_CATCH_UP_EVERY_MS);
@@ -160,7 +160,7 @@ export function createUsageService(opts: {
   }
   // The background plan checks (user 2026-10-18): every installed and tracked plan every 30 min, and a plan with an
   // alarm on its own throttle. Unref'd; off with the env switch (both test preloads) or the injection.
-  if (inj.background !== false && env.WINTER_USAGE_BACKGROUND !== "off") service.startBackground();
+  if (inj.background !== false && env.CLOVER_USAGE_BACKGROUND !== "off") service.startBackground();
   return {
     service,
     close: () => {

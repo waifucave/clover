@@ -4,7 +4,7 @@
 // surrogate that came in is replaced. A lone `\ud83d` survives `JSON.stringify` as an escape that Foundation's
 // `JSONDecoder` refuses — the Mac would drop the whole `wake_armed` (its pill never shows) and the phone's history page
 // would fail to decode.
-import { WAKE_LABEL_MAX } from "@yanlinglabs/winter-protocol";
+import { WAKE_LABEL_MAX } from "@waifucave/clover-protocol";
 
 /** A high surrogate not followed by a low one, or a low surrogate not preceded by a high one. */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;

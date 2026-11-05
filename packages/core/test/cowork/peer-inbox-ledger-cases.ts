@@ -37,7 +37,7 @@ afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 /** Real canonical records (so the real `mayContactCoworkPeer` runs), a store from the harness and a manual clock.
  * `decorate` wraps the store the ledger sees (fault injection, spies); `harness.open()` is a plain second instance (a restart). */
 function fixture(options: { limits?: CoworkPeerInboxOptions["limits"]; decorate?: (inner: PeerInboxStore) => PeerInboxStore } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-peer-inbox-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-peer-inbox-"));
   const db = openRuntimeStateDb(home), records = new CoworkRepository(db);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   let sequence = 0, clock = 1_000_000, receipts = 0;

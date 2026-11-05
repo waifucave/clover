@@ -16,7 +16,7 @@ export function anthropicConfigDirFor(home: string): string {
  *  ${ANTHROPIC_PROFILE_NAME}` writes `<anthropicConfigDirFor(home)>/credentials/${ANTHROPIC_PROFILE_NAME}.json`,
  *  and `ant auth print-credentials --profile ${ANTHROPIC_PROFILE_NAME}` reads the identical file
  *  (fix wave 3 M-A: `claude auth login --console` was measured to write neither this file nor
- *  anything else under `ANTHROPIC_CONFIG_DIR` at all). Winter never supports more than one
+ *  anything else under `ANTHROPIC_CONFIG_DIR` at all). Clover never supports more than one
  *  Anthropic Console profile — a literal, not a setting. */
 export const ANTHROPIC_PROFILE_NAME = "winter";
 

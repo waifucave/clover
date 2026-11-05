@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import type { MessagingDriverHandle } from "../../src/agent/session-messaging";
 import { AutomationFailure } from "../../src/computer-use/errors";
 import type { PrimitiveMetric } from "../../src/computer-use/telemetry";
@@ -46,7 +46,7 @@ afterEach(() => {
 interface WorldOpts { home?: string; settings?: Settings; archived?: Set<string>; gone?: Set<string>; followed?: Set<string>; retryDelaysMs?: readonly number[]; armTimeoutMs?: number }
 
 function world(opts: WorldOpts = {}) {
-  const home = opts.home ?? mkdtempSync(join(tmpdir(), "winter-wakes-"));
+  const home = opts.home ?? mkdtempSync(join(tmpdir(), "clover-wakes-"));
   if (opts.home === undefined) homes.push(home);
   const backends = { tab: new FakeWakeBackend(), app: new FakeWakeBackend() };
   const events: Array<NewSessionEvent & { sessionId: string }> = [];
@@ -132,7 +132,7 @@ describe("arming", () => {
     await expect(w.arm()).rejects.toMatchObject({ kind: "TargetBusy", message: expect.stringContaining("already has 8 wake triggers armed") });
     for (let s = 0; s < 3; s++) for (let i = 0; i < WAKE_LIMITS.perSession; i++) await w.arm({ sessionId: `s_b${s}` });
     expect(w.reg.armedCount).toBe(32);
-    await expect(w.arm({ sessionId: "s_z" })).rejects.toMatchObject({ kind: "TargetBusy", message: expect.stringContaining("Winter already has 32 wake triggers armed") });
+    await expect(w.arm({ sessionId: "s_z" })).rejects.toMatchObject({ kind: "TargetBusy", message: expect.stringContaining("Clover already has 32 wake triggers armed") });
   });
 
   test("the setting off: arming is NotAllowed", async () => {
@@ -409,7 +409,7 @@ describe("endings", () => {
 
 describe("restart (spine §5)", () => {
   test("an armed trigger the daemon stopped with is ended `restart` at the next boot, and its session woken once", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-wakes-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-wakes-"));
     homes.push(home);
     const before = world({ home });
     const a = await before.arm({ note: "go on" });
@@ -423,7 +423,7 @@ describe("restart (spine §5)", () => {
     expect(ofType(after.events, "wake_ended").map((e) => [e.wakeId, e.reason])).toEqual([[a.wakeId, "restart"], [b.wakeId, "restart"]]);
     await until(() => after.wakeTexts().length === 1);
     const text = after.wakeTexts()[0]!;
-    expect(text).toContain("Winter restarted, so these waits ended — arm them again with wakeWhen() if you still need them.");
+    expect(text).toContain("Clover restarted, so these waits ended — arm them again with wakeWhen() if you still need them.");
     expect(text).toContain(`- ${a.wakeId} (armed at`);
     expect(text).toContain("  Your note: go on");
     expect(text).toContain("“Order confirmed” to appear in Chrome — Developer Dashboard");
@@ -431,7 +431,7 @@ describe("restart (spine §5)", () => {
   });
 
   test("the stop: each backend's own stop runs first; a LOSS reported while stopping is the next boot's `restart`, never a wake now", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-wakes-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-wakes-"));
     homes.push(home);
     const before = world({ home });
     const order: string[] = [];
@@ -448,11 +448,11 @@ describe("restart (spine §5)", () => {
     after.reg.start();
     expect(ofType(after.events, "wake_ended").map((e) => [e.wakeId, e.reason])).toEqual([[a.wakeId, "restart"]]);
     await until(() => after.wakeTexts().length === 1);
-    expect(after.wakeTexts()[0]).toContain("Winter restarted");
+    expect(after.wakeTexts()[0]).toContain("Clover restarted");
   });
 
   test("a wake that fired while the daemon was stopping is delivered as `fired` at the next boot", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-wakes-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-wakes-"));
     homes.push(home);
     const before = world({ home });
     const a = await before.arm();
@@ -469,7 +469,7 @@ describe("restart (spine §5)", () => {
   });
 
   test("a boot whose restart wake was NOT delivered: the next boot delivers it as it is — exactly one wake_ended, never the expired branch", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-wakes-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-wakes-"));
     homes.push(home);
     const before = world({ home });
     const a = await before.arm({ timeoutMs: 1_000, note: "go on" });
@@ -490,7 +490,7 @@ describe("restart (spine §5)", () => {
     boot2.reg.start();
     expect(ofType(boot2.events, "wake_ended")).toEqual([]);
     await until(() => boot2.wakeTexts().length === 1);
-    expect(boot2.wakeTexts()[0]).toContain("Winter restarted, so this wait ended");
+    expect(boot2.wakeTexts()[0]).toContain("Clover restarted, so this wait ended");
     expect(boot2.wakeTexts()[0]).toContain(`- ${a.wakeId} (armed at`);
     expect(boot2.wakeTexts()[0]).toContain("  Your note: go on");
     await until(() => !existsSync(join(home, "computer-use", "wakes.json")));
@@ -499,7 +499,7 @@ describe("restart (spine §5)", () => {
   });
 
   test("a trigger armed BEFORE the boot sweep never overwrites what the last daemon left, and is never ended `restart` by it", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-wakes-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-wakes-"));
     homes.push(home);
     const before = world({ home });
     const old = await before.arm();
@@ -553,7 +553,7 @@ describe("restart (spine §5)", () => {
   });
 
   test("expired records: dropped silently, or woken when they asked; archived or deleted sessions' records dropped", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-wakes-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-wakes-"));
     homes.push(home);
     mkdirSync(join(home, "computer-use"), { recursive: true });
     const old = Date.now() - 2 * 3_600_000;
@@ -600,7 +600,7 @@ describe("the message text (pinned shape)", () => {
 describe("AutomationFailure propagation", () => {
   test("a refusal is an AutomationFailure (the worker throws it as its class)", async () => {
     const w = world();
-    w.backends.tab.refuse = new AutomationFailure("Refused", "that is a password field — Winter never watches one");
+    w.backends.tab.refuse = new AutomationFailure("Refused", "that is a password field — Clover never watches one");
     await expect(w.arm()).rejects.toBeInstanceOf(AutomationFailure);
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, renameSync, symlinkSync, linkSync, statfsSync, readdirSync, existsSync, fstatSync, statSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
-import { CoworkInstructionUpdate, CoworkInstructionRead, CoworkInstructionProvenance, CoworkInstructionMetadata, COWORK_INSTRUCTION_MAX_BYTES } from "@yanlinglabs/winter-protocol";
+import { CoworkInstructionUpdate, CoworkInstructionRead, CoworkInstructionProvenance, CoworkInstructionMetadata, COWORK_INSTRUCTION_MAX_BYTES } from "@waifucave/clover-protocol";
 import { openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION, downgradeCoworkRuntimeStateToV7 } from "../../src/runtime-state/db";
 import { CoworkRepository } from "../../src/cowork/repository";
 import { CoworkInstructions, type InstructionUpdate } from "../../src/cowork/instructions";
@@ -19,7 +19,7 @@ const supported = process.platform === "darwin" && process.arch === "arm64";
 const unavailable: CoworkErrorCode = supported ? "recovery_required" : "unsupported_topology";
 const grants = { folder: () => ({ rootIdentity: "root", writable: true, revoked: false }), repository: () => undefined };
 export function instructionFixture(checkpoint: (phase: string) => void = () => {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-instructions-")); cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+  const home = mkdtempSync(join(tmpdir(), "clover-instructions-")); cleanups.push(() => rmSync(home, { recursive: true, force: true }));
   const db = openRuntimeStateDb(home); cleanups.push(() => db.close());
   const records = new CoworkRepository(db), store = new SessionStore(home); cleanups.push(() => store.close());
   const hub = new SessionHub(store), broker = new ApprovalBroker();

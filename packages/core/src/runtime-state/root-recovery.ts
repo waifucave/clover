@@ -7,7 +7,7 @@
 // THREE SOURCES, ONE RULE — nothing is deleted until the router has reconciled it:
 //   1. recorded roots  `runtime_sessions.active_local_write_root` (§13 step 6's seam)
 //   2. run folders     every real directory under `<home>/cache/runs/` — at boot none is live, so each is
-//                      a crashed (or `pending`) incarnation's (a Winter-leg one, whose `projects/` is a link
+//                      a crashed (or `pending`) incarnation's (a Clover-leg one, whose `projects/` is a link
 //                      to the store, has no working copy and is just removed — review M1)
 //   3. staging roots   stale, unclaimed `claude-resume-*` directories (step 8's narrow sweep, deferred
 //                      here on a run-home build so it runs only after the reconcile — spec §3.8) — and,
@@ -24,12 +24,12 @@
 //                      reconciled or swept again); the router copied only the UNPROVABLE transcripts under
 //                      `<home>/cache/quarantine/<ts>-<basename(root)>` and reconciled the rest; the sessions
 //                      owning those transcripts are marked `repair-required` (review I6, per transcript);
-//                      reported by `winter doctor`
+//                      reported by `clover doctor`
 //   a throw          → the root is left in place, kept and counted (the router rethrows its own refusals,
 //                      e.g. a linked quarantine dir); recovery stays bounded — one root never stops the others
 //
 // WS-23: the official `claude` leg is retired, so no NEW working copy, spool root or staging root is
-// created — Winter-leg run folders carry none (`projects/` is a link to the store). This pass stays for
+// created — Clover-leg run folders carry none (`projects/` is a link to the store). This pass stays for
 // the ones an older build left behind (a crashed official generation, a pre-WS-21 spool), which still
 // hold transcript tails the canonical store may lack.
 //
@@ -68,7 +68,7 @@ export interface RootRecoveryDeps {
   reconcile: RootReconcile;
   /** A run folder a live incarnation of THIS process owns — never touched. */
   isLive?: (dir: string) => boolean;
-  /** The staging scan root: `WINTER_CLAUDE_RESUME_SCAN_ROOT` in tests, else `os.tmpdir()`. */
+  /** The staging scan root: `CLOVER_CLAUDE_RESUME_SCAN_ROOT` in tests, else `os.tmpdir()`. */
   claudeResumeScanRoot?: string;
   /** The `claude-resume-*` listing (`listClaudeResumeStaging` by default) — called at most once per
    *  home and scan root; a test passes a spy to prove a later boot lists nothing. */
@@ -87,12 +87,12 @@ export interface RootRecoveryReport {
   stagingScan: "listed" | "listed-partial" | "marker" | "unreadable";
   /** Every root quarantined by THIS pass. */
   quarantinedRoots: string[];
-  /** Review I6: the Winter sessions marked `repair-required` because one of their transcripts (a
+  /** Review I6: the Clover sessions marked `repair-required` because one of their transcripts (a
    *  subagent's included) was quarantined. */
   sessionsMarked: string[];
 }
 
-/** The rows `winter doctor` reports. */
+/** The rows `clover doctor` reports. */
 export function quarantinedRunRoots(rs: RuntimeStateDb): { root: string; recordedAt: string }[] {
   try {
     return rs.db.query<{ root: string; recorded_at: string }, []>("SELECT root, recorded_at FROM run_root_quarantine ORDER BY recorded_at, root").all()
@@ -102,7 +102,7 @@ export function quarantinedRunRoots(rs: RuntimeStateDb): { root: string; recorde
   }
 }
 
-/** Review M1: a Winter-leg run folder's `projects/` is a LINK to the store itself — there is no working
+/** Review M1: a Clover-leg run folder's `projects/` is a LINK to the store itself — there is no working
  *  copy to reconcile (the router would compare the store with itself). Such a folder is just removed. */
 const hasNoWorkingCopy = (dir: string): boolean => {
   try { return lstatSync(join(dir, "projects")).isSymbolicLink(); } catch { return false; }
@@ -199,7 +199,7 @@ export async function recoverRunRoots(deps: RootRecoveryDeps): Promise<RootRecov
         continue;
       }
       report.recorded[outcome]++;
-      // Only a run folder or a staging root is Winter's to delete; any other recorded root (the pre-WS-21
+      // Only a run folder or a staging root is Clover's to delete; any other recorded root (the pre-WS-21
       // official spool) stays where it is — reconciled, not removed.
       if ((isRunFolder(row.root) || isStagingRoot(row.root)) && remove(row.root)) {
         try { deps.rs.db.run("UPDATE runtime_sessions SET active_local_write_root = NULL, active_local_write_root_kind = NULL WHERE winter_session_id = ?", [row.id]); } catch { /* bounded */ }

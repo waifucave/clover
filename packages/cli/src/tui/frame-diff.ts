@@ -1,7 +1,7 @@
 /** TUI renderer T4 — the damage-bounded frame writer (mechanism report Q5 perf + Q7 cure 4,
  *  ADAPTED — no CC code, only the mechanism: repaint cost bounded by DAMAGE, never frame height).
  *
- *  CC's engine diffs a packed cell grid with per-node damage rects; Winter doesn't need the grid —
+ *  CC's engine diffs a packed cell grid with per-node damage rects; Clover doesn't need the grid —
  *  the transcript is already a line log of pre-wrapped strings, so a LINE differ gets the same
  *  bound with a fraction of the machinery (the mechanism report's own "Renderer design
  *  implications" call). The pieces, layered pure→stream:
@@ -14,7 +14,7 @@
  *     longer previous row) unless the row already fills the terminal width; the whole batch is
  *     wrapped in ONE BSU/ESU synchronized-update envelope
  *     with the cursor parked on the frame's last row at the end (cursor discipline: Ink keeps the
- *     terminal cursor HIDDEN for the app's whole life — log-update's cliCursor.hide — and Winter's
+ *     terminal cursor HIDDEN for the app's whole life — log-update's cliCursor.hide — and Clover's
  *     composer paints its own inverse-video cursor glyph, so the park is escape-hygiene for
  *     tmux/emulator cursor-perturbation self-healing, not a visible-caret decision; absolute
  *     addressing per op replaces CC's CSI H + relative-move anchoring).
@@ -36,7 +36,7 @@
  *     stream, never the proxy — the private-field brand-check hazard), but `write` routes every
  *     string chunk through extract→diff→damage-write instead of BSU-wrapping the full frame.
  *
- *  THE KILL-SWITCH: mount.ts consults `WINTER_TUI_DIFF` — `"0"` bypasses this module entirely
+ *  THE KILL-SWITCH: mount.ts consults `CLOVER_TUI_DIFF` — `"0"` bypasses this module entirely
  *  (today's `makeSyncStdout` write-through), the plan's renderer-vs-writer bisect hatch. */
 
 import { BSU, ESU } from "./alt-screen";

@@ -8,7 +8,7 @@ import { CREDENTIAL_MATERIAL_NAMES, readCredentialMaterial, writeCredentialMater
 
 /**
  * One row of the credential inventory: a provider id, the `SecretStore` name that backs it, and
- * the `CredentialRef["kind"]` it is reached through. Winter's own secrets are ALWAYS Keychain-
+ * the `CredentialRef["kind"]` it is reached through. Clover's own secrets are ALWAYS Keychain-
  * resident in production (`KeychainSecretStore` over `Bun.secrets`; `FileSecretStore` stands in
  * for it in tests) — so every row here is `kind: "keychain"`. `CredentialRef`'s other kinds
  * (`env`/`file`/`inline`/`aws-default-chain`/`none`) name credentials the HOST supplies some other
@@ -36,13 +36,13 @@ export interface CredentialSlot {
  *    `{ kind: "oauth", accessToken, refreshToken?, expiresAt?, accountId?, idToken? }` record.
  *
  * HOTFIX (post-8b, 2026-09-11): these are JSON MATERIAL records, not the raw token/key strings the
- * inventory used to point at (`"openai-api-key"` / `"codex-access-token"`). The spawned Winter
+ * inventory used to point at (`"openai-api-key"` / `"codex-access-token"`). The spawned Clover
  * child resolves a `CredentialRef` by reading the Keychain ITSELF (`Bun.secrets.get`, never through
- * Winter's own provider code) and `JSON.parse`s whatever it finds — a raw string fails outright
+ * Clover's own provider code) and `JSON.parse`s whatever it finds — a raw string fails outright
  * ("... is not valid JSON credential material"). `auth/credential-material.ts` is the single
  * source of truth for these records; the OLD raw names (`OPENAI_API_KEY_SECRET`,
  * `CODEX_SECRET_NAMES.access` and its four bookkeeping siblings) are now a one-way migration
- * source (`migrateLegacyCredentialMaterial`, run once at daemon boot) and `winter logout`'s blank
+ * source (`migrateLegacyCredentialMaterial`, run once at daemon boot) and `clover logout`'s blank
  * target — never named by a credential ref, and `CodexAuthStore` no longer writes them at all.
  *
  * SUPERSEDED BY WS-19 (W19-1): the list used to be a LITERAL array on purpose, so that adding a
@@ -84,7 +84,7 @@ export interface CredentialSlot {
  * `auth/credential-material.ts` is not a lane-1-owned file this phase (it is not named in the
  * 8c lane map at all), and `readCredentialMaterial`/`writeCredentialMaterial` both take an
  * arbitrary secret NAME (never keyed off that constant internally), so nothing requires editing it
- * to add a third provider row here. `winter login --anthropic-key` (`cli/main.ts`) writes exactly
+ * to add a third provider row here. `clover login --anthropic-key` (`cli/main.ts`) writes exactly
  * this name.
  */
 export const ANTHROPIC_CREDENTIAL_SECRET_NAME = "anthropic:default";
@@ -92,7 +92,7 @@ export const ANTHROPIC_CREDENTIAL_SECRET_NAME = "anthropic:default";
 /**
  * Winter Phase 10a fix wave 3 (M-B): the console profile's OWN Keychain slot — a SEPARATE account
  * from `anthropic:default` above. `anthropic:default` is the user's own API-KEY material
- * (`winter login --anthropic-key`); the console broker's bearer material (refreshed off
+ * (`clover login --anthropic-key`); the console broker's bearer material (refreshed off
  * `ant auth print-credentials`, `console-profile-broker.ts`) now lands here instead, never mixed
  * into the api-key slot. Same LOCAL-literal convention as `ANTHROPIC_CREDENTIAL_SECRET_NAME` above
  * — `keychain.test.ts` pins it equal to the SDK's own `ANTHROPIC_CONSOLE_CREDENTIAL_ACCOUNT`, the
@@ -120,7 +120,7 @@ export const ANTHROPIC_ACCOUNT_REQUIRED_KIND: Readonly<Record<string, "api-key" 
   [ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME]: "bearer",
 };
 
-/** `winter login --anthropic-key` (`cli/main.ts`) — the SAME `{kind:"api-key", key}` material shape
+/** `clover login --anthropic-key` (`cli/main.ts`) — the SAME `{kind:"api-key", key}` material shape
  *  `writeOpenAiApiKey` writes, under the anthropic row's own name. No legacy raw-key record exists
  *  for this provider (it is new in 8c), so there is no blank-the-legacy-name step to mirror. */
 export async function writeAnthropicApiKey(store: SecretStore, key: string): Promise<void> {
@@ -152,14 +152,14 @@ export async function writeAnthropicApiKey(store: SecretStore, key: string): Pro
  * an internal role's `no-default-model` refusal NAMES when nothing the user chose can run it
  * (`preferredInternalProviderFor`'s last rung, via `internalProviderPreferenceOrder`).
  *
- * The two OAuth rows are NOT derived — they are the fixed accounts Winter's own bespoke login doors
- * write (`codex-oauth:default` from `winter login`, `anthropic:console` from the console broker) and
+ * The two OAuth rows are NOT derived — they are the fixed accounts Clover's own bespoke login doors
+ * write (`codex-oauth:default` from `clover login`, `anthropic:console` from the console broker) and
  * they carry no api-key slot of their own. Each is filed under the catalog provider it serves
  * (`codex-oauth`, `console`), so every provider appears exactly once.
  *
  * Memoised: `loadCatalog()` is itself memoised for the life of the process and the catalog is
  * immutable, so this array is computed once and handed back by reference (callers treat it as
- * `readonly`, and `WINTER_CREDENTIAL_INVENTORY` below is exactly this call's result).
+ * `readonly`, and `CLOVER_CREDENTIAL_INVENTORY` below is exactly this call's result).
  */
 let memoisedInventory: readonly CredentialSlot[] | undefined;
 
@@ -185,10 +185,10 @@ export function credentialInventory(): readonly CredentialSlot[] {
     // The console broker's bearer account, filed under the `console` CATALOG provider (WS-23 live-gate
     // fix). Fix wave 3 (M-B) had filed it under "anthropic": in the official-leg era a Console-only home
     // still had to select the `anthropic` provider so the `claude` child would use the `ant` profile.
-    // That conflation is what refused every `console/*` session at create time once the Winter runtime
+    // That conflation is what refused every `console/*` session at create time once the Clover runtime
     // served Claude (the router admits a row only when `byProvider` names ITS provider, and nothing
     // produced `byProvider.console`) — and it reported a Console-only home's `anthropic/*` rows as
-    // credentialed with no api key behind them. `console` is its own catalog provider on the Winter
+    // credentialed with no api key behind them. `console` is its own catalog provider on the Clover
     // runtime, and the SDK's Anthropic adapter sends this bearer for exactly that provider id.
     { provider: "console", secretName: ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME, kind: "keychain" },
   ];
@@ -202,7 +202,7 @@ export function credentialInventory(): readonly CredentialSlot[] {
 
 /** The exported constant name every existing caller already reads — now the derivation's result
  *  rather than a literal (WS-19 §5 keeps the name deliberately: nothing downstream changes). */
-export const WINTER_CREDENTIAL_INVENTORY: readonly CredentialSlot[] = credentialInventory();
+export const CLOVER_CREDENTIAL_INVENTORY: readonly CredentialSlot[] = credentialInventory();
 
 /** Error code/class only — NEVER `.message`, which could embed material for some future
  *  `SecretStore` implementation even though today's two (`Bun.secrets`, file read) do not put
@@ -217,8 +217,8 @@ function describeError(err: unknown): string {
 
 /**
  * The `CredentialRef` for a known provider, or `undefined` when `provider` is not in
- * `WINTER_CREDENTIAL_INVENTORY`. Its `account` is the inventory's `secretName` and its `service` is
- * Winter's own `keychainService()` — the pair the child resolves itself (the daemon never reads through it).
+ * `CLOVER_CREDENTIAL_INVENTORY`. Its `account` is the inventory's `secretName` and its `service` is
+ * Clover's own `keychainService()` — the pair the child resolves itself (the daemon never reads through it).
  *
  * The `keychain:<account>` string form of this ref (never constructed here — see 8a) is the exact
  * locator `RuntimeSessionRecord.authRef` persists (`runtime-state/records.ts:46`: "Opaque locator
@@ -234,9 +234,9 @@ function describeError(err: unknown): string {
  * prefix), and this function just looks up each one's fixed inventory row like every other
  * provider.
  *
- * WS-23 (the Winter-only pivot, 2026-09-25): `console` names the console broker's OWN bearer slot
+ * WS-23 (the Clover-only pivot, 2026-09-25): `console` names the console broker's OWN bearer slot
  * (`anthropic:console`, refreshed off `ant auth print-credentials` by `console-profile-broker.ts`)
- * — the official `claude` leg that used to read the on-disk profile is gone, and the Winter child
+ * — the official `claude` leg that used to read the on-disk profile is gone, and the Clover child
  * needs a credential locator like every other provider. The slot holds `{kind:"bearer", token}`
  * material, which the child's `coerceMaterial` accepts and the SDK's anthropic-messages adapter sends
  * as `Authorization: Bearer` plus the OAuth beta for the `console` provider id. Since the live-gate fix
@@ -244,7 +244,7 @@ function describeError(err: unknown): string {
  * every other provider — and presence (`credentialPresenceFrom`) reads the same slot this names.
  */
 export function credentialRefFor(provider: string, home?: string): CredentialRef | undefined {
-  const slot = WINTER_CREDENTIAL_INVENTORY.find((s) => s.provider === provider);
+  const slot = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === provider);
   if (!slot) return undefined;
   return { kind: "keychain", account: slot.secretName, service: keychainService(undefined, home) };
 }
@@ -278,12 +278,12 @@ export function credentialRefFor(provider: string, home?: string): CredentialRef
  */
 /**
  * P8c-10: which `SelectionAuthFamily` each inventory provider's credential belongs to (WS-14 §12's
- * own table, C-14). `openai`/`anthropic` are both a bare API key; `codex-oauth` is Winter's own
+ * own table, C-14). `openai`/`anthropic` are both a bare API key; `codex-oauth` is Clover's own
  * OAuth material shape, which the router's selector treats as `"custom"` (never `"claude-oauth"` —
  * that family is reserved for the Anthropic subscription login this daemon does not have, D14).
  */
 /** WS-19 (W19-1): DERIVED alongside the inventory rather than a three-row literal — every derived
- *  api-key row is `"api-key"`, and `codex-oauth` (Winter's own OAuth material shape) stays
+ *  api-key row is `"api-key"`, and `codex-oauth` (Clover's own OAuth material shape) stays
  *  `"custom"`, exactly as before. `console` has no entry, deliberately: its family is not expressible
  *  in this `"api-key" | "custom"` vocabulary, and the router names it itself — `candidatesFor`
  *  overrides a `console` row's auth family to `console-profile` whenever a ref admits it, so the
@@ -305,7 +305,7 @@ export const PROVIDER_AUTH_FAMILY: Readonly<Record<string, "api-key" | "custom">
 
 export async function credentialPresenceFrom(
   store: SecretStore,
-  inventory: readonly CredentialSlot[] = WINTER_CREDENTIAL_INVENTORY,
+  inventory: readonly CredentialSlot[] = CLOVER_CREDENTIAL_INVENTORY,
 ): Promise<CredentialPresence> {
   // WS-19: the inventory went from 4 rows to ~150, and this probe runs on every session
   // create/open and every `selectRuntimeFor`. Sequential awaits would turn one presence probe into
@@ -378,7 +378,7 @@ export async function refMaterialPresent(store: SecretStore | undefined, ref: Cr
  *
  * WS-23 live-gate fix: `console` is answered by its Keychain slot like every other provider, no longer
  * by the on-disk `ant` profile (`consoleProfileCredentialFile`). The slot is what a turn actually sends
- * — the Winter child and the daemon's own internal jobs both read `anthropic:console` — while the
+ * — the Clover child and the daemon's own internal jobs both read `anthropic:console` — while the
  * profile is only where the broker refreshes it FROM. The two normally move together (a login fills
  * the slot at once; the broker's watcher deletes it when the profile disappears), and where they
  * diverge — a profile whose first refresh has not landed or keeps failing — the profile would offer a

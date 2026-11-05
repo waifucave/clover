@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { CoworkWatchFrame, WORKSPACE_WATCH_LEASE_MS, WORKSPACE_WATCH_RENEW_MS, type CoworkWorkspace } from "@yanlinglabs/winter-protocol";
+import { CoworkWatchFrame, WORKSPACE_WATCH_LEASE_MS, WORKSPACE_WATCH_RENEW_MS, type CoworkWorkspace } from "@waifucave/clover-protocol";
 import type { RuntimeStateDb } from "../runtime-state/db";
 import { CoworkError } from "./types";
 import type { CoworkConnection } from "./service";

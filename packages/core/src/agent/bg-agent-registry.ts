@@ -1,7 +1,7 @@
 import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { GlobalAgentMessage } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
-import type { ChildProfiles, ChildStatus, PersistedWinterChild, RuntimeChildren } from "../runtime-state/children";
+import type { ChildProfiles, ChildStatus, PersistedCloverChild, RuntimeChildren } from "../runtime-state/children";
 import type { SessionApprovalPolicy } from "./gate";
 import { UNSTATED_TAG } from "../runtime-sdk/model-tag";
 
@@ -28,7 +28,7 @@ import { UNSTATED_TAG } from "../runtime-sdk/model-tag";
 // already key off "running" vs. "not running" rather than an enumerated terminal set.
 // P8b Task 13: `interrupted` joins the union. It is WS-16 §12's "interrupted/recoverable" — what a
 // `running` child becomes at the next boot once the caller has PROVEN its process/thread is gone.
-// Deliberately NOT terminal in `PersistedWinterChild`'s sense (it stamps no `completedAt`) and
+// Deliberately NOT terminal in `PersistedCloverChild`'s sense (it stamps no `completedAt`) and
 // deliberately not `stopped` (nobody stopped it), and every consumer here already branches on
 // `"running"` versus everything else, so widening the union changes no behaviour — it only stops an
 // interrupted child being reported as a generic failure.
@@ -87,7 +87,7 @@ export interface RegisterInput {
   sessionId: string;
   threadId: string;
   name?: string;
-  /** The local controller for a child THIS process runs. Absent for a Winter child (Task 17): the
+  /** The local controller for a child THIS process runs. Absent for a Clover child (Task 17): the
    *  child belongs to its session's `winter` process, so `stop()` asks through the owning session's
    *  messaging facet (`steerChild`) instead of aborting anything locally. */
   abort?: AbortController;
@@ -172,7 +172,7 @@ export interface AgentRegistry {
   markNotified(agentId: string): void;
   /**
    * "This child made progress" — the resettable window behind the no-wall-clock rule (CLAUDE.md;
-   * Winter map §10). A no-op on the in-memory registry, whose children are watched by
+   * Clover map §10). A no-op on the in-memory registry, whose children are watched by
    * `SubagentManager` instead.
    */
   progress(agentId: string): void;
@@ -334,7 +334,7 @@ export class BackgroundAgentRegistry implements AgentRegistry {
   }
 
   /** No watchdog here: this registry's children are engine threads, and `SubagentManager` owns
-   *  their progress window (Winter map §10). Present so the two implementations share one type. */
+   *  their progress window (Clover map §10). Present so the two implementations share one type. */
   progress(_agentId: string): void {}
 
   private findByName(sessionId: string, name: string): AgentEntry | undefined {
@@ -348,7 +348,7 @@ export class BackgroundAgentRegistry implements AgentRegistry {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // P8b Task 13 (C-12 / P8b-15): the SAME roster, over 8a's durable child store.
 //
-// WS-17 §8 row 6 is the proof row this exists for: "Winter child identity + `ResumeContext`
+// WS-17 §8 row 6 is the proof row this exists for: "Clover child identity + `ResumeContext`
 // reconstructed after daemon restart". `BackgroundAgentRegistry` is one `Map`, so a restart lost
 // every child wholesale — the names a model was using, which of them had finished, and every
 // `ResumeContext` that made `resume` possible at all. 8a shipped the replacement table
@@ -371,7 +371,7 @@ export class BackgroundAgentRegistry implements AgentRegistry {
 // facet is asynchronous and `stop()` is not, so the steer is fired and its failure logged: the
 // registry's own state flips to `stopped` either way, which is what every caller reads.
 
-/** The default progress window, identical to `SubagentManager`'s and to the Winter runtime's own
+/** The default progress window, identical to `SubagentManager`'s and to the Clover runtime's own
  *  `ASYNC_AGENT_STALL_TIMEOUT_MS` (surface map §9.3). There is deliberately NO wall clock. */
 export const CHILD_STALL_TIMEOUT_MS = 600_000;
 
@@ -409,7 +409,7 @@ export interface PersistedChildrenDeps {
    * `daemon.ts` passes while the engine still runs children. Dep PRESENT ⇒ the window is live and
    * resettable: the getter is re-read at every arm (`settings.subagents.stallTimeoutMs` is hot),
    * `undefined` from it means the 600 s default, and `null`/`0` disables it. Task 17 turns it on
-   * for Winter children when `SubagentManager` retires with the engine.
+   * for Clover children when `SubagentManager` retires with the engine.
    */
   stallTimeoutMs?: () => number | null | undefined;
   timers?: ChildTimers;
@@ -473,7 +473,7 @@ export function createPersistedChildren(deps: PersistedChildrenDeps): AgentRegis
     return located.length === 1 ? located[0]!.parent : undefined;
   };
 
-  const toEntry = (child: PersistedWinterChild): AgentEntry => {
+  const toEntry = (child: PersistedCloverChild): AgentEntry => {
     const profile = tryOr("children.profile", () => deps.profiles.read(child.parentWinterSessionId, child.childId), undefined);
     return {
       agentId: child.childId,
@@ -492,7 +492,7 @@ export function createPersistedChildren(deps: PersistedChildrenDeps): AgentRegis
     };
   };
 
-  const row = (parent: string, childId: string): PersistedWinterChild | undefined =>
+  const row = (parent: string, childId: string): PersistedCloverChild | undefined =>
     tryOr("children.get", () => deps.store.get(parent, childId), undefined);
 
   const read = (parent: string, childId: string): AgentEntry | undefined => {
@@ -533,7 +533,7 @@ export function createPersistedChildren(deps: PersistedChildrenDeps): AgentRegis
     );
   };
 
-  /** A stop envelope the owning session's facet can carry. Winter sends no body the model wrote —
+  /** A stop envelope the owning session's facet can carry. Clover sends no body the model wrote —
    *  this is a control instruction, and it is attributed to the parent session itself. */
   const stopEnvelope = (parent: string, childId: string): GlobalAgentMessage => ({
     messageId: `stop:${encodeURIComponent(parent)}:${encodeURIComponent(childId)}:${now()}`,

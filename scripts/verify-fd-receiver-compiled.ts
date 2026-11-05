@@ -1,13 +1,13 @@
 /**
- * The compiled-binary proof that the Cowork native channel's receiver thread starts in the SHIPPED `winter-core`.
+ * The compiled-binary proof that the Cowork native channel's receiver thread starts in the SHIPPED `clover-core`.
  *
  * `fd-channel.ts` serves every launcher channel from ONE Bun Worker. In dev it builds the Worker from an absolute source URL; in a compiled binary it must use the plain relative
  * string `./fd-receiver-worker.ts` (a `new URL(...).href` hangs silently, WS-23 spike #1), which resolves only if `packages/cli/src/fd-receiver-worker.ts` was passed to
  * `compile:core` as a third entrypoint. `bun test` only runs the dev path, so nothing but the real artifact notices that missing.
  *
- *   1. `compile:core` -> dist/winter-core (all three entrypoints).
- *   2. A copy in a throwaway directory, ad-hoc signed the way the Release app signs winter-core (hardened runtime + scripts/winter-core.entitlements).
- *   3. `<copy> __fd-receiver-probe` from that directory, with a narrow environment and a temp WINTER_HOME: socketpair, one line through the receiver hub, expect the line back.
+ *   1. `compile:core` -> dist/clover-core (all three entrypoints).
+ *   2. A copy in a throwaway directory, ad-hoc signed the way the Release app signs clover-core (hardened runtime + scripts/clover-core.entitlements).
+ *   3. `<copy> __fd-receiver-probe` from that directory, with a narrow environment and a temp CLOVER_HOME: socketpair, one line through the receiver hub, expect the line back.
  *   3b. `<copy> __host-code-adapter-probe`: the host-code broker's SDK modules resolve INSIDE the built binary (`installedHostCodeAdapter()` does not throw "Cannot find module").
  *       Same safety: no home, Keychain, daemon or launcher.
  *   3c. `<copy> __host-env-lazy-probe`: the activation seam's lazy `require("./host-env/environment")` resolves INSIDE the built binary (the seam stays off; the module loads, nothing is built).
@@ -25,8 +25,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DIST_BINARY = join(REPO_ROOT, "dist", "winter-core");
-const ENTITLEMENTS = join(REPO_ROOT, "scripts", "winter-core.entitlements");
+const DIST_BINARY = join(REPO_ROOT, "dist", "clover-core");
+const ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
 const COMPILE_TIMEOUT_MS = 180_000, PROBE_TIMEOUT_MS = 30_000;
 export const ENTRY_NAME = "./fd-receiver-worker.ts";
 
@@ -68,14 +68,14 @@ function sign(path: string): void {
 
 async function main(): Promise<void> {
   console.log("=== compiled-binary proof: the Cowork channel's receiver thread ===");
-  const compile = spawnSync(process.execPath, ["run", "--filter", "@yanlinglabs/winter-cli", "compile:core"], { cwd: REPO_ROOT, encoding: "utf8", timeout: COMPILE_TIMEOUT_MS });
+  const compile = spawnSync(process.execPath, ["run", "--filter", "@waifucave/clover-cli", "compile:core"], { cwd: REPO_ROOT, encoding: "utf8", timeout: COMPILE_TIMEOUT_MS });
   if (compile.status !== 0) throw new Error(`compile:core failed:\n${compile.stdout ?? ""}\n${compile.stderr ?? ""}`);
   if (!existsSync(DIST_BINARY)) throw new Error(`compile:core reported success but ${DIST_BINARY} was not produced`);
-  const scratch = mkdtempSync(join(tmpdir(), "winter-fd-receiver-proof-"));
+  const scratch = mkdtempSync(join(tmpdir(), "clover-fd-receiver-proof-"));
   try {
     const home = join(scratch, "home"); mkdirSync(home);
-    const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? homedir(), WINTER_HOME: home, WINTER_PROFILE: "dev", WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-isolated", WINTER_LOGIN_SHELL_PATH: "off" };
-    const good = join(scratch, "winter-core");
+    const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? homedir(), CLOVER_HOME: home, CLOVER_PROFILE: "dev", CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-isolated", CLOVER_LOGIN_SHELL_PATH: "off" };
+    const good = join(scratch, "clover-core");
     copyFileSync(DIST_BINARY, good); chmodSync(good, 0o755); sign(good);
     const run = await runChild(good, ["__fd-receiver-probe"], env, scratch);
     const result = parseProbe(run.stdout);
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
 
     const broken = withBrokenEntry(readFileSync(DIST_BINARY));
     if (broken === null) throw new Error(`the binary does not contain the entry string ${ENTRY_NAME}: fd-channel.ts does not use the compiled entry`);
-    const bad = join(scratch, "winter-core-broken");
+    const bad = join(scratch, "clover-core-broken");
     writeFileSync(bad, broken); chmodSync(bad, 0o755); sign(bad);
     const negative = await runChild(bad, ["__fd-receiver-probe"], env, scratch);
     if (parseProbe(negative.stdout)?.ok === true) throw new Error("negative control failed: a binary without the worker entry still passed the probe, so the probe proves nothing");

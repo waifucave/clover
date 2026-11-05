@@ -23,7 +23,7 @@ describe("externalCapability", () => {
     expect((server.instance as WinterMcpServerInstance).listTools()).toEqual([]);
   });
 
-  test("a fake plugin's contributed tool appears under the P8b-35 wire name mcp__winter__external__<tool>", () => {
+  test("a fake plugin's contributed tool appears under the P8b-35 wire name mcp__clover__external__<tool>", () => {
     const source: ExternalToolSource = {
       pluginId: "battery-limiter", name: "set_limit", description: "Sets the charge limit.",
       parameters: { type: "object", properties: { percent: { type: "number" } } },
@@ -33,7 +33,7 @@ describe("externalCapability", () => {
     const tools = instance.listTools();
     expect(tools).toEqual([{ name: "set_limit", description: "Sets the charge limit.", inputSchema: { type: "object", properties: { percent: { type: "number" } } } }]);
     // The router builds `mcp__<server.name>__<tool.name>` (capabilities/names.ts's own convention);
-    // `server.name` is `capabilityServerName("external")` ("winter__external"), so the wire name a
+    // `server.name` is `capabilityServerName("external")` ("clover__external"), so the wire name a
     // child actually sees is exactly `capabilityToolName("external", "set_limit")`.
     expect(`mcp__${capabilityServerName("external")}__set_limit`).toBe(capabilityToolName("external", "set_limit"));
   });
@@ -124,7 +124,7 @@ describe("externalCapability", () => {
     };
   }
 
-  test("after a fake tool.register, a Code session's winter__external server lists mcp__winter__external__<name> and a call executes through the registry", async () => {
+  test("after a fake tool.register, a Code session's clover__external server lists mcp__clover__external__<name> and a call executes through the registry", async () => {
     // `tool.register`'s own handler (ipc/server.ts) registers exactly this shape: the namespaced
     // name, a passthrough args schema, and a `run()` closing over the plugin RPC bridge.
     const registry = new ToolRegistry();
@@ -198,14 +198,14 @@ describe("externalCapability — two plugins registering one tool name (WS-27)",
     for (const len of [1, 20, 31, 32, 60, 200]) {
       const tool = "t".repeat(len - 1) + "x";
       const names = externalToolNames([src(`${"p".repeat(50)}@m`, tool), src(`${"q".repeat(50)}@m`, tool)]);
-      for (const n of names) expect(`mcp__winter__external__${n}`.length).toBeLessThanOrEqual(64);
+      for (const n of names) expect(`mcp__clover__external__${n}`.length).toBeLessThanOrEqual(64);
       expect(new Set(names).size).toBe(2);
     }
     // One plugin's two long names sharing their first characters, both clashing: still distinct.
     const long = (end: string) => "a".repeat(40) + end;
     const names = externalToolNames([src("p@m", long("1")), src("q@m", long("1")), src("p@m", long("2")), src("q@m", long("2"))]);
     expect(new Set(names).size).toBe(4);
-    for (const n of names) expect(`mcp__winter__external__${n}`.length).toBeLessThanOrEqual(64);
+    for (const n of names) expect(`mcp__clover__external__${n}`.length).toBeLessThanOrEqual(64);
   });
 
   test("specs that sanitise alike, or a name past 64 characters, fall back to a digest", () => {

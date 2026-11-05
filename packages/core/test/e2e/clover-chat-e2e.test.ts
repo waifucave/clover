@@ -1,4 +1,4 @@
-// P8b Task 16 — CHAT ON THE WINTER LEG, end to end, on the BUILT binary.
+// P8b Task 16 — CHAT ON THE CLOVER LEG, end to end, on the BUILT binary.
 //
 // WS-23 (ruling R1): chat now runs EMBEDDED — one Bun Worker per session inside the daemon — so a chat
 // session's "child" is its Worker, observed through `daemon.embedded` by its backend session id, and
@@ -6,16 +6,16 @@
 // the code-shaped tripwire below spawns it (code keeps the subprocess), and `winterExecutable` still names
 // it; the embedded-only proofs that need no binary at all are `embedded-chat-dispatch-e2e.test.ts`.
 //
-// A real `startDaemon` in a temp home (every mode is the Winter leg since Task 17), a real NDJSON client
-// on its socket, and the real `winter` child `WINTER_RUNTIME_EXECUTABLE` names (the helper SKIPS this
-// whole file when it is unset, and FAILS when `WINTER_RUNTIME_REQUIRE_BINARY=1`). Every model is a
+// A real `startDaemon` in a temp home (every mode is the Clover leg since Task 17), a real NDJSON client
+// on its socket, and the real `winter` child `CLOVER_RUNTIME_EXECUTABLE` names (the helper SKIPS this
+// whole file when it is unset, and FAILS when `CLOVER_RUNTIME_REQUIRE_BINARY=1`). Every model is a
 // `winter-test/<double>` — nothing reaches the network.
 //
 // The brief's cases (a)–(h), reshaped where the binary's measured behaviour differs from the
-// brief's premise (see `winter-session.ts`'s header and the Task 16 report):
-//   (a) create → a Winter-leg record; send "hello" → user_message, turn_started, assistant_message,
+// brief's premise (see `clover-session.ts`'s header and the Task 16 report):
+//   (a) create → a Clover-leg record; send "hello" → user_message, turn_started, assistant_message,
 //       turn_completed, in that order, ONE terminal
-//   (b) tooluse → tool_call/tool_result/terminal with WINTER names, the fallback text on the result
+//   (b) tooluse → tool_call/tool_result/terminal with CLOVER names, the fallback text on the result
 //   (c) two sessions; a delivery through the router lands in B's JSONL and runs B's next turn
 //   (d) steer during a hang, interrupt → the interrupted terminal, NO agent_error; the child stays
 //       live and the same child takes the next send; then end() → resumable → a send RESUMES the
@@ -28,13 +28,13 @@
 //   (g) P8c-6 (integration round 3 update — P8b-22's own "permanently refused" premise is now
 //       stale): daemon.ts wires `importLegacy` into every real boot, so `session.send` on that
 //       engine-era record now imports it ONE-SHOT instead of refusing — the record moves onto the
-//       Winter leg and the send succeeds; a later `session.steer` no longer sees
+//       Clover leg and the send succeeds; a later `session.steer` no longer sees
 //       `session_predates_winter_leg` either, because the record is no longer engine-era by then.
 //   (tripwires) chat's init.tools = exactly the allowed built-ins ∪ chat's capability tools; a
 //       code-shaped child advertises BASE ∪ MCP ∪ its capability tools minus the ToolSearch/
 //       WaitForMcpServers half `toolSearchEnabled` excludes
 //   (e) stop() with a HANGING live turn ends inside the grace and the child is gone
-//   (h) ~/.winter and ~/.winter-dev have the same recursive NAME signature before and after, their
+//   (h) ~/.clover and ~/.clover-dev have the same recursive NAME signature before and after, their
 //       `projects/` subtrees (what a winter child writes) the same size/mtime signature, and no
 //       `dist/winter` process survives this file; the POSITIVE half — the transcript lives under
 //       the TEMP home — is (d)'s
@@ -43,21 +43,21 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSy
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { Options } from "@yanlinglabs/winter-agent-sdk";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import type { RuntimeStateWiring } from "../../src/runtime-state";
 import { sessionLegOf } from "../../src/runtime-sdk/leg";
-import { buildWinterOptions, toolsFor } from "../../src/runtime-sdk/mode-options";
+import { buildCloverOptions, toolsFor } from "../../src/runtime-sdk/mode-options";
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
-import { WINTER_ADVERTISED_MCP_TOOLS_0_0_4, WINTER_ADVERTISED_TOOLS_0_0_4_BASE } from "../../src/runtime-sdk/tool-names";
+import { CLOVER_ADVERTISED_MCP_TOOLS_0_0_4, CLOVER_ADVERTISED_TOOLS_0_0_4_BASE } from "../../src/runtime-sdk/tool-names";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { buildRunHome } from "@yanlinglabs/winter-runtime-sdk";
 import { runHomeInputFor } from "../../src/runtime-sdk/run-home-input";
-import { withRunHome } from "../../src/runtime-sdk/winter-session";
-import { WINTER_CAPABILITY_TOOLS } from "../../src/capabilities";
+import { withRunHome } from "../../src/runtime-sdk/clover-session";
+import { CLOVER_CAPABILITY_TOOLS } from "../../src/capabilities";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 
 // ── a raw NDJSON client that also collects the events it is streamed ─────────────────────────────
@@ -122,7 +122,7 @@ class TestClient {
 // user's LIVE daemon does not touch on its own — a size/mtime signature over `sessions/`, `logs/`
 // or `run/` would flake on every keystroke the user types meanwhile.
 
-const REAL_HOMES = [join(homedir(), ".winter"), join(homedir(), ".winter-dev")];
+const REAL_HOMES = [join(homedir(), ".clover"), join(homedir(), ".clover-dev")];
 function walkHome(dir: string, describe: (rel: string, st: Stats) => string): string {
   if (!existsSync(dir)) return `${dir}: absent`;
   const lines: string[] = [];
@@ -145,20 +145,20 @@ const homeSignature = (dir: string): string => walkHome(dir, (rel, st) => (st.is
 const projectsSignature = (home: string): string => walkHome(join(home, "projects"), (rel, st) => `${rel} ${st.size} ${st.mtimeMs}`);
 /** Every `dist/winter` process on the box, whoever spawned it (the survivors check) — matched on
  *  the EXECUTABLE (the command line starts with the binary), not `pgrep -f`'s substring, which also
- *  catches the shell that exported `WINTER_RUNTIME_EXECUTABLE=<bin>` to run this very file. */
+ *  catches the shell that exported `CLOVER_RUNTIME_EXECUTABLE=<bin>` to run this very file. */
 /** THIS file's surviving children only: a `winter` process whose command line names this file's own home (its
  *  `--config-json` carries the daemon's sandbox paths under it) — never a stray from another run, which would
  *  fail every file's check at once. */
-const winterSurvivors = (bin: string, home: string): string[] =>
+const cloverSurvivors = (bin: string, home: string): string[] =>
   Bun.spawnSync(["ps", "-axww", "-o", "pid=,command="]).stdout.toString().split("\n")
     .map((l) => l.trim()).filter((l) => l.replace(/^\d+\s+/, "").startsWith(bin) && l.includes(home));
 
 /** `pgrep -f` takes a REGEX. The npm platform binary's path carries `+` and `.`
  *  (`…/@yanlinglabs+winter-agent-sdk-darwin-arm64@0.0.35/…`), so an unescaped path matched nothing and
- *  every child scan came back empty whenever `$WINTER_RUNTIME_EXECUTABLE` was unset. */
+ *  every child scan came back empty whenever `$CLOVER_RUNTIME_EXECUTABLE` was unset. */
 const pgrepLiteral = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** The child processes of THIS test process that are the winter binary. */
-const winterChildren = (bin: string): string[] =>
+const cloverChildren = (bin: string): string[] =>
   Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", pgrepLiteral(bin)]).stdout.toString().trim().split("\n").filter(Boolean);
 
 /** WS-23: the daemon's embedded-session host — where a chat session's Worker is observed. */
@@ -166,7 +166,7 @@ type EmbeddedHost = RunningDaemon["embedded"];
 
 const types = (events: SessionEvent[]): string[] => events.map((e) => e.type);
 
-describeWithWinterBinary("chat on the Winter leg — the built binary through a real daemon", (bin) => {
+describeWithWinterBinary("chat on the Clover leg — the built binary through a real daemon", (bin) => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let rt: RuntimeStateWiring;
@@ -205,7 +205,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
 
   beforeAll(async () => {
     for (const h of REAL_HOMES) { signaturesBefore.set(h, homeSignature(h)); projectsBefore.set(h, projectsSignature(h)); }
-    home = mkdtempSync(join(tmpdir(), "winter-chat-e2e-"));
+    home = mkdtempSync(join(tmpdir(), "clover-chat-e2e-"));
     mkdirSync(home, { recursive: true });
     writeSettings(true);
     await bootDaemon();
@@ -216,7 +216,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     const stopping = daemon?.stop();
     daemon = undefined;
     await stopping;
-    for (const pid of winterChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
+    for (const pid of cloverChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -224,10 +224,10 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
    *  Worker runs in (WS-23: the Worker is constructed synchronously inside `query()`), having checked
    *  that the create spawned NO `winter` process — chat is embedded, never a subprocess. */
   async function createChat(model: string): Promise<{ sid: string; host: EmbeddedHost }> {
-    const before = new Set(winterChildren(bin));
+    const before = new Set(cloverChildren(bin));
     const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "chat", model: `winter-test/${model}` });
     await client.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
-    expect(winterChildren(bin).filter((p) => !before.has(p))).toEqual([]);
+    expect(cloverChildren(bin).filter((p) => !before.has(p))).toEqual([]);
     return { sid: sessionId, host: daemon!.embedded };
   }
   const workerAlive = (host: EmbeddedHost, backend: string): boolean => host.live().includes(backend);
@@ -241,7 +241,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     expect(new Date(rt.lastRecovery.finishedAt).getTime()).toBeLessThanOrEqual(statSync(daemon!.socketPath).ctimeMs);
   });
 
-  test("(a) create → a Winter-leg record with a backend uuid; send 'hello' → the ordered turn with ONE terminal", async () => {
+  test("(a) create → a Clover-leg record with a backend uuid; send 'hello' → the ordered turn with ONE terminal", async () => {
     const { sid, host } = await createChat("echo");
     // one Worker per session (WS-23: chat is embedded — P8b-1's path (b))
     expect(host.live().filter((b) => b === record(sid)?.backendSessionId)).toHaveLength(1);
@@ -253,8 +253,8 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     expect(rec!.versionProvenance).toBe("recorded");
     // fix wave F12: the reason narrates a FACT, never a flag (the old wording named
     // `settings.runtimes.winterLeg.chat`, which no longer decides anything)
-    expect(rec!.selection.reason).toBe("created as a chat session on the Winter leg (the only leg since Phase 8b)");
-    const driver = daemon!.winter.get(sid);
+    expect(rec!.selection.reason).toBe("created as a chat session on the Clover leg (the only leg since Phase 8b)");
+    const driver = daemon!.clover.get(sid);
     expect(driver?.state).toBe("live");
     expect(driver?.generation).toBe(1);
 
@@ -276,7 +276,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
 
   test("(tripwire) chat's system/init.tools = exactly the allowed built-ins the child advertises ∪ chat's capability tools", async () => {
     const { sid } = await createChat("echo");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     const t0 = Date.now();
     while (driver.init === undefined && Date.now() - t0 < 10_000) await Bun.sleep(20);
     // The 2026-10-01 tool-surface ruling: chat's built-ins are an ALLOWED list (`Options.tools`,
@@ -284,14 +284,14 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     // search tool is `WebSearch` — and every MCP tool starts DEFERRED, so chat's one capability tool,
     // `Browser`, is NOT in `init.tools` (it loads through `ToolSearch`; `tool-surface-e2e.test.ts`
     // proves the deferred half). `advisor` is allowed but advertised only when a reviewer resolves.
-    const chatCaps = Object.entries(WINTER_CAPABILITY_TOOLS).filter(([, f]) => (f.modes as readonly string[]).includes("chat")).map(([n]) => n);
-    expect(chatCaps).toEqual(["mcp__winter__browser__browser"]);
+    const chatCaps = Object.entries(CLOVER_CAPABILITY_TOOLS).filter(([, f]) => (f.modes as readonly string[]).includes("chat")).map(([n]) => n);
+    expect(chatCaps).toEqual(["mcp__clover__browser__browser"]);
     const expected = toolsFor("chat", { exaKeyPresent: false })!.filter((t) => t !== "advisor");
     expect([...driver.init!.tools].sort()).toEqual(expected);
     expect(expected).toEqual(["AskUserQuestion", "ToolSearch", "WebFetch", "WebSearch"]);
   }, 30_000);
 
-  test("(b) tooluse → tool_call + tool_result + terminal, WINTER-shaped, and the child's fallback text on the unregistered tool", async () => {
+  test("(b) tooluse → tool_call + tool_result + terminal, CLOVER-shaped, and the child's fallback text on the unregistered tool", async () => {
     const { sid } = await createChat("tooluse");
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "use the tool" });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sid);
@@ -301,7 +301,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     expect(kinds).toEqual(["user_message", "turn_started", "tool_call", "tool_result", "assistant_message", "turn_completed"]);
     const call = log.find((e) => e.type === "tool_call") as { name: string; callId: string };
     const res = log.find((e) => e.type === "tool_result") as { callId: string; isError: boolean; output: string };
-    expect(call.name).toBe("test_tool");      // no Winter name: the documented fail-open pass-through
+    expect(call.name).toBe("test_tool");      // no Clover name: the documented fail-open pass-through
     expect(res.callId).toBe(call.callId);
     expect(res.isError).toBe(true);           // the tool is not registered: the child's own denial text
     expect(res.output.length).toBeGreaterThan(0);
@@ -310,7 +310,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
   test("(c) a delivery through the router lands in B's JSONL as a user_message and runs B's next turn", async () => {
     const { sid: a } = await createChat("echo");
     const { sid: b } = await createChat("echo");
-    for (const sid of [a, b]) { const d = daemon!.winter.get(sid)!; const t0 = Date.now(); while (d.init === undefined && Date.now() - t0 < 10_000) await Bun.sleep(20); }
+    for (const sid of [a, b]) { const d = daemon!.clover.get(sid)!; const t0 = Date.now(); while (d.init === undefined && Date.now() - t0 < 10_000) await Bun.sleep(20); }
     const outcome = await daemon!.runtimeSdk!.sdk.messaging.send({
       from: buildSessionAddress(backendOf(a)),
       to: serializeRuntimeAddress(buildSessionAddress(backendOf(b))),
@@ -332,7 +332,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
 
   test("(d) steer during a hang + interrupt → the interrupted terminal, NO agent_error, the child stays live; end() then send resumes the SAME backend session", async () => {
     const { sid, host } = await createChat("hang");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang please" });
     await Bun.sleep(400);
     const steer = await client.call<{ ok: boolean; injected: boolean }>(METHODS.sessionSteer, { sessionId: sid, text: "steer mid-turn" });
@@ -383,7 +383,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
 
   test("(d2) the idle timeout ends an idle child (its Worker leaves the embedded host) and a later send resumes it", async () => {
     const { sid, host } = await createChat("echo");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "one" });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sid);
     expect(driver.state).toBe("live");
@@ -406,8 +406,8 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     // and never cold-resumes a child behind the daemon's back (the row was parked without its
     // backend id). The next `send` through the daemon is what resumes it.
     const { sid: sender } = await createChat("echo");
-    { const s = daemon!.winter.get(sender)!; const t1 = Date.now(); while (s.init === undefined && Date.now() - t1 < 10_000) await Bun.sleep(20); }
-    const before = winterChildren(bin);
+    { const s = daemon!.clover.get(sender)!; const t1 = Date.now(); while (s.init === undefined && Date.now() - t1 < 10_000) await Bun.sleep(20); }
+    const before = cloverChildren(bin);
     const workersBefore = daemon!.embedded.live();
     const outcome = await daemon!.runtimeSdk!.sdk.messaging.send({
       from: buildSessionAddress(backendOf(sender)),
@@ -418,13 +418,13 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     expect(outcome.status).toBe("unavailable");
     expect(driver.state).toBe("resumable");
     expect(driver.heldDeliveries).toEqual([]);
-    expect(winterChildren(bin)).toEqual(before);
+    expect(cloverChildren(bin)).toEqual(before);
     expect(daemon!.embedded.live()).toEqual(workersBefore);   // nor a Worker
   }, 40_000);
 
   test("(j) P8b-39: a send held behind an INTERRUPTED turn is not auto-run — no turn_started until the next send, which runs it FIRST and queues its own text", async () => {
     const { sid } = await createChat("hang");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang please" });
     await Bun.sleep(400);
     const held = await client.call<{ seq: number }>(METHODS.sessionSend, { sessionId: sid, text: "held one" });
@@ -463,22 +463,22 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     const { sid } = await createChat("echo");
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "one" });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sid);   // the transcript now exists
-    await daemon!.winter.get(sid)!.end();                                              // the model is re-read on resume
+    await daemon!.clover.get(sid)!.end();                                              // the model is re-read on resume
     await client.call(METHODS.sessionSetModel, { sessionId: sid, model: "winter-test/hang" });
     const host = daemon!.embedded;
     const backend = backendOf(sid);
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang please" });
     expect(workerAlive(host, backend)).toBe(true);
-    expect(daemon!.winter.get(sid)!.resumed).toBe(true);
+    expect(daemon!.clover.get(sid)!.resumed).toBe(true);
     await Bun.sleep(400);
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "held one" });
-    expect(daemon!.winter.get(sid)!.pendingSends).toEqual(["held one"]);
+    expect(daemon!.clover.get(sid)!.pendingSends).toEqual(["held one"]);
     const transcriptBefore = statSync(transcriptFile(sid)).size;
     await stopDaemon();                        // the hanging turn is aborted; "held one" is in the log only
     expect(await workerGoneWithin(host, backend, 3000)).toBe(true);
     await bootDaemon();
-    expect(daemon!.winter.get(sid)).toBeUndefined();   // never cold-resumed at boot: the first RPC does it
-    expect(daemon!.winter.legOf(sid)).toBe("winter");
+    expect(daemon!.clover.get(sid)).toBeUndefined();   // never cold-resumed at boot: the first RPC does it
+    expect(daemon!.clover.legOf(sid)).toBe("winter");
     await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     await client.call(METHODS.sessionSetModel, { sessionId: sid, model: "winter-test/echo" });
     const kinds = (log: SessionEvent[]) => types(log).filter((t) => ["user_message", "turn_started", "assistant_message", "turn_completed"].includes(t));
@@ -488,7 +488,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     ]);
     const evCount = client.events.length;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "third" });
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     expect(driver.resumed).toBe(true);
     expect(driver.generation).toBe(3);
     await client.waitFor((e) => client.events.indexOf(e) >= evCount && e.type === "turn_completed" && e.sessionId === sid && client.events.filter((x) => client.events.indexOf(x) >= evCount && x.type === "turn_completed" && x.sessionId === sid).length >= 2);
@@ -519,8 +519,8 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     const bare = new SessionStore(home);
     try { engineSid = bare.createSession("e2e", { mode: "chat" }); } finally { bare.close(); }
     await bootDaemon();
-    expect(daemon!.winter.get(engineSid)).toBeUndefined();
-    expect(winterChildren(bin)).toEqual([]);   // nothing spawned for a backfilled row
+    expect(daemon!.clover.get(engineSid)).toBeUndefined();
+    expect(cloverChildren(bin)).toEqual([]);   // nothing spawned for a backfilled row
     expect(daemon!.embedded.live()).toEqual([]);   // …and no Worker either (WS-23)
     const rec = record(engineSid);
     expect(rec).toBeDefined();
@@ -528,7 +528,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     expect(rec!.backendSessionId).toBeUndefined();
     expect(rec!.transcriptHealth).toBe("unsupported");
     expect(rec!.versionProvenance).toBe("legacy-unknown");
-    // the Winter-leg records from the earlier boots survived this boot's recovery intact
+    // the Clover-leg records from the earlier boots survived this boot's recovery intact
     expect(rt.records.list().filter((r) => sessionLegOf(r) === "winter").length).toBeGreaterThan(0);
   }, 30_000);
 
@@ -542,7 +542,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     const sent = await client.call<{ seq: number }>(METHODS.sessionSend, { sessionId: engineSid, text: "hello?" });
     expect(sent.seq).toBeGreaterThan(0);
     // The record is no longer engine-era: the import gave it a real backend transcript on the
-    // Winter leg. WS-20: the resumed child runs the settings-wide default (`winter-test/echo`, see
+    // Clover leg. WS-20: the resumed child runs the settings-wide default (`winter-test/echo`, see
     // `writeSettings`) — a provider-less double, so the first-turn credential gate has nothing to
     // refuse and the RPC's own success is the import door's contract.
     expect(sessionLegOf(record(engineSid))).not.toBe("engine");
@@ -563,7 +563,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     const sid = "s_tripwire_code";
     // R.1: the daemon's router is a run-home router (`requireRunHome`), so a generation driven straight at it
     // carries a run home the router's own builder made for this cwd — the canonical one it checks against.
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-tripwire-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-tripwire-cwd-")));
     const caps = daemon!.buildSessionCapabilities({ sessionId: sid, mode: "code", cwd, roots: [cwd], tmpDir: cwd });
     const hook = handle.spawnHookFor("code");
     if (hook instanceof Error) throw hook;
@@ -571,10 +571,10 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     const runHome = await buildRunHome(runHomeInputFor({
       home, trust: { isTrusted: () => false }, settings: () => undefined, reservedMcpServerNames: Object.keys(caps), gitRootFor: () => null,
     }, { mode: "code", dispatchChild: false, leg: "winter", cwd }));
-    const options: Options = withRunHome(buildWinterOptions({
+    const options: Options = withRunHome(buildCloverOptions({
       mode: "code", policy: "auto", sessionId: crypto.randomUUID(), home, cwd, model: "winter-test/echo" as ModelTag,
       credentials: { byProvider: {} }, spawn: hook, canUseTool: async () => ({ behavior: "deny", message: "tripwire" }), abort,
-      capabilityTools: WINTER_CAPABILITY_TOOLS, capabilities: caps, runHomeApplied: true,
+      capabilityTools: CLOVER_CAPABILITY_TOOLS, capabilities: caps, runHomeApplied: true,
     }), runHome);
     const queue = createHostPromptQueue();
     const q = sdk.query({ prompt: queue, options });
@@ -588,20 +588,20 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     await runHome.dispose();
     // Agent SDK 0.0.17 advertises `WebFetch`/`WebSearch` in EVERY session (the 0.0.3 measurement the
     // BASE constant records predates them), and code mode withholds neither — the 2026-09-18 ruling
-    // gives a Winter code session both. The 2026-10-01 ruling turns Tool Search ON: so `ToolSearch` is
+    // gives a Clover code session both. The 2026-10-01 ruling turns Tool Search ON: so `ToolSearch` is
     // advertised (never `WaitForMcpServers`), every capability tool (an MCP tool) starts DEFERRED and is
     // NOT in `init.tools`, and `CronList` is deferred too (`deferTools`).
     expect(Object.keys(caps).length).toBeGreaterThan(0);
-    const expected = [...new Set([...WINTER_ADVERTISED_TOOLS_0_0_4_BASE, ...WINTER_ADVERTISED_MCP_TOOLS_0_0_4, "WebFetch", "WebSearch"])]
+    const expected = [...new Set([...CLOVER_ADVERTISED_TOOLS_0_0_4_BASE, ...CLOVER_ADVERTISED_MCP_TOOLS_0_0_4, "WebFetch", "WebSearch"])]
       .filter((t) => t !== "WaitForMcpServers" && t !== "CronList").sort();
     expect([...tools].sort()).toEqual(expected);
-    expect(tools.some((t) => t.startsWith("mcp__winter__"))).toBe(false);
+    expect(tools.some((t) => t.startsWith("mcp__clover__"))).toBe(false);
     rmSync(cwd, { recursive: true, force: true });
   }, 40_000);
 
   test("(e) stop() with a HANGING live turn ends inside the grace, and the child (its Worker) is gone", async () => {
     const { sid, host } = await createChat("hang");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     const backend = backendOf(sid);
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang forever" });
     await Bun.sleep(400);
@@ -626,7 +626,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     } finally { store.close(); }
   }, 30_000);
 
-  test("(h) home isolation: ~/.winter and ~/.winter-dev carry the same name signature as before this file ran, their projects/ the same size+mtime signature, and no dist/winter survives", async () => {
+  test("(h) home isolation: ~/.clover and ~/.clover-dev carry the same name signature as before this file ran, their projects/ the same size+mtime signature, and no dist/winter survives", async () => {
     for (const h of REAL_HOMES) {
       expect(homeSignature(h)).toBe(signaturesBefore.get(h)!);
       expect(projectsSignature(h)).toBe(projectsBefore.get(h)!);
@@ -634,7 +634,7 @@ describeWithWinterBinary("chat on the Winter leg — the built binary through a 
     // every child this file spawned is gone ((e) stopped the last daemon; a filtered run stops it here)
     if (daemon !== undefined) await stopDaemon();
     const t0 = Date.now();
-    while (winterSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
-    expect(winterSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
+    while (cloverSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
+    expect(cloverSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
   });
 });

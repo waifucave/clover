@@ -52,7 +52,7 @@
 //
 // Nothing in `src/` imports this module. It never touches a record, a process or a view itself.
 
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { coworkConnectorVerdict, coworkHostDecision, isCoworkApprovalPolicy, type CoworkGuestToolClass, type CoworkHostDecision, type CoworkPathClass, type CoworkVerdict } from "./host-policy";
 import type { CapabilityCeiling } from "./types";
 

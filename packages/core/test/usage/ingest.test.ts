@@ -24,7 +24,7 @@ function service(opts: { codexHome?: string; claudeHome?: string; tracking?: Usa
     db, pricer, tracking: () => opts.tracking ?? { codex: true, claudeCode: true, antigravity: true, opencode: true },
     ...(opts.codexHome === undefined ? {} : { codexHome: opts.codexHome }),
     ...(opts.claudeHome === undefined ? {} : { claudeHome: opts.claudeHome }),
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, winterCodexWindows: () => [],
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
     probeRoot: () => probeRootIn(home), ingestEveryMs: 0, ...(opts.now === undefined ? {} : { now: opts.now }),
     ...(opts.fileBudgetBytes === undefined ? {} : { fileBudgetBytes: opts.fileBudgetBytes }),
     ...(opts.maxLineBytes === undefined ? {} : { maxLineBytes: opts.maxLineBytes }),

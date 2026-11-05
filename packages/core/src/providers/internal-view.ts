@@ -1,5 +1,5 @@
 /**
- * 2026-09-19: the ONE live snapshot of "which providers can Winter's own background jobs actually run
+ * 2026-09-19: the ONE live snapshot of "which providers can Clover's own background jobs actually run
  * on right now" — the object the wire (`settings.modelRoles`), the default-tag readers
  * (`settings.ts`'s `preferredInternalProviderFor`/`internalRoleDefaultTagFor`) and the actual
  * dispatcher (`internal-router.ts`) all read, so none of them can disagree.
@@ -74,7 +74,7 @@ export interface InternalProviderView {
    * no-op), so a hot loop of refused internal calls cannot turn into a Keychain probe per call.
    *
    * WHY THIS EXISTS. `credential.set`/`credential.remove` are not the only doors onto the material
-   * these jobs read: `winter login` (the ChatGPT/Codex OAuth flow) and bare `winter logout` write
+   * these jobs read: `clover login` (the ChatGPT/Codex OAuth flow) and bare `clover logout` write
    * `codex-oauth:default` IN-PROCESS, by design — a login door whose first move is to reach the daemon
    * is useless in exactly the state a user reaches for it. Before the per-provider fan-out the codex arm
    * resolved its material per call and so picked those up for free; a cached presence snapshot does not.
@@ -87,7 +87,7 @@ export interface InternalProviderView {
 }
 
 /** The self-heal floor — at most one background probe per 30 s per view. Long enough that a refused
- *  job in a tight loop costs nothing, short enough that a user who just ran `winter login` in another
+ *  job in a tight loop costs nothing, short enough that a user who just ran `clover login` in another
  *  terminal does not notice the gap. */
 export const REFRESH_SOON_MIN_MS = 30_000;
 
@@ -113,8 +113,8 @@ export function createInternalProviderView(deps: {
     set.size === 0 ? "none" : internalProviderPreferenceOrder().filter((id) => set.has(id)).join(", ");
   const summaryOf = (set: ReadonlySet<string>): string =>
     set.size === 0
-      ? `internal-provider: no provider Winter's own jobs can run on holds a credential — titles, the bash safety reviewer, the dreamer and the session cleaner are inert until one is stored (${LOGIN_HINT})`
-      : `internal-provider: Winter's own jobs can run on ${describe(set)}`;
+      ? `internal-provider: no provider Clover's own jobs can run on holds a credential — titles, the bash safety reviewer, the dreamer and the session cleaner are inert until one is stored (${LOGIN_HINT})`
+      : `internal-provider: Clover's own jobs can run on ${describe(set)}`;
 
   const view: InternalProviderView = {
     eligible: () => eligible,
@@ -137,7 +137,7 @@ export function createInternalProviderView(deps: {
     },
     async refresh(opts) {
       // Only the ELIGIBLE slots, never the whole ~150-row inventory: this runs on every credential
-      // write and the rows for providers Winter's jobs can never use would be pure cost.
+      // write and the rows for providers Clover's jobs can never use would be pure cost.
       const slots = credentialInventory().filter((s) => eligible.has(s.provider));
       let next: ReadonlySet<string>;
       try {
@@ -179,7 +179,7 @@ export function staticInternalProviderView(credentialed: Iterable<string> = []):
     generation: () => 0,
     refreshSoon: () => {},
     changedAt: () => STATIC_CHANGED_AT,
-    summary: () => (set.size === 0 ? "internal-provider: no credentialed provider (injected view)" : `internal-provider: Winter's own jobs can run on ${[...set].join(", ")} (injected view)`),
+    summary: () => (set.size === 0 ? "internal-provider: no credentialed provider (injected view)" : `internal-provider: Clover's own jobs can run on ${[...set].join(", ")} (injected view)`),
     refresh: async () => {},
   };
 }

@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { signedFacts } from "./dev-daemon-lib";
 
-/** Winter's Apple team (the signing certificate's OU), as `scripts/embed-computer-helper.sh` defaults it. */
+/** Clover's Apple team (the signing certificate's OU), as `scripts/embed-computer-helper.sh` defaults it. */
 export const COWORK_NATIVE_TEAM = "37N77U9RSZ";
 
 export const COWORK_NATIVE = {
@@ -27,7 +27,7 @@ export type CoworkNativeFlavor = "dist" | "dev";
 export const coworkNativeIdentifier = (role: CoworkNativeRole, flavor: CoworkNativeFlavor = "dist"): string =>
   role === "launcher" && flavor === "dev" ? COWORK_NATIVE.launcher.devIdentifier : COWORK_NATIVE[role].identifier;
 
-/** Where the pair sits inside Winter.app. S7 wires the embed phase; the path is decided here so every check agrees. */
+/** Where the pair sits inside Clover.app. S7 wires the embed phase; the path is decided here so every check agrees. */
 export const COWORK_NATIVE_EMBED_RELATIVE = join("Contents", "Helpers", "WinterCowork");
 
 /** The worker's ONE entitlement. The launcher has none. */
@@ -44,7 +44,7 @@ export const COWORK_TEST_PIN_MARKER = 'cdhash H"';
 /** The Swift package of the launcher, relative to the repository root. */
 export const COWORK_LAUNCHER_PACKAGE = join("apple", "Cowork", "WinterCoworkLauncher");
 
-/** A stated designated requirement: the identifier and Winter's team under Apple's anchor — the shape of
+/** A stated designated requirement: the identifier and Clover's team under Apple's anchor — the shape of
  *  `scripts/computer-helper-lib.ts`, and what the launcher compiles for its worker (`WinterCodeIdentity.requirement`). */
 export function coworkRequirement(identifier: string, teamId: string = COWORK_NATIVE_TEAM): string {
   return `identifier "${identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
@@ -97,7 +97,7 @@ export interface SignedNativeFacts {
 }
 
 /**
- * Everything a signed member of the pair must be, as failure lines (empty = good): its identifier, Winter's team (`teamId`
+ * Everything a signed member of the pair must be, as failure lines (empty = good): its identifier, Clover's team (`teamId`
  * undefined means an ad-hoc test signature, which has none), the hardened runtime, EXACTLY the stated designated requirement,
  * the right entitlements (none for the launcher, exactly the hypervisor key for the worker), platform dylibs only, and no test hook
  * anywhere in the bytes.
@@ -129,7 +129,7 @@ export function checkSignedNative(role: CoworkNativeRole, teamId: string | undef
 
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// The bundle gate: what a Winter.app must hold for the pair, checked by release.ts and verify:cowork-native on the SAME function.
+// The bundle gate: what a Clover.app must hold for the pair, checked by release.ts and verify:cowork-native on the SAME function.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
 /** The manifest `embed-cowork-native.sh` writes after signing. Nothing in the daemon reads it. */
@@ -247,7 +247,7 @@ export type CoworkNativeReleasePlan =
 
 /**
  * `COWORK_LIBKRUN_INCLUDE` + `COWORK_LIBKRUN_ARCHIVE` (both) build and ship the pair; `COWORK_NATIVE=omit` ships none; anything else refuses, with a message that names both ways out.
- * Giving the inputs AND omit is contradictory, one input alone is half a build, and any other value of COWORK_NATIVE is a typo: all refuse. Winter releases must not block on an archive
+ * Giving the inputs AND omit is contradictory, one input alone is half a build, and any other value of COWORK_NATIVE is a typo: all refuse. Clover releases must not block on an archive
  * that does not exist yet, which is what `omit` is for; it is never the default.
  */
 export function coworkNativeReleasePlan(env: Readonly<Record<string, string | undefined>>): CoworkNativeReleasePlan {

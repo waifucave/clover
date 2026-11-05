@@ -7,13 +7,14 @@ import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
 import { join } from "node:path";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { bootstrapWinterDir, resolveWinterHome, isDefaultWinterHome } from "./winter-dir";
+import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+import { assertNotOtherInstallHome } from "./other-installs";
+import { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
 import { acquireLock, type Lock } from "./lock";
-import { keychainService, resolveWinterProfile } from "./profile";
-import { describeHomePristineness, legacyHomeFor, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
+import { keychainService, resolveCloverProfile } from "./profile";
+import { describeHomePristineness, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
 import { inspectCoworkSource } from "./migration/cowork-exclusion";
 import { manifestFileState, manifestPath } from "./migration/manifest";
-import { LegacyKeychainSecretStore } from "./migration/legacy-keychain-store";
 import { TOKEN_NAMES, TokenAuthority } from "./auth/tokens";
 import { appTokenAclBootTrust, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, type AppTokenAccess, type AppTokenKeychain, type AppTokenTrust } from "./auth/app-token-acl";
 import { applicationPathsForBundleId, keychainUnlocked, withKeychainUserInteractionDisabled } from "./auth/keychain-ffi";
@@ -32,7 +33,7 @@ import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, winterOptionsFromSettings, ownProviderFor, pinsFor, INTERNAL_PROVIDER_IDS, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, INTERNAL_PROVIDER_IDS, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -111,7 +112,7 @@ import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDG
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
-import { coldResumeRunHomeFor, createWinterSessionDrivers, sessionPermissionClassFor, type WinterLegDeps, type WinterSessionDrivers } from "./runtime-sdk/session-driver";
+import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
@@ -120,7 +121,7 @@ import { MigrationCRefused, finishMigrationC, isOldLayout, migrationCManifestPat
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
 import { localScopeKeyFor, projectScopeRootFor, projectScopeTrust, projectScopeTrusted, runHomeInputFor } from "./runtime-sdk/run-home-input";
 import { reservedMcpServerNames } from "./capabilities/names";
-import { projectScopeAllowRulesFor, winterGateRulesFromSdk } from "./runtime-sdk/mode-options";
+import { projectScopeAllowRulesFor, cloverGateRulesFromSdk } from "./runtime-sdk/mode-options";
 import { configuredMcpServersFor, pluginMcpServersFor } from "./runtime-sdk/external-mcp";
 import { planBridgeFor, type PlanBridge } from "./runtime-sdk/plan-bridge";
 import { importEngineEraSession } from "./runtime-sdk/import-legacy";
@@ -149,7 +150,7 @@ export interface BrowserHostInjection {
 import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -161,8 +162,8 @@ export { CORE_VERSION } from "./version";
  * tier (`sdk/settings.json`) plus, when its project is trusted, the project's committed and local tiers.
  *
  * WS-24: the project tiers are read at the project SCOPE root (`projectScopeRootFor`: the cwd's own git
- * top, a linked worktree's own — where `winter plugin|mcp --scope project|local` write them and a run home
- * reads them), trusted when the REPOSITORY is (`projectScopeTrusted`). It used to be `<primary>/.winter/…`
+ * top, a linked worktree's own — where `clover plugin|mcp --scope project|local` write them and a run home
+ * reads them), trusted when the REPOSITORY is (`projectScopeTrusted`). It used to be `<primary>/.clover/…`
  * gated on the primary's own path, which a worktree of a trusted repo (not itself in `trust.json`), or a
  * session in a subdirectory, never matched. The widening to the git top is the router's own: a run home
  * builds the project settings tiers from `RunHomeInput.trustedProjectRoot` (`projectScopeRootFor(cwd)`,
@@ -183,7 +184,7 @@ export interface RunningDaemon {
   // R-T3 whole-branch review FIX 1: the SAME ToolRegistry instance every `register*Tool(s)` call
   // inside the `if (agentProvider)` gate above populates (mirrored into `sharedRegistry`, then
   // threaded to ipc/server.ts's `registry` option) — exposed here too so a test that boots a REAL
-  // daemon (temp WINTER_HOME + injected FakeProvider, same precedent as server.test.ts/
+  // daemon (temp CLOVER_HOME + injected FakeProvider, same precedent as server.test.ts/
   // remote-allowlist-parity.test.ts) can walk `registry.namesForMode(mode, ...)` against daemon.ts's
   // ACTUAL registration path instead of a hand-picked mirror of it (see
   // test/agent/mode-toolset-census.test.ts). `null` on a no-agentProvider daemon (opts.agentProvider
@@ -198,8 +199,8 @@ export interface RunningDaemon {
   /** N2 S7: the inert native worker host wiring (`undefined` without the runtime spine). Nothing reaches it from an RPC. */
   coworkNative?: CoworkNativeWiring;
   /**
-   * P8b Task 5: THE ONE Winter runtime handle — the router `createRuntimeSdk` built, the spawn
-   * hook every Winter session's `Options` takes its executable from, and the tracked-query registry
+   * P8b Task 5: THE ONE Clover runtime handle — the router `createRuntimeSdk` built, the spawn
+   * hook every Clover session's `Options` takes its executable from, and the tracked-query registry
    * shutdown drains. `undefined` when the router could not construct (a packaging fault: a peer
    * version mismatch, an invalid brand, a malformed capability declaration), in which case EVERY
    * `session.create`/`session.dispatch` refuses typed (`winter_leg_unavailable`) — there is no
@@ -211,7 +212,7 @@ export interface RunningDaemon {
   runtimeSdk: WinterRuntimeSdk | undefined;
   /**
    * WS-23: the embedded-session host — chat and dispatch Workers. Exposed for the same reason
-   * `winter` is: a test that boots a REAL daemon observes which sessions have a live Worker here (an
+   * `clover` is: a test that boots a REAL daemon observes which sessions have a live Worker here (an
    * embedded session has no pid to `kill -0`), rather than off a mirror it built itself.
    */
   embedded: EmbeddedSessionHost;
@@ -219,7 +220,7 @@ export interface RunningDaemon {
    * P8b Task 5: THE SessionStore this daemon opened — the same instance `stop()` closes.
    *
    * Exposed for the same reason `registry` is: `store.close()` moved onto `stop()`'s ASYNC tail
-   * (behind `runtimeSdk.dispose()`, because a draining Winter child appends its final events
+   * (behind `runtimeSdk.dispose()`, because a draining Clover child appends its final events
    * through it), and the only honest way to prove that ordering is to use the daemon's OWN handle
    * from inside a tracked session's teardown — a second `SessionStore` over the same home would
    * answer whether or not this one had been closed, which is a test that passes for the wrong
@@ -236,11 +237,11 @@ export interface RunningDaemon {
    */
   buildSessionCapabilities(session: CapabilitySession): CapabilityServerRecord;
   /**
-   * P8b Task 16: the Winter leg's driver table — the SAME instance `ipc/server.ts` routes through.
+   * P8b Task 16: the Clover leg's driver table — the SAME instance `ipc/server.ts` routes through.
    * A test that boots a REAL daemon reads a session's live driver (its `init` facts, its state, its
    * child) off this rather than off a mirror it built itself.
    */
-  winter: WinterSessionDrivers;
+  clover: CloverSessionDrivers;
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
    *  capability server's `session_spawn` and every driver's turn-settled hook reach. */
   dispatchChildren: DispatchChildren | undefined;
@@ -261,17 +262,17 @@ export interface RunningDaemon {
    *   1. synchronous kills — the socket server, MCP, LSP, plugins, background agents, the settings
    *      watcher, the routine scheduler/store, the dreamer. All of this has happened when `stop()`
    *      RETURNS, exactly as it always has.
-   *   2. `runtimeSdk.dispose()` — every live Winter session ends (bounded by
+   *   2. `runtimeSdk.dispose()` — every live Clover session ends (bounded by
    *      `SHUTDOWN_QUERY_GRACE_MS`), then the router's own dispose; then (WS-23) the embedded host's
    *      Workers drain (bounded by `EMBEDDED_SHUTDOWN_BUDGET_MS`, then `terminate()`). ASYNC.
-   *   3. `store.close()` — the session store. NO LONGER SYNCHRONOUS when a Winter handle exists: a
+   *   3. `store.close()` — the session store. NO LONGER SYNCHRONOUS when a Clover handle exists: a
    *      draining child appends its last events through it, so it must outlive step 2.
    *   4. `runtime.close()` — the §16 deletion drain (bounded) and `runtime-state.db`, which step 2's
    *      delivery receipts likewise write into.
-   *   5. `lock.release()` — unlinks the socket file, and `winter doctor`'s repairs check for its
+   *   5. `lock.release()` — unlinks the socket file, and `clover doctor`'s repairs check for its
    *      absence before touching it.
    *
-   * The returned promise is present whenever EITHER the Winter handle or the runtime spine exists —
+   * The returned promise is present whenever EITHER the Clover handle or the runtime spine exists —
    * i.e. on essentially every real daemon. A caller that then exits the process MUST await it, or
    * the process dies mid-drain with the lock still on disk.
    */
@@ -420,21 +421,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    * ALL is what turns migration on for a caller that ALSO supplies its own `secrets`: without it, a
    * caller supplying `secrets` stays migration-inert no matter what exists on the real machine —
    * which is what keeps every pre-9c daemon-boot test (none of which passes this) off the
-   * developer's real legacy home and real legacy Keychain service. A true production caller (no
-   * `secrets` override at all) needs neither field: both default to the real profile-derived legacy
-   * home (`legacyHomeFor`) and a real `LegacyKeychainSecretStore`.
+   * developer's real legacy home and real legacy Keychain service. C0 (review S2): it is now the ONLY way
+   * the boot hook runs — a production caller never migrates — and it migrates only from the
+   * `legacyHome` and `legacySecrets` it names (no defaults).
    */
   migration?: {
     legacyHome?: string;
     legacySecrets?: SecretStore;
-    /** TEST ONLY (P9c-15) — overrides `isDefaultWinterHome`'s `homedir()` call, so a test can prove
+    /** TEST ONLY (P9c-15) — overrides `isDefaultCloverHome`'s `homedir()` call, so a test can prove
      *  the "home resolves to the default" branch actually runs its migration WITHOUT the test home
-     *  ever literally being the developer's real `~/.winter[-dev]`. A production caller never sets
+     *  ever literally being the developer's real `~/.clover[-dev]`. A production caller never sets
      *  this; the real boot hook always checks against the real home directory. */
     homedirOverride?: () => string;
   };
   /** The login-shell PATH resolution at boot (`login-shell-path.ts`). Absent: the real login shell,
-   *  unless `WINTER_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
+   *  unless `CLOVER_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
    *  the test seam (a fake runner and/or env to update). */
   loginShellPath?: LoginShellPathDeps | false;
   /** TEST ONLY (WS-21 ordering contract): stands in for the router's `reconcileRootForRecovery` in the boot
@@ -459,22 +460,32 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  Security.framework check of the host's pid (the opt-in extension e2e runs a test-build host). Production sets none. */
   browserHost?: BrowserHostInjection;
   /** Usage tracking TEST SEAM (`docs/claude/usage.md`): the Codex / Claude Code roots and executables. Absent: the env
-   *  overrides (`WINTER_USAGE_*`, which both test preloads point at nothing), else the user's real installs. */
+   *  overrides (`CLOVER_USAGE_*`, which both test preloads point at nothing), else the user's real installs. */
   usage?: UsageInjection;
+  /** TEST ONLY: the user's home the other-install guard below measures against (default `homedir()`), so a test
+   *  proves the refusal on a stand-in home and never names the real one. */
+  userHomeForTests?: string;
 } = {}): Promise<RunningDaemon> {
   const startedAt = Date.now();
-  const home = opts.home ?? resolveWinterHome();
-  const profile = resolveWinterProfile();
+  // C0 (review S1): the daemon's own provider calls (titles, the reviewer, the dreamer, the cleaner) present as
+  // Clover, not as the SDK's default (`runtime-sdk/process-identity.ts`; already installed when core loaded).
+  installCloverProcessIdentity();
+  const home = opts.home ?? resolveCloverHome();
+  const profile = resolveCloverProfile();
+
+  // Before anything reads or writes `home`: never another install's home (`other-installs.ts` names them), by real
+  // path, whatever `CLOVER_HOME` or `opts.home` says.
+  assertNotOtherInstallHome(home, opts.userHomeForTests);
 
   // ── Migration B boot hook (P9c, WS-16 §18) ──────────────────────────────────────────────────
-  // Runs BEFORE `bootstrapWinterDir` creates a single directory and before the lock is taken: a
+  // Runs BEFORE `bootstrapCloverDir` creates a single directory and before the lock is taken: a
   // refusal here must leave nothing on disk to clean up, and a successful migration must land its
   // files before anything else touches `home`.
   //
   // A manifest that is in-progress (a previous run was interrupted) OR simply unreadable/corrupt
   // (fail-closed: a torn manifest is evidence of an interruption too, never evidence nothing
   // happened) refuses typed — the daemon NEVER auto-resumes, because the operator may be mid
-  // `winter migrate --rollback`.
+  // `clover migrate --rollback`.
   //
   // Fix wave M1 (review Minor): the two flavours get DIFFERENT operator advice, because `--resume`
   // is only useful when there is a manifest to resume FROM — an unreadable manifest has nothing
@@ -487,27 +498,27 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (manifestState.kind === "unreadable") {
     throw new MigrationRefused(
       "home_half_migrated",
-      `migration: move ${manifestPath(home)} aside (e.g. to manifest.json.bad), then restart — the migration re-runs from scratch on a pristine home, or run \`winter migrate --rollback\` if files were already copied`,
+      `migration: move ${manifestPath(home)} aside (e.g. to manifest.json.bad), then restart — the migration re-runs from scratch on a pristine home, or run \`clover migrate --rollback\` if files were already copied`,
     );
   }
   if (manifestState.kind === "parsed" && manifestState.manifest.status === "in-progress") {
-    throw new MigrationRefused("home_half_migrated", "migration: half-migrated home — run `winter migrate --resume` or `winter migrate --rollback`");
+    throw new MigrationRefused("home_half_migrated", "migration: half-migrated home — run `clover migrate --resume` or `clover migrate --rollback`");
   }
   // WS-21 (spec §8): the same rule for Migration C — a phase 1 caught half-way (or a manifest that will not
-  // parse) refuses boot on every build until `winter migrate --sdk-home --resume` or `--rollback` runs.
+  // parse) refuses boot on every build until `clover migrate --sdk-home --resume` or `--rollback` runs.
   // `phase1-complete` is NOT half-migrated: phase 2 finishes at this boot's late site.
   const migrationC = migrationCState(home);
   if (migrationC.kind === "unreadable" || (migrationC.kind === "parsed" && migrationC.manifest.status === "in-progress")) {
-    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: half-migrated home (${migrationCManifestPath(home)}) — run \`winter migrate --sdk-home --resume\` or \`winter migrate --sdk-home --rollback\``);
+    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: half-migrated home (${migrationCManifestPath(home)}) — run \`clover migrate --sdk-home --resume\` or \`clover migrate --sdk-home --rollback\``);
   }
   // R.3 I-5: a rollback caught half-way (`rolling-back`, written before its first file moves) — the same
   // door; booting would split transcripts between sdk/projects and a half-restored <home>/projects.
   if (migrationC.kind === "parsed" && migrationC.manifest.status === "rolling-back") {
-    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: a rollback of this home was interrupted (${migrationCManifestPath(home)}) — run \`winter migrate --sdk-home --rollback\` to finish it`);
+    throw new MigrationCRefused("sdk_home_half_migrated", `migration C: a rollback of this home was interrupted (${migrationCManifestPath(home)}) — run \`clover migrate --sdk-home --rollback\` to finish it`);
   }
 
   // The service is THIS daemon's home's (`keychainService(profile, home)`): on a custom home a
-  // `WINTER_KEYCHAIN_SERVICE` is honoured, so an experiment or e2e daemon never reads the profile's real items.
+  // `CLOVER_KEYCHAIN_SERVICE` is honoured, so an experiment or e2e daemon never reads the profile's real items.
   const secrets = opts.secrets ?? new KeychainSecretStore(Bun.secrets, keychainService(profile, home));
 
   // WS-27: the credential items' access lists (`auth/credential-acl.ts`) — same guards as the app-token
@@ -523,7 +534,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let keychainPass: KeychainPass | undefined;
   if (opts.keychainPassForTests !== undefined) {
     keychainPass = await opts.keychainPassForTests(home);
-  } else if (opts.secrets === undefined && process.platform === "darwin" && isDefaultWinterHome(home, profile)) {
+  } else if (opts.secrets === undefined && process.platform === "darwin" && isDefaultCloverHome(home, profile)) {
     try {
       keychainPass = await beginKeychainPass({ home, service: keychainService(), log: (line) => console.error(line) });
     } catch (err) {
@@ -545,29 +556,23 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     Object.entries(bootPresence.byProvider).filter(([, v]) => v !== undefined).map(([k]) => k),
   );
 
-  let legacyHome: string | undefined;
-  let legacySecrets: SecretStore | undefined;
-  if (opts.migration) {
-    legacyHome = opts.migration.legacyHome ?? legacyHomeFor(profile);
-    legacySecrets = opts.migration.legacySecrets;
-  } else if (opts.secrets === undefined) {
-    // Real production boot only — see this option's own doc comment above for the test-isolation
-    // argument. `secrets` was just resolved to a REAL KeychainSecretStore two lines up in this
-    // branch, so `legacySecrets` below is its exact legacy-service counterpart.
-    legacyHome = legacyHomeFor(profile);
-    legacySecrets = new LegacyKeychainSecretStore(profile);
-  }
+  // C0 (review S2): a boot never looks for a legacy home. Spec §12 retires the legacy migrations, and the one
+  // door left is the operator's explicit `clover migrate --from <legacy home>`. Only a test's seam
+  // (`opts.migration`), naming its own throwaway legacy home and store, still drives the hook below — so a
+  // production boot never builds a legacy Keychain store, never reads a legacy home and writes no manifest.
+  const legacyHome = opts.migration?.legacyHome;
+  const legacySecrets = opts.migration?.legacySecrets;
   if (legacyHome !== undefined && legacySecrets !== undefined && existsSync(join(legacyHome, "settings.json"))) {
     // P9c-15: auto-migration fires ONLY when `home` resolves to the PROFILE'S OWN DEFAULT home
-    // (`~/.winter` dist, `~/.winter-dev` dev) — regardless of how `home` got here (`opts.home`,
-    // `WINTER_HOME`, or the default). A real (compiled or `bun`-run) daemon spawned against a temp
-    // or custom `WINTER_HOME` with no injected `secrets` — a binary-backed e2e test, `verify:
+    // (`~/.clover` dist, `~/.clover-dev` dev) — regardless of how `home` got here (`opts.home`,
+    // `CLOVER_HOME`, or the default). A real (compiled or `bun`-run) daemon spawned against a temp
+    // or custom `CLOVER_HOME` with no injected `secrets` — a binary-backed e2e test, `verify:
     // workflow`/`verify:runtime-state`/`verify:runtimes`, a live-gate script, a developer's ad-hoc
-    // `WINTER_HOME=/tmp/x winter daemon run` — would otherwise find the REAL legacy home pristine
+    // `CLOVER_HOME=/tmp/x clover daemon run` — would otherwise find the REAL legacy home pristine
     // and migrate the user's REAL data (and REAL Keychain items) into a throwaway directory. This
     // check is IN ADDITION TO `isPristineHome` below, never a replacement for it.
-    if (!isDefaultWinterHome(home, profile, opts.migration?.homedirOverride)) {
-      console.error(`migration: ${home} is not the default home for the ${profile} profile — auto-migration skipped; run \`winter migrate --from ${legacyHome}\` to migrate it by hand`);
+    if (!isDefaultCloverHome(home, profile, opts.migration?.homedirOverride)) {
+      console.error(`migration: ${home} is not the default home for the ${profile} profile — auto-migration skipped; run \`clover migrate --from ${legacyHome}\` to migrate it by hand`);
     } else {
       const check = describeHomePristineness(home);
       // Cowork storage in the legacy source is never auto-copied (`migration/cowork-exclusion.ts`): skip
@@ -584,7 +589,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // `migrateOneSecret`), but this catches whatever residual throw still gets through (a
         // thrown SecretStore on the unwrapped destination existence-check, an fs error mid-copy,
         // …). The manifest is written to disk after EVERY step, so whatever ran before the throw is
-        // already durably "in-progress" on disk — `winter migrate --resume`/`--rollback` stays the
+        // already durably "in-progress" on disk — `clover migrate --resume`/`--rollback` stays the
         // door. Converting to ONE typed refusal here is what stops the daemon from crash-looping on
         // an uncaught exception (the CLI's `daemon run` prints `MigrationRefused.message` and exits
         // cleanly; see `packages/cli/src/main.ts`'s `case "daemon run"`).
@@ -596,7 +601,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           const detail = err instanceof Error ? err.message : String(err);
           throw new MigrationRefused(
             "migration_failed",
-            `migration: failed (${detail}) — the home is left half-migrated; run \`winter migrate --resume\` or \`winter migrate --rollback\``,
+            `migration: failed (${detail}) — the home is left half-migrated; run \`clover migrate --resume\` or \`clover migrate --rollback\``,
           );
         }
         const filesMoved = manifest.entries.filter((e) => e.status === "copied" || e.status === "rekeyed").length;
@@ -606,23 +611,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         console.error(`migration: ${filesMoved} files, ${kcCopied + kcSkipped} keychain items (${kcCopied} copied, ${kcSkipped} skipped-existing), settings rekeyed ${rekeyed} — from ${legacyHome}`);
       } else {
         // A legacy home exists, but this home already has content of its own (not pristine) — never
-        // auto-migrate over it (P9c-10). One line so an operator isn't left wondering why the legacy
-        // home was never picked up. Review M2: names the actual offending entry, not just "not
-        // pristine" — the same reason `winter doctor`'s migration row surfaces. Fix wave C2: the
-        // advice is the SAME instruction the `winter migrate`/`planMigrationB` refusal itself prints
-        // (`mv <home> <home>.bak`, then restart) — advice and refusal must always agree, since
-        // `winter migrate --from <legacyHome>` into a non-pristine `home` would just hit that same
-        // refusal.
-        console.error(`migration: a legacy home was found at ${legacyHome}, but ${home} is not pristine (${check.reason}) — move it aside, e.g. \`mv ${home} ${home}.bak\`, then restart to migrate`);
+        // migrate over it (P9c-10). One line naming the offending entry (review M2). C0 (review S2): no
+        // advice to restart, since a boot never migrates outside a test's seam.
+        console.error(`migration: a legacy home was found at ${legacyHome}, but ${home} is not pristine (${check.reason}) — skipped`);
       }
     }
   }
 
-  const dirs = bootstrapWinterDir(home);
+  const dirs = bootstrapCloverDir(home);
   const lock: Lock = await acquireLock(dirs.lockPath, dirs.socketPath);
 
   // A3: legacy top-level files an earlier Migration B copied but nothing reads (`mcp.json`,
-  // `tools.json`, …). One line when any exist — never touched, only named (`winter doctor` repeats it).
+  // `tools.json`, …). One line when any exist — never touched, only named (`clover doctor` repeats it).
   const deadLegacyLine = describeDeadLegacyFiles(findDeadLegacyFiles(home), home);
   if (deadLegacyLine !== undefined) console.error(deadLegacyLine);
 
@@ -674,7 +674,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // The user's login-shell PATH, merged into THIS process's environment before anything below can
   // spawn — an app/Sparkle/launchd-launched daemon otherwise inherits LaunchServices' bare
-  // `/usr/bin:/bin:/usr/sbin:/sbin`, and every child (the Winter child and its Bash tool, stdio MCP
+  // `/usr/bin:/bin:/usr/sbin:/sbin`, and every child (the Clover child and its Bash tool, stdio MCP
   // servers, plugins) would get that. After the lock, so a second daemon that loses the race never
   // pays for a shell; after `ensureTokens`, so a slow or broken rc file (up to the 5 s bound) never
   // delays the tokens a first-boot client is waiting for (P9c-20). Nothing between the lock and
@@ -703,11 +703,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // both live, at call time.
   let sessionCreator: InternalSessionCreator | undefined;
   let dispatchChildren: DispatchChildren | undefined;
-  /** SendMessage between Winter sessions (`agent/session-messaging.ts`): built right after
+  /** SendMessage between Clover sessions (`agent/session-messaging.ts`): built right after
    *  `dispatchChildren`; every session's `Options.hostMessaging` reads it live. */
   let sessionMessaging: SessionMessaging | undefined;
 
-  const winterHome = dirs.home;
+  const cloverHome = dirs.home;
 
   // Settings surface (role-health, 2026-09-18): quiet per-role failure notes for the Mac app's
   // Roles pane — see `providers/role-health.ts` for the full design. Constructed unconditionally
@@ -715,7 +715,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // no `agentProvider` at all, and every other consumer (titler/reviewer/dreamer/cleaner/research,
   // plus the two `settings.modelRoles`/`settings.setModelRole` RPC handlers) shares this ONE
   // instance rather than each holding its own view of the same on-disk file.
-  const roleHealth = new RoleHealthRegistry(winterHome);
+  const roleHealth = new RoleHealthRegistry(cloverHome);
 
   // Loaded once, up front, so the settings-derived plugin consent (below) is available before
   // the SkillStore and PluginStore are built. A malformed settings.json degrades to `null` here
@@ -740,7 +740,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // `handoff.crossRuntime`) still load and are reported here, once — same "accepted, logged,
     // ignored" posture as winterLeg above (settings-apply reports a hot edit).
     const retired = retiredRuntimeSettingKeys(settings);
-    if (retired.length > 0) console.error(`settings: ${retired.join(", ")} — the official claude runtime was retired (every model runs on the Winter runtime); ignored`);
+    if (retired.length > 0) console.error(`settings: ${retired.join(", ")} — the official claude runtime was retired (every model runs on the Clover runtime); ignored`);
   } catch (err) {
     console.error(`settings unavailable, agent disabled: ${(err as Error).message}`);
     settings = null;
@@ -753,13 +753,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // the split reads); before the boot split below (so preflight's backups capture the pre-split state
   // and the migration's own split step is the one that copies); before the runtime spine (backfill and
   // recovery read the store and `backend_root`). The profile's default home migrates by itself; any
-  // other home in the old layout refuses boot until `winter migrate --sdk-home --home <dir>` runs. A
+  // other home in the old layout refuses boot until `clover migrate --sdk-home --home <dir>` runs. A
   // preflight refusal refuses BOOT — the supported build must never start writing `sdk/projects` while
   // `<home>/projects` still holds the store. Phase 2 runs at the late site, once the router exists.
   if (linkedRouterSupportsRunHome() && isOldLayout(home)) {
     try {
-      if (!isDefaultWinterHome(home, profile, opts.migration?.homedirOverride)) {
-        throw new MigrationCRefused("sdk_home_migration_required", `migration C: ${home} is in the old layout and is not the profile's default home — stop, then run \`winter migrate --sdk-home --home ${home}\``);
+      if (!isDefaultCloverHome(home, profile, opts.migration?.homedirOverride)) {
+        throw new MigrationCRefused("sdk_home_migration_required", `migration C: ${home} is in the old layout and is not the profile's default home — stop, then run \`clover migrate --sdk-home --home ${home}\``);
       }
       await runMigrationC(home, { log: (line) => console.error(line), reconcileAvailable: true, convertLegacyPlugins: convertLegacyPluginsForMigration });
     } catch (err) {
@@ -774,7 +774,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // never throws; `settings.json` itself is never written.
   splitSettingsToSdk(home, { log: (line) => console.error(line) });
 
-  // The skills Winter ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
+  // The skills Clover ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
   // skill tier, `sdk/skills/` — the builtin tier is staged into no run folder. Every boot, every home, after the
   // sdk home exists and Migration C has had its turn; only where a session loads that tier at all (a build whose
   // router applies run homes — on the old layout `sdk/` is not the skill store, and a copy there would only
@@ -790,7 +790,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // carries `{ unavailable }`, the failure is logged, and boot continues (nothing else in the
   // daemon depends on the spine in 8a). See `runtime-state/wiring.ts` for the whole sequence.
   const runtimeState = await startRuntimeState({
-    home: winterHome,
+    home: cloverHome,
     store,
     settings: () => settings, // LIVE holder, re-read per sweep — never a boot snapshot
     log: (line) => console.error(`runtime-state: ${line}`),
@@ -822,7 +822,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }
 
   // `trustRecordFile`: the same path the write fences name (`controlPlaneDenyRules`/`sandboxConfigFor`).
-  const trustStore = new TrustStore(trustRecordFile(winterHome));
+  const trustStore = new TrustStore(trustRecordFile(cloverHome));
   // Task 7 (CC project-folder-mechanics): the ONE cwd-keyed "effective settings" resolver for the
   // whole daemon — `base` reads the reassignable `settings` holder above LIVE (same hot-settings
   // shape as memoryEnabledHot/hooksEnabledHot below: a watcher-driven reload swaps in a NEW object
@@ -835,13 +835,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const projectSettings = new ProjectSettingsResolver({ base: () => settings, trust: projectScopeTrust(trustStore) });
   // Review I2 (lane B): the daemon's own record of rules the user approved "in this project" from a
   // card (`<home>/permissions/projects.json`). WS-21: RETIRED as a store — nothing writes it any more (a
-  // card's "in this project" answer goes to the trusted project's `.winter/settings.local.json`,
+  // card's "in this project" answer goes to the trusted project's `.clover/settings.local.json`,
   // `agent/saved-answers.ts`); what an older build recorded is still READ (on a build whose router does
-  // not apply run homes), reported by `winter doctor` and moved by `winter migrate-project`.
-  const approvedProjectRules = new ApprovedProjectRules({ winterHome });
+  // not apply run homes), reported by `clover doctor` and moved by `clover migrate-project`.
+  const approvedProjectRules = new ApprovedProjectRules({ cloverHome });
   // fix-wave B (I1): every per-project getter below resolves at the REPO ROOT, matching
   // `globalAllow`'s own `projectRoot` (engine.ts's `repoRootFor(cwd)`) — NOT the raw session cwd.
-  // Before this, a SUBDIRECTORY session read a DIFFERENT `.winter/settings.json` than
+  // Before this, a SUBDIRECTORY session read a DIFFERENT `.clover/settings.json` than
   // `globalAllow`/`editPathRules` did for the identical repo, so a repo-root settings.json was only
   // half-honored: `permissions.allow` picked it up, but `dangerousDomains.added` (and
   // reviewer/toolSearch/hooks/lsp) silently didn't — same-file keys diverging on which cwd they're
@@ -850,7 +850,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // spawn only on first sight of a dir) and falls back to the dir itself outside a git repo, so
   // this is perf-neutral and a non-repo cwd behaves exactly as before.
   // R.3 residual (controller ruling): the PROJECT scope's root is the cwd's own git top — a linked
-  // worktree's own `.winter/`, where the run home reads the project tier and `--scope project` writes
+  // worktree's own `.clover/`, where the run home reads the project tier and `--scope project` writes
   // (`projectScopeRootFor`, `localScopeKeyFor`'s sibling) — and the resolver above trusts it per
   // `projectScopeTrust` (keyed on the repository, so a worktree of a trusted repo is trusted).
   const projectRootOf = (cwd?: string | null): string | null => (cwd ? projectScopeRootFor(cwd) : null);
@@ -877,24 +877,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     emit: (event) => { hub.broadcastTransient(event.sessionId, event); },
   });
   // Output styles (CC-parity phase 2, Task 4): per-project effective outputStyle, repo-root-keyed
-  // via the SAME projectRootOf as every other getter here — a trusted project's `.winter/settings.json`
+  // via the SAME projectRootOf as every other getter here — a trusted project's `.clover/settings.json`
   // outputStyle applies; an untrusted project's is ignored (ProjectSettingsResolver.effective()'s own
   // trust gate). Resolution itself (name -> ResolvedStyle, incl. the slug-guard against a
   // project-supplied name escaping the output-styles dir) lives in OutputStyleStore.resolve — this is
   // just the name lookup.
-  const outputStyleStore = new OutputStyleStore({ winterHome, trust: trustStore, legacySettings: () => settings });
+  const outputStyleStore = new OutputStyleStore({ cloverHome, trust: trustStore, legacySettings: () => settings });
   // WS-24 (router 0.0.15): a repository never picks the output style -- the run-home builder drops a
   // project or local tier's `outputStyle` (and never lets a project style redefine a user/built-in
   // name), so the daemon reads the user tier alone (`sdk/settings.json`, `sdkOutputStyle`) and what it
   // reports can't disagree with what the child runs. (WS-21 had let a trusted project's overlay win.)
-  const outputStyleFor = (_cwd?: string | null): string | undefined => sdkOutputStyle(winterHome);
+  const outputStyleFor = (_cwd?: string | null): string | undefined => sdkOutputStyle(cloverHome);
   // CC-parity phase 3 (Workflows, Track C Task C2): built unconditionally, same "no engine
   // dependency" precedent as `outputStyleStore` just above — workflow.list's "saved" section and
   // workflow.run's by-name resolution work even on a no-agentProvider daemon (only launching a
   // resolved/inline script needs the WorkflowRuntime below, which DOES require an engine).
-  const workflowStore = new WorkflowStore({ winterHome, trust: trustStore });
+  const workflowStore = new WorkflowStore({ cloverHome, trust: trustStore });
   const pluginStore = new PluginStore({
-    winterHome, consents: settings?.plugins?.consents, log: (m) => console.error(m),
+    cloverHome, consents: settings?.plugins?.consents, log: (m) => console.error(m),
   });
   // Built unconditionally (Phase 4b Task 4): shortcut.register/tile.update/provider.register are
   // plain latest-per-plugin storage, independent of whether an LLM provider (and thus a
@@ -911,7 +911,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const hookRegistry = new HookRegistry();
   // WS-21 (L4 request 2): the store lists the user, self, project and builtin tiers; a plugin's skills are
   // claude-native content now (the runtimes load them, and `skills.list`'s plugin half is lane L4's).
-  const skillStore = new SkillStore({ winterHome, trust: trustStore });
+  const skillStore = new SkillStore({ cloverHome, trust: trustStore });
   // File-based memory (MEMDIR, T1 — design doc `2026-07-15-file-based-memory-design.md`): a live
   // getter over the `settings` holder (assigned above; reassigned in place by the hot-settings
   // watcher below), read fresh by BOTH the write-root join (`sessionDirs`, just below) and the
@@ -920,8 +920,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // WS-21: `memory.enabled`/`memory.directory` moved to `sdk/settings.json` as claude's
   // `autoMemoryEnabled`/`autoMemoryDirectory` (`sdkAutoMemory`, read live — an edit applies on the next
   // read, no restart). Same default: ON unless explicitly false.
-  const memoryEnabledHot = (): boolean => sdkAutoMemory(winterHome).enabled;
-  const memoryDirectoryHot = (): string | undefined => sdkAutoMemory(winterHome).directory;
+  const memoryEnabledHot = (): boolean => sdkAutoMemory(cloverHome).enabled;
+  const memoryDirectoryHot = (): string | undefined => sdkAutoMemory(cloverHome).directory;
   // session-activity-hygiene T7 (spec §3): the session cleaner's own switch, on exactly the
   // `memoryEnabledHot` terms one line up — a live getter over the reassignable `settings` holder
   // (the settings watcher swaps a NEW object into that same binding), so a `cleaner.enabled` edit
@@ -935,10 +935,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // moves the trees, and the next memory read has to follow them. Absent (no runtime store, or
   // nothing relocated) leaves the derivation exactly as it was.
   const memoryDirOf = (cwd: string): string =>
-    memoryDirFor(cwd, { winterHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
-  const memoryGlobalDirOf = (): string => globalMemoryDirFor({ winterHome, directory: memoryDirectoryHot() });
+    memoryDirFor(cwd, { cloverHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
+  const memoryGlobalDirOf = (): string => globalMemoryDirFor({ cloverHome, directory: memoryDirectoryHot() });
   const assembler = new ContextAssembler({
-    winterHome, trust: trustStore, skills: skillStore,
+    cloverHome, trust: trustStore, skills: skillStore,
     memory: {
       enabled: memoryEnabledHot,
       dirFor: memoryDirOf,
@@ -946,7 +946,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // `settings?.memory?.directory` (unlike `memoryDirOf`/`memoryGlobalDirOf` above): honoring
       // the relocation override would collapse this bucket into the project bucket and leak dream
       // memories into code sessions (see assistantMemoryDirFor's own doc comment).
-      assistantDir: () => assistantMemoryDirFor({ winterHome }),
+      assistantDir: () => assistantMemoryDirFor({ cloverHome }),
     },
     // Output styles (CC-parity phase 2, Task 4): main-conversation only — assemble() itself skips
     // this resolver under a basePromptOverride (dispatch coordinators/subagents keep their own base;
@@ -980,26 +980,26 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // — so a mid-session `memory.enabled` false→true flip no longer waits for a restart either.
   if (memoryEnabledHot()) {
     try {
-      migrateMemoryStore({ winterHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
+      migrateMemoryStore({ cloverHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
     } catch (err) {
       console.error(`memory migration skipped: ${(err as Error).message}`);
     }
   }
   // Phase 5b Task 2: ONE MemoryStore for the whole daemon (fact-file CRUD is the single-writer
   // contract §4.8 requires — daemon RPCs (ipc/server.ts's memory.*) must share this exact
-  // instance, never open a second one). Built unconditionally, same "needs only winterHome/trust,
+  // instance, never open a second one). Built unconditionally, same "needs only cloverHome/trust,
   // no provider" precedent as skillStore/assembler just above — a provider-disabled daemon (or a
   // future read-only RPC) can still serve memory state.
   //
   // T1 (file-based memory) supersedes this store's TOOL surface (memory_read/write/delete are
   // deleted — see agent/tools/memory.ts's removal) and, whenever `memory.enabled` (above) is on,
   // the assembler's OWN injection of this store's data (context.ts's legacy branch, which reads
-  // these exact `<winterHome>/memory/MEMORY.md` / `<cwd>/.winter/memory/MEMORY.md` paths, is skipped
+  // these exact `<cloverHome>/memory/MEMORY.md` / `<cwd>/.clover/memory/MEMORY.md` paths, is skipped
   // in favor of the new per-project MEMDIR). T2 rewires the memory.* RPCs (below, `memoryFiles`)
   // to read/write MEMDIR files whenever `memory.enabled` is on, falling back to THIS store
   // unchanged when it's off — the store instance itself and its on-disk data stay untouched
   // either way (the escape hatch, and the migration importer's source, both need it intact).
-  const memoryStore = new MemoryStore({ winterHome, trust: trustStore });
+  const memoryStore = new MemoryStore({ cloverHome, trust: trustStore });
   // Built unconditionally (needs only store, no provider) so the server's session.addDir /
   // setCwd handlers always have live roots to work with, even when the agent is disabled.
   const sessionDirs = new SessionDirectories((sid) => {
@@ -1044,15 +1044,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // workdir-less relative fs-tool path resolves there — engine.test.ts's own "never the daemon's
     // cwd" pin) BEFORE this MEMDIR fold existed, and that pin must survive memory being enabled.
     if (!primary) {
-      roots.push(ensureOutdir(winterHome, sid));
+      roots.push(ensureOutdir(cloverHome, sid));
       if (memoryEnabledHot()) {
-        const memDir = assistantMemoryDirFor({ winterHome });
+        const memDir = assistantMemoryDirFor({ cloverHome });
         mkdirSync(memDir, { recursive: true });
         roots.push(memDir);
       }
       return roots;
     }
-    roots.push(...sessionPermissionDirs(winterHome, primary, trustStore));
+    roots.push(...sessionPermissionDirs(cloverHome, primary, trustStore));
     // T1 write-root join (design doc: "the tmpDir pattern" — a plain, ungated, auto-provisioned
     // root, mirroring how `sessionTmpDir` needs no user approval either): whenever file-based
     // memory is enabled, the session's MEMDIR joins the SAME write-fence `roots` the `write`/`edit`
@@ -1076,14 +1076,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       mkdirSync(memDir, { recursive: true });
       roots.push(memDir);
     }
-    // working-directories T4: the session's own delivery folder — `<winterHome>/outputs/<sid>` —
+    // working-directories T4: the session's own delivery folder — `<cloverHome>/outputs/<sid>` —
     // joins the SAME write-fence roots the MEMDIR just above does, and by the identical mechanism:
     // one more entry in this session-scoped list, no new fencing/grant machinery. Unlike the MEMDIR
     // this is NOT gated on a settings flag — the outputs dir is a core primitive, always available.
-    // Keyed by `sid` (this closure's own parameter, never a bare `~/.winter/outputs/` prefix), which
+    // Keyed by `sid` (this closure's own parameter, never a bare `~/.clover/outputs/` prefix), which
     // is exactly what keeps ANOTHER session's outputs dir OUT of this list — `grantDeniedPrefixes:
-    // [winterHome]` (below) still refuses it for every session but this one.
-    roots.push(ensureOutdir(winterHome, sid));
+    // [cloverHome]` (below) still refuses it for every session but this one.
+    roots.push(ensureOutdir(cloverHome, sid));
     return roots;
   });
 
@@ -1116,7 +1116,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // Hotfix (credential material, P8b): boot-time, idempotent, one-way — promotes the legacy raw
   // openai-api-key / codex-access-token(+4) records into the JSON material records the spawned
-  // Winter child actually reads (auth/credential-material.ts). Unconditional and BEFORE
+  // Clover child actually reads (auth/credential-material.ts). Unconditional and BEFORE
   // createProvider below (even when `settings` is absent, and regardless of whether
   // `opts.agentProvider` was injected) — this `secrets` store is the daemon's own real one
   // (`KeychainSecretStore` in production, whatever a test injected) every time this function
@@ -1155,7 +1155,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
     internalRouter = createInternalRouter({ view: internalView, secrets });
     // THE boot line, replacing the every-boot "the daemon's internal provider only builds for
-    // codex-oauth/openai … are inert" one. Accurate in both directions: which providers Winter's own
+    // codex-oauth/openai … are inert" one. Accurate in both directions: which providers Clover's own
     // jobs can run on, or — when none — exactly why and what would fix it. The SAME sentence
     // `view.refresh()` prints on a later change (`InternalProviderView.summary`), never a second
     // spelling of the same fact, and never a credential value.
@@ -1168,7 +1168,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    * credentialed provider, resolved per role. Keeping the builder alive here cost three things that
    * are all now wrong:
    *
-   *  - a spurious `agent disabled: no API key stored — run: winter login --api-key` line on any
+   *  - a spurious `agent disabled: no API key stored — run: clover login --api-key` line on any
    *    openai-default home without an OpenAI key, describing a handle nothing reads;
    *  - a second Keychain read of material `internalView.refresh()` has already probed;
    *  - the `providerInfo`/`liveSelection`/`liveProvider` reads below were GATED on it being non-null,
@@ -1193,7 +1193,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // SP-approvals Task 5: hoisted alongside `engine` — same "declared null/undefined above, assigned
   // inside the gate" shape as `dreamer`/`mcp`/etc below. PermissionRules itself needs no provider
-  // (only settings + winterHome), but has always been constructed inside the `if (agentProvider)`
+  // (only settings + cloverHome), but has always been constructed inside the `if (agentProvider)`
   // gate next to the engine that consumes it (see the assignment site's own doc comment); declared
   // here so it's reachable AFTER the gate closes, where startIpcServer's opts (below) share this
   // SAME instance with the engine's own ask-policy rule-consult path — one mtime cache, not two
@@ -1221,7 +1221,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `settings.json`, for the one reaction a moved key still drives here (the memory importer).
   const sdkWatchers: Array<SettingsWatcher<Record<string, unknown>>> = [];
   // P8b Task 16 HOISTED this out of the `if (agentProvider)` gate (it used to be built beside
-  // `taskStore` inside it): the Winter leg's question bridge (`AskUserQuestion` → `question_asked`)
+  // `taskStore` inside it): the Clover leg's question bridge (`AskUserQuestion` → `question_asked`)
   // needs a broker whether or not an engine exists, and `ask_user.respond` must resolve into the
   // SAME instance. Wire-identical on a no-provider daemon: `respond()` on a broker with nothing
   // pending answers `{ ok: true, alreadyResolved: true }`, which is exactly the handler's old
@@ -1291,16 +1291,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Hoisted above the `if (agentProvider)` gate (4g Task 5) — the web tools that used to be registered
   // below needed it, and
   // tool registration happens inside that gate. Built unconditionally regardless (same precedent as
-  // `peripheral`/`hardware` further down, which share this SAME instance): winterHome is ready at
+  // `peripheral`/`hardware` further down, which share this SAME instance): cloverHome is ready at
   // line 135, and AuditLog's own constructor is cheap (mkdir is lazy, on first write — see audit.ts).
-  const audit = new AuditLog(join(winterHome, "audit.jsonl"));
+  const audit = new AuditLog(join(cloverHome, "audit.jsonl"));
 
   // ComputerV2 (2026-10-08): the daemon's computer-use runtime — the helper connection, the per-app policy and
   // the script service behind the `computer_v2` capability (`computer-use/wiring.ts`). Built unconditionally
   // (cheap: nothing connects or spawns until a script runs); the capability is built per session only while
-  // computer use is on. `interrupt` reaches `winterDrivers` late (the helper's Esc), as the capability
+  // computer use is on. `interrupt` reaches `cloverDrivers` late (the helper's Esc), as the capability
   // closures below do.
-  // The Winter island (`docs/claude/island.md`): every card still pending in any session, for Winter.app's surface at
+  // The Clover island (`docs/claude/island.md`): every card still pending in any session, for Clover.app's surface at
   // the camera housing (`island.pending`). Pending-ness is the brokers'; the payload is the request event, seen here.
   const islandFacts = (sid: string): IslandSessionFacts | undefined => {
     try {
@@ -1328,7 +1328,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   });
   hub.addObserver((event) => islandRegistry.observe(event));
   // The island's Usage tab (`island.usage`): plan windows the runtime reported, per-session token counts since start,
-  // and Winter's background jobs' quota — all read from what the daemon already sees.
+  // and Clover's background jobs' quota — all read from what the daemon already sees.
   /** The provider a session's model tag names (the island's plan windows are tagged with it). */
   const islandProviderOf = (sid: string): string | undefined => {
     try { const m = store.meta(sid).model; return m === undefined || !m.includes("/") ? undefined : splitTag(m).providerId; } catch { return undefined; }
@@ -1344,35 +1344,35 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
   });
   hub.addObserver((event) => islandUsage.observe(event));
-  // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): Winter's own turns as they end, the user's Codex and
+  // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): Clover's own turns as they end, the user's Codex and
   // Claude Code usage ingested ON DEMAND. Its own SQLite file (`<home>/usage/usage.db`), never runtime-state.db.
   // A fired plan alarm is the island's notification pill — late-bound: the island's activity is built further down.
   let usageAlarmNotices: (() => void) | undefined;
   const usage = createUsageService({
-    home: winterHome, settings: () => settings, islandUsage, version: CORE_VERSION,
+    home: cloverHome, settings: () => settings, islandUsage, version: CORE_VERSION,
     ...(opts.usage === undefined ? {} : { injection: opts.usage }),
     onAlarmNotices: () => usageAlarmNotices?.(),
   });
 
   const computerUseRuntime = createComputerUseRuntime({
     island: islandRegistry,
-    home: winterHome,
+    home: cloverHome,
     profile,
     settings: () => settings,
-    settingsPath: join(winterHome, "settings.json"),
+    settingsPath: join(cloverHome, "settings.json"),
     approvals: approvalBroker,
     hub,
     store,
     audit: (line) => audit.append(line),
     // ComputerV2's Esc (the helper's `escPressed`) is the user's stop: a Dispatch child's report says so.
-    interrupt: (sid) => { dispatchChildren?.noteStop(sid, { kind: "user" }); void winterDrivers.get(sid)?.interrupt(); },
-    launchAllowed: opts.secrets === undefined && process.platform === "darwin" && isDefaultWinterHome(home, profile),
+    interrupt: (sid) => { dispatchChildren?.noteStop(sid, { kind: "user" }); void cloverDrivers.get(sid)?.interrupt(); },
+    launchAllowed: opts.secrets === undefined && process.platform === "darwin" && isDefaultCloverHome(home, profile),
     // Phase 2, the browsers' dangerous-domain floor: the SAME user-added list `Search`, the old `Browser` and the
     // child's `WebFetch` read, and the user's saved allow rules (the "everywhere" tier in claude's grammar plus the
     // project tiers) — a standing `WebFetch(domain:…)` rule approves a listed host where a card could ask.
     dangerousDomainsAdded,
     savedAllowRules: (cwd) => {
-      const user = sdkAllowRules(winterHome) ?? [];
+      const user = sdkAllowRules(cloverHome) ?? [];
       if (cwd === undefined) return user;
       return [...user, ...projectScopeAllowRulesFor(cwd, {
         effectiveSettings: (root) => projectSettings.effective(root),
@@ -1381,18 +1381,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         trust: trustStore,
       })];
     },
-    turnRunning: (sid) => winterDrivers.get(sid)?.turnRunning ?? false,
+    turnRunning: (sid) => cloverDrivers.get(sid)?.turnRunning ?? false,
     // Wake triggers (2026-10-12): a wake goes in through the session's own driver (late-bound, like `interrupt`), and a
     // Dispatch child's wake turn is followed when its trigger was armed in a followed turn.
-    sessions: () => ({ get: (sid) => winterDrivers.get(sid), ensure: (sid) => winterDrivers.ensure(sid) }),
+    sessions: () => ({ get: (sid) => cloverDrivers.get(sid), ensure: (sid) => cloverDrivers.ensure(sid) }),
     followedNow: (sid) => dispatchChildren?.followingTurn(sid) ?? false,
     followWake: (sid, text) => dispatchChildren?.expectWake(sid, text),
     ...(opts.computerUse === undefined ? {} : { inject: opts.computerUse }),
     log: (line) => console.error(line),
   });
   hub.addObserver((event) => computerUseRuntime.observe(event));
-  // The Winter island's activity (phase 2, `island/activity.ts`): the sessions driving ComputerV2 now, the turns that
-  // just ended idle, and every armed wake trigger — for Winter.app's island (`island.activity`).
+  // The Clover island's activity (phase 2, `island/activity.ts`): the sessions driving ComputerV2 now, the turns that
+  // just ended idle, and every armed wake trigger — for Clover.app's island (`island.activity`).
   const islandActivity = new IslandActivity({
     facts: islandFacts,
     hosts: islandHosts,
@@ -1441,7 +1441,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     expiryMs: settings?.peripheral?.expiryMs,
     policy: buildLeasePolicy({ store, approvals: approvalBroker, hub }),
     // lease_granted/lease_lost are emitted on the REQUESTER's session (broadcastTransient scopes
-    // fan-out to that session's attached harnesses), but the provider connection (Winter.app) is
+    // fan-out to that session's attached harnesses), but the provider connection (Clover.app) is
     // rarely attached to the requesting session — it needs its own copy of these two event types
     // to track its active-lease set regardless of what it's attached to. peripheral_call_requested
     // already reaches the provider via pushToProvider; lease_granted/lease_lost did not, which
@@ -1461,9 +1461,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // instance for the whole daemon (no risk of the tool and the scheduler racing on two separate
   // sqlite handles to the same file) — see the "Scheduled routines" block below, which reuses this
   // SAME `routineStore` rather than calling `openRoutineStore` a second time.
-  const routineStore = openRoutineStore(join(winterHome, "routines.db"));
+  const routineStore = openRoutineStore(join(cloverHome, "routines.db"));
 
-  // ── The Winter runtime handle (P8b Task 5) ────────────────────────────────────────────────────
+  // ── The Clover runtime handle (P8b Task 5) ────────────────────────────────────────────────────
   // THE ONE `createRuntimeSdk` for this daemon. It slots here because it needs everything above it
   // — the settings holder (its retention and advisor options are settings-derived), the secrets
   // store (the keychain seam) and the runtime spine's directory store — and because the capability
@@ -1472,7 +1472,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // A ROUTER THAT CANNOT CONSTRUCT NEVER STOPS THE DAEMON. `createRuntimeSdk` throws typed refusals
   // for a peer-version mismatch, an invalid brand and a malformed capability declaration (surface
   // map §1.10) — every one of them a packaging fault, not a user fault. In this task the engine
-  // still serves every mode, so the cost of an undefined handle is the Winter leg alone: a session
+  // still serves every mode, so the cost of an undefined handle is the Clover leg alone: a session
   // created on it refuses with a typed error at create. Only the error's CODE/class is logged; the
   // message can carry paths and option contents.
   //
@@ -1486,14 +1486,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // HALF of that wiring — the instances, stores and closures the tools need, built once and shared —
   // and `buildCapabilitiesFor(session, …)` turns it into ONE SESSION'S six servers. Each server
   // holds the SAME `ToolDefinition` objects the shared `ToolRegistry` below registers (one
-  // implementation, two doors), so a Winter child and an engine turn run identical code with
+  // implementation, two doors), so a Clover child and an engine turn run identical code with
   // identical schemas and identical refusals.
   //
   // PER SESSION, NOT PER DAEMON (P8b-36). `callTool(name, args)` carries no session identity, so an
   // instance shared across the handle would have to look one up — and a daemon-wide "currently
-  // bound session" slot cross-attributes the moment two Winter sessions run turns concurrently.
+  // bound session" slot cross-attributes the moment two Clover sessions run turns concurrently.
   // Because `ctx.mode` comes from the same place and resolves `browser`'s read-only chat subset,
-  // that is a SECURITY bug, not only an identity one. 8b is Winter-leg-only (P8b-1) and the router
+  // that is a SECURITY bug, not only an identity one. 8b is Clover-leg-only (P8b-1) and the router
   // forwards a caller's own `Options.mcpServers` straight through, so the session driver (Task 16)
   // builds this session's servers and puts them on that session's own `Options` —
   // `RuntimeSdkOptions.capabilities` stays `[]`.
@@ -1513,7 +1513,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // own small bare-id list) and `deriveModelAliases` (a bare-id short-name hack this catalog-driven
   // list has no more use for: `facingName` on each picker row already carries the curated slot
   // name). A daemon with no credentials at all gets an empty list, the honest answer.
-  const spawnModelIds = pickerModels({ credentials: spawnModelsCredentials, home: winterHome }).map((m) => m.id);
+  const spawnModelIds = pickerModels({ credentials: spawnModelsCredentials, home: cloverHome }).map((m) => m.id);
   const capabilityDeps: CapabilityDeps = {
     sessions: {
       models: spawnModelIds,
@@ -1532,8 +1532,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           return sessionMessaging.mayList(callerId, targetId);
         },
         derive: (row, sessionId, nowMs) => activityDeriver?.(row, sessionId, nowMs),
-        turnStartedAt: (sid) => winterDrivers.get(sid)?.turnStartedAt,
-        working: (sid) => signalsDeriver?.(sid).working ?? (winterDrivers.get(sid)?.turnRunning ?? false),
+        turnStartedAt: (sid) => cloverDrivers.get(sid)?.turnStartedAt,
+        working: (sid) => signalsDeriver?.(sid).working ?? (cloverDrivers.get(sid)?.turnRunning ?? false),
       },
     },
     computer: {
@@ -1573,20 +1573,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // on what "this session's working directories" means.
     office: {
       office: {
-        home: winterHome,
+        home: cloverHome,
         dispatch: (cmd) => panelCommands.dispatch(cmd),
         harnesses: (sid) => hub.attachedHarnesses(sid),
         dirsOf: (sid) => store.dirs(sid),
       },
     },
-    // The `research` server (Winter's own Exa-answer `Search` for chat/dispatch) is GONE (2026-10-01
+    // The `research` server (Clover's own Exa-answer `Search` for chat/dispatch) is GONE (2026-10-01
     // ruling): `Search` is the agent SDK's built-in now, reading the same key through
     // `Options.web.search.authRef` (resolved over `credential_resolve`) and the same floor through
     // `Options.web.blockedDomains` (`runtime-sdk/mode-options.ts`'s `webOptionsFor`). `readPage` and
     // the `web` server left earlier, with the 2026-09-18 ruling.
     // Fix wave (review F7): the `lsp` tool over the SAME `let lspManager` holder the registry
     // door and `settings-apply.ts`'s hot `lsp.enabled` flip reassign — read per call.
-    lsp: { home: winterHome, lsp: () => lspManager ?? undefined },
+    lsp: { home: cloverHome, lsp: () => lspManager ?? undefined },
     // P8c integration round 2: the `external` capability server's real source
     // (`capabilities/external.ts`'s own header names the design). `sharedRegistry` is the SAME
     // `ToolRegistry` `tool.register` (ipc/server.ts) writes `plugin__<pluginId>__<name>` rows into
@@ -1629,7 +1629,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // capability-server names and the relocation-aware MEMDIR are re-read for every incarnation.
   const runHomeBuilder = linkedRunHomeBuilder();
   // The run home itself is returned untouched — the router refuses one `buildRunHome` did not build.
-  const runHomeDeps: WinterLegDeps["runHome"] = runHomeBuilder === undefined ? undefined : {
+  const runHomeDeps: CloverLegDeps["runHome"] = runHomeBuilder === undefined ? undefined : {
     build: async (input) => {
       const built = await runHomeBuilder(input);
       // Spec §8: what the builder did NOT do (skipped links, dropped MCP servers and imports,
@@ -1639,7 +1639,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       return built;
     },
     inputFor: (facts) => runHomeInputFor({
-      home: winterHome,
+      home: cloverHome,
       trust: trustStore,
       settings: () => settings,
       reservedMcpServerNames: [...reservedMcpServerNames()],
@@ -1651,7 +1651,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Worker each (`runtime-sdk/embedded.ts`). Owned HERE rather than by the runtime handle, because
   // `stop()` must drain it after `runtimeSdk.dispose()` and before the stores close (a Worker's last
   // frames still pass through the session store and `runtime-state.db` on the way out).
-  const embeddedSessions = createEmbeddedSessionHost({ ...(opts.embeddedHost ?? {}), home: winterHome, log: (line) => console.error(`runtime-sdk: ${line}`) });
+  const embeddedSessions = createEmbeddedSessionHost({ ...(opts.embeddedHost ?? {}), home: cloverHome, log: (line) => console.error(`runtime-sdk: ${line}`) });
   onEmbeddedHost(embeddedSessions);
   // The version lock, said ONCE at boot: every embedded session re-checks it at `spawnHookFor` and
   // refuses typed (`embedded_runtime_unavailable`); this line is where an operator finds out why.
@@ -1662,23 +1662,23 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   try {
     runtimeSdk = await createWinterRuntimeSdk({
-      home: winterHome,
+      home: cloverHome,
       embedded: embeddedSessions,
       settings: () => settings, // LIVE holder, never a boot snapshot
       // WS-21 (spec §3.1): a run-home router is created with `requireRunHome: true` and this builder
       // for its OWN cold-resume path. Absent (router 0.0.11) — the router is created as before.
       ...(runHomeDeps === undefined ? {} : {
         // Round 4, minor 3: the cwd canonicalized and the lazy transcript re-key run, as at every `resume()`.
-        runHomeFor: coldResumeRunHomeFor({ home: winterHome, store, records: runtime?.records, runHome: runHomeDeps, log: (line) => console.error(`runtime-sdk: ${line}`) }),
+        runHomeFor: coldResumeRunHomeFor({ home: cloverHome, store, records: runtime?.records, runHome: runHomeDeps, log: (line) => console.error(`runtime-sdk: ${line}`) }),
       }),
       secrets,
       directoryStore: runtime?.directory,
       // EMPTY ON PURPOSE (P8b-36) — this list is handle-wide and construction-time, which is
-      // exactly what a per-session capability set must not be. Winter's capability servers ride each
+      // exactly what a per-session capability set must not be. Clover's capability servers ride each
       // session's own `Options.mcpServers` instead (`buildSessionCapabilities` above).
       capabilities: [],
       // Task 12's seam, filled by Task 16: the inbound class of a session this process holds no
-      // live facet for — a parked (`resumable`) Winter session answers `unavailable` instead of
+      // live facet for — a parked (`resumable`) Clover session answers `unavailable` instead of
       // holding its mail forever, and is never cold-resumed behind the daemon's back.
       sessionPermissionClass: sessionPermissionClassFor({ records: () => runtime?.records, store }),
       log: (line) => console.error(`runtime-sdk: ${line}`),
@@ -1687,21 +1687,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const code = (err as { code?: string })?.code ?? (err as Error)?.constructor?.name ?? "unknown";
     // A2: the message too (one line, bounded) — `RuntimeSdkVersionError` alone does not say WHICH
     // peer's version failed, which is the whole diagnosis.
-    console.error(`runtime-sdk: winter runtime sdk unavailable (${code}: ${describeLoadError(err)}) — every session.create/session.dispatch will refuse typed (winter_leg_unavailable); there is no engine leg`);
+    console.error(`runtime-sdk: clover runtime sdk unavailable (${code}: ${describeLoadError(err)}) — every session.create/session.dispatch will refuse typed (winter_leg_unavailable); there is no engine leg`);
     runtimeSdk = undefined;
   }
 
   // Winter Phase 10a (O6, P10a-2/4/6): the daemon's ONE console-profile broker. Fix wave 3 (M-A):
   // `claudeExecutable` is GONE — the single login/logout door is `ant`-driven, never `claude`'s own
   // `auth login`. `antExecutable` is a closure over `resolveAntExecutable` (Lane L,
-  // `bundle-layout.ts`), fed `winterOptionsFromSettings(settings).antExecutable` LIVE (re-read per
+  // `bundle-layout.ts`), fed `cloverOptionsFromSettings(settings).antExecutable` LIVE (re-read per
   // call, never a boot snapshot) exactly the way `create.ts`'s own `winterExecutable`/
   // `claudeExecutable` rungs read their settings — so `runtimes.antExecutable` takes effect with no
   // daemon restart.
   const consoleBroker = createConsoleProfileBroker({
-    home: winterHome,
+    home: cloverHome,
     antExecutable: () => resolveAntExecutable({
-      setting: winterOptionsFromSettings(settings).antExecutable,
+      setting: cloverOptionsFromSettings(settings).antExecutable,
       env: process.env,
       execPath: process.execPath,
     })?.path,
@@ -1716,9 +1716,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (consoleBroker.profileExists()) consoleBroker.startRefresher();
   // Winter Phase 10a fix wave (F2): starts UNCONDITIONALLY, regardless of the boot-time check
   // above — its whole job is to notice the profile appearing/disappearing AFTER boot, from a
-  // separate process (a CLI `winter login`/`logout --anthropic-console`, which is deliberately NOT
+  // separate process (a CLI `clover login`/`logout --anthropic-console`, which is deliberately NOT
   // an RPC and so cannot tell a running daemon directly, or a human running `ant auth
-  // login`/`logout --profile winter` by hand). See `ConsoleProfileBroker.startWatcher`'s own doc.
+  // login`/`logout --profile clover` by hand). See `ConsoleProfileBroker.startWatcher`'s own doc.
   // Fix wave 3 (Minor 1): guarded — a synchronous throw here (e.g. a permissions error hardening
   // `anthropic-config`) must never fail daemon boot; log one line and continue without the watcher
   // rather than crash. `startRefresher()` above already has the identical guarantee internally.
@@ -1748,7 +1748,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // `backendSessionId`, and the router's only refusal before a cold resume is `archived` — so
       // every session from the last boot would still be resumable from inside a delivery, by a
       // spawn this daemon never tracked. Nothing is attached at this point in boot by construction,
-      // so the sweep parks them all. A Winter session is resumed by its DRIVER from the 8a record
+      // so the sweep parks them all. A Clover session is resumed by its DRIVER from the 8a record
       // (which keeps its own backend id), never by the messaging layer.
       const parked = await parkRecoveredSessions(runtimeSdk, (line) => console.error(`runtime-sdk: ${line}`));
       console.error(
@@ -1757,7 +1757,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       );
       // P8d-11 (ruling: 8b task-12 option (b)): step 10 ran LATE by design — the router handle is
       // built after §13 — so the boot-time attempt row says `skipped`; re-stamp it with the real
-      // outcome so `winter doctor` reads one honest step 10.
+      // outcome so `clover doctor` reads one honest step 10.
       if (runtime?.lastRecovery.step10AttemptId !== undefined) {
         restampStep(runtime.db.db, runtime.lastRecovery.step10AttemptId, 10, "ok", { entriesLoaded: recovered.entriesLoaded, staleMarked: recovered.staleMarked });
       }
@@ -1789,14 +1789,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   if (routerRecovery !== undefined && runtime !== undefined) {
     try {
       const recovered = await recoverRunRoots({
-        home: winterHome,
+        home: cloverHome,
         rs: runtime.db,
         reconcile: (root) => routerRecovery.reconcileRootForRecovery(root),
-        claudeResumeScanRoot: process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT?.trim() || undefined,
+        claudeResumeScanRoot: process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT?.trim() || undefined,
         log: (line) => console.error(`runtime-sdk: ${line}`),
       });
       const quarantined = recovered.quarantinedRoots.length;
-      if (quarantined > 0) console.error(`runtime-sdk: run-root recovery kept ${quarantined} quarantined root(s) — see \`winter doctor\``);
+      if (quarantined > 0) console.error(`runtime-sdk: run-root recovery kept ${quarantined} quarantined root(s) — see \`clover doctor\``);
       if (runtime.lastRecovery.step6AttemptId !== undefined) {
         const failed = recovered.recorded.failed + recovered.runFolders.failed + recovered.staging.failed;
         restampStep(runtime.db.db, runtime.lastRecovery.step6AttemptId, 6, failed === 0 ? "ok" : "partial", rootRecoveryDetail(recovered));
@@ -1833,14 +1833,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   }
 
-  // ── The Winter leg's driver table (P8b Task 16) ───────────────────────────────────────────────
+  // ── The Clover leg's driver table (P8b Task 16) ───────────────────────────────────────────────
   // Built HERE, after §13's recovery (`startRuntimeState` above) and the router's own directory
   // recovery + `parkRecoveredSessions` (just above): a projector is never constructed before that
   // sweep has run, and nothing below can construct one before `startIpcServer` hands a client a
   // socket. `ipc/server.ts` routes every `session.*` method through this table — every mode is
-  // the Winter leg since Task 17. The drivers it starts are tracked on `runtimeSdk`
+  // the Clover leg since Task 17. The drivers it starts are tracked on `runtimeSdk`
   // (`trackQuery`), so `stop()`'s `dispose()` ends them inside the shutdown budget.
-  // P8b Task 17: HOISTED above the `if (agentProvider)` gate — the Winter leg's drivers (below)
+  // P8b Task 17: HOISTED above the `if (agentProvider)` gate — the Clover leg's drivers (below)
   // persist their children through this roster too, on a daemon with or without an engine.
   // Async spawn (4h-ii-a): tracks DETACHED (`run_in_background:true`) child threads — see
   // bg-agent-registry.ts's own doc comment for why this is separate from `bgRegistry` above
@@ -1868,11 +1868,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // second KILLER, not a second safety net. Worse, while nothing in production reset it, it was a
   // 600 s WALL CLOCK, which is exactly what CLAUDE.md's tool surface and the standing "subagents:
   // no timeout" rule forbid. The registry's window is opt-in (see `stallTimeoutMs`'s own note) and
-  // Task 17 turns it on for Winter children when `SubagentManager` retires with the engine. The
+  // Task 17 turns it on for Clover children when `SubagentManager` retires with the engine. The
   // engine DOES feed `progress()` here and now (engine.ts's three child sites), so the window is a
   // progress window the moment it is armed rather than an API nobody calls.
   // Task 17: the roster's progress watchdog is ARMED here — `SubagentManager` retired with the
-  // engine, so this is the only window over a Winter child (progress-fed by the driver, no wall
+  // engine, so this is the only window over a Clover child (progress-fed by the driver, no wall
   // clock; `settings.subagents.stallTimeoutMs` hot, undefined = 600 s, null/0 = off).
   const bgAgents: AgentRegistry | undefined =
     runtime === undefined
@@ -1887,10 +1887,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             if (model === undefined) return "unstated";
             try { return splitTag(model).providerId; } catch { return "unstated"; }
           },
-          // The owning session's live facet — Task 16 attaches Winter sessions, and until then a
+          // The owning session's live facet — Task 16 attaches Clover sessions, and until then a
           // stop with no local `AbortController` is recorded and nothing is asked of the child.
           facetFor: (sessionId) => {
-            // A child's `parentWinterSessionId` is WINTER's session id; the router addresses a
+            // A child's `parentWinterSessionId` is CLOVER's session id; the router addresses a
             // session by its BACKEND id (P8b Task 12), so the 8a record is the hop between them.
             // Nothing attaches until Task 16, so this answers `undefined` today and a stop with
             // no local controller is recorded without anything being asked of the child.
@@ -1899,7 +1899,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           },
           log: (line) => console.error(`children: ${line}`),
         });
-  // Fix wave (review row 4): session titles on the Winter leg. The titler stays on Winter's OWN
+  // Fix wave (review row 4): session titles on the Clover leg. The titler stays on Clover's OWN
   // provider layer (P8b-10 — never `sdk.query()`), so it needs `agentProvider`; a no-provider
   // daemon simply titles nothing, as before. `titles.enabled` is read LIVE at every fire (the
   // engine-era wiring was a boot snapshot; no setting may need a restart).
@@ -1963,19 +1963,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     maybeTitle: (sid: string): Promise<void> => (settings?.titles?.enabled === false ? Promise.resolve() : sessionTitler.maybeTitle(sid)),
   };
   // ── P8c integration Wiring 1: the ExitPlanMode bridge (lane 2's `plan-bridge.ts`, P8c-14) ──────
-  // `winterDriversForPlanBridge` breaks the construction cycle: `planBridge` is a `WinterLegDeps`
-  // field `createWinterSessionDrivers` below needs at construction, but an APPROVAL's `setPolicy`
-  // reaches a LIVE child through that same `winterDrivers` table (mirrors `ipc/server.ts`'s own
-  // `session.setPolicy` composition: `store.setApprovalPolicy` + `winter.get(sessionId)?.setPolicy`)
-  // — so the reference is filled in right after `winterDrivers` itself is assigned, below.
-  let winterDriversForPlanBridge: WinterSessionDrivers | undefined;
+  // `cloverDriversForPlanBridge` breaks the construction cycle: `planBridge` is a `CloverLegDeps`
+  // field `createCloverSessionDrivers` below needs at construction, but an APPROVAL's `setPolicy`
+  // reaches a LIVE child through that same `cloverDrivers` table (mirrors `ipc/server.ts`'s own
+  // `session.setPolicy` composition: `store.setApprovalPolicy` + `clover.get(sessionId)?.setPolicy`)
+  // — so the reference is filled in right after `cloverDrivers` itself is assigned, below.
+  let cloverDriversForPlanBridge: CloverSessionDrivers | undefined;
   const planBridgeLog = { info: (m: string) => console.error(`plan-bridge: ${m}`), error: (m: string) => console.error(`plan-bridge: ${m}`) };
   const planBridge: PlanBridge = planBridgeFor({
     emit: (event) => { hub.append(event.sessionId, event); },
     setPolicy: async (sessionId, policy) => {
       store.setApprovalPolicy(sessionId, policy);
       try {
-        await winterDriversForPlanBridge?.get(sessionId)?.setPolicy(policy);
+        await cloverDriversForPlanBridge?.get(sessionId)?.setPolicy(policy);
       } catch (err) {
         console.error(`plan-bridge: setPolicy for ${sessionId} failed: ${err instanceof Error ? err.name : "unknown"}`);
       }
@@ -1988,18 +1988,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `BashReviewer` were never constructed anywhere in this file post-engine-deletion (8b) — this is
   // their first live wiring since the retired AgentEngine's own `cfg.hooks`/`reviewer`. Read LIVE
   // per call (settings hot-reload), matching every other getter in this block.
-  const winterHooksEnabled = (cwd?: string | null): boolean => {
+  const cloverHooksEnabled = (cwd?: string | null): boolean => {
     const s = projectSettings.effective(projectRootOf(cwd));
     return s ? hooksEnabledFrom(s) : true;
   };
-  const winterLspAutoDiagnosticsEnabled = (cwd?: string | null): boolean => {
+  const cloverLspAutoDiagnosticsEnabled = (cwd?: string | null): boolean => {
     const s = projectSettings.effective(projectRootOf(cwd));
     return s ? lspAutoDiagnosticsEnabledFrom(s) : true;
   };
   const hookFacade = new HookFacade({
     registry: hookRegistry,
     runner: new HookRunner(),
-    hooksEnabled: winterHooksEnabled,
+    hooksEnabled: cloverHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });
   // The retired engine's own BashReviewer gate (engine.ts:4547-4548): `provider`/`model` are the
@@ -2033,14 +2033,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // WS-26: the connector permissions' live facts — the stored table from the daemon's in-memory settings and
   // the scope-aware read-only answers (`agent/mcp/connector-source.ts` has the rules: which listing, the
   // background kick, and why nothing on a call path ever spawns a server).
-  const connectorPermissions = daemonConnectorSource({ home: winterHome, trust: trustStore, settings: () => settings, manager: () => mcp });
+  const connectorPermissions = daemonConnectorSource({ home: cloverHome, trust: trustStore, settings: () => settings, manager: () => mcp });
   // The reviewing pill (2026-10-08): which thread each live tool call is on, for the reviewer's transient.
   const callThreads = new CallThreads();
   hub.addObserver((event) => callThreads.observe(event));
   const hooksFor = (session: CapabilitySession) =>
     sessionHooksFor({
       sessionId: session.sessionId,
-      home: winterHome,
+      home: cloverHome,
       roots: session.roots,
       tmpDir: session.tmpDir,
       hookFacade,
@@ -2056,10 +2056,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       policy: () => { try { return store.meta(session.sessionId).approvalPolicy; } catch { return undefined; } },
       lsp: () => lspManager ?? undefined,
-      autoDiagnosticsEnabled: () => winterLspAutoDiagnosticsEnabled(session.cwd),
+      autoDiagnosticsEnabled: () => cloverLspAutoDiagnosticsEnabled(session.cwd),
       // 2026-09-18 (the web-tools floor, both legs): the SAME project-overlay-aware getter every
       // other consumer of the dangerous-domain list is wired to, with THIS session's cwd bound —
-      // so the host-side floor hook, a Winter child's `Options.web.blockedDomains` and the daemon's
+      // so the host-side floor hook, a Clover child's `Options.web.blockedDomains` and the daemon's
       // own `Search` are provably reading one list. `hooks.ts` unions the shipped half itself.
       dangerousDomainsAdded: () => dangerousDomainsAdded(session.cwd),
       // WS-21 (spec §7.1/§7.2): the path fence — the mode decides card vs typed deny, and the project
@@ -2131,9 +2131,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // this closure's only job is the filter above and resolving `tag`.
     recordDispatchOutcome(event, tag, roleHealth);
   });
-  // Daemon settings surface (2026-09-17 plan, item 3): hoisted alongside `winterDrivers` below (the
+  // Daemon settings surface (2026-09-17 plan, item 3): hoisted alongside `cloverDrivers` below (the
   // ONE producer) for the identical reason — the RPC that reads it must work on a daemon with or
-  // without `agentProvider`, since `Query.supportedAgents()` is entirely a Winter-runtime-SDK fact,
+  // without `agentProvider`, since `Query.supportedAgents()` is entirely a Clover-runtime-SDK fact,
   // unrelated to the daemon's own internal Provider.
   const supportedAgentsCache = new SupportedAgentsCache();
   // WS-25: the daemon's ONE MCP OAuth store for this home, chosen once so the session credential answers,
@@ -2142,20 +2142,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `opts.mcpOAuthStore` is that one instance everywhere. A daemon handed its own `secrets` (every test
   // daemon, and the Swift suites' `RealDaemon` fixture) gets a per-daemon MEMORY store instead: a test that
   // configures an http/sse server and signs in must never reach the Keychain, not even the throwaway
-  // service `WINTER_KEYCHAIN_SERVICE` names (a fixture that forgets that variable would otherwise land on the
-  // real `com.winter.core`).
+  // service `CLOVER_KEYCHAIN_SERVICE` names (a fixture that forgets that variable would otherwise land on the
+  // real `com.waifucave.clover.core`).
   const oauthStoreForThisDaemon: McpOAuthStore = opts.mcpOAuthStore
-    ?? (opts.secrets !== undefined ? createMemoryMcpOAuthStore() : daemonMcpOAuthStore(keychainService(profile, winterHome)));
+    ?? (opts.secrets !== undefined ? createMemoryMcpOAuthStore() : daemonMcpOAuthStore(keychainService(profile, cloverHome)));
   const daemonOAuthStore = (): McpOAuthStore => oauthStoreForThisDaemon;
   const sessionMcpOAuthStore: McpOAuthStore = oauthStoreForThisDaemon;
-  const winterDrivers: WinterSessionDrivers = createWinterSessionDrivers({
-    home: winterHome,
+  const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
+    home: cloverHome,
     // WS-21: every incarnation's run home, when the linked router applies them (see `runHomeDeps`).
     ...(runHomeDeps === undefined ? {} : { runHome: runHomeDeps }),
     // WS-21 (spec §4.3): a card offers "in this project" only for a trusted project.
     isTrusted: (dir) => trustStore.isTrusted(dir),
-    hostAuthorityRevision: () => [trustStore.authorityRevision(), authorityRevision(winterHome)],
-    profile: process.env.WINTER_PROFILE,
+    hostAuthorityRevision: () => [trustStore.authorityRevision(), authorityRevision(cloverHome)],
+    profile: process.env.CLOVER_PROFILE,
     settings: () => settings, // LIVE holder
     runtime: runtimeSdk,
     records: runtime?.records,
@@ -2170,13 +2170,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: new PermissionGate(),
     rootsOf: (sid) => sessionDirs.roots(sid),
     tmpDirOf: (sid) => sessionTmpDir(sid),
-    outDirOf: (sid) => ensureOutdir(winterHome, sid),
+    outDirOf: (sid) => ensureOutdir(cloverHome, sid),
     // The SAME relocation-aware derivation the live memory path uses (`memoryDirOf` above), so the
     // record names the directory the session actually reads.
-    memoryKeyOf: (cwd) => memoryProjectKeyFor(cwd, { winterHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }),
+    memoryKeyOf: (cwd) => memoryProjectKeyFor(cwd, { cloverHome, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }),
     // Task 17 Step 0(a): the SAME assembler the engine's `turn()` composes its instructions with —
-    // Winter's persona per mode, the `_assistant` bucket, the output style — so a Winter-leg session
-    // speaks as Winter.
+    // Clover's persona per mode, the `_assistant` bucket, the output style — so a Clover-leg session
+    // speaks as Clover.
     assembler,
     // Lane B: the user's SAVED allow rules reach both legs' children — `settings.json`, a TRUSTED
     // project's overlay (the SAME `projectSettings` resolver, at the SAME repo root) and its
@@ -2188,7 +2188,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(permissionRules === undefined ? {} : { projectRules: (root: string) => permissionRules!.rulesFor(root).project }),
       trust: trustStore,
     }),
-    // Task 17 (P8b-15): Winter children land in the persisted roster (absent when the spine is offline).
+    // Task 17 (P8b-15): Clover children land in the persisted roster (absent when the spine is offline).
     ...(bgAgents === undefined ? {} : { children: bgAgents }),
     onTurnSettled: (sid) => { signals.onTurnSettled?.(sid); dispatchChildren?.onTurnSettled(sid); },
     onSupportedAgents: (sid, agents) => supportedAgentsCache.observe(sid, agents),
@@ -2196,22 +2196,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     onTurnUsage: (sid, u) => {
       let mode: string | undefined;
       try { mode = store.meta(sid).mode; } catch { mode = undefined; }
-      usage?.service.recordWinterTurn(sid, mode, u.sourceId, u.rows);
+      usage?.service.recordCloverTurn(sid, mode, u.sourceId, u.rows);
     },
     ...(titler === undefined ? {} : { titler }),
     // Fix wave (review row 7): the user's servers and a TRUSTED project's MCP file (WS-21: its
-    // `.winter/mcp.json`; the repo-root `.mcp.json` is no longer read) reach the child under the
+    // `.clover/mcp.json`; the repo-root `.mcp.json` is no longer read) reach the child under the
     // registry's own keys (`mcp__<key>__<tool>`), any transport
     // (stdio/http/sse). Read LIVE per incarnation from the same holder and the same `TrustStore`
     // the McpManager consults. `log`: the SAME one-stderr-line-per-name convention `McpManager`'s
     // own `log` dep already uses (below), for a project-scope entry that didn't validate.
-    // WS-21: the user and local scopes live in `sdk/.winter.json` (`sdkUserMcpServers`/`sdkLocalMcpServers`,
+    // WS-21: the user and local scopes live in `sdk/.clover.json` (`sdkUserMcpServers`/`sdkLocalMcpServers`,
     // the local one keyed by `localScopeKeyFor`), read live; precedence local > project > user.
     extraMcpServers: (session) => configuredMcpServersFor({
       settings,
-      userMcpServers: sdkUserMcpServers(winterHome),
+      userMcpServers: sdkUserMcpServers(cloverHome),
       // WS-21 (spec §4.4): the local scope, keyed by the session's canonical project root.
-      localMcpServers: session.cwd ? sdkLocalMcpServers(winterHome, localScopeKeyFor(session.cwd)) : {},
+      localMcpServers: session.cwd ? sdkLocalMcpServers(cloverHome, localScopeKeyFor(session.cwd)) : {},
       cwd: session.cwd, trusted: (dir) => trustStore.isTrusted(dir), log: (m) => console.error(m),
     }),
     // Daemon settings surface batch 3 (item 1): the SAME trust gate `extraMcpServers` above and
@@ -2220,13 +2220,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     projectAgentDefinitions: (cwd) => (trustStore.isTrusted(cwd) ? loadProjectAgentDefinitions(cwd) : { definitions: {}, sources: [], rejected: [] }),
     // 2026-09-18 (agent SDK 0.0.17): the SAME `dangerousDomainsAdded` getter the daemon's own
     // `Search` and the `browser` tool are wired to, a few hundred lines
-    // below — so the floor a Winter CHILD honours through `Options.web.blockedDomains` is provably the
+    // below — so the floor a Clover CHILD honours through `Options.web.blockedDomains` is provably the
     // identical list, project overlay included, rather than a second derivation of it.
     dangerousDomainsAdded,
-    log: (line) => console.error(`winter-leg: ${line}`),
+    log: (line) => console.error(`clover-leg: ${line}`),
     // P8c integration Wirings 1 & 3 (P8c-14): lane 2's plan bridge and lane 3's hooks facade,
-    // built above. `hooksFor(...).winter` becomes the child's `Options.hooks` (`optionsFor` →
-    // `buildWinterOptions`); `planBridge` answers `ExitPlanMode` through the approval-bridge deps.
+    // built above. `hooksFor(...).clover` becomes the child's `Options.hooks` (`optionsFor` →
+    // `buildCloverOptions`); `planBridge` answers `ExitPlanMode` through the approval-bridge deps.
     planBridge,
     // WS-26: the bridge's half of the connector permissions (the hook above is the floor's).
     connectors: connectorPermissions,
@@ -2254,8 +2254,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
   });
   // Wiring 1: fills the forward reference `planBridge`'s `setPolicy` closes over (declared above,
-  // before `winterDrivers` existed) — see that block's own comment for why the cycle is broken here.
-  winterDriversForPlanBridge = winterDrivers;
+  // before `cloverDrivers` existed) — see that block's own comment for why the cycle is broken here.
+  cloverDriversForPlanBridge = cloverDrivers;
   // Dispatch's children (`agent/dispatch-children.ts`): `session_spawn` mints them through the IPC
   // server's creation transaction, sends each its prompt through its own driver, mirrors their
   // approvals/questions and status onto the coordinator's log, and wakes the coordinator with a
@@ -2269,9 +2269,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       try { store.deleteSession(sid); } catch { /* already gone */ }
       onSessionDeleted(sid);
     },
-    sessions: { get: (sid) => winterDrivers.get(sid), ensure: (sid) => winterDrivers.ensure(sid) },
+    sessions: { get: (sid) => cloverDrivers.get(sid), ensure: (sid) => cloverDrivers.ensure(sid) },
     // LIVE, per call — the schema's enum is a boot snapshot (`spawnModelIds` above).
-    models: async () => pickerModels({ credentials: await credentialPresenceFrom(secrets), home: winterHome }).map((m) => m.id),
+    models: async () => pickerModels({ credentials: await credentialPresenceFrom(secrets), home: cloverHome }).map((m) => m.id),
     announceActivity: (sid) => { try { hub.emitActivity(sid, activityDeriver?.(store.meta(sid), sid, Date.now())); } catch { /* best effort */ } },
     notifyFallback: (title, message) => notifyHeadless(title, message),
     log: (line) => console.error(`dispatch-children: ${line}`),
@@ -2291,33 +2291,33 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     cowork: runtime ? new CoworkRepository(runtime.db) : undefined,
     derive: (row, sid, nowMs) => activityDeriver?.(row, sid, nowMs),
     working: (sid) => signalsDeriver?.(sid).working ?? false,
-    sessions: { get: (sid) => winterDrivers.get(sid), ensure: (sid) => winterDrivers.ensure(sid) },
+    sessions: { get: (sid) => cloverDrivers.get(sid), ensure: (sid) => cloverDrivers.ensure(sid) },
     followUp: () => dispatchChildren,
     log: (line) => console.error(`session-messaging: ${line}`),
   });
-  /** A deleted session takes its Winter child (bounded `end()`, out of the table) AND its runtime
+  /** A deleted session takes its Clover child (bounded `end()`, out of the table) AND its runtime
    *  rows with it — the reaper's 600 s grace is shorter than the 900 s idle timer, so without the
    *  first half a live child would outlive its session. The boot sweep above ran before any driver
    *  could exist, so it keeps the bare records hook. */
   const onSessionDeleted = (sessionId: string): void => {
-    void winterDrivers.evict(sessionId);
+    void cloverDrivers.evict(sessionId);
     onStoredSessionDeleted(sessionId);
     // ComputerV2: the session's automation worker ends with it, and the helper releases its targets.
     computerUseRuntime.service.endSession(sessionId);
   };
   /** Task 17: what the engine used to answer, over the driver table + the child roster. */
-  const grantDeniedPrefixes = [winterHome];
+  const grantDeniedPrefixes = [cloverHome];
   const signals: EngineSignals = {
-    isRunning: (sid) => winterDrivers.get(sid)?.turnRunning ?? false,
+    isRunning: (sid) => cloverDrivers.get(sid)?.turnRunning ?? false,
     hasBackgroundWork: (sid) => (bgAgents?.list(sid) ?? []).some((a) => a.status === "running"),
-    interrupt: (sid) => { const d = winterDrivers.get(sid); if (d === undefined || !d.turnRunning) return { wasRunning: false }; void d.interrupt(); return { wasRunning: true }; },
-    activeTurnCount: () => winterDrivers.list().filter((d) => d.turnRunning).length,
+    interrupt: (sid) => { const d = cloverDrivers.get(sid); if (d === undefined || !d.turnRunning) return { wasRunning: false }; void d.interrupt(); return { wasRunning: true }; },
+    activeTurnCount: () => cloverDrivers.list().filter((d) => d.turnRunning).length,
     // Always empty: the internal `Provider`s are adapter-backed and report no model list of their own
     // (`runtimeBackedProvider`'s `models: () => []`). `pickerModels()` (ipc/picker-models.ts) is the
     // real model listing — see `runtime-provider.ts`'s WS-20 L3.6 note.
     knownModels: () => [],
     // engine.ts's `grantDenied`, verbatim: at/under a prefix, or an ANCESTOR of one (fence
-    // containment is subtree-based; granting an ancestor of ~/.winter/run would open the control plane).
+    // containment is subtree-based; granting an ancestor of ~/.clover/run would open the control plane).
     isGrantDenied: (dir) => {
       for (const p of grantDeniedPrefixes) {
         let cp: string;
@@ -2327,7 +2327,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       return false;
     },
     threadsFor: (sid) => [
-      { threadId: "main", status: winterDrivers.get(sid)?.turnRunning ? "running" : "completed" },
+      { threadId: "main", status: cloverDrivers.get(sid)?.turnRunning ? "running" : "completed" },
       ...(bgAgents?.list(sid) ?? []).map((a) => ({ threadId: a.threadId, parentThreadId: "main", status: a.status === "running" ? "running" as const : "completed" as const, ...(a.status === "running" ? {} : { stopReason: a.status }) })),
     ],
   };
@@ -2336,7 +2336,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     facetFor: (sid) => { const backend = runtime?.records.get(sid)?.backendSessionId; return backend === undefined || runtimeSdk === undefined ? undefined : attachedFacetFor(runtimeSdk, backend); },
   });
 
-  // 2026-09-19: the gate now asks "does this daemon run Winter's own jobs at all" — `internalRouter`
+  // 2026-09-19: the gate now asks "does this daemon run Clover's own jobs at all" — `internalRouter`
   // — instead of "was a single internal `Provider` built for `settings.provider.model`". The two used
   // to be the same question, and that is the bug: a DeepSeek-default home got `agentProvider = null`
   // and therefore no ToolRegistry, no plugins, no dreamer/cleaner AND — the part nobody noticed — NO
@@ -2348,14 +2348,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const registry = new ToolRegistry();
     sharedRegistry = registry;
     // Reads-unrestricted (user rule, memory/reads-unrestricted.md, task-10): read/ls/glob/grep get
-    // NO path fence — the ONE carve-out is denying `dirs.runDir` (~/.winter/run), the sole directory
-    // bootstrapWinterDir (winter-dir.ts) locks down to 0700; every other winterHome subdir (sessions,
+    // NO path fence — the ONE carve-out is denying `dirs.runDir` (~/.clover/run), the sole directory
+    // bootstrapCloverDir (clover-dir.ts) locks down to 0700; every other cloverHome subdir (sessions,
     // memory, skills, agents, plugins, hooks, logs, settings.json) stays fully readable by design.
-    // Boot-constant: winterHome can't change within a daemon lifetime, and `run` already exists by
-    // this point (bootstrapWinterDir mkdir'd it above). This is belt-and-suspenders — today every
+    // Boot-constant: cloverHome can't change within a daemon lifetime, and `run` already exists by
+    // this point (bootstrapCloverDir mkdir'd it above). This is belt-and-suspenders — today every
     // actual secret (harness/admin tokens, Codex OAuth tokens, web-search/OpenAI API keys) lives in
-    // the OS Keychain via `secrets` (KeychainSecretStore), never on disk under winterHome — but it's
-    // the real, deliberately-hardened boundary Winter draws around its own runtime material (the IPC
+    // the OS Keychain via `secrets` (KeychainSecretStore), never on disk under cloverHome — but it's
+    // the real, deliberately-hardened boundary Clover draws around its own runtime material (the IPC
     // socket, the daemon lock file, plugin-supervisor PID files), so a prompt-injected turn can't
     // read the daemon's own control-plane files through the tool the daemon itself hosts.
     // P8a (WS-16 §10, whole-branch review M1): `runtimes/` joins `run/`. It holds the authoritative
@@ -2363,7 +2363,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // spool and the resume-staging roots — i.e. router metadata today and MESSAGE BODIES the moment
     // 8b lands (`global_messages`/`held_messages` carry whole envelopes), plus 8c's staged
     // credentials. A model that could `read` the db file could read all of it around every seam this
-    // branch built. `winter doctor` is a separate CLI process and is unaffected by this denial.
+    // branch built. `clover doctor` is a separate CLI process and is unaffected by this denial.
     // hot-settings T2: getter over the live `settings` holder (was a boot-captured value) — a
     // later task's watcher reassigns `settings` in place; this closure re-reads it on the NEXT
     // enter_worktree/spawn isolation call, no WorktreeManager reconstruction needed.
@@ -2440,30 +2440,30 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             break;
         }
         // Task 17: the engine's `notifyWorkflowCompletion` pinned a notice into the parent's next
-        // turn; the `Workflow` tool is not served to a Winter child yet (carry), so there is no
+        // turn; the `Workflow` tool is not served to a Clover child yet (carry), so there is no
         // parent turn to notify — the completion event above is the record.
       },
-      // Task 17: a workflow's `agent()` is a Winter CODE child session with a fixed prompt, run to
+      // Task 17: a workflow's `agent()` is a Clover CODE child session with a fixed prompt, run to
       // its first idle through the driver table; the result is its last assistant text.
       spawnAgent: async (sid, prompt, o, signal) => {
         const parent = store.meta(sid);
         const childId = store.createSession("global", { cwd: parent.cwd ?? undefined, approvalPolicy: parent.approvalPolicy, origin: "workflow-child", mode: "code", parentSessionId: sid, ...(o?.model === undefined ? {} : { model: o.model }) });
-        const onAbort = (): void => { void winterDrivers.get(childId)?.end(); };
+        const onAbort = (): void => { void cloverDrivers.get(childId)?.end(); };
         signal.addEventListener("abort", onAbort, { once: true });
         try {
-          await winterDrivers.runTurn(childId, prompt, "workflow");
+          await cloverDrivers.runTurn(childId, prompt, "workflow");
         } catch (err) {
           return { ok: false, result: err instanceof Error ? err.message : String(err) };
         } finally {
           signal.removeEventListener("abort", onAbort);
-          void winterDrivers.get(childId)?.end();
+          void cloverDrivers.get(childId)?.end();
         }
         const log = store.read(childId);
         const last = [...log].reverse().find((e) => e.type === "assistant_message" && (e as { threadId?: string }).threadId === "main") as { text: string } | undefined;
         const failed = log.some((e) => e.type === "agent_error") || signal.aborted;
         return { ok: !failed, result: last?.text ?? "" };
       },
-      runsDir: join(winterHome, "workflows-runs"),
+      runsDir: join(cloverHome, "workflows-runs"),
     });
     // Deferred (rides ToolSearch like worktree/notebook/plan/schedule above) — a specialized
     // orchestration primitive, not needed in every turn. Session-type/settings gating (Task B3/B4,
@@ -2515,7 +2515,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // FIX 3): the user's request was "deferred on dispatch" (narrowing bash/task_stop/computer/
     // AskQuestion/send_message's EXISTING toolset into dispatch), never "make task_stop immediate in
     // code", and CC parity (this repo's tool surface deliberately tracks Claude Code's shape — see
-    // winter-vs-cc-tools.md) has TaskStop deferred: one generic stop tool, no separate bash_kill
+    // clover-vs-cc-tools.md) has TaskStop deferred: one generic stop tool, no separate bash_kill
     // (removed; task_stop's bash-unify path is now the only way to kill a bg bash task) — that is
     // the ORIGINAL CC-parity clause this comment used to (mis)attribute to "stays immediate in
     // code" instead. Restored to `deferred: ["code", "dispatch"]` — deferred in BOTH modes it's
@@ -2548,8 +2548,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Computer use (Phase 5 CU): on unless settings.computerUse.enabled is explicitly false (default
     // ON since 2026-10-07, user ruling; it was opt-in before — absent now means on).
     // The service holds leases on the SAME `peripheral` broker (hoisted above this gate) that
-    // Winter.app serves screenshot/ax-read/input-drive behind. reuses settings.peripheral.heartbeatMs.
-    // P8b Task 6: the `let` itself is HOISTED above the Winter runtime block (it is the holder the
+    // Clover.app serves screenshot/ax-read/input-drive behind. reuses settings.peripheral.heartbeatMs.
+    // P8b Task 6: the `let` itself is HOISTED above the Clover runtime block (it is the holder the
     // `computer` capability server's getter reads — one service, one lease set, two doors); only
     // the construction stays here, unchanged.
     // Minor 5e (fix wave): `computerUseEnabledFrom` — the ONE reader, see this const's own doc.
@@ -2587,11 +2587,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // working-directories T4: engine.ts's `EngineConfig.outDirOf` — read fresh per tool call
     // alongside `tmpDir` (executeCall), independent of `sessionDirs`/`rootsOverride` (see that
     // field's own doc comment for why: mirrors `tmpDir`'s own rootsOverride-independence).
-    const outDirOf = (sid: string) => ensureOutdir(winterHome, sid);
-    // diff-tabs Task 6: engine.ts's `EngineConfig.persistDiff` — same winterHome-closure shape as
+    const outDirOf = (sid: string) => ensureOutdir(cloverHome, sid);
+    // diff-tabs Task 6: engine.ts's `EngineConfig.persistDiff` — same cloverHome-closure shape as
     // outDirOf just above, action- rather than value-shaped (see persistDiff's own doc comment).
     const persistDiff = (sid: string, diffId: string, header: Omit<DiffHeader, "truncated">, patch: string) =>
-      writeDiff(winterHome, sid, diffId, header, patch);
+      writeDiff(cloverHome, sid, diffId, header, patch);
     // Minor 5e (fix wave): `lspEnabledFrom` — the ONE reader, see this const's own doc comment.
     if (settings ? lspEnabledFrom(settings) : true) {
       lspManager = new LspManager({ idleShutdownMs: lspCfg?.idleShutdownMs });
@@ -2617,7 +2617,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // network) and must not start anything the user has disabled
     // (`settings.mcp.disabled`) — `stdioMcpServersFor` is the one filter both facts go through
     // (settings.ts).
-    await mcp.startAll(stdioMcpServersFor(sdkUserMcpServers(winterHome), settings?.mcp?.disabled));
+    await mcp.startAll(stdioMcpServersFor(sdkUserMcpServers(cloverHome), settings?.mcp?.disabled));
     // WS-21 (L4 request 2): a plugin's MCP servers are claude-native content now (its `.mcp.json`, or a
     // claude manifest's own `mcpServers`), loaded by both runtimes themselves (spec §5.3) — the daemon no
     // longer starts one.
@@ -2699,24 +2699,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // referenced by its old inline comment, now a shorthand) for what this class actually does.
     // Task 7: `globalAllow` now takes the `projectRoot` PermissionRules' own decision()/rulesFor()/
     // editPathRules() already have in scope, and resolves it through the SAME `projectSettings`
-    // instance above — a trusted project's OWN `.winter/settings.json` `permissions.allow` UNIONS
+    // instance above — a trusted project's OWN `.clover/settings.json` `permissions.allow` UNIONS
     // into this project's effective rules (mergeSettings, Task 5) on top of the global settings.json
     // value; `effective(null)` degrades to `settings` verbatim, so a null projectRoot (or an
     // untrusted/overlay-less one) reads byte-identically to the pre-Task-7 global-only getter.
     permissionRules = new PermissionRules({
       // WS-21: the "everywhere" rules moved to `sdk/settings.json` in claude's grammar; the gate reads
-      // them back in its own (`winterGateRulesFromSdk`, never wider), plus a trusted project's overlay.
+      // them back in its own (`cloverGateRulesFromSdk`, never wider), plus a trusted project's overlay.
       // The `["Computer"]` default still applies only when NEITHER tier states `allow` at all.
       globalAllow: (projectRoot) => {
-        const user = sdkAllowRules(winterHome);
+        const user = sdkAllowRules(cloverHome);
         const overlay = projectSettings.effective(projectRoot)?.permissions?.allow;
         if (user === undefined && overlay === undefined) return ["Computer"];
-        return [...new Set([...winterGateRulesFromSdk(user ?? []), ...(overlay ?? [])])];
+        return [...new Set([...cloverGateRulesFromSdk(user ?? []), ...(overlay ?? [])])];
       },
-      winterHome,
+      cloverHome,
     });
     // P8b Task 5, deliberately: `runtimeSdk` is NOT on this config. The engine never consumes the
-    // Winter handle — P8b-13 decides the leg at `session.create` (`ipc/server.ts`, which has it) and
+    // Clover handle — P8b-13 decides the leg at `session.create` (`ipc/server.ts`, which has it) and
     // Task 16's driver owns every session that runs on it — and this whole class is deleted in
     // Task 17, so a field here would be churn on a dying config. See the report's F7.
     // Dispatch (Phase 7) Task 4: constructed AFTER `engine` exists — its `runTurn`/`isRunning`
@@ -2740,15 +2740,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       resolve: () => internalRouter!.resolve("pins.dream", settings),
       refreshCredentials: () => internalRouter!.view.refreshSoon(),
       store,
-      dir: () => assistantMemoryDirFor({ winterHome }),
+      dir: () => assistantMemoryDirFor({ cloverHome }),
       enabled: memoryEnabledHot,
-      // P8b Task 17: a Winter-leg turn in flight is activity too (the drivers' host-side count).
+      // P8b Task 17: a Clover-leg turn in flight is activity too (the drivers' host-side count).
       activeTurnCount: () => signals.activeTurnCount(),
       // WS-20: hot settings read — `pinsFor(deps.settings()).dream` is what actually decides the
       // model now, never a boot snapshot (see Dreamer's own DreamerDeps.settings doc comment).
       settings: () => settings,
       // 2026-09-18: quiet per-role failure notes — the ONE registry instance every consumer shares
-      // (constructed unconditionally near `winterHome` above).
+      // (constructed unconditionally near `cloverHome` above).
       roleHealth,
       // session-activity-hygiene T7 (spec §3): the cleaner rides THIS scheduler slot. Constructed
       // here (not at the top of the file) for the same reason the Dreamer is: it needs a provider,
@@ -2771,14 +2771,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         attachedCount: (sid) => hub.attachedCount(sid),
         turnRunning: (sid) => signals.isRunning(sid),
         bgWork: (sid) => signals.hasBackgroundWork(sid),
-        home: winterHome,
+        home: cloverHome,
         enabled: cleanerEnabledHot,
         // WS-20: hot settings read — `pinsFor(deps.settings()).cleaner` is what actually decides
         // the model now, never a boot snapshot (see SessionCleaner's own CleanerDeps.settings doc
         // comment, which defaults to the SAME value as Dreamer's own `pinsFor(...).dream`).
         settings: () => settings,
         // P8a Task 12: the second sanctioned deletion path takes runtime state with it too, exactly
-        // as the reaper's does (WS-16 §16) — and, since Task 16, the session's Winter child.
+        // as the reaper's does (WS-16 §16) — and, since Task 16, the session's Clover child.
         onDelete: onSessionDeleted,
         roleHealth,
       }),
@@ -2794,7 +2794,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // engine to hot-apply against (same "agent disabled" boundary the rest of this gate follows).
     const apply = makeApply({
       // THE atomic swap — a single synchronous assignment, first thing every apply does (T4).
-      setLiveSettings: (s) => { settings = liveSettingsView(s); advanceAuthorityRevision(winterHome); },
+      setLiveSettings: (s) => { settings = liveSettingsView(s); advanceAuthorityRevision(cloverHome); },
       registry,
       buildComputerService: (s) => new ComputerUseService({ broker: peripheral, heartbeatMs: s?.peripheral?.heartbeatMs }),
       registerComputer: (svc, s) => {
@@ -2815,7 +2815,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       registerLsp: (mgr) => {
         // Fix wave (review F7): the `lsp` CAPABILITY server reads this holder per call, so
         // reassigning it IS the hot re-enable — the next `lsp` call on any session finds the new
-        // manager. (Task 17 had retired the registry-door tool on the false premise that Winter's
+        // manager. (Task 17 had retired the registry-door tool on the false premise that Clover's
         // own LSP serves the child; the 0.0.4 child advertises none.)
         lspManager = mgr;
       },
@@ -2826,7 +2826,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await m?.stopAll();
       },
       // File-based memory hot-toggle (T3, design doc follow-up / task-23): the SAME boot-time call
-      // above (`migrateMemoryStore({ winterHome, trust: trustStore, directory, relocatedKey })`),
+      // above (`migrateMemoryStore({ cloverHome, trust: trustStore, directory, relocatedKey })`),
       // re-run whenever `memory.enabled` flips false→true on THIS running daemon — closes T2's
       // "boot-time only" gap. `settings` here is read at the moment this closure actually RUNS
       // (fire-and-forget, deferred a tick past `apply()`'s synchronous `setLiveSettings` swap), so
@@ -2837,7 +2837,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // WS-21: inert here — the live holder no longer carries `memory.enabled` (`withoutMovedKeys`), so
       // `makeApply` never sees a flip. The live trigger is the `sdk/settings.json` watcher below, on
       // claude's `autoMemoryEnabled`.
-      migrateMemory: () => { migrateMemoryStore({ winterHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }); },
+      migrateMemory: () => { migrateMemoryStore({ cloverHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) }); },
       // P8a Task 12: `runtimes.migrations.memoryKeys` flipped on a RUNNING daemon must migrate
       // without a restart (the project's standing no-restart-for-settings rule). The wiring's own
       // `schema_meta` marker is what keeps it a ONE-TIME relocation, so this is handed the new
@@ -2852,7 +2852,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     settingsWatcher = new SettingsWatcher({
       path: dirs.settingsPath,
-      onChangeObserved: () => advanceAuthorityRevision(winterHome),
+      onChangeObserved: () => advanceAuthorityRevision(cloverHome),
       load: loadSettings,
       apply,
       log: (msg) => console.error(`settings-watcher: ${msg}`),
@@ -2860,20 +2860,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     settingsWatcher.start(settings);
   }
 
-  // WS-21: `sdk/settings.json` and `sdk/.winter.json` — debounced, single-flight, keep-last-good, like
+  // WS-21: `sdk/settings.json` and `sdk/.clover.json` — debounced, single-flight, keep-last-good, like
   // `settings.json` above. Built unconditionally: a no-provider daemon still serves the `sdk/`-backed
   // RPCs, and the reaction below needs no engine. `load` drops the cached parse first (so an in-place
   // same-size edit within one mtime tick is still seen) and THROWS on an unparseable file, which the
   // watcher turns into "keep the last good version" — the live readers already do the same on their own.
   const loadSdkFileStrict = (path: string): Record<string, unknown> => {
     forgetSdkFile(path);
-    const read = path === sdkSettingsPath(winterHome) ? readSdkSettingsDetailed(winterHome) : readSdkGlobalConfigDetailed(winterHome);
+    const read = path === sdkSettingsPath(cloverHome) ? readSdkSettingsDetailed(cloverHome) : readSdkGlobalConfigDetailed(cloverHome);
     if (read.state === "invalid") throw new Error(`${path} is not a readable JSON object (${read.reason})`);
     return read.state === "ok" ? read.value : {};
   };
   const sdkSettingsWatcher = new SettingsWatcher<Record<string, unknown>>({
-    path: sdkSettingsPath(winterHome),
-    onChangeObserved: () => advanceAuthorityRevision(winterHome),
+    path: sdkSettingsPath(cloverHome),
+    onChangeObserved: () => advanceAuthorityRevision(cloverHome),
     load: loadSdkFileStrict,
     // The memory importer's hot trigger moved with `memory.enabled`: it re-runs on exactly an
     // `autoMemoryEnabled` false→true flip (claude's default is ON, so only an explicit `false` is off).
@@ -2886,7 +2886,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       const is = next.autoMemoryEnabled !== false;
       if (!was && is) {
         try {
-          migrateMemoryStore({ winterHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
+          migrateMemoryStore({ cloverHome, trust: trustStore, directory: memoryDirectoryHot(), relocatedKey: (k) => runtime?.relocatedMemoryKey(k) });
         } catch (err) {
           console.error(`memory migration on hot-toggle failed (best-effort, will retry next boot): ${(err as Error).message}`);
         }
@@ -2896,16 +2896,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (msg) => console.error(`settings-watcher (sdk/settings.json): ${msg}`),
   });
   const sdkGlobalConfigWatcher = new SettingsWatcher<Record<string, unknown>>({
-    path: sdkGlobalConfigPath(winterHome),
-    onChangeObserved: () => advanceAuthorityRevision(winterHome),
+    path: sdkGlobalConfigPath(cloverHome),
+    onChangeObserved: () => advanceAuthorityRevision(cloverHome),
     load: loadSdkFileStrict,
     apply: () => {},
     watch: watchViaParentDir,
-    log: (msg) => console.error(`settings-watcher (sdk/.winter.json): ${msg}`),
+    log: (msg) => console.error(`settings-watcher (sdk/.clover.json): ${msg}`),
   });
   const sdkWatcherStarts: Array<[SettingsWatcher<Record<string, unknown>>, () => Record<string, unknown>]> = [
-    [sdkSettingsWatcher, () => liveSdkSettings(winterHome)],
-    [sdkGlobalConfigWatcher, () => liveSdkGlobalConfig(winterHome)],
+    [sdkSettingsWatcher, () => liveSdkSettings(cloverHome)],
+    [sdkGlobalConfigWatcher, () => liveSdkGlobalConfig(cloverHome)],
   ];
   for (const [w, current] of sdkWatcherStarts) {
     try {
@@ -2914,7 +2914,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     } catch (err) {
       // A missing `sdk/` (it is created by the bootstrap, so this is a torn home) degrades to the live
       // readers alone — every read still goes to the file; only the debounced reaction is lost.
-      console.error(`settings-watcher: could not watch ${sdkHomeFor(winterHome)} (${(err as Error).message}) — sdk/ files are still read live`);
+      console.error(`settings-watcher: could not watch ${sdkHomeFor(cloverHome)} (${(err as Error).message}) — sdk/ files are still read live`);
     }
   }
 
@@ -2928,10 +2928,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `routines.maxConcurrent` below is ALREADY a getter over the live `settings` holder (hot-settings
   // T2 leaves it exactly as it already was — same shape `subagents.maxConcurrent`/`worktrees.baseRef`
   // above were just converted TO).
-  const routinesAudit = new RoutineAuditLog(join(winterHome, "routines-audit.jsonl"));
+  const routinesAudit = new RoutineAuditLog(join(cloverHome, "routines-audit.jsonl"));
   // P8b Task 17: a routine fires as a NEW code session through the driver table (fix wave F9: the
   // runner's engine branch is gone with the engine).
-  const routineRunner = makeDaemonRoutineRunner({ store, hub, winter: winterDrivers });
+  const routineRunner = makeDaemonRoutineRunner({ store, hub, clover: cloverDrivers });
   let coworkService: CoworkWorkspaceService | undefined;
   const routineScheduler = makeRoutineScheduler({
     store: routineStore,
@@ -2947,7 +2947,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // Hardware helper (Phase 4c Task 2, spec §5).  // Hardware helper (Phase 4c Task 2, spec §5). Built unconditionally, same precedent as
   // `peripheral` above — hardware access has nothing to do with whether an LLM provider is
-  // configured. Shares the SAME `providerLink`/`audit` instances as `peripheral`: Winter.app's one
+  // configured. Shares the SAME `providerLink`/`audit` instances as `peripheral`: Clover.app's one
   // provider connection doubles as the hardware provider, and `hardware.respond` (ipc/server.ts)
   // reuses `peripheral.isProvider()` to gate on that SAME connection identity rather than tracking
   // its own.
@@ -3044,16 +3044,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // first start a caller asks for, from an injected environment that production never has). The Cowork service gets it as its
   // `native` port only when a caller injected an environment, so the production service refuses exactly as before.
   // The production environment comes ONLY through the activation seam (cowork/native-activation.ts), which answers undefined until the owner flips it.
-  const nativeEnvironment = opts.coworkNative?.environment ?? (runtime ? coworkNativeProductionEnvironment(() => ({ home: winterHome, db: runtime.db, records: coworkRecords!, env: process.env })) : undefined);
+  const nativeEnvironment = opts.coworkNative?.environment ?? (runtime ? coworkNativeProductionEnvironment(() => ({ home: cloverHome, db: runtime.db, records: coworkRecords!, env: process.env })) : undefined);
   const coworkNative: CoworkNativeWiring | undefined = runtime
-    ? createCoworkNativeWiring({ db: runtime.db, records: coworkRecords!, home: winterHome, secrets, ...opts.coworkNative, ...(nativeEnvironment ? { environment: nativeEnvironment } : {}) }) : undefined;
+    ? createCoworkNativeWiring({ db: runtime.db, records: coworkRecords!, home: cloverHome, secrets, ...opts.coworkNative, ...(nativeEnvironment ? { environment: nativeEnvironment } : {}) }) : undefined;
   const coworkNativePort = nativeEnvironment ? coworkNative : undefined;
-  const baseCoworkHost = runtime ? (opts.coworkHost ?? createMacCoworkHost(winterHome, undefined, runtime.db, coworkNativePort)) : undefined;
+  const baseCoworkHost = runtime ? (opts.coworkHost ?? createMacCoworkHost(cloverHome, undefined, runtime.db, coworkNativePort)) : undefined;
   const withNative = baseCoworkHost && coworkNativePort && !baseCoworkHost.native ? { ...baseCoworkHost, native: coworkNativePort } : baseCoworkHost;
   // The provisioning port exists only where an environment was injected (production has none: the activation seam answers undefined), and only when the host has not got one.
   const coworkProvisioning = withNative && coworkNativePort && !withNative.provisioning ? coworkNativePort.provisioningPort() : undefined;
   const coworkHostPorts = coworkProvisioning ? { ...withNative!, provisioning: coworkProvisioning } : withNative;
-  coworkService = runtime ? new CoworkWorkspaceService(coworkRecords!, coworkHostPorts!, opts.coworkScheduleNow, winterHome, { broker: approvalBroker, emit: (sessionId, event) => { hub.append(sessionId, event); } }) : undefined;
+  coworkService = runtime ? new CoworkWorkspaceService(coworkRecords!, coworkHostPorts!, opts.coworkScheduleNow, cloverHome, { broker: approvalBroker, emit: (sessionId, event) => { hub.append(sessionId, event); } }) : undefined;
   // Boot steps are best effort: a throw here (a locked or damaged Cowork table) must neither abort startup nor, later, kill the process.
   // The host that supplies the provisioning port drives the creations still pending (a crash between COMMIT and `provision`) once at boot. It never rejects.
   if (coworkProvisioning) void coworkService?.resumeProvisioning();
@@ -3109,7 +3109,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // remove/setConsent) read+write settings.json and the plugins directory directly, and re-read
     // both fresh on every call (`livePlugins`, ipc/server.ts) instead of trusting `pluginStore`
     // above's boot-time snapshot.
-    winterHome,
+    cloverHome,
     // BYOK T1: the SAME SecretStore instance `authority`/`createProvider` above already use (one
     // Keychain, no separate store to keep in sync) — lets `provider.configure` write the BYO
     // OpenAI API key server-side. Chat Slice D task 3: also `sync.config`'s ONLY route to the Exa
@@ -3135,7 +3135,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // the internal roles' `permitted` set and their derived `problem`, and `credential.set`/
     // `credential.remove` await its view's refresh before returning.
     ...(internalRouter === null ? {} : { internalRouter }),
-    // 2026-09-18: the shared role-health registry (constructed near `winterHome` above) — read by
+    // 2026-09-18: the shared role-health registry (constructed near `cloverHome` above) — read by
     // `settings.modelRoles`/`settings.setModelRole`'s handlers to merge a `problem` onto each role.
     roleHealth,
     // Fix wave (finding 4b): the SAME retry lever `settings-apply.ts`'s hot-reload path calls on
@@ -3190,9 +3190,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     panelCommands,
     quota,
     // Daemon settings surface (2026-09-17 plan, item 3): `agents.list`'s `builtins` field — the
-    // SAME instance `winterDrivers`'s `onSupportedAgents` callback (above) writes into, hoisted
-    // above the `if (agentProvider)` gate for the identical reason `winterDrivers` itself is: a
-    // Winter-leg session (and therefore this cache) exists independently of the daemon's own
+    // SAME instance `cloverDrivers`'s `onSupportedAgents` callback (above) writes into, hoisted
+    // above the `if (agentProvider)` gate for the identical reason `cloverDrivers` itself is: a
+    // Clover-leg session (and therefore this cache) exists independently of the daemon's own
     // internal Provider.
     supportedAgents: supportedAgentsCache,
     providerInfo,
@@ -3220,16 +3220,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     workflows: workflowRuntime ?? undefined,
     workflowStore,
     // P8a Task 12: the mint-time reaper inside this server deletes sessions too — same hook, same
-    // reach as the boot sweep above (WS-16 §16), plus the Winter child (Task 16).
+    // reach as the boot sweep above (WS-16 §16), plus the Clover child (Task 16).
     onSessionDeleted,
-    // P8b Task 5: the Winter handle, on the deps object the IPC layer receives — this is the door
-    // Task 16 opens a Chat session on the Winter leg through (`session.create`'s handler). Undefined
-    // means the router never constructed; a Winter-leg create must then refuse with a typed error.
+    // P8b Task 5: the Clover handle, on the deps object the IPC layer receives — this is the door
+    // Task 16 opens a Chat session on the Clover leg through (`session.create`'s handler). Undefined
+    // means the router never constructed; a Clover-leg create must then refuse with a typed error.
     runtimeSdk,
     // P8b-36: the per-session capability door, on the same deps object as the handle above.
     buildSessionCapabilities,
-    // P8b Task 16: the driver table — the Winter leg's door for every `session.*` handler.
-    winter: winterDrivers,
+    // P8b Task 16: the driver table — the Clover leg's door for every `session.*` handler.
+    clover: cloverDrivers,
     // Winter Phase 8d (P8d-7, lane 4): a read-only door onto the 8a record — ipc/server.ts's
     // session.list reads `record.providerId` off it (`opts.records?.get`, narrowed to Pick<…,"get">).
     records: runtime?.records,
@@ -3240,7 +3240,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // precedent as every other optional field in this object. `runtime` here is the 8a spine
     // (`.records`); `runtimeSdk` is the router handle `HandoffDeps.runtime` names.
     ...(runtime === undefined ? {} : {
-      importLegacy: { importSession: (sessionId: string) => importEngineEraSession({ home: winterHome, store, records: runtime.records }, sessionId) },
+      importLegacy: { importSession: (sessionId: string) => importEngineEraSession({ home: cloverHome, store, records: runtime.records }, sessionId) },
     }),
     // `sdk` is captured into its own `const` before the closure below: `runtimeSdk` (outer scope)
     // is a `let` reassigned inside a try/catch above, so a narrowing on it does not persist into a
@@ -3257,13 +3257,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // the record's `authRef` column could persist a DIFFERENT account name than `create()` (which
           // HAS the home) writes for the very same provider. Record hygiene only — every spawn
           // recomputes the ref with the home — but the two writers must not disagree.
-          planAndApplySwitch({ runtime: sdk, winter: winterDrivers, records: runtime.records, store, settings: () => settings, home: winterHome }, sessionId, model, confirmLossy),
+          planAndApplySwitch({ runtime: sdk, clover: cloverDrivers, records: runtime.records, store, settings: () => settings, home: cloverHome }, sessionId, model, confirmLossy),
       },
     }))(runtimeSdk)),
     ...opts.server,
   });
 
-  console.error(`winter-core ${CORE_VERSION} listening on ${dirs.socketPath}`);
+  console.error(`clover-core ${CORE_VERSION} listening on ${dirs.socketPath}`);
   try {
     browserHostServer.start();
   } catch (err) {
@@ -3279,7 +3279,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     embedded: embeddedSessions,
     sessions: store,
     buildSessionCapabilities,
-    winter: winterDrivers,
+    clover: cloverDrivers,
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze
@@ -3300,7 +3300,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // N2 S7: stop every live native guest. `undefined` (no await, no timer) when none was ever started, so the no-guest stop is unchanged;
       // otherwise bounded by the contract's host wait, and settled below BEFORE the store and the runtime close.
       const guestsDrained = coworkNative?.beginShutdown();
-      winterDrivers.beginShutdown?.();
+      cloverDrivers.beginShutdown?.();
       dispatchChildren?.beginShutdown();
       sessionMessaging?.beginShutdown(); // no SendMessage resumes a session into a daemon that is going away
       computerUseRuntime.wakes.beginShutdown(); // no wake resumes a session either: its trigger stays in wakes.json for the next boot
@@ -3322,14 +3322,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // shutdown has only reached the microtask queue, and dropping it strands a runtime record
       // whose session is gone), and closes `runtime-state.db`. That drain was the FIRST part of
       // teardown that could not be synchronous, which is why `stop()` hands back a promise (P8b
-      // Task 5 added a second, below: ending the live Winter sessions — so `store.close()` is on
+      // Task 5 added a second, below: ending the live Clover sessions — so `store.close()` is on
       // the async tail now too; see `RunningDaemon.stop`'s doc for the whole order), and
       // `lock.release()` — which unlinks
-      // the socket, and whose absence is what `winter doctor`'s repairs check before touching this
+      // the socket, and whose absence is what `clover doctor`'s repairs check before touching this
       // file — happens strictly after the handle is closed. AWAIT IT in any path that then calls
       // `process.exit` (daemon.ts's own SIGTERM handler below, and cli/src/main.ts's `daemon run`),
       // or the process dies mid-drain with the lock still on disk.
-      // P8b Task 5 (G-14) — AND IT IS PART OF THE SAME ORDER. Every live Winter session ends BEFORE
+      // P8b Task 5 (G-14) — AND IT IS PART OF THE SAME ORDER. Every live Clover session ends BEFORE
       // the router disposes (that ordering is inside `runtimeSdk.dispose()`), and the whole of it
       // happens BEFORE `store.close()` and `runtime.close()` below: a child draining its last turn
       // appends its final events into the session store and writes delivery receipts into
@@ -3346,7 +3346,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // A daemon with no runtime SDK still built the embedded host, and the host's storage-policy consumer is process-global: its
       // shutdown() unregisters it synchronously (nothing is live without a runtime), so call it here too and keep stop() synchronous.
       if (runtimeSdk === undefined) void embeddedSessions.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {});
-      const winterDone = runtimeSdk === undefined
+      const cloverDone = runtimeSdk === undefined
         ? undefined
         : runtimeSdk.dispose()
           .catch((err: unknown) => { console.error(`runtime-sdk: dispose failed: ${(err as Error)?.name ?? "unknown"}`); })
@@ -3360,9 +3360,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         if (!runtime) { lock.release(); return; }
         return runtime.close().then(() => lock.release(), () => lock.release());
       };
-      // Synchronous when there is no Winter handle — `stop()`'s existing contract for every pre-8b
+      // Synchronous when there is no Clover handle — `stop()`'s existing contract for every pre-8b
       // caller is unchanged (everything but the runtime drain has already happened on return).
-      const settled = winterDone === undefined ? guestsDrained : guestsDrained === undefined ? winterDone : Promise.all([winterDone, guestsDrained]).then(() => undefined);
+      const settled = cloverDone === undefined ? guestsDrained : guestsDrained === undefined ? cloverDone : Promise.all([cloverDone, guestsDrained]).then(() => undefined);
       return settled === undefined ? closeRest() : settled.then(closeRest);
     },
   };

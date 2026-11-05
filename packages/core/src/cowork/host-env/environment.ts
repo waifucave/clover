@@ -11,7 +11,7 @@ import { CoworkPressureGuard } from "../native/pressure";
 import { createCoworkResourceObserver } from "../native/resource-observer";
 import { coworkNativeLedgerStopProbe, type CoworkNativeHostBoot } from "../native/stop-proof";
 import type { CoworkNativeEnvironment } from "../native-wiring";
-import { CoworkHostEnvError, assertDisjointFromHome, assertOutsideWinterHomes, coordinationDirectory, coordinationLedgerFile, ensurePrivateDirectory, loadOrCreateInstallationId } from "./coordination";
+import { CoworkHostEnvError, assertDisjointFromHome, assertOutsideCloverHomes, coordinationDirectory, coordinationLedgerFile, ensurePrivateDirectory, loadOrCreateInstallationId } from "./coordination";
 import { createCoworkRecoverGuards, processStartToken } from "./guards";
 import { createCoworkLauncherPort, type CoworkLauncherPortOptions } from "./launcher-port";
 import { createCoworkHomeBindingStore, createCoworkLaunchJournal, createCoworkReceiptStore } from "./stores";
@@ -35,9 +35,9 @@ export const COWORK_LAUNCHER_IDENTIFIER = "com.winter.cowork.launcher";
 /** What `dev:cowork-native` signs the dev launcher as: the launcher reads which daemon it serves from its OWN signing identifier, so a dev daemon expects this one. */
 export const COWORK_LAUNCHER_DEV_IDENTIFIER = "com.winter.cowork.launcher.dev";
 export const COWORK_DEFAULT_TEAM = "37N77U9RSZ";
-/** Identifier + Winter's team under Apple's anchor, the same form as `scripts/embed-cowork-native.sh` states and `embed-computer-helper.sh` uses. */
+/** Identifier + Clover's team under Apple's anchor, the same form as `scripts/embed-cowork-native.sh` states and `embed-computer-helper.sh` uses. */
 export const coworkLauncherRequirement = (team: string = COWORK_DEFAULT_TEAM, identifier: string = COWORK_LAUNCHER_IDENTIFIER): string => `identifier "${identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${team}"`;
-/** `Winter.app/Contents/Helpers/WinterCowork/{winter-cowork-launcher,winter-cowork-worker}`, next to `Contents/Resources/winter-core`. */
+/** `Clover.app/Contents/Helpers/WinterCowork/{winter-cowork-launcher,winter-cowork-worker}`, next to `Contents/Resources/clover-core`. */
 export function coworkNativeBinaryPaths(executablePath: string): { launcherPath: string; workerPath: string } {
   const base = resolve(dirname(executablePath), "..", "Helpers", "WinterCowork");
   return { launcherPath: join(base, "winter-cowork-launcher"), workerPath: join(base, "winter-cowork-worker") };
@@ -58,7 +58,7 @@ export interface CoworkNativeProductionOptions {
   /** The daemon's own executable (`process.execPath` in production). */
   readonly executablePath: string;
   readonly team?: string;
-  /** The launcher's signing identifier: the dist one by default, the dev one for the dev daemon (`WINTER_PROFILE=dev`, chosen by the activation seam). */
+  /** The launcher's signing identifier: the dist one by default, the dev one for the dev daemon (`CLOVER_PROFILE=dev`, chosen by the activation seam). */
   readonly launcherIdentifier?: string;
   /** `ioreg`, `sysctl` and the process table. The default is the real ones, created lazily and only here. */
   readonly adapters?: { runCommand: HostCommandRunner; sysctl: SysctlReader; processes: ProcessTable };
@@ -97,7 +97,7 @@ export function createCoworkNativeProductionEnvironment(options: CoworkNativePro
   const adapters = options.adapters ?? createProductionHostAdapters();
   const now = options.now ?? Date.now;
   const directory = coordinationDirectory(options.coordination);
-  assertOutsideWinterHomes(directory);
+  assertOutsideCloverHomes(directory);
   assertDisjointFromHome(directory, options.home);
   ensurePrivateDirectory(directory);
   const installationId = loadOrCreateInstallationId(directory);
@@ -125,7 +125,7 @@ export function createCoworkNativeProductionEnvironment(options: CoworkNativePro
   guard.watch("coordination", { kind: "path", path: directory });
   const observeResources = createCoworkResourceObserver({ sysctl: adapters.sysctl, disk: guard, budget: coworkResourceBudget, now });
 
-  const ledger = new CoworkAdmissionLedger({ path: coordinationLedgerFile(options.coordination), domainId: `winter-user-${process.geteuid?.() ?? 0}`, probes, observeResources, now });
+  const ledger = new CoworkAdmissionLedger({ path: coordinationLedgerFile(options.coordination), domainId: `clover-user-${process.geteuid?.() ?? 0}`, probes, observeResources, now });
   try {
     let binding = store.read();
     if (binding === null) {
@@ -140,7 +140,7 @@ export function createCoworkNativeProductionEnvironment(options: CoworkNativePro
 
   // ---- stores beside the ledger, namespaced by the home
   const receiptDirectory = join(directory, "cowork-receipts", homeId), journalDirectory = join(directory, "cowork-launch-journal", homeId);
-  assertOutsideWinterHomes(receiptDirectory);
+  assertOutsideCloverHomes(receiptDirectory);
   ensurePrivateDirectory(join(directory, "cowork-receipts")); ensurePrivateDirectory(receiptDirectory);
   const receipts = createCoworkReceiptStore(receiptDirectory);
   ensurePrivateDirectory(join(directory, "cowork-launch-journal"));

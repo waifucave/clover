@@ -157,8 +157,8 @@ function tabVars(code: string): Set<string> {
 // ── the skill as a skill ───────────────────────────────────────────────────────────────────────────
 describe("the computer-use skill file", () => {
   test("parses as a skill: name, one-line description, a body that fits the loader's cap, in a tight size", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-cu-skill-")));
-    const store = new SkillStore({ winterHome: home, trust: new TrustStore(join(home, "trust.json")) });
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-cu-skill-")));
+    const store = new SkillStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
     const meta = store.list({ cwd: null }).find((m) => m.name === "computer-use");
     expect(meta).toMatchObject({ name: "computer-use", source: "builtin" });
     expect(meta!.description.length).toBeGreaterThan(40);
@@ -333,7 +333,7 @@ function mac(mode: "happy" | "escalate" | "refused", seen: Call_[]): (m: Call_) 
       case "console": return { ok: true, value: [{ level: "error", text: "TypeError: x is undefined", at: "2026-10-11T10:00:00.000Z" }] };
       case "network": return { ok: true, value: mode === "happy" ? [{ id: "r1", method: "GET", url: "http://localhost:3000/api/items", type: "Fetch", status: 500 }] : [] };
       case "networkBody": return { ok: true, value: "{\"error\":\"boom\"}" };
-      case "download": return { ok: true, value: { path: "/tmp/winter-session-s/downloads/report.csv", name: "report.csv", bytes: 12, mime: "text/csv" } };
+      case "download": return { ok: true, value: { path: "/tmp/clover-session-s/downloads/report.csv", name: "report.csv", bytes: 12, mime: "text/csv" } };
       case "waitForUser": return { ok: true, value: { done: mode === "happy" } };
       case "screen.appAt": return { ok: true, value: { targetId: "t:at", name: "Under", bundleId: "com.example.under" } };
       case "apps.list": return { ok: true, value: [{ name: "Notes", bundleId: "com.apple.Notes", running: true }] };

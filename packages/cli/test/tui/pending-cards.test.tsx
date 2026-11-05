@@ -647,13 +647,13 @@ describe("PendingCards — question (ask_user)", () => {
       const card: PendingCard = { kind: "question", callId: "g3", questions: [{ question: "Name?", multiSelect: false }] };
       const { stdin } = render(<PendingCards pending={card} onApprove={() => {}} onAnswer={(id, payload) => calls.push([id, payload])} onPlan={() => {}} />);
       await wait();
-      stdin.write("Winter");
+      stdin.write("Clover");
       await wait();
       stdin.write("\r");
       await wait();
       stdin.write("\r");
       await wait();
-      expect(calls).toEqual([["g3", { answers: { "Name?": "Winter" } }]]);
+      expect(calls).toEqual([["g3", { answers: { "Name?": "Clover" } }]]);
     });
 
     test("(g4) a menu question's placeholder is its Other line's hint; multiSelect joins typed text after the labels", async () => {

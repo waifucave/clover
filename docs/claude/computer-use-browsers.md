@@ -1,5 +1,7 @@
 # ComputerV2 browsers
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching `packages/core/src/computer-use/browser/`, `extensions/winter-for-chrome/`, `apple/ComputerUse/WinterBrowserHost/` or Winter.app's browser link.* Core ComputerV2: [computer-use](./computer-use.md). Winter Headless: [headless](./headless.md).
 
 ## Engine (Phase 2, `packages/core/src/computer-use/browser/`)

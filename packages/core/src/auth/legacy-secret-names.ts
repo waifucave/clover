@@ -12,7 +12,7 @@
  * existing importer (`runtime-sdk/keychain.ts`, `ipc/server.ts`, `cli/main.ts`, tests, `index.ts`)
  * keeps working unchanged — this file is an implementation detail, not a new public import path.
  *
- * These are migration-source / `winter logout`-blank-target ONLY now. Nothing writes them going
+ * These are migration-source / `clover logout`-blank-target ONLY now. Nothing writes them going
  * forward except `logout`'s blank; nothing reads them except the migration and the read-only
  * fallbacks in `CodexAuthStore.load()` / `readOpenAiApiKey`.
  */
@@ -52,7 +52,7 @@ export const MIGRATION_B_SECRET_NAMES: readonly string[] = [
   // WS-19 (W19-9): the Console broker's OWN bearer account (`anthropic:console`,
   // `runtime-sdk/keychain.ts`'s `ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME`). It shipped in Phase
   // 10a, AFTER this list was written, and was simply never added — so a migrated home silently lost
-  // its Console sign-in and had to re-run `winter login --anthropic-console`.
+  // its Console sign-in and had to re-run `clover login --anthropic-console`.
   "anthropic:console",
   "harness-token",
   "admin-token",

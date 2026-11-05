@@ -3,23 +3,23 @@
 //
 // ── What a connector action is ────────────────────────────────────────────────────────────────────
 // A tool a session's child calls as `mcp__<server>__<tool>`, where `<server>` is an MCP server the USER
-// configured — the user, local or project scope (`sdk/.winter.json`, a trusted project's
-// `.winter/mcp.json`) — or one an enabled claude-format PLUGIN ships in its own `.mcp.json`: the runtime
+// configured — the user, local or project scope (`sdk/.clover.json`, a trusted project's
+// `.clover/mcp.json`) — or one an enabled claude-format PLUGIN ships in its own `.mcp.json`: the runtime
 // keys a plugin's servers by their raw names (`pluginMcpServerSources` in the agent runtime), so their
 // tools are byte-identical on the wire to a user server's and there is nothing to tell them apart by.
 // NOT a connector action:
-//  - the daemon's own capability tools, `mcp__winter__<key>__<tool>` — including `external`, which is
-//    how Winter's extras-tier `plugin__<id>__<tool>` tools reach a child (`capabilities/external.ts`);
-//    a `plugin__…` name itself never reaches a child at all. Keyed on `<key>` (`isWinterCapabilityName`):
-//    a `winter__foo` server's tools ARE connector actions, and on a live call only the keys that
+//  - the daemon's own capability tools, `mcp__clover__<key>__<tool>` — including `external`, which is
+//    how Clover's extras-tier `plugin__<id>__<tool>` tools reach a child (`capabilities/external.ts`);
+//    a `plugin__…` name itself never reaches a child at all. Keyed on `<key>` (`isCloverCapabilityName`):
+//    a `clover__foo` server's tools ARE connector actions, and on a live call only the keys that
 //    incarnation built count, so a retired or unbuilt key's spelling is a connector action too;
-//  - a user server literally named `winter` (its tools would read `mcp__winter__<tool>`, inside the
+//  - a user server literally named `clover` (its tools would read `mcp__clover__<tool>`, inside the
 //    capability prefix): excluded rather than guessed at, so it keeps today's external-tool treatment;
 //  - every built-in.
 // `gate.ts`'s `isExternalToolName` lumps all `mcp__`/`plugin__` names together; `isConnectorToolName`
 // is the narrower predicate, and the ONLY one the chat exception below keys on.
 //
-// ── The store, and why it is Winter's own ─────────────────────────────────────────────────────────
+// ── The store, and why it is Clover's own ─────────────────────────────────────────────────────────
 // `settings.json` → `mcp.toolPermissions: { [server]: { [tool | "*"]: "allow" | "ask" | "deny" } }`,
 // beside `mcp.disabled`, written through the same `loadSettings`/`saveSettings` door and read LIVE on
 // every decision (the settings watcher swaps the daemon's in-memory copy; nothing snapshots it).
@@ -29,7 +29,7 @@
 // child's run-folder `settings.json` ONCE, at incarnation (`buildEffectiveSettings`, `flag: "wx"`), and
 // the runtime evaluates deny rules at stage 2 of `evaluateStages` — after only the PreToolUse hooks,
 // and nothing a hook answers can undo a deny rule. A stored deny flipped to allow would keep denying in
-// every live session until it respawned. So Winter keeps its own table and enforces it itself (the hook
+// every live session until it respawned. So Clover keeps its own table and enforces it itself (the hook
 // and the bridge below); rules the user or a "saved answer → everywhere" already wrote to
 // `sdk/settings.json` still bind natively and are REPORTED beside it (`sdkRulesFor`), never folded in.
 //
@@ -83,26 +83,26 @@ export const CONNECTOR_ALL_TOOLS = "*";
 export type ConnectorPermissionTable = Record<string, Record<string, ConnectorPermission>>;
 
 const MCP_PREFIX = "mcp__";
-/** The daemon's own capability tools (`runtime-sdk/tool-names.ts`'s `WINTER_CAPABILITY_TOOL_PREFIX`). */
-const CAPABILITY_PREFIX = "mcp__winter__";
-/** Every key a `winter__<key>` capability server has ever had — the live ones and the retired ones. */
+/** The daemon's own capability tools (`runtime-sdk/tool-names.ts`'s `CLOVER_CAPABILITY_TOOL_PREFIX`). */
+const CAPABILITY_PREFIX = "mcp__clover__";
+/** Every key a `clover__<key>` capability server has ever had — the live ones and the retired ones. */
 const ALL_CAPABILITY_KEYS: ReadonlySet<string> = new Set<string>([...CAPABILITY_SERVER_KEYS, ...RETIRED_CAPABILITY_SERVER_KEYS]);
 
 /**
- * Is `name` one of the daemon's OWN capability tools, `mcp__winter__<key>__<tool>`? Keyed on the server
- * KEY, never the bare prefix: a server named `winter__foo` is not Winter's and its tools are connector
- * actions like any other. `winterKeys` narrows it to the keys a LIVE incarnation built (the approval bridge
+ * Is `name` one of the daemon's OWN capability tools, `mcp__clover__<key>__<tool>`? Keyed on the server
+ * KEY, never the bare prefix: a server named `clover__foo` is not Clover's and its tools are connector
+ * actions like any other. `cloverKeys` narrows it to the keys a LIVE incarnation built (the approval bridge
  * and the hook pass them; 2026-10-01 review): a retired key (`research`, `web`) or one not built this time
  * (`computer` with computer use off) is then an ordinary server whose tools carry the user's connector
- * permissions — never a Winter-owned exemption. Without it (display, `mcp.tools`) every key counts.
+ * permissions — never a Clover-owned exemption. Without it (display, `mcp.tools`) every key counts.
  */
-export function isWinterCapabilityName(name: string, winterKeys?: ReadonlySet<string>): boolean {
+export function isCloverCapabilityName(name: string, cloverKeys?: ReadonlySet<string>): boolean {
   if (!name.startsWith(CAPABILITY_PREFIX)) return false;
   const rest = name.slice(CAPABILITY_PREFIX.length);
   const sep = rest.indexOf("__");
   if (sep <= 0) return false;
   const key = rest.slice(0, sep);
-  return ALL_CAPABILITY_KEYS.has(key) && (winterKeys === undefined || winterKeys.has(key));
+  return ALL_CAPABILITY_KEYS.has(key) && (cloverKeys === undefined || cloverKeys.has(key));
 }
 
 /**
@@ -110,21 +110,21 @@ export function isWinterCapabilityName(name: string, winterKeys?: ReadonlySet<st
  * for anything that is not a connector action (see this file's header).
  *
  * WHY EVERY SPLIT (review r1, CRITICAL 1): the runtime names a tool `mcp__${server}__${tool.name}` and
- * neither half is forbidden to contain `__` — `winter mcp add` accepts a server named `cf__prod`, and a
- * hand-edited `sdk/.winter.json` or a project's `.winter/mcp.json` can name anything. So
+ * neither half is forbidden to contain `__` — `clover mcp add` accepts a server named `cf__prod`, and a
+ * hand-edited `sdk/.clover.json` or a project's `.clover/mcp.json` can name anything. So
  * `mcp__cf__prod__delete_worker` is EITHER server `cf` + tool `prod__delete_worker` OR server `cf__prod` +
  * tool `delete_worker`, and nothing in the name says which. Splitting at the first `__` alone let a stored
  * deny on `cf__prod` never match (the call ran under `bypass`) while `mcp.tools`, which looks up by the
  * real name, reported it denied. `resolveConnector` below weighs every candidate.
  */
-export function connectorCandidates(name: string, winterKeys?: ReadonlySet<string>): Array<{ server: string; tool: string }> {
-  if (typeof name !== "string" || !name.startsWith(MCP_PREFIX) || isWinterCapabilityName(name, winterKeys)) return [];
+export function connectorCandidates(name: string, cloverKeys?: ReadonlySet<string>): Array<{ server: string; tool: string }> {
+  if (typeof name !== "string" || !name.startsWith(MCP_PREFIX) || isCloverCapabilityName(name, cloverKeys)) return [];
   const rest = name.slice(MCP_PREFIX.length);
   const out: Array<{ server: string; tool: string }> = [];
   for (let sep = rest.indexOf("__"); sep !== -1; sep = rest.indexOf("__", sep + 1)) {
     if (sep <= 0 || sep + 2 >= rest.length) continue;
     const server = rest.slice(0, sep);
-    if (server === "winter") continue;
+    if (server === "clover") continue;
     out.push({ server, tool: rest.slice(sep + 2) });
   }
   return out;
@@ -137,8 +137,8 @@ export function parseConnectorToolName(name: string): { server: string; tool: st
 }
 
 /** Is `name` a connector action? The narrow predicate the chat exception keys on (never `isExternalToolName`). */
-export function isConnectorToolName(name: string, winterKeys?: ReadonlySet<string>): boolean {
-  return connectorCandidates(name, winterKeys).length > 0;
+export function isConnectorToolName(name: string, cloverKeys?: ReadonlySet<string>): boolean {
+  return connectorCandidates(name, cloverKeys).length > 0;
 }
 
 /** The wire name of a server's action. */
@@ -214,7 +214,7 @@ export function connectorVerdict(i: ConnectorVerdictInput): ConnectorVerdict {
 export function connectorDenialMessage(server: string, tool: string, i: Pick<ConnectorVerdictInput, "setting" | "policy">): string {
   const action = `${tool} (the ${server} connector)`;
   if (i.setting === "deny") {
-    return `${action} was not run — the user set this action to "Always deny" in Winter's connector permissions. Do not retry it; tell the user if you need it.`;
+    return `${action} was not run — the user set this action to "Always deny" in Clover's connector permissions. Do not retry it; tell the user if you need it.`;
   }
   if (i.policy === "plan") {
     return `${action} was not run — plan mode makes no changes, and this action is not marked read-only by its server. When your plan is ready, call exit_plan_mode to present it for approval.`;
@@ -225,7 +225,7 @@ export function connectorDenialMessage(server: string, tool: string, i: Pick<Con
 /** The reason a hook `ask` carries (the child passes it to `canUseTool` as `decisionReason`). */
 export function connectorAskReason(server: string, tool: string, setting: ConnectorPermission | undefined): string {
   return setting === "ask"
-    ? `${tool} (the ${server} connector) is set to "Always ask" in Winter's connector permissions — the user decides.`
+    ? `${tool} (the ${server} connector) is set to "Always ask" in Clover's connector permissions — the user decides.`
     : `${tool} (the ${server} connector) is not marked read-only by its server — the user decides.`;
 }
 
@@ -350,8 +350,8 @@ function statedFacts(table: ConnectorPermissionTable, toolName: string, stated: 
  *  - read-only only when at least one candidate is confirmed, every confirmed listing says read-only, and no
  *    configured candidate is unconfirmed.
  */
-export function connectorFactsFor(source: ConnectorPermissionSource, toolName: string, cwd?: string, stated?: StatedMcpServer, winterKeys?: ReadonlySet<string>): ConnectorFacts | undefined {
-  const candidates = connectorCandidates(toolName, winterKeys);
+export function connectorFactsFor(source: ConnectorPermissionSource, toolName: string, cwd?: string, stated?: StatedMcpServer, cloverKeys?: ReadonlySet<string>): ConnectorFacts | undefined {
+  const candidates = connectorCandidates(toolName, cloverKeys);
   if (candidates.length === 0) return undefined;
   const table = source.table();
   if (stated !== undefined) {

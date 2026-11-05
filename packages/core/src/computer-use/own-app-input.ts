@@ -1,4 +1,4 @@
-// ComputerV2 — wake triggers ACROSS BACKENDS: Winter's own HELPER input to an app, per bundle id, from any session.
+// ComputerV2 — wake triggers ACROSS BACKENDS: Clover's own HELPER input to an app, per bundle id, from any session.
 //
 // A browser bound as an APP (`apps.open("Google Chrome")`) takes the helper's clicks and keys — and inside its page those
 // arrive as TRUSTED DOM events, exactly like the user's. A tab wake trigger on that browser (the browser backend) must
@@ -29,7 +29,7 @@ export class OwnAppInput {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /** Winter's input to `bundleId` starts; the returned function ends it (idempotent). */
+  /** Clover's input to `bundleId` starts; the returned function ends it (idempotent). */
   begin(bundleId: string): () => void {
     const t = this.now();
     this.prune(t);
@@ -49,7 +49,7 @@ export class OwnAppInput {
     };
   }
 
-  /** Was Winter's input to this app in flight at `at` (epoch ms), or did it end at most the grace before? */
+  /** Was Clover's input to this app in flight at `at` (epoch ms), or did it end at most the grace before? */
   at(bundleId: string, at: number): boolean {
     const b = this.byBundle.get(bundleId.toLowerCase());
     if (b === undefined || !Number.isFinite(at)) return false;

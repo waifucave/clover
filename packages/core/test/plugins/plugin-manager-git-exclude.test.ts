@@ -1,9 +1,9 @@
 // Post-merge round: installing/enabling/disabling a plugin at LOCAL scope writes
-// `<root>/.winter/settings.local.json` -- a personal overlay, never meant to be committed (claude
+// `<root>/.clover/settings.local.json` -- a personal overlay, never meant to be committed (claude
 // parity, F21). `plugins/plugin-manager.ts` (the daemon's door onto the agent SDK's plugin API, which leaves F21 to
 // its host) calls `ensureGlobalGitExclude` right after every local-scope install/uninstall/enable/
 // disable, exactly like `agent/saved-answers.ts` does for its own
-// `.winter/settings.local.json` writes (L3's own precedent). `project` scope (`.winter/settings.json`,
+// `.clover/settings.local.json` writes (L3's own precedent). `project` scope (`.clover/settings.json`,
 // team-shared, meant to be committed) and `user` scope (never touches the project's git tree at all)
 // must NOT trigger it.
 //
@@ -24,7 +24,7 @@ let home: string;
 
 beforeEach(() => {
   saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-  home = tmp("winter-gitx-plugin-home-");
+  home = tmp("clover-gitx-plugin-home-");
   process.env.HOME = home;
   delete process.env.XDG_CONFIG_HOME;
   process.env.GIT_CONFIG_GLOBAL = join(home, ".gitconfig");
@@ -33,7 +33,7 @@ beforeEach(() => {
 afterEach(() => { for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
 
 function repo(): string {
-  const dir = tmp("winter-gitx-plugin-repo-");
+  const dir = tmp("clover-gitx-plugin-repo-");
   const p = Bun.spawnSync(["git", "-C", dir, "init", "-q"], { env: process.env });
   if (p.exitCode !== 0) throw new Error("git init failed");
   return dir;
@@ -44,19 +44,19 @@ const excludeLines = (): string[] => {
   return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : [];
 };
 
-/** A one-plugin directory marketplace, registered under `winterHome`; returns the spec to install. */
-async function registerOnePlugin(winterHome: string): Promise<{ options: PluginManagerOptions; spec: string }> {
-  const mktDir = tmp("winter-gitx-plugin-mkt-");
+/** A one-plugin directory marketplace, registered under `cloverHome`; returns the spec to install. */
+async function registerOnePlugin(cloverHome: string): Promise<{ options: PluginManagerOptions; spec: string }> {
+  const mktDir = tmp("clover-gitx-plugin-mkt-");
   mkdirSync(join(mktDir, ".claude-plugin"), { recursive: true });
   writeFileSync(join(mktDir, ".claude-plugin", "marketplace.json"), JSON.stringify({
     name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: "." }],
   }));
-  writeFileSync(join(mktDir, "winter-plugin.json"), JSON.stringify({ id: "p", tier: "capability" }));
-  const pluginsRoot = join(winterHome, "sdk", "plugins");
+  writeFileSync(join(mktDir, "clover-plugin.json"), JSON.stringify({ id: "p", tier: "capability" }));
+  const pluginsRoot = join(cloverHome, "sdk", "plugins");
   const options: PluginManagerOptions = {
     pluginsRoot,
     settingsPathFor: (scope) => {
-      if (scope === "user") return join(winterHome, "sdk", "settings.json");
+      if (scope === "user") return join(cloverHome, "sdk", "settings.json");
       throw new Error("this test always threads a project-scoped settingsPathFor directly");
     },
   };
@@ -66,12 +66,12 @@ async function registerOnePlugin(winterHome: string): Promise<{ options: PluginM
 
 describe("plugins/plugin-manager.ts: local scope writes trigger ensureGlobalGitExclude, project/user never do", () => {
   test("installPlugin at LOCAL scope (inside a git repo) appends the exclude pattern", async () => {
-    const winterHome = tmp("winter-gitx-plugin-wh-");
+    const cloverHome = tmp("clover-gitx-plugin-wh-");
     const root = repo();
-    const { options: base, spec } = await registerOnePlugin(winterHome);
+    const { options: base, spec } = await registerOnePlugin(cloverHome);
     const options: PluginManagerOptions = {
       ...base,
-      settingsPathFor: (scope) => scope === "local" ? join(root, ".winter", "settings.local.json") : base.settingsPathFor(scope),
+      settingsPathFor: (scope) => scope === "local" ? join(root, ".clover", "settings.local.json") : base.settingsPathFor(scope),
     };
 
     await installPlugin(options, spec, "local");
@@ -80,12 +80,12 @@ describe("plugins/plugin-manager.ts: local scope writes trigger ensureGlobalGitE
   });
 
   test("setPluginEnabled/uninstallPlugin at LOCAL scope also trigger it (idempotent — one line, however many calls)", async () => {
-    const winterHome = tmp("winter-gitx-plugin-wh-");
+    const cloverHome = tmp("clover-gitx-plugin-wh-");
     const root = repo();
-    const { options: base, spec } = await registerOnePlugin(winterHome);
+    const { options: base, spec } = await registerOnePlugin(cloverHome);
     const options: PluginManagerOptions = {
       ...base,
-      settingsPathFor: (scope) => scope === "local" ? join(root, ".winter", "settings.local.json") : base.settingsPathFor(scope),
+      settingsPathFor: (scope) => scope === "local" ? join(root, ".clover", "settings.local.json") : base.settingsPathFor(scope),
     };
     await installPlugin(options, spec, "local");
     await setPluginEnabled(options, spec, "local", false);
@@ -96,22 +96,22 @@ describe("plugins/plugin-manager.ts: local scope writes trigger ensureGlobalGitE
   });
 
   test("installPlugin at USER scope never touches the project's git tree — no exclude write at all", async () => {
-    const winterHome = tmp("winter-gitx-plugin-wh-");
+    const cloverHome = tmp("clover-gitx-plugin-wh-");
     repo(); // a real repo exists, but user scope never resolves against it
-    const { options, spec } = await registerOnePlugin(winterHome);
+    const { options, spec } = await registerOnePlugin(cloverHome);
 
     await installPlugin(options, spec, "user");
 
     expect(excludeLines()).toEqual([]);
   });
 
-  test("installPlugin at PROJECT scope (team-shared .winter/settings.json) never excludes it", async () => {
-    const winterHome = tmp("winter-gitx-plugin-wh-");
+  test("installPlugin at PROJECT scope (team-shared .clover/settings.json) never excludes it", async () => {
+    const cloverHome = tmp("clover-gitx-plugin-wh-");
     const root = repo();
-    const { options: base, spec } = await registerOnePlugin(winterHome);
+    const { options: base, spec } = await registerOnePlugin(cloverHome);
     const options: PluginManagerOptions = {
       ...base,
-      settingsPathFor: (scope) => scope === "project" ? join(root, ".winter", "settings.json") : base.settingsPathFor(scope),
+      settingsPathFor: (scope) => scope === "project" ? join(root, ".clover", "settings.json") : base.settingsPathFor(scope),
     };
 
     await installPlugin(options, spec, "project");

@@ -1,5 +1,5 @@
 // ComputerV2 Phase 2 — the native-messaging host manifests that tell each Chromium browser where `winter-browser-host`
-// lives. dist: Winter.app (Release) writes `com.winter.browser.json` at every launch (its Swift twin,
+// lives. dist: Clover.app (Release) writes `com.winter.browser.json` at every launch (its Swift twin,
 // apple/Winter/Sources/BrowserExtension). dev: `bun run dev:helper` writes `com.winter.browser.dev.json` with this
 // module after it builds and signs the dev helper. Tests: only into a temp `--user-data-dir`'s own NativeMessagingHosts.
 //

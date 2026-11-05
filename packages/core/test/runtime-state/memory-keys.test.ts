@@ -841,11 +841,11 @@ describe("memory-key migration — P8b-17's preconditions", () => {
         const records = new RuntimeSessionRecords(rs);
         backfillNativeSessions({ rs, store, home, providerId: "codex-oauth" });
         // The daemon's own wiring: a live resolver over the migration's manifest.
-        const live = () => memoryDirFor(a.cwd, { winterHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) });
+        const live = () => memoryDirFor(a.cwd, { cloverHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) });
 
         // BEFORE: nothing has moved, so the derivation stands and the file is where it says.
         expect(live()).toBe(join(storeProjectsDir(home), a.oldKey, "memory"));
-        expect(memoryDirForRecord(records.get(a.sessionId)!, { winterHome: home })).toBe(live());
+        expect(memoryDirForRecord(records.get(a.sessionId)!, { cloverHome: home })).toBe(live());
         expect(readFileSync(join(live(), "MEMORY.md"), "utf8")).toBe("alpha");
 
         applyMemoryKeyMigration({ rs, home }, planMemoryKeyMigration({ rs, home, records, store }));
@@ -853,7 +853,7 @@ describe("memory-key migration — P8b-17's preconditions", () => {
         // AFTER: both doors move in the same breath as the tree — the record's key and the cwd-keyed
         // lookup agree, and the user's own MEMORY.md is still what the agent reads.
         expect(live()).toBe(join(storeProjectsDir(home), a.newKey, "memory"));
-        expect(memoryDirForRecord(records.get(a.sessionId)!, { winterHome: home })).toBe(live());
+        expect(memoryDirForRecord(records.get(a.sessionId)!, { cloverHome: home })).toBe(live());
         expect(readFileSync(join(live(), "MEMORY.md"), "utf8")).toBe("alpha");
 
         // And a rollback takes the lookup back with the tree, in the same transaction.
@@ -970,7 +970,7 @@ describe("memory-key migration — a torn apply", () => {
         expect(manifest(rs).map((r) => r.status)).toEqual(["moved"]);
         expect(records.get(a.sessionId)!.memoryProjectKey).toBe(a.newKey);
         expect(memoryKeyRelocations(rs).get(a.oldKey)).toBe(a.newKey);
-        expect(memoryDirFor(a.cwd, { winterHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
+        expect(memoryDirFor(a.cwd, { cloverHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
           .toBe(join(storeProjectsDir(home), a.newKey, "memory"));
 
         // Completed, not stranded: it is rollback-able, byte-for-byte.
@@ -1013,7 +1013,7 @@ describe("memory-key migration — a torn apply", () => {
         expect(resumed.moves).toEqual([]);
         expect(resumed.unresolved).toEqual([{ winterSessionId: a.sessionId, reason: "root-disagrees" }]);
         // And the user's memory is READABLE the whole time, which is the only thing that matters.
-        expect(memoryDirFor(a.cwd, { winterHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
+        expect(memoryDirFor(a.cwd, { cloverHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
           .toBe(join(storeProjectsDir(home), legacyKey, "memory"));
         expect(rollbackMemoryKeyMigration({ rs, home })).toEqual({ rolledBack: 1, failures: [] });
         expect(readFileSync(join(storeProjectsDir(home), a.oldKey, "memory", "MEMORY.md"), "utf8")).toBe("alpha");
@@ -1059,15 +1059,15 @@ describe("memory-key migration — a torn apply", () => {
   });
 });
 
-// ── P8b-29: the destination is SHARED with the Winter SDK, so the move is per ENTRY ──────────────
+// ── P8b-29: the destination is SHARED with the Clover SDK, so the move is per ENTRY ──────────────
 //
-// `<home>/projects/<key>/` is not Winter's alone: it is where the SDK writes this repo's transcripts,
+// `<home>/projects/<key>/` is not Clover's alone: it is where the SDK writes this repo's transcripts,
 // and for a session opened at the repo root the transcript key and the compatibility memory key are
 // the same string. A whole-directory rename could therefore only ever refuse on a home that has run
-// a Winter session — permanently, and taking every other project in that home with it.
+// a Clover session — permanently, and taking every other project in that home with it.
 describe("memory-key migration — merging into the SDK's own project directory", () => {
   /** What the SDK leaves in `projects/<transcriptKey>/`: a transcript, its subagents, its tool
-   *  results. None of it is Winter's to move, and none of it is in the way. */
+   *  results. None of it is Clover's to move, and none of it is in the way. */
   function seedSdkTranscripts(home: string, key: string): void {
     mkdirSync(join(storeProjectsDir(home), key, "subagents"), { recursive: true });
     writeFileSync(join(storeProjectsDir(home), key, "3f2a1c00-0000-4000-8000-000000000000.jsonl"), "{\"type\":\"user\"}\n");
@@ -1093,7 +1093,7 @@ describe("memory-key migration — merging into the SDK's own project directory"
         expect(plan.moves).toEqual([{ oldKey: a.oldKey, newKey: a.newKey, cwd: a.cwd, entries: ["memory"] }]);
         expect(applyMemoryKeyMigration({ rs, home }, plan)).toEqual({ moved: 1, movedEntries: 1, refused: [] });
 
-        // Winter's memory arrived beside the SDK's files; not one of the SDK's files moved or changed.
+        // Clover's memory arrived beside the SDK's files; not one of the SDK's files moved or changed.
         expect(readFileSync(join(storeProjectsDir(home), a.newKey, "memory", "MEMORY.md"), "utf8")).toBe("alpha");
         for (const [path, body] of Object.entries(sdkBefore)) {
           expect(snapshotTree(join(storeProjectsDir(home), a.newKey))[path]).toBe(body);
@@ -1233,7 +1233,7 @@ describe("memory-key migration — merging into the SDK's own project directory"
         // THE LIVE PATH FOLLOWS `memory`, not the whole set: it is what `memoryDirFor` resolves, and
         // in this half-moved window it is the difference between the agent finding its own
         // MEMORY.md and starting a second one.
-        expect(memoryDirFor(a.cwd, { winterHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
+        expect(memoryDirFor(a.cwd, { cloverHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
           .toBe(join(storeProjectsDir(home), a.newKey, "memory"));
         expect(records.get(a.sessionId)!.memoryProjectKey).toBe(a.newKey);
 
@@ -1291,7 +1291,7 @@ describe("memory-key migration — a home that was migrated by a schema-v1 build
         expect(reconcileMemoryKeyManifest({ rs, home, records })).toEqual([{ oldKey: a.oldKey, newKey: a.newKey, entries: ["memory"] }]);
         expect(manifestEntries(rs)).toEqual([{ old_key: a.oldKey, entry: "memory", new_key: a.newKey, status: "moved" }]);
         expect(records.get(a.sessionId)!.memoryProjectKey).toBe(a.newKey);
-        expect(memoryDirFor(a.cwd, { winterHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
+        expect(memoryDirFor(a.cwd, { cloverHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
           .toBe(join(storeProjectsDir(home), a.newKey, "memory"));
         // And it is rollback-able, which is the whole reason the row was carried forward.
         expect(rollbackMemoryKeyMigration({ rs, home })).toEqual({ rolledBack: 1, failures: [] });
@@ -1305,7 +1305,7 @@ describe("memory-key migration — a home that was migrated by a schema-v1 build
 
 // ── Fix round 2: which RECORDS a move owns, and what a race-window refusal leaves behind ─────────
 describe("memory-key migration — record scoping and the race window", () => {
-  /** A record filed AT the compatibility key from birth — what a Winter session's own record is
+  /** A record filed AT the compatibility key from birth — what a Clover session's own record is
    *  (Task 16), and the thing a blanket by-key re-key would drag around. */
   function seedNativeAtDestination(home: string, store: SessionStore, key: string): string {
     const cwd = workdir(home, `native-${key.slice(-8)}`);
@@ -1498,7 +1498,7 @@ describe("memory-key migration — a torn UNDO", () => {
         expect(reconcileMemoryKeyManifest({ rs, home, records, log: (l) => { again.push(l); } })).toEqual([]);
         expect(again).toEqual([]);
         expect(snapshotTree(join(storeProjectsDir(home), a.oldKey))).toEqual(before);
-        expect(memoryDirFor(a.cwd, { winterHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
+        expect(memoryDirFor(a.cwd, { cloverHome: home, relocatedKey: (k) => memoryKeyRelocations(rs).get(k) }))
           .toBe(join(storeProjectsDir(home), a.oldKey, "memory"));
 
         // And the project migrates normally once the obstruction is cleared — no row is skipped

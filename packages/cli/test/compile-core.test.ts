@@ -57,8 +57,8 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   });
 
   // SECURITY (no-autoload): by default a `bun build --compile` binary reads the bunfig.toml (its
-  // `preload` runs as the binary) and .env of the directory it is STARTED in. `winter` is a symlink to
-  // `winter-core` that users run inside arbitrary repositories, so both are switched off at compile
+  // `preload` runs as the binary) and .env of the directory it is STARTED in. `clover` is a symlink to
+  // `clover-core` that users run inside arbitrary repositories, so both are switched off at compile
   // time; the setting is baked into the executable, so every self-spawn (`__workflow-worker`,
   // `__runtime-workflow-worker`) inherits it. `bun run verify:runtimes` proves it on the real binary.
   test("both compile scripts switch off the cwd bunfig.toml and .env autoloads", () => {
@@ -71,16 +71,16 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   test("the worker file imports only the pre-built bundle, and the bundle's source is the daemon package's own Worker entry", () => {
     const importsOf = (file: string): string[] => [...readFileSync(file, "utf8").matchAll(/^import\s+"([^"]+)";$/gm)].map((m) => m[1]!);
     expect(importsOf(WORKER_FILE)).toEqual([`../${WORKER_BUNDLE_REL}`]);
-    expect(importsOf(join(CLI_DIR, WORKER_SOURCE_REL))).toEqual(["@yanlinglabs/winter-core/embedded-worker"]);
+    expect(importsOf(join(CLI_DIR, WORKER_SOURCE_REL))).toEqual(["@waifucave/clover-core/embedded-worker"]);
   });
 
   // The regression itself (a release blocker for 0.118.0): with the npm-installed runtime, bundling
-  // the Worker graph BESIDE src/main.ts (which dynamically `import()`s winter-core and the protocol)
+  // the Worker graph BESIDE src/main.ts (which dynamically `import()`s clover-core and the protocol)
   // left zod wrapped in `__esm` with no `init_*()` call from the runtime's MCP client, so the Worker
   // threw `new ZodLazy` at load. Build exactly what `compile:core` builds, minus `--compile`, and load
   // the Worker bundle: it must evaluate cleanly (off the main thread it installs nothing and exits).
   test("the Worker bundle built beside src/main.ts evaluates without error", async () => {
-    const out = mkdtempSync(join(tmpdir(), "winter-worker-bundle-"));
+    const out = mkdtempSync(join(tmpdir(), "clover-worker-bundle-"));
     try {
       const run = (args: string[]): { code: number | null; stderr: string } => {
         const r = spawnSync(process.execPath, args, { cwd: CLI_DIR, encoding: "utf8", timeout: 60_000 });
@@ -98,8 +98,8 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   }, 120_000);
 });
 
-// The daemon seeds the skills Winter ships (`computer-use`) into `<home>/sdk/skills` from text EMBEDDED in the
-// binary (`core/src/migration/builtin-skills.ts`, a bun text import). A compiled `winter-core` has no
+// The daemon seeds the skills Clover ships (`computer-use`) into `<home>/sdk/skills` from text EMBEDDED in the
+// binary (`core/src/migration/builtin-skills.ts`, a bun text import). A compiled `clover-core` has no
 // `packages/core/skills/` to read — `import.meta.url` there is a virtual path — so the proof is a real
 // `bun build --compile` of that module, run from a directory that holds no repo.
 describe("compile:core carries the skills it seeds (the managed copy of computer-use)", () => {
@@ -113,8 +113,8 @@ describe("compile:core carries the skills it seeds (the managed copy of computer
   });
 
   test("a compiled binary seeds the exact bytes of packages/core/skills/computer-use/SKILL.md into a fresh home, from a directory with no repo", () => {
-    const out = mkdtempSync(join(tmpdir(), "winter-seed-compile-"));
-    const elsewhere = mkdtempSync(join(tmpdir(), "winter-seed-cwd-"));
+    const out = mkdtempSync(join(tmpdir(), "clover-seed-compile-"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "clover-seed-cwd-"));
     try {
       const entry = join(out, "entry.ts");
       writeFileSync(entry, `import { seedBuiltinSkills } from ${JSON.stringify(SEED_MODULE)};\nconsole.log(JSON.stringify(seedBuiltinSkills(process.argv[2]!)));\n`);

@@ -1,15 +1,15 @@
-# Tool inventories — Winter vs. Claude Code
+# Tool inventories — Clover vs. Claude Code
 
-> References to an external product's Cowork do not imply Winter Cowork is available; see the
+> References to an external product's Cowork do not imply Clover Cowork is available; see the
 > [Cowork implementation map](docs/cowork-status.md).
 
-Two reference tables: Winter's built-in agent tools, and Claude Code's fixed built-in
+Two reference tables: Clover's built-in agent tools, and Claude Code's fixed built-in
 catalogue. **Deferred = Yes** means the tool is hidden behind `ToolSearch` (schema not
 loaded / not callable until loaded); **No** means always visible.
 
 ---
 
-## Winter — built-in agent tools
+## Clover — built-in agent tools
 
 Source: `packages/core/src/agent/tools/` + daemon wiring (`packages/core/src/daemon.ts`).
 "Deferred = Yes" reflects the per-tool `deferred: true` flag, active whenever built-in
@@ -98,7 +98,7 @@ what to trust.** Notes:
 - `session_spawn` is **dispatch-session-only** — the mirror image of `spawn_agent`/`skill_write`/
   `write`/`edit`/`lsp`/`notebook_edit`, which are excluded FROM a dispatch session; a code
   session never sees `session_spawn` at all. The comparison is to an external product's Cowork "Dispatch"
-  child creation, not an implemented Winter Cowork mode; Winter spawns Code sessions. Unlike
+  child creation, not an implemented Clover Cowork mode; Clover spawns Code sessions. Unlike
   `spawn_agent`'s in-session subagent THREAD, a spawned dispatch child is
   a full first-class sibling SESSION (own transcript, own `session.list` entry, independently
   attachable/resumable), not a nested thread of the caller's own session. Current `TaskStop` also
@@ -196,18 +196,18 @@ subcommands, and the server-side `advisor` tool). Notes:
 
 ---
 
-## Winter vs. CC — the contrast
+## Clover vs. CC — the contrast
 
 - CC keeps its whole fixed catalogue **eager** and defers **only** external MCP tools.
-- Winter additionally defers ~20 of its **own** built-ins via a per-tool `deferred: true`
+- Clover additionally defers ~20 of its **own** built-ins via a per-tool `deferred: true`
   flag riding the same ToolSearch machinery.
-- Same mechanism, broader application in Winter. CC's built-ins are "conditional" (gated by
-  version/plan/provider/OS) rather than deferred; Winter's counts: 39 built-ins vs. CC's 42.
-- `PushNotification`/`push_notification` (task-30) closes the last item on this list: Winter's
+- Same mechanism, broader application in Clover. CC's built-ins are "conditional" (gated by
+  version/plan/provider/OS) rather than deferred; Clover's counts: 39 built-ins vs. CC's 42.
+- `PushNotification`/`push_notification` (task-30) closes the last item on this list: Clover's
   version leans on a REAL Mac app for delivery — a native `UNUserNotificationCenter` alert with
   proper app identity — rather than CC's undocumented hosted delivery, plus a headless `osascript`
   fallback when nobody's attached at all (CC's hosted Remote Control phone delivery is out of
-  scope for Winter).
-- Update (SP2a): Winter's own remote transport — a Mac-side `Gateway` fronted by a real iroh P2P
+  scope for Clover).
+- Update (SP2a): Clover's own remote transport — a Mac-side `Gateway` fronted by a real iroh P2P
   listener, proven end-to-end (real daemon + real iroh) in `IrohE2ETests.swift` — is now live code,
   though dev/test-only until SP2b's pairing ceremony ships.

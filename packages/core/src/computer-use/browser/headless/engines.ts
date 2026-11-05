@@ -1,23 +1,23 @@
 // ComputerV2 Phase 4 — the headless pool's ENGINES and where each one is. There is one: `winter`, Winter Headless — the
-// separate, windowless CEF helper app Winter ships (apple/Winter/Sources/HeadlessHelper), driven only through the
+// separate, windowless CEF helper app Clover ships (apple/Winter/Sources/HeadlessHelper), driven only through the
 // browser link's ops (no browser-level CDP command list: that, `browser-commands.ts`, belongs to installed browsers run
 // headless, a later stage, and only for those that pass the plug-and-play gates).
 //
 // THE LADDER, in the `resolveWinterExecutable` convention (an explicit path is authoritative — a missing one is the
 // failure, never a fall-through to another copy):
-//   1. `$WINTER_HEADLESS_APP` — tests and dev;
+//   1. `$CLOVER_HEADLESS_APP` — tests and dev;
 //   2. a dev daemon: `<repo>/dist/dev/Winter Headless Dev.app` (built by `bun run dev:headless`) — beside the signed
-//      dev daemon `dist/dev/winter-core`, or found from this file when the daemon runs from source under bun;
-//   3. dist: `Winter.app/Contents/Helpers/Winter Headless.app` next to the running `winter-core`.
+//      dev daemon `dist/dev/clover-core`, or found from this file when the daemon runs from source under bun;
+//   3. dist: `Clover.app/Contents/Helpers/Winter Headless.app` next to the running `clover-core`.
 // A daemon off its profile's own default home (a test or experiment daemon) takes ONLY rung 1: it never finds an
 // installed or dev helper by itself.
 // The daemon SPAWNS the app's executable directly (never through LaunchServices) and, before it sends a command,
-// checks the process it spawned against Winter's stated designated requirement (`processSatisfiesRequirement`).
+// checks the process it spawned against Clover's stated designated requirement (`processSatisfiesRequirement`).
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WINTER_TEAM_ID } from "../../../auth/app-token-acl";
-import type { WinterProfile } from "../../../profile";
+import { CLOVER_TEAM_ID } from "../../../auth/app-token-acl";
+import type { CloverProfile } from "../../../profile";
 
 /** The engines `browsers.open(url, { browser: "headless", engine })` takes, the default first. */
 export const HEADLESS_ENGINES = ["winter"] as const;
@@ -25,41 +25,42 @@ export type HeadlessEngine = (typeof HEADLESS_ENGINES)[number];
 export const DEFAULT_HEADLESS_ENGINE: HeadlessEngine = "winter";
 
 /** Winter Headless's bundle id per profile: dist `com.winter.headless`, dev `com.winter.headless.dev`. */
-export function headlessBundleIdFor(profile: WinterProfile): string {
+export function headlessBundleIdFor(profile: CloverProfile): string {
   return profile === "dev" ? "com.winter.headless.dev" : "com.winter.headless";
 }
 
 /** The app's file name per profile. */
-export function headlessAppNameFor(profile: WinterProfile): string {
+export function headlessAppNameFor(profile: CloverProfile): string {
   return profile === "dev" ? "Winter Headless Dev.app" : "Winter Headless.app";
 }
 
 /**
- * The designated requirement the spawned helper is held to: its identifier and Winter's team under Apple's anchor.
- * An app named by `$WINTER_HEADLESS_APP` may be either identity (a dev daemon's tests point at the dev build).
+ * The designated requirement the spawned helper is held to: its identifier and Clover's team under Apple's anchor.
+ * An app named by `$CLOVER_HEADLESS_APP` may be either identity (a dev daemon's tests point at the dev build).
  */
-export function headlessRequirementFor(profile: WinterProfile, override: boolean, teamId: string = WINTER_TEAM_ID): string {
+export function headlessRequirementFor(profile: CloverProfile, override: boolean, teamId: string = CLOVER_TEAM_ID): string {
   const anchor = `anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
   if (override) return `(identifier "${headlessBundleIdFor("dist")}" or identifier "${headlessBundleIdFor("dev")}") and ${anchor}`;
   return `identifier "${headlessBundleIdFor(profile)}" and ${anchor}`;
 }
 
-/** Winter.app's bundle id per profile: dist `com.winter.app`, dev `com.winter.app.dev` ("Winter Dev"). */
-export function winterAppBundleIdFor(profile: WinterProfile): string {
+/** The app's bundle id per profile, as the kept helpers know it: dist `com.winter.app`, dev `com.winter.app.dev`
+ *  (computer use keeps the ids of the app it was built with until opensky, spec §4). */
+export function winterAppBundleIdFor(profile: CloverProfile): string {
   return profile === "dev" ? "com.winter.app.dev" : "com.winter.app";
 }
 
 /**
  * Lane H3 — the code requirement Winter Headless holds the VIEWER of a presentation to (checked against the viewer's
- * audit token on its first message): Winter's own app for this daemon's profile, signed by Winter's team.
+ * audit token on its first message): the app (`winterAppBundleIdFor`) for this daemon's profile, signed by the team.
  */
-export function winterAppRequirementFor(profile: WinterProfile, teamId: string = WINTER_TEAM_ID): string {
+export function winterAppRequirementFor(profile: CloverProfile, teamId: string = CLOVER_TEAM_ID): string {
   return `identifier "${winterAppBundleIdFor(profile)}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
 /** Where the Winter Headless app should be for this daemon. */
-export function winterHeadlessAppPath(profile: WinterProfile, env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): { path: string; override: boolean } {
-  const override = env.WINTER_HEADLESS_APP;
+export function cloverHeadlessAppPath(profile: CloverProfile, env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): { path: string; override: boolean } {
+  const override = env.CLOVER_HEADLESS_APP;
   if (override !== undefined && override.trim().length > 0) return { path: override.trim(), override: true };
   if (profile === "dist") return { path: join(dirname(execPath), "..", "Helpers", headlessAppNameFor("dist")), override: false };
   const compiled = typeof Bun !== "undefined" && (Bun.main.startsWith("/$bunfs/") || Bun.main.includes("/$bunfs/"));
@@ -76,16 +77,16 @@ export interface ResolvedEngine {
 }
 
 /** Winter Headless for this daemon, or why it can't run. Cheap (two `stat`s); the pool caches it briefly. */
-export function resolveWinterHeadless(profile: WinterProfile, o: { env?: NodeJS.ProcessEnv; execPath?: string; exists?: (p: string) => boolean; overrideOnly?: boolean } = {}): ResolvedEngine | { missing: string } {
+export function resolveCloverHeadless(profile: CloverProfile, o: { env?: NodeJS.ProcessEnv; execPath?: string; exists?: (p: string) => boolean; overrideOnly?: boolean } = {}): ResolvedEngine | { missing: string } {
   const exists = o.exists ?? existsSync;
-  const { path: app, override } = winterHeadlessAppPath(profile, o.env ?? process.env, o.execPath ?? process.execPath);
-  if (o.overrideOnly === true && !override) return { missing: "Winter's headless browser is missing — reinstall Winter" };
+  const { path: app, override } = cloverHeadlessAppPath(profile, o.env ?? process.env, o.execPath ?? process.execPath);
+  if (o.overrideOnly === true && !override) return { missing: "Clover's headless browser is missing — reinstall Clover" };
   // The executable is named after the bundle ("Winter Headless", "Winter Headless Dev").
   const executable = join(app, "Contents", "MacOS", basename(app).replace(/\.app$/i, ""));
   if (!exists(executable)) {
     return { missing: profile === "dev" && !override
-      ? "Winter's headless browser is not built — run `bun run dev:headless`"
-      : "Winter's headless browser is missing — reinstall Winter" };
+      ? "Clover's headless browser is not built — run `bun run dev:headless`"
+      : "Clover's headless browser is missing — reinstall Clover" };
   }
   return { engine: "winter", app, executable, requirement: headlessRequirementFor(profile, override) };
 }

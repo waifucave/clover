@@ -182,7 +182,7 @@ if (landed.length === 0) {
 }
 ```
 
-`requestForeground(reason)` asks the user (a card shows your reason) to let the app come forward until the script ends — on the user's OWN desktop only. It returns `true` when the app is there, `false` if the user said no, or when the window is on another desktop: Winter never keeps the user there. Then stay with what works in the background, or ask them to do the step.
+`requestForeground(reason)` asks the user (a card shows your reason) to let the app come forward until the script ends — on the user's OWN desktop only. It returns `true` when the app is there, `false` if the user said no, or when the window is on another desktop: Clover never keeps the user there. Then stay with what works in the background, or ask them to do the step.
 
 An act that can only be done with the window on screen asks the user by itself (a prompt on their screen and a card; no answer within a minute allows it), moves them to that desktop while the steps that need it run back to back, and brings them back a moment after the last one — the result says "moved the user to … and back". So do those steps together. If the user refuses, the act fails with `NeedsForeground` and is not asked again until they write to you: ask them in your reply.
 
@@ -253,7 +253,7 @@ try {
 | `HelperUnavailable` | Try once more. If it keeps failing, tell the user to check Settings → Computer Use. |
 | `PermissionMissing` | Tell the user to grant the permission in Settings → Computer Use. |
 | `Cancelled` | The call was stopped or ran out of time. Look with `state()` before going on. |
-| `BrowserUnavailable` | A browser can't be reached (Winter must be running; the user's own browser needs Winter for Chrome). Tell the user. |
+| `BrowserUnavailable` | A browser can't be reached (Clover must be running; the user's own browser needs Winter for Chrome). Tell the user. |
 
 ## 9. Loops and `timeLeft()`
 
@@ -316,7 +316,7 @@ Each app is its own handle with its own refs: a ref from `safari` means nothing 
 
 ## 13. Browser tabs
 
-`browsers.open(url)` opens a tab in Winter's built-in browser and prints its state. `{ browser: 'chrome' }` (an id `browsers.list()` shows as connected) uses the user's own browser: their sign-ins. A tab is a target like an app: `state`, `find`, `click`, `type`, `waitFor` work the same, and `refOf` works on it.
+`browsers.open(url)` opens a tab in Clover's built-in browser and prints its state. `{ browser: 'chrome' }` (an id `browsers.list()` shows as connected) uses the user's own browser: their sign-ins. A tab is a target like an app: `state`, `find`, `click`, `type`, `waitFor` work the same, and `refOf` works on it.
 
 ```js
 const shop = await browsers.open('https://shop.example.com/orders');
@@ -326,7 +326,7 @@ await shop.state();
 
 ## 14. Debug a page: console and network
 
-What the page logged and loaded since you opened or bound the tab: requests made while it first loaded can come before Winter was watching, so reload it to see a load from the start. Secrets come back as `<redacted>`.
+What the page logged and loaded since you opened or bound the tab: requests made while it first loaded can come before Clover was watching, so reload it to see a load from the start. Secrets come back as `<redacted>`.
 
 ```js
 const page = await browsers.open('http://localhost:3000/');
@@ -392,7 +392,7 @@ On a web page, skip the Open panel: bind the page as a tab and hand the file to 
 const store = await browsers.tab({ url: 'https://dashboard.example.com/listing' });
 await store.click(await refOf(store, 'Upload new package'));
 // The click's line names the file input: "upload([31], paths) puts the files in". 31 is that ref.
-await store.upload(31, ['/tmp/winter-session-s/extension-1.2.0.zip']);
+await store.upload(31, ['/tmp/clover-session-s/extension-1.2.0.zip']);
 await store.state();
 ```
 

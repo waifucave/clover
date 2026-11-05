@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import {
   buildSpawnablePlugins,
   createSupervisedInstance,
@@ -117,7 +117,7 @@ describe("4d-i gate: live tiles + shortcut/tile-action round-trip (real sample-e
     async () => {
       const pluginName = "sample-echo";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-gate-4d-i-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate-4d-i-"));
       installSampleEcho(home, pluginName);
       const settings = writeAndLoadSettings(home, pluginName);
       const socketPath = join(home, "core.sock");
@@ -129,9 +129,9 @@ describe("4d-i gate: live tiles + shortcut/tile-action round-trip (real sample-e
 
       // `plugins: true` (not `hardware: true` — this gate never touches ctx.hardware()) wires just
       // enough PluginStore machinery for (e)'s `plugins.list` status assertion below.
-      // WS-21: plugin.list now reads through the Contract B adapter (opts.winterHome), not
-      // opts.plugins alone — wireWinterHome:true is needed for step (e)'s plugin.list call.
-      const inst: SupervisedInstance = await createSupervisedInstance({ home, socketPath, plugins: true, wireWinterHome: true });
+      // WS-21: plugin.list now reads through the Contract B adapter (opts.cloverHome), not
+      // opts.plugins alone — wireCloverHome:true is needed for step (e)'s plugin.list call.
+      const inst: SupervisedInstance = await createSupervisedInstance({ home, socketPath, plugins: true, wireCloverHome: true });
 
       // The harness connects and hellos BEFORE startAll() spawns the child — `plugin_tile_updated`
       // (like `session_created`) is a one-shot broadcast to whoever is in `harnessConns` at the

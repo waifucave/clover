@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { resolveWinterHome } from "../winter-dir";
+import { resolveCloverHome } from "../clover-dir";
 import { nextRunAt, parseSpec } from "./spec";
 
 export interface Routine {
@@ -212,7 +212,7 @@ export class RoutineStore {
 }
 
 export function openRoutineStore(path?: string): RoutineStore {
-  // P9b-12: routed through the resolver rather than hardcoding `~/.winter` — a `WINTER_HOME`
+  // P9b-12: routed through the resolver rather than hardcoding `~/.clover` — a `CLOVER_HOME`
   // override must move this file with everything else.
-  return new RoutineStore(path ?? join(resolveWinterHome(), "routines.db"));
+  return new RoutineStore(path ?? join(resolveCloverHome(), "routines.db"));
 }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import {
   buildSpawnablePlugins,
   createSupervisedInstance,
@@ -18,13 +18,13 @@ import {
  * index.ts` battery-limiter child process (installed via `installBatteryLimiter`, same
  * install-and-rewrite machinery `supervised-e2e.test.ts` uses for sample-echo — see
  * `supervised-fixtures.ts`'s doc comment). Only ONE thing here is scripted: the "provider"
- * connection (Winter.app's XPC helper stand-in) — a raw `TestClient` socket that hellos as a
+ * connection (Clover.app's XPC helper stand-in) — a raw `TestClient` socket that hellos as a
  * harness, advertises itself via `peripheral.advertise`, and answers the `hardware_requested` push
  * with `hardware.respond`. That is deliberate, not a shortcut: this suite has no way to drive a
  * real XPC connection to a real WinterHelper daemon (there's no helper process in the test
  * environment at all — Task 3's WinterHelper is a separate, un-spawnable-here macOS system
  * daemon), so the provider boundary is exactly where core's OWN spec draws the seam between
- * "core's job" and "Winter.app's job" (design spec §5) — the same boundary
+ * "core's job" and "Clover.app's job" (design spec §5) — the same boundary
  * `server.test.ts`'s "hardware.request / hardware.respond" suite already stubs, just reused here
  * one layer further out, with a REAL plugin process (not a scripted "plugin" TestClient) on the
  * other end.
@@ -122,7 +122,7 @@ describe("battery-limiter ctx.hardware round-trip (real Bun child process, scrip
     async () => {
       const pluginName = "battery-limiter";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-battery-limiter-e2e-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-battery-limiter-e2e-"));
       installBatteryLimiter(home, pluginName);
       const settings = writeAndLoadSettings(home, pluginName, { hardwareConsent: true });
       const socketPath = join(home, "core.sock");

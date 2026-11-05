@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
  * Winter Phase 8d (P8d-15, WS-17 §6 row 9): generates `packages/core/capability-matrix.json` —
- * Winter's OWN rows of the cross-repo capability matrix (mode × runtime × surface). The SDK repo
- * owns the other axes (provider/protocol capabilities); this file's whole scope is "what Winter's
+ * Clover's OWN rows of the cross-repo capability matrix (mode × runtime × surface). The SDK repo
+ * owns the other axes (provider/protocol capabilities); this file's whole scope is "what Clover's
  * own daemon/CLI/app/remote-gateway code lets each combination reach", derived from three real
  * predicates rather than hand-typed:
  *
  *   1. **The runtime axis** — WS-23 retired the official (`claude-agent`) leg: every mode, Claude
- *      models included, runs on the Winter leg (`runtime-sdk/create.ts` tells the router
+ *      models included, runs on the Clover leg (`runtime-sdk/create.ts` tells the router
  *      `hasClaudePeer: false`, and `session-driver.ts`'s `decideRuntime` refuses any other answer).
  *      The `claude-agent` column stays, because the protocol keeps the value for sessions the leg
  *      created (ruling R4) — every cell in it is `correctly-unavailable`.
@@ -15,12 +15,12 @@
  *      `session.create`/`session.setModel` for every mode `REMOTE_ELIGIBLE_SESSION_MODES` names
  *      (`code`/`dispatch`/`chat` — Chat Slice C lifted chat's remote gate, SP3.4 added remote
  *      session.create). Winter Phase 8d fix round 1: `REMOTE_ELIGIBLE_SESSION_MODES` is now
- *      EXPORTED from `ipc/server.ts` and imported directly here — Winter's own capability-matrix
+ *      EXPORTED from `ipc/server.ts` and imported directly here — Clover's own capability-matrix
  *      generator is an in-repo consumer with no dependency-direction problem, unlike the CLI
  *      surface rule below.
  *   3. **The mode tool surface** (`runtime-sdk/mode-options.ts`'s `toolsFor`, the 2026-10-01 ALLOWED list) — chat's
  *      own allowed built-ins (`CHAT_BUILTIN_TOOLS` plus its search tool)
- *      are read here and folded into chat's `reason` text, so "chat is implemented on the Winter
+ *      are read here and folded into chat's `reason` text, so "chat is implemented on the Clover
  *      leg" carries the caveat that its tool surface is narrower BY DESIGN, not an oversight this
  *      matrix would otherwise hide.
  *
@@ -85,7 +85,7 @@ function surfaceUnreachableReason(surface: CapabilitySurface, mode: CapabilityMo
 }
 
 /** WS-23: the one answer for the `claude-agent` column, in every mode. */
-const OFFICIAL_LEG_RETIRED_REASON = "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)";
+const OFFICIAL_LEG_RETIRED_REASON = "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)";
 
 const CHAT_MODE_TOOL_NOTE = (() => {
   // Chat's answer with an Exa key assumed present (the absent default). Since the 2026-10-01 ruling its
@@ -109,12 +109,12 @@ export function buildCapabilityMatrix(): CapabilityMatrix {
           continue;
         }
         if (runtime === "winter-agent") {
-          // Every mode since Phase 8b runs on the Winter leg (Task 17: "the engine is retired;
-          // every mode runs on the Winter leg") — the ONLY question left is surface reachability,
+          // Every mode since Phase 8b runs on the Clover leg (Task 17: "the engine is retired;
+          // every mode runs on the Clover leg") — the ONLY question left is surface reachability,
           // already settled above.
           const reason = mode === "chat"
-            ? `the Winter leg serves every mode (Task 17) — reachable from this surface; ${CHAT_MODE_TOOL_NOTE}`
-            : "the Winter leg serves every mode (Task 17) — reachable from this surface";
+            ? `the Clover leg serves every mode (Task 17) — reachable from this surface; ${CHAT_MODE_TOOL_NOTE}`
+            : "the Clover leg serves every mode (Task 17) — reachable from this surface";
           rows.push({ mode, runtime, surface, cell: "implemented", reason });
           continue;
         }

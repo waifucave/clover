@@ -38,7 +38,7 @@ export function preflight(opts: { checks: Record<string, () => string | null> })
 // Distribution backbone (design spec 2026-07-15-release-pipeline-design.md) — GitHub Releases
 // is the sole download host; matches the `origin` remote and project.yml's SUFeedURL. Exported
 // so release.ts's publish tail (gh release URL, cask url) shares this single source of truth.
-export const GH_REPO = "yanlingLabs/winter";
+export const GH_REPO = "waifucave/clover";
 
 /**
  * Renders one Sparkle appcast `<item>` for the update-check enclosure (the `.zip`). Schema
@@ -184,11 +184,12 @@ export function releaseNotesHtml(i: { notesMarkdown: string; version: string }):
     blocks.push(`<p>${inline(paragraph.join(" "), `the paragraph starting on line ${startedAt}`)}</p>`);
   }
 
-  // Every notes file opens with `# Winter <version>`, and Sparkle's own pane is already titled
-  // with the app name and this exact version (plus the `<title>` element of the item). Repeating it
-  // as the first heading of the body is the third copy on one screen, so that ONE heading — matched
-  // against this release's version, nothing else — is dropped.
-  if (blocks[0] === `<h1>Winter ${i.version}</h1>`) blocks.shift();
+  // Every notes file opens with `# Clover <version>` — or `# Winter <version>`, for the releases before
+  // C0 kept in `releases/notes/` — and Sparkle's own pane is already titled with the app name and this
+  // exact version (plus the `<title>` element of the item). Repeating it as the first heading of the
+  // body is the third copy on one screen, so that ONE heading — matched against this release's
+  // version, nothing else — is dropped.
+  if (blocks[0] === `<h1>Clover ${i.version}</h1>` || blocks[0] === `<h1>Winter ${i.version}</h1>`) blocks.shift();
   return blocks.join("\n");
 }
 
@@ -206,7 +207,7 @@ export function appcastDescription(i: { versionLine: string; version: string; no
   return `<p>${i.versionLine}</p>\n${notes}`;
 }
 
-/** Interpolates a brew cask template (T3's packaging/winter.rb.tmpl) — `{{version}}`/`{{sha256}}`/`{{url}}`. */
+/** Interpolates a brew cask template (T3's packaging/clover.rb.tmpl) — `{{version}}`/`{{sha256}}`/`{{url}}`. */
 export function caskFrom(tmpl: string, i: { version: string; sha256: string; url: string }): string {
   return tmpl
     .replaceAll("{{version}}", i.version)
@@ -241,7 +242,7 @@ export function dmgStagePlan(appPath: string): DmgStageOp[] {
 
 /**
  * Bundle-relative paths the §11b artifact identity scan deliberately does NOT read, as anchored
- * regexes against POSIX-relative paths (`Contents/…`) inside `Winter.app`.
+ * regexes against POSIX-relative paths (`Contents/…`) inside `Clover.app`.
  *
  * Added by panel-cef Task 5, and kept as narrow as the measurement allowed. The scan reads every
  * shipped byte as text and fails closed on any hit; embedding Chromium adds 317MB of it, so the
@@ -263,7 +264,7 @@ export function dmgStagePlan(appPath: string): DmgStageOp[] {
  *     `v8_context_snapshot.arm64.bin`, `gpu_shader_cache.bin`, `Info.plist`),
  *   - `Contents/Resources/Licenses/CREDITS.html` — 19.6MB of third-party contributor names, the
  *     obvious candidate for exclusion, measured at ZERO hits and therefore left in,
- *   - and every byte Winter actually compiles: the app, the five CEF helpers, winter-core,
+ *   - and every byte Clover actually compiles: the app, the five CEF helpers, clover-core,
  *     WinterHelper, Sparkle.
  * That last group is where the leaks this gate exists for (absolute builder paths in Mach-O debug
  * stabs, v0.2.001) actually happen, and none of it is excluded.
@@ -276,8 +277,8 @@ export function dmgStagePlan(appPath: string): DmgStageOp[] {
 // why. Anchored on the version segment rather than skipping it, so the top-level `Resources`
 // SYMLINK (…framework/Resources -> Versions/Current/Resources) is deliberately not matched: the
 // scan walker never follows symlinks, so a locale pack is reachable by exactly one path.
-// Winter's one Chromium lives inside the nested Winter Headless helper (the user's ruling), so that is where its
-// locale packs are; Winter.app's own Contents/Frameworks holds no copy.
+// Clover's one Chromium lives inside the nested Winter Headless helper (the user's ruling), so that is where its
+// locale packs are; Clover.app's own Contents/Frameworks holds no copy.
 export const NAME_SCAN_EXCLUSIONS: readonly RegExp[] = [
   /^Contents\/Helpers\/Winter Headless\.app\/Contents\/Frameworks\/Chromium Embedded Framework\.framework\/Versions\/[^/]+\/Resources\/[^/]+\.lproj$/,
   // editor-plumbing Task 1 — a DIFFERENT rationale from the rule above, deliberately not
@@ -293,7 +294,7 @@ export const NAME_SCAN_EXCLUSIONS: readonly RegExp[] = [
   // Directory-anchored (`(\/|$)`) rather than a bare prefix so the scan walker prunes the whole
   // vs/ subtree as one excluded node — same shape as the lproj rule above — while a name that
   // merely starts with "vs" (e.g. a hypothetical "vsx" sibling) does not accidentally match.
-  // The in-repo `EditorAssets/app` page shell (Winter's OWN code, landed by Task 4) is
+  // The in-repo `EditorAssets/app` page shell (Clover's OWN code, landed by Task 4) is
   // deliberately NOT covered by this pattern and stays fully scanned — only vendored, unreviewed
   // third-party bytes get this treatment.
   /^Contents\/Resources\/EditorAssets\/vs(\/|$)/,
@@ -388,8 +389,8 @@ export interface AppcastInsertPlanInputs {
   dryRun: boolean;
   version: string;
   /** Current contents of the appcast this run would insert into (read by release.ts from
-   * whichever file `target` below resolves to — always `releases/winter/appcast.xml` on disk
-   * (the P9b-9 Winter feed), since that's the only copy this pipeline ever writes; the frozen
+   * whichever file `target` below resolves to — always `releases/clover/appcast.xml` on disk
+   * (the P9b-9 Clover feed), since that's the only copy this pipeline ever writes; the frozen
    * pre-rename `releases/appcast.xml` is never touched by it. The preview file is only ever an
    * OUTPUT). */
   appcastXml: string;
@@ -402,7 +403,7 @@ export interface AppcastInsertPlanResult {
    * out/release/<v>-dryrun/appcast-preview.xml ONLY (dry-run — F1 fix: never the tracked file;
    * `d3054fa3` moved every dry-run artifact under the `-dryrun` suffix, and release.ts's own
    * mirror of this sentence says the same);
-   * "repo" -> releases/winter/appcast.xml (real run — release.ts must do this write from inside
+   * "repo" -> releases/clover/appcast.xml (real run — release.ts must do this write from inside
    * its `!DRY_RUN` publish tail, not before; the frozen `releases/appcast.xml` — the pre-rename
    * feed — is never touched by this pipeline). */
   target: "preview" | "repo";
@@ -435,7 +436,7 @@ export function appcastInsertPlan(i: AppcastInsertPlanInputs): AppcastInsertPlan
 }
 
 export interface ResolveSigningIdentityInputs {
-  /** release.ts's `WINTER_SIGN_IDENTITY` escape hatch — when set, returned as-is with no lookup
+  /** release.ts's `CLOVER_SIGN_IDENTITY` escape hatch — when set, returned as-is with no lookup
    * at all (so `identitiesOutput` doesn't even need to be real, letting a differently-provisioned
    * keychain, e.g. CI, skip `security find-identity` entirely). */
   envOverride?: string;
@@ -496,11 +497,11 @@ export function publishGuard(i: PublishGuardInputs): PublishGuardResult {
     return {
       action: "dry-run-skip",
       lines: [
-        `gh release create v${v} --title "Winter ${v}" + upload Winter-${v}.zip + Winter-${v}.dmg`,
-        // Fix wave M4 (P9c-19): explicit, idempotent — Winter's release is asserted "latest" rather
+        `gh release create v${v} --title "Clover ${v}" + upload Clover-${v}.zip + Clover-${v}.dmg`,
+        // Fix wave M4 (P9c-19): explicit, idempotent — Clover's release is asserted "latest" rather
         // than relying on create-order against the handoff release.
         `gh release edit v${v} --latest`,
-        `commit + push releases/winter/appcast.xml`,
+        `commit + push releases/clover/appcast.xml`,
         `git tag v${v} && git push origin v${v}`,
       ],
     };
@@ -540,7 +541,7 @@ export function publishGuard(i: PublishGuardInputs): PublishGuardResult {
  * promotes whatever the first paragraph says to the subtitle, so the shorter line needs nothing there.
  */
 export function embeddedRuntimesDescriptionLine(v: { winterAgentSdk: string }): string {
-  return `Winter agent SDK ${v.winterAgentSdk}`;
+  return `Clover agent SDK ${v.winterAgentSdk}`;
 }
 
 export interface VersionsJsonPinCheck {
@@ -579,7 +580,7 @@ export interface AntEmbedCheck {
 
 /**
  * Winter Phase 10a (Task L3, fix round 2): the PURE half of release.ts's `ant` CONTENT-IDENTITY
- * gate — mirrors `row16IdentityCheck`'s shape for `winter`, because `ant`, like `winter`, is
+ * gate — mirrors `row16IdentityCheck`'s shape for `clover`, because `ant`, like `clover`, is
  * RE-SIGNED at embed time: a signature blob changes
  * a Mach-O's bytes, so no hash of the ALREADY-SIGNED embedded file can ever equal a pre-sign pin
  * (measured: codesign --remove-signature on the real vendored ant binary does NOT restore the
@@ -703,7 +704,7 @@ export function row16ProvenanceCheck(input: Row16CheckInput): Row16CheckResult {
   if (!input.rebuildSucceeded) {
     return {
       ok: false,
-      failure: `Row 16: could not establish provenance — rebuilding winter from the pinned tag failed: ${input.rebuildError ?? "unknown reason"}`,
+      failure: `Row 16: could not establish provenance — rebuilding clover from the pinned tag failed: ${input.rebuildError ?? "unknown reason"}`,
       record,
     };
   }
@@ -716,7 +717,7 @@ export interface Row16IdentityResult {
    *  never encodes that decision, since it does not know whether the flag was passed. */
   ok: boolean;
   /** Whether the STRONG (checksum-equality) path was even attempted — `false` means the embedded
-   *  `winter` came from a from-source `checkout-build`, so `row16ProvenanceCheck` is the relevant
+   *  `clover` came from a from-source `checkout-build`, so `row16ProvenanceCheck` is the relevant
    *  check instead (this function never re-derives that one). */
   strong: boolean;
   detail: string;
@@ -726,7 +727,7 @@ export interface Row16IdentityResult {
  * Row 16 ("identical versioned artifact") STRONG-path decision (P9a-8) — a literal checksum
  * equality, now that the embedded `winter` can come from the SAME npm-published artifact a
  * consumer's `bun install` fetches: `winterSource === "platform-package"` AND the embedded
- * `winter`'s pre-sign SHA-256 equals the CURRENTLY INSTALLED platform package's own `bin/winter`
+ * `clover`'s pre-sign SHA-256 equals the CURRENTLY INSTALLED platform package's own `bin/winter`
  * SHA-256. `row16ProvenanceCheck` (above) is UNCHANGED and stays the check for the weaker
  * `checkout-build` path (dry-run/rehearsal only, P9a-8) — this function never supersedes it, only
  * adds the strong alternative alongside it.
@@ -781,7 +782,7 @@ export function row16IdentityCheck(input: { versionsJsonText: string; platformPa
       ok: false,
       strong: true,
       detail:
-        `Row 16 (identity): STRONG check FAILED — the embedded winter's pre-sign SHA-256 (${input.embeddedPreSignSha256}) ` +
+        `Row 16 (identity): STRONG check FAILED — the embedded clover's pre-sign SHA-256 (${input.embeddedPreSignSha256}) ` +
         `does not equal the installed platform package's bin/winter SHA-256 (${installedSha256}). The embedded binary ` +
         "is not the artifact npm shipped.",
     };
@@ -826,7 +827,7 @@ export function row16Gate(input: { identity: Row16IdentityResult; dryRun: boolea
 }
 
 /**
- * WS-27: does `winter-core __keychain-ffi-probe`'s output say BOTH of its bun:ffi libraries ran on this
+ * WS-27: does `clover-core __keychain-ffi-probe`'s output say BOTH of its bun:ffi libraries ran on this
  * signed binary — Security.framework (the keychain status) and libSystem's `sysctl` (the credential
  * migration lock's process start time, a positive epoch-seconds number)? The 0.120.0 lesson: an ffi the
  * release gate does not call is an ffi a missing entitlement can kill in the field.

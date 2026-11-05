@@ -9,7 +9,7 @@
 // router's own live store — built long after the boot hook — AND reads its canonical transcripts from
 // `<home>/sdk/projects`, so it can only run AFTER step 3 has moved them there. So:
 //
-//   phase 1 (the boot hook, or `winter migrate --sdk-home`):
+//   phase 1 (the boot hook, or `clover migrate --sdk-home`):
 //     preflight → move-dirs → copy-files → split-settings → convert-plugins → runtime-state
 //     then `phase1-complete` — a NORMAL booting state; the half-migrated refusal is phase 1 incomplete
 //   phase 2 (the daemon's late site, after `createWinterRuntimeSdk`, before `startIpcServer`):
@@ -117,7 +117,7 @@ export interface MigrationCRekey {
 }
 
 /** R.3 I-5: why a home caught mid-rollback refuses everything but `--rollback`. */
-const INTERRUPTED_ROLLBACK = "a Migration C rollback was interrupted — run `winter migrate --sdk-home --rollback` to finish it";
+const INTERRUPTED_ROLLBACK = "a Migration C rollback was interrupted — run `clover migrate --sdk-home --rollback` to finish it";
 
 export function migrationCDir(home: string): string { return join(home, "migration", "c"); }
 export function migrationCManifestPath(home: string): string { return join(migrationCDir(home), "manifest.json"); }
@@ -167,7 +167,7 @@ function hasFiles(dir: string, budget = { left: 20_000 }): boolean {
  *  but a home whose ONLY legacy content is plugins must still migrate rather than sit forever
  *  unconverted (`isOldLayout` returning `false` skips the whole boot-time Migration C check, so
  *  `convertLegacyPlugins` never even runs). Reviewer round, item 3: originally required a
- *  `winter-plugin.json` specifically — but `convertLegacyPlugins`'s own discovery requires no
+ *  `clover-plugin.json` specifically — but `convertLegacyPlugins`'s own discovery requires no
  *  manifest at all (a `plugin.json`-only or fully manifest-less directory still converts, generating
  *  a fresh manifest from just its name), so a home whose only plugin had neither STILL never
  *  migrated. Delegates to `legacyPluginDirs` (below), which is `convertLegacyPlugins`'s own discovery
@@ -180,7 +180,7 @@ function hasLegacyPlugin(home: string): boolean {
 /**
  * Spec §8's OLD LAYOUT (r3, widened by review M7): any directory Migration C moves (`SDK_COMPAT_LINKS`:
  * projects, backups, skills, agents, workflows, output-styles) is a real directory (not a compatibility
- * link) WITH CONTENT (a file somewhere below it), or the home holds an instructions file (`WINTER.md`, or
+ * link) WITH CONTENT (a file somewhere below it), or the home holds an instructions file (`CLOVER.md`, or
  * the legacy one) that `sdk/` does not, or `<home>/plugins` holds at least one legacy plugin (post-merge
  * fix round, minor 1, widened by the reviewer round's item 3 — see `hasLegacyPlugin`'s own doc) — and
  * Migration C is not done. A run-home build reads none of those from the old place, so a home holding
@@ -191,8 +191,8 @@ export function isOldLayout(home: string): boolean {
   if (existsSync(migrationCCompletePath(home))) return false;
   if (SDK_COMPAT_LINKS.some(([name]) => hasFiles(join(home, name)))) return true;
   if (hasLegacyPlugin(home)) return true;
-  if (existsSync(join(sdkHomeFor(home), "WINTER.md"))) return false;
-  return [join(home, "WINTER.md"), join(home, LEGACY_INSTRUCTIONS_FILE)].some((p) => {
+  if (existsSync(join(sdkHomeFor(home), "CLOVER.md"))) return false;
+  return [join(home, "CLOVER.md"), join(home, LEGACY_INSTRUCTIONS_FILE)].some((p) => {
     try { return lstatSync(p).isFile(); } catch { return false; }
   });
 }
@@ -210,7 +210,7 @@ export interface MigrationCDeps {
   convertLegacyPlugins?: (home: string) => Promise<{ converted: string[]; unconvertible: { name: string; reason: string }[] }>;
   /** Preflight's lease probe (tests describe a live or recycled pid); the live machine by default. */
   probe?: LeaseProbe;
-  /** Where claude staging roots live (`WINTER_CLAUDE_RESUME_SCAN_ROOT`, else `os.tmpdir()`) — round 4. */
+  /** Where claude staging roots live (`CLOVER_CLAUDE_RESUME_SCAN_ROOT`, else `os.tmpdir()`) — round 4. */
   claudeResumeScanRoot?: string;
   /** The `claude-resume-*` listing seam (`listClaudeResumeStaging` by default); a test spies on it. */
   listClaudeResumeStaging?: ClaudeResumeLister;
@@ -256,7 +256,7 @@ function sdkPreflightProblem(home: string): string | undefined {
     const to = join(home, target);
     if (isSymlink(from) || !hasFiles(from)) continue;
     // No manifest exists at preflight, so there is nothing to `--resume`: the remedy is the pair itself.
-    if (hasFiles(to)) return `${from} and ${to} both have content — merge them or move one aside by hand, then run \`winter migrate --sdk-home\` (or start Winter again)`;
+    if (hasFiles(to)) return `${from} and ${to} both have content — merge them or move one aside by hand, then run \`clover migrate --sdk-home\` (or start Clover again)`;
   }
   return undefined;
 }
@@ -270,7 +270,7 @@ function leaseProblem(home: string, probe: LeaseProbe | undefined): string | und
   if (!existsSync(join(home, "runtimes", "runtime-state.db"))) return undefined;
   let rs;
   try { rs = openRuntimeStateDb(home, { readonly: true }); } catch (err) {
-    return `runtime-state.db cannot be read (${(err as Error).name}) — its transcript leases cannot be checked; repair it first (\`winter doctor\`)`;
+    return `runtime-state.db cannot be read (${(err as Error).name}) — its transcript leases cannot be checked; repair it first (\`clover doctor\`)`;
   }
   try {
     const leases = new RuntimeLeases(rs, { pid: process.pid, startedAt: "unknown" });
@@ -283,7 +283,7 @@ function leaseProblem(home: string, probe: LeaseProbe | undefined): string | und
     }
     return undefined;
   } catch (err) {
-    return `runtime-state.db's transcript leases cannot be read (${(err as Error).name}) — repair it first (\`winter doctor\`)`;
+    return `runtime-state.db's transcript leases cannot be read (${(err as Error).name}) — repair it first (\`clover doctor\`)`;
   } finally {
     rs.close();
   }
@@ -301,7 +301,7 @@ function coworkOwnershipProblem(home: string): string | undefined {
   if (!existsSync(join(home, "runtimes", "runtime-state.db"))) return undefined;
   let rs;
   try { rs = openRuntimeStateDb(home, { readonly: true }); } catch (err) {
-    return `runtime-state.db cannot be read (${(err as Error).name}) — Cowork ownership cannot be checked; repair it first (\`winter doctor\`)`;
+    return `runtime-state.db cannot be read (${(err as Error).name}) — Cowork ownership cannot be checked; repair it first (\`clover doctor\`)`;
   }
   try {
     const has = (table: string): boolean => rs.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table) !== null;
@@ -315,7 +315,7 @@ function coworkOwnershipProblem(home: string): string | undefined {
     }
     return undefined;
   } catch (err) {
-    return `Cowork ownership cannot be read (${(err as Error).name}) — repair runtime-state.db first (\`winter doctor\`)`;
+    return `Cowork ownership cannot be read (${(err as Error).name}) — repair runtime-state.db first (\`clover doctor\`)`;
   } finally {
     rs.close();
   }
@@ -394,7 +394,7 @@ function isSymlink(p: string): boolean {
   try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
 }
 
-/** Claude's `history.jsonl` entry shape from Winter's `{display, ts, sessionId}` (spec §8 step 4). */
+/** Claude's `history.jsonl` entry shape from Clover's `{display, ts, sessionId}` (spec §8 step 4). */
 function convertHistory(src: string, dest: string, cwdOf: (sessionId: string) => string | undefined): number {
   let n = 0;
   const out: string[] = [];
@@ -435,7 +435,7 @@ function sessionCwds(home: string): (sessionId: string) => string | undefined {
 }
 
 /** The sessions index's cwd and first working directory per session, read-only — what each leg keys a
- *  transcript by (the Winter leg the `cwd` column, the official leg `cwd ?? dirs[0]`). */
+ *  transcript by (the Clover leg the `cwd` column, the official leg `cwd ?? dirs[0]`). */
 function sessionPrimaries(home: string): (sessionId: string) => { cwd?: string; firstDir?: string } | undefined {
   const path = join(home, "sessions", "index.db");
   if (!existsSync(path)) return () => undefined;
@@ -557,7 +557,7 @@ export function recordLazyRekey(home: string, entry: MigrationCRekey): void {
 export async function runMigrationC(home: string, deps: MigrationCDeps): Promise<MigrationCManifest> {
   const now = deps.now ?? (() => new Date());
   const state = migrationCState(home);
-  if (state.kind === "unreadable") throw new MigrationCRefused("sdk_home_half_migrated", `${migrationCManifestPath(home)} does not parse — move it aside or run \`winter migrate --sdk-home --rollback\``);
+  if (state.kind === "unreadable") throw new MigrationCRefused("sdk_home_half_migrated", `${migrationCManifestPath(home)} does not parse — move it aside or run \`clover migrate --sdk-home --rollback\``);
   // R.3 I-5: never resume the MIGRATION onto a half-rolled-back home — only the rollback goes on from here.
   if (state.kind === "parsed" && state.manifest.status === "rolling-back") throw new MigrationCRefused("sdk_home_half_migrated", INTERRUPTED_ROLLBACK);
   let m: MigrationCManifest;
@@ -601,7 +601,7 @@ export async function runMigrationC(home: string, deps: MigrationCDeps): Promise
         settings: backup(join(home, "settings.json"), "settings.json.bak"),
         runtimeState,
         sdkSettings: backup(join(sdkHomeFor(home), "settings.json"), "sdk-settings.json.bak"),
-        sdkGlobal: backup(join(sdkHomeFor(home), ".winter.json"), "sdk-winter.json.bak"),
+        sdkGlobal: backup(join(sdkHomeFor(home), ".clover.json"), "sdk-clover.json.bak"),
         splitMarker: backup(settingsSplitMarkerPath(home), "settings-split.json.bak"),
       },
       moved: [], links: [], copied: [], archived: [], reconciled: [],
@@ -639,12 +639,12 @@ export async function runMigrationC(home: string, deps: MigrationCDeps): Promise
       if (existsSync(from)) {
         if (existsSync(to) && hasFiles(to)) {
           if (!existsSync(migrationCRolledBackPath(home))) {
-            throw new MigrationCRefused("sdk_home_migration_refused", `${to} and ${from} both have content — resolve by hand, then \`winter migrate --sdk-home --resume\``);
+            throw new MigrationCRefused("sdk_home_migration_refused", `${to} and ${from} both have content — resolve by hand, then \`clover migrate --sdk-home --resume\``);
           }
           // Round 3, minor 2: a rolled-back home — the new build's content in the target is moved aside into
           // THIS migration's archive (recorded first; rollback restores it), never refused forever.
           const dest = join(m.archiveDir, "displaced", target);
-          if (existsSync(dest) || isSymlink(dest)) throw new MigrationCRefused("sdk_home_half_migrated", `${to} has content and ${dest} is already taken — resolve by hand, then \`winter migrate --sdk-home --resume\``);
+          if (existsSync(dest) || isSymlink(dest)) throw new MigrationCRefused("sdk_home_half_migrated", `${to} has content and ${dest} is already taken — resolve by hand, then \`clover migrate --sdk-home --resume\``);
           if (!(m.displaced ?? []).some((d) => d.from === target)) {
             (m.displaced ??= []).push({ from: target, to: relative(home, dest) });
             writeManifest(home, m);
@@ -658,7 +658,7 @@ export async function runMigrationC(home: string, deps: MigrationCDeps): Promise
         m.moving = { from: name, to: target };
         writeManifest(home, m);                    // the intent, before the rename
         renameSync(from, to);
-        if (existsSync(from) || !existsSync(to)) throw new MigrationCRefused("sdk_home_half_migrated", `the rename of ${from} into ${to} did not land — nothing more was moved; \`winter migrate --sdk-home --rollback\``);
+        if (existsSync(from) || !existsSync(to)) throw new MigrationCRefused("sdk_home_half_migrated", `the rename of ${from} into ${to} did not land — nothing more was moved; \`clover migrate --sdk-home --rollback\``);
         m.moved.push({ from: name, to: target });
         delete m.moving;
         writeManifest(home, m);
@@ -681,13 +681,13 @@ export async function runMigrationC(home: string, deps: MigrationCDeps): Promise
     record("move-dirs", "done", { moved: m.moved.length });
   }
 
-  // ── 4. copy-files: WINTER.md (or the legacy instructions file) and history.jsonl, into sdk/ ──────
+  // ── 4. copy-files: CLOVER.md (or the legacy instructions file) and history.jsonl, into sdk/ ──────
   if (!done("copy-files")) {
     const sdk = sdkHomeFor(home);
-    const instructions = [join(home, "WINTER.md"), join(home, LEGACY_INSTRUCTIONS_FILE)].find((p) => existsSync(p) && !isSymlink(p));
-    if (instructions !== undefined && !existsSync(join(sdk, "WINTER.md"))) {
-      copyFileSync(instructions, join(sdk, "WINTER.md"));
-      m.copied.push("sdk/WINTER.md");
+    const instructions = [join(home, "CLOVER.md"), join(home, LEGACY_INSTRUCTIONS_FILE)].find((p) => existsSync(p) && !isSymlink(p));
+    if (instructions !== undefined && !existsSync(join(sdk, "CLOVER.md"))) {
+      copyFileSync(instructions, join(sdk, "CLOVER.md"));
+      m.copied.push("sdk/CLOVER.md");
     }
     let history = 0;
     const hist = join(home, "history.jsonl");
@@ -751,7 +751,7 @@ export async function runMigrationC(home: string, deps: MigrationCDeps): Promise
   // Lazy on purpose (2026-10-10): with a router door the answer is not needed, and the staging check is
   // the one that may have to list the temp folder.
   if (deps.reconcile !== undefined) return finishMigrationC(home, deps);
-  const scanRoot = deps.claudeResumeScanRoot ?? (process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT?.trim() || tmpdir());
+  const scanRoot = deps.claudeResumeScanRoot ?? (process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT?.trim() || tmpdir());
   const nothingToReconcile = !officialRoots(home).some((r) => existsSync(r) && !isSymlink(r) && hasFiles(r)) && !stagingRootsPresent(home, scanRoot, deps.listClaudeResumeStaging);
   if (nothingToReconcile) return finishMigrationC(home, deps);
   return m;
@@ -776,7 +776,7 @@ function backendIdsUnder(root: string): string[] {
   return [...ids];
 }
 
-/** Mark the Winter sessions owning these BACKEND session ids `repair-required`; returns the ones marked.
+/** Mark the Clover sessions owning these BACKEND session ids `repair-required`; returns the ones marked.
  *  Bounded: a store that will not open marks nothing (the manifest still records every transcript). */
 function markQuarantinedSessions(home: string, backendIds: readonly string[]): string[] {
   if (backendIds.length === 0 || !existsSync(join(home, "runtimes", "runtime-state.db"))) return [];
@@ -852,7 +852,7 @@ export async function finishMigrationC(home: string, deps: Pick<MigrationCDeps, 
     // Round 5: with no router door the daemon could not sweep the claude staging roots first (its late site
     // sweeps only through the door), and a staging copy swept at the OLD key after this re-key becomes an
     // orphan — so, like an official working copy with no door, a staging root refuses phase 2 here.
-    const scanRoot = deps.claudeResumeScanRoot ?? (process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT?.trim() || tmpdir());
+    const scanRoot = deps.claudeResumeScanRoot ?? (process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT?.trim() || tmpdir());
     if (deps.reconcile === undefined && stagingRootsPresent(home, scanRoot, deps.listClaudeResumeStaging)) {
       throw new MigrationCRefused("sdk_home_migration_refused", `${scanRoot} holds a claude staging root and no router can reconcile it here — the transcripts are not re-keyed before it is; the next daemon boot with a working router finishes Migration C`);
     }

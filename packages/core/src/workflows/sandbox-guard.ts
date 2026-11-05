@@ -1,10 +1,10 @@
 // WS-27: a workflow worker refuses to run outside a sandbox that denies it the Keychain.
 //
-// `winter-core __workflow-worker` (the daemon's own worker) and `winter-core __runtime-workflow-worker
+// `clover-core __workflow-worker` (the daemon's own worker) and `clover-core __runtime-workflow-worker
 // --bridge` (the runtime's, for embedded sessions) run model-authored JavaScript. Their containment is the
 // seatbelt the PARENT wraps them in (`/usr/bin/sandbox-exec -p <profile> …`): nothing stopped the same
 // binary being launched with those arguments WITHOUT it — by anything that can run a process as the user —
-// and then it runs the script with every right `winter-core` has, the Keychain items it created included.
+// and then it runs the script with every right `clover-core` has, the Keychain items it created included.
 // So each worker checks, before it reads a byte of input, that it is (a) sandboxed at all and (b) denied a
 // lookup of the security daemons' mach services — the file-based keychain's `com.apple.SecurityServer`
 // (securityd, where `Bun.secrets` and `keychain-ffi.ts` live) and the data-protection keychain's
@@ -97,6 +97,6 @@ export function keychainSandboxState(check?: SandboxCheck): KeychainSandboxState
 export function refuseUnlessKeychainSandboxed(worker: string): void {
   const state = keychainSandboxState();
   if (state.ok) return;
-  process.stderr.write(`winter-core: the ${worker} refuses to run: ${state.reason}. It is started only by Winter, inside a sandbox that denies it the Keychain.\n`);
+  process.stderr.write(`clover-core: the ${worker} refuses to run: ${state.reason}. It is started only by Clover, inside a sandbox that denies it the Keychain.\n`);
   process.exit(WORKER_NOT_SANDBOXED_EXIT_CODE);
 }

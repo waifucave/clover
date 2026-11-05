@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COWORK_RPC, COWORK_REMOTE_METHODS, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, COWORK_REMOTE_METHODS, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { runtimeStateOnline } from "../../src/runtime-state/wiring";
@@ -36,7 +36,7 @@ const caps = { toolClasses: ["read"], hostServices: [], connectors: [], network:
 let daemon: RunningDaemon | undefined, home: string | undefined; const clients: Client[] = [];
 afterEach(async () => { clients.splice(0).forEach(client => client.close()); if (daemon) await daemon.stop(); daemon = undefined; if (home) rmSync(home, { recursive: true, force: true }); home = undefined; });
 test("isolated daemon accepts canonical metadata, restarts missed timers and never creates Code sessions", async () => {
-  home = mkdtempSync(join(tmpdir(), "winter-schedule-rpc-")); let time = 0;
+  home = mkdtempSync(join(tmpdir(), "clover-schedule-rpc-")); let time = 0;
   const host: CoworkHostPorts = { principal: connection => connection.role === "remote" ? { kind: "paired-user", id: "phone", workspaceIds: new Set(), repositoryAuthorities: new Set<string>() } : { kind: "local-user", id: "fixture" }, grants: { folder: () => ({ rootIdentity: "fixture-root", writable: true, revoked: false }), repository: () => undefined }, selection: () => undefined, creationCeiling: () => caps, requireProvisioning: () => { throw new Error("native unavailable"); } };
   const boot = async () => { daemon = await startDaemon({ home: home!, secrets: new FileSecretStore(join(home!, "secrets")), agentProvider: null, coworkHost: host, coworkScheduleNow: () => time }); const client = await Client.connect(join(home!, "run/core.sock"), daemon.tokens.harness); clients.push(client); return client; };
   let local = await boot(); const records = new CoworkRepository(runtimeStateOnline(daemon!.runtimeState)!.db);
@@ -69,7 +69,7 @@ test("all four remote allowlist mirrors exclude schedule metadata", () => {
   }
 });
 test("actual daemon RPC returns safe durable quarantine and keeps healthy timers progressing", async () => {
-  home = mkdtempSync(join(tmpdir(), "winter-schedule-quarantine-rpc-")); let time = 0;
+  home = mkdtempSync(join(tmpdir(), "clover-schedule-quarantine-rpc-")); let time = 0;
   const host: CoworkHostPorts = { principal: () => ({ kind: "local-user", id: "fixture" }), grants: { folder: () => ({ rootIdentity: "fixture-root", writable: true, revoked: false }), repository: () => undefined }, selection: () => undefined, creationCeiling: () => caps, requireProvisioning: () => { throw new Error("execution unavailable"); } };
   const boot = async () => { daemon = await startDaemon({ home: home!, secrets: new FileSecretStore(join(home!, "secrets")), agentProvider: null, coworkHost: host, coworkScheduleNow: () => time }); const client = await Client.connect(join(home!, "run/core.sock"), daemon.tokens.harness); clients.push(client); return client; };
   let local = await boot(); let records = new CoworkRepository(runtimeStateOnline(daemon!.runtimeState)!.db);

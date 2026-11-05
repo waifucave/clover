@@ -43,7 +43,7 @@ describe("the helper's identities", () => {
     expect(helperExecutable("/x/Winter Computer Use Dev.app", "dev")).toBe("/x/Winter Computer Use Dev.app/Contents/MacOS/Winter Computer Use Dev");
   });
 
-  test("the stated requirement: identifier + Winter's team under Apple's anchor (the dev daemon's shape)", () => {
+  test("the stated requirement: identifier + Clover's team under Apple's anchor (the dev daemon's shape)", () => {
     expect(helperRequirement("com.winter.computeruse", TEAM)).toBe(`identifier "com.winter.computeruse" and anchor apple generic and certificate leaf[subject.OU] = "${TEAM}"`);
   });
 
@@ -195,7 +195,7 @@ describe("winter-browser-host (nested in the helper)", () => {
     const main = readFileSync(join(host, "Tool", "main.swift"), "utf8");
     const guarded = main.slice(main.indexOf("#if WINTER_CU_TEST_BUILD"), main.indexOf("#else"));
     for (const name of ["WINTER_BROWSER_HOST_HOME", "WINTER_CU_TEST_DAEMON_REQUIREMENT"]) expect(guarded).toContain(name);
-    expect(main.slice(main.indexOf("#else"))).not.toContain("WINTER_");
+    expect(main.slice(main.indexOf("#else"))).not.toContain("CLOVER_");
     const lib = join(host, "Sources", "WinterBrowserHostCore");
     for (const file of readdirSync(lib)) {
       const text = readFileSync(join(lib, file), "utf8");
