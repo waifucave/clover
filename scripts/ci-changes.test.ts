@@ -28,6 +28,11 @@ describe("ci-changes", () => {
     expect(on(["plugins/clover/plugins/shell/package.json"])).toEqual(["workspaces", "gallery", "typecheck", "lockfiles"]);
   });
 
+  test("the packages: packaging/ and the app's builder config build and open the Linux packages; an app change does too", () => {
+    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "scripts"]);
+    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
+  });
+
   test("a service's change: its tests and the typecheck", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
