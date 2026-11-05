@@ -43,7 +43,22 @@ export interface ComposerVoice {
 }
 
 /** The composer's buttons, keyed like the `composer.action` spot (spec §5.5). */
-export type ComposerActionId = "attach" | "model" | "voice" | "send" | "stop";
+export type ComposerActionId = "attach" | "model" | "level" | "voice" | "send" | "stop";
+
+/** One of the computer's approval levels (spec §9.1). */
+export interface ComposerLevelOption {
+  id: string;
+  label: string;
+  detail?: string;
+}
+
+/** The approval level the bot works at on this computer, and the others to pick from. A change goes to
+ *  the host, which makes it (spec §5.5: from any layer but `clover`'s it is a sealed card). */
+export interface ComposerLevel {
+  level: string;
+  levels: ComposerLevelOption[];
+  onChange: (level: string) => void;
+}
 
 export interface ComposerProps {
   botName: string;
@@ -64,13 +79,18 @@ export interface ComposerProps {
    *  §6.4: sending needs a live connection). */
   asleep?: { reason: string };
   model?: ComposerModelChoice;
+  /** The approval-level pill. */
+  level?: ComposerLevel;
   voice?: ComposerVoice;
+  /** A sealed approval card waits in the conversation: menus close and the pills wait, so nothing of
+   *  the composer's competes with the card (review item 1). */
+  cardPending?: boolean;
   /** At most this many attachments ride one message. */
   maxAttachments?: number;
   placeholder?: string;
   autoFocus?: boolean;
   /** The `composer.action` spot: draw one button another way, or not at all (null). */
   renderAction?: (id: ComposerActionId, standard: ReactNode) => ReactNode;
-  /** Open the model menu at first (the gallery's still frame of it). */
-  initialMenuOpen?: boolean;
+  /** Open a menu at first (the gallery's still frame of it). */
+  initialMenu?: "model" | "level";
 }

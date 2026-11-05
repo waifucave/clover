@@ -1,17 +1,22 @@
-/* The composer. Every colour, face and type size is a theme token (`--clover-*`, listed in
-   tokens.ts). A composer several tabs share takes each tab's tokens (spec §5.5). */
+/* The composer. Every colour, face and size is a theme token from lane B's catalog (`--clover-*`,
+   listed in tokens.ts). A composer several tabs share takes each tab's tokens (spec §5.5).
+
+   Nothing here leaves the part: menus open in the flow above the box, never over the conversation,
+   and the box casts no shadow onto it (review item 1). */
 
 .cl-composer {
-  position: relative;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
   width: 100%;
-  max-width: 760px;
+  max-width: 800px;
   margin: 0 auto;
-  padding: 0 24px 16px;
-  color: var(--clover-color-text);
-  font-family: var(--clover-font-body);
-  font-size: var(--clover-text-body);
-  line-height: var(--clover-line-body);
+  padding: 0 var(--clover-space-xl) var(--clover-space-m);
+  color: var(--clover-composer-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+  line-height: var(--clover-font-line-body);
 }
 
 .cl-composer button {
@@ -23,25 +28,37 @@
   outline-offset: 2px;
 }
 
-.cl-composer__card {
+/* The box: attachments, then the row of + / text / microphone / send. */
+.cl-composer__box {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 10px 8px 14px;
-  border: 1px solid var(--clover-color-composer-rim);
-  border-radius: var(--clover-radius-composer);
-  background: var(--clover-color-composer);
-  box-shadow: 0 2px 12px var(--clover-color-shadow);
+  gap: var(--clover-space-s);
+  padding: var(--clover-space-s);
+  border: 1px solid var(--clover-composer-rim);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-composer-background);
+}
+
+/* The field shows its focus on the box around it. */
+.cl-composer__box:focus-within {
+  border-color: var(--clover-color-focus);
+}
+
+.cl-composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--clover-space-xs);
 }
 
 .cl-composer__field {
   box-sizing: border-box;
-  width: 100%;
-  min-height: 24px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
   max-height: 240px;
   margin: 0;
-  padding: 4px 0;
+  padding: 5px var(--clover-space-xs);
   overflow-y: auto;
   border: none;
   outline: none;
@@ -56,24 +73,10 @@
 }
 
 .cl-composer__field::placeholder {
-  color: var(--clover-color-text-placeholder);
+  color: var(--clover-composer-placeholder);
 }
 
-.cl-composer[data-listening] .cl-composer__field::placeholder {
-  color: var(--clover-color-text-secondary);
-}
-
-.cl-composer__bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.cl-composer__spacer {
-  flex: 1;
-}
-
-.cl-composer__button {
+.cl-composer__icon-button {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -82,97 +85,157 @@
   height: 32px;
   padding: 0;
   border: none;
-  border-radius: var(--clover-radius-pill);
-  background: var(--clover-color-control);
-  color: var(--clover-color-text);
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
   cursor: pointer;
 }
 
-.cl-composer__button:hover {
+.cl-composer__icon-button:hover {
   background: var(--clover-color-hover);
+  color: var(--clover-color-text);
 }
 
-.cl-composer__primary,
-.cl-composer__primary:hover {
-  background: var(--clover-color-strong);
-  color: var(--clover-color-on-strong);
+.cl-composer__voice[aria-pressed="true"] {
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
 }
 
-.cl-composer__primary:disabled {
+/* Send: an arrow on the accent, round. */
+.cl-composer__send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent);
+  color: var(--clover-color-accent-contrast);
+  cursor: pointer;
+}
+
+.cl-composer__send:disabled {
   background: var(--clover-color-control);
-  color: var(--clover-color-text-muted);
+  color: var(--clover-color-text-placeholder);
   cursor: default;
 }
 
-.cl-composer__voice[aria-pressed="true"],
-.cl-composer__voice[aria-pressed="true"]:hover {
-  background: var(--clover-color-accent);
-  color: var(--clover-color-on-accent);
-}
-
-.cl-composer[data-listening] .cl-composer__voice .cl-composer-icon {
-  animation: cl-composer-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes cl-composer-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
-.cl-composer__model {
+/* Stop: a square on the control colour, with a rim. Never mistaken for Send. */
+.cl-composer__stop {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 32px;
   height: 32px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--clover-radius-pill);
-  background: transparent;
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-small);
+  padding: 0;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
   cursor: pointer;
 }
 
-.cl-composer__model:hover,
-.cl-composer__model[aria-expanded="true"] {
+.cl-composer__stop:hover {
+  background: var(--clover-color-hover);
+}
+
+/* Beneath the box: the approval level at the start, the model at the end. */
+.cl-composer__under {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  padding: 0 var(--clover-space-xs);
+}
+
+.cl-composer__spacer {
+  flex: 1 1 auto;
+}
+
+.cl-composer__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+  cursor: pointer;
+}
+
+.cl-composer__pill:hover,
+.cl-composer__pill[aria-expanded="true"] {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);
 }
 
-.cl-composer__model-effort {
+.cl-composer__pill:disabled {
+  cursor: default;
+}
+
+.cl-composer__pill-label {
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-composer__pill-detail {
   color: var(--clover-color-text-muted);
 }
 
+.cl-composer__pill[data-level="automatic"] .cl-composer__pill-label {
+  color: var(--clover-color-attention-text);
+}
+
+/* A menu: in the flow, above the box, lined up with its pill. */
 .cl-composer__menu {
-  position: absolute;
-  right: 8px;
-  bottom: calc(100% + 6px);
-  z-index: 10;
   box-sizing: border-box;
-  min-width: 270px;
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  width: min(100%, 320px);
+  padding: var(--clover-space-xs);
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-card);
-  background: var(--clover-color-floating);
-  box-shadow: 0 8px 28px var(--clover-color-shadow);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-float);
+}
+
+.cl-composer__menu[data-side="end"] {
+  align-self: flex-end;
+}
+
+.cl-composer__menu[data-side="start"] {
+  align-self: flex-start;
+}
+
+.cl-composer__menu-section + .cl-composer__menu-section {
+  padding-top: var(--clover-space-xs);
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+.cl-composer__menu-title {
+  padding: var(--clover-space-xs) var(--clover-space-s) 2px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-composer__menu-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px 1fr;
   align-items: center;
-  gap: 8px;
+  column-gap: var(--clover-space-xs);
   width: 100%;
-  padding: 7px 8px;
+  padding: 6px var(--clover-space-s);
   border: none;
-  border-radius: var(--clover-radius-control);
-  background: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
   color: var(--clover-color-text);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   text-align: left;
   cursor: pointer;
 }
@@ -180,57 +243,20 @@
 .cl-composer__menu-item:hover,
 .cl-composer__menu-item:focus-visible {
   background: var(--clover-color-hover);
-  outline: none;
-}
-
-.cl-composer__menu-item[aria-checked="true"] {
-  font-weight: 600;
 }
 
 .cl-composer__menu-check {
   display: inline-flex;
-  width: 14px;
+  color: var(--clover-color-accent-text);
 }
 
 .cl-composer__menu-detail {
-  margin-left: auto;
+  grid-column: 2;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
-  font-weight: 400;
+  font-size: var(--clover-font-size-caption);
 }
 
-.cl-composer__menu-title {
-  margin-top: 4px;
-  padding: 6px 8px 4px;
-  border-top: 1px solid var(--clover-color-hairline-raised);
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
-  font-weight: 600;
-}
-
-.cl-composer__efforts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 8px 6px;
-}
-
-.cl-composer__effort {
-  padding: 3px 10px;
-  border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-pill);
-  background: none;
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-caption);
-  cursor: pointer;
-}
-
-.cl-composer__effort[aria-checked="true"] {
-  border-color: var(--clover-color-accent);
-  background: var(--clover-color-selected);
-  color: var(--clover-color-text);
-}
-
+/* Attachments ride above the text. */
 .cl-composer__attachments {
   display: flex;
   flex-wrap: wrap;
@@ -245,16 +271,17 @@
   align-items: center;
   gap: 6px;
   max-width: 220px;
-  padding: 4px 4px 4px 6px;
-  border-radius: var(--clover-radius-control);
-  background: var(--clover-color-control);
-  font-size: var(--clover-text-small);
+  padding: var(--clover-space-xs) 6px var(--clover-space-xs) var(--clover-space-xs);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-composer__thumb {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--clover-radius-small);
   object-fit: cover;
 }
 
@@ -267,14 +294,13 @@
 
 .cl-composer__remove {
   display: inline-flex;
-  flex: none;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: var(--clover-radius-pill);
+  border-radius: var(--clover-radius-round);
   background: transparent;
   color: var(--clover-color-text-muted);
   cursor: pointer;
@@ -287,22 +313,10 @@
 
 .cl-composer__error {
   color: var(--clover-color-danger);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-control);
 }
 
-.cl-composer__note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 4px 0;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
-}
-
-.cl-composer__note[data-kind="asleep"] {
-  color: var(--clover-color-text-secondary);
-}
-
+/* While files are dragged over, the box says it takes them. Inside the box, never beyond it. */
 .cl-composer__drop {
   position: absolute;
   inset: 0;
@@ -310,21 +324,31 @@
   align-items: center;
   justify-content: center;
   border: 2px dashed var(--clover-color-accent);
-  border-radius: inherit;
-  background: var(--clover-color-composer);
-  color: var(--clover-color-text);
-  font-weight: 600;
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-composer__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--clover-space-s);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__note[data-kind="asleep"] {
+  color: var(--clover-color-attention-text);
 }
 
 .cl-composer-icon {
   flex: none;
-  display: inline-block;
-  vertical-align: middle;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .cl-composer * {
-    animation: none !important;
-    transition: none !important;
+    transition: none;
   }
 }

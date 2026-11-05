@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { Composer } from "../client/Composer";
 import type { ComposerAttachment, ComposerProps } from "../client/types";
-import { ATTACHMENTS, MODELS } from "../gallery/stories";
+import { ATTACHMENTS, LEVEL, MODELS } from "../gallery/stories";
 
 afterEach(cleanup);
 
@@ -68,6 +68,14 @@ describe("writing and sending", () => {
     }
     expect(calledDuringDispatch).toBe(true);
     expect(onSend).toHaveBeenCalledWith({ text: "now", attachments: ATTACHMENTS });
+  });
+
+  test("a held Enter sends once: its repeats send nothing", () => {
+    const { field, onSend } = setup({ value: "hello" });
+    fireEvent.keyDown(field, { key: "Enter" });
+    fireEvent.keyDown(field, { key: "Enter", repeat: true });
+    fireEvent.keyDown(field, { key: "Enter", repeat: true });
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   test("Shift+Enter and an input method's Enter do not send", () => {
@@ -144,33 +152,80 @@ describe("attachments", () => {
     expect(onAddFiles).toHaveBeenCalledWith([file]);
     fireEvent.paste(field, { clipboardData: { files: [], types: ["text/plain"] } });
     expect(onAddFiles).toHaveBeenCalledTimes(1);
+    // Text pasted together with an image still lands in the field: only the file goes to the host.
+    const both = createEvent.paste(field, {
+      clipboardData: { files: [file], types: ["Files", "text/plain"], getData: (t: string) => (t === "text/plain" ? "the caption" : "") },
+    });
+    fireEvent(field, both);
+    expect(onAddFiles).toHaveBeenCalledTimes(2);
+    expect(both.defaultPrevented).toBe(false);
     const root = container.querySelector(".cl-composer") as HTMLElement;
     fireEvent.dragEnter(root, { dataTransfer: { types: ["Files"], files: [] } });
     expect(screen.getByText("Drop files to attach them")).toBeTruthy();
     fireEvent.drop(root, { dataTransfer: { types: ["Files"], files: [file] } });
-    expect(onAddFiles).toHaveBeenCalledTimes(2);
+    expect(onAddFiles).toHaveBeenCalledTimes(3);
     expect(screen.queryByText("Drop files to attach them")).toBeNull();
   });
 });
 
 describe("model, voice and actions", () => {
-  test("the model pill opens a menu; a model or an effort reaches the host", () => {
+  test("the model pill opens a menu; a model or an effort reaches the host, and focus comes back", () => {
     const onChange = mock((_c: { model: string; effort?: string }) => undefined);
     setup({ model: { ...MODELS, onChange } });
-    const pill = screen.getByRole("button", { name: "Model: Opus 5.5" });
-    expect(pill.textContent).toContain("medium");
+    const pill = screen.getByRole("button", { name: "Model: Opus 5.5, medium" });
     fireEvent.click(pill);
     expect(pill.getAttribute("aria-expanded")).toBe("true");
     const menu = screen.getByRole("menu", { name: "Model and effort" });
-    expect(screen.getByRole("menuitemradio", { name: /Opus 5.5/ }).getAttribute("aria-checked")).toBe("true");
+    // Focus starts on the checked model; arrow keys move through every item.
+    expect(document.activeElement?.textContent).toContain("Opus 5.5");
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement?.textContent).toContain("Sonnet 5");
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(document.activeElement?.textContent).toBe("max");
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement?.textContent).toContain("Opus 5.5");
     fireEvent.click(screen.getByRole("menuitemradio", { name: "high" }));
     expect(onChange).toHaveBeenCalledWith({ model: "anthropic/opus-5.5", effort: "high" });
+    expect(menu.isConnected).toBe(false);
+    expect(document.activeElement).toBe(pill);
+    fireEvent.click(pill);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Sonnet 5/ }));
     expect(onChange).toHaveBeenLastCalledWith({ model: "anthropic/sonnet-5", effort: "medium" });
-    expect(menu.isConnected).toBe(false);
     fireEvent.click(pill);
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(pill);
+  });
+
+  test("the level pill offers Clover's five levels; a pick reaches the host", () => {
+    const onChange = mock((_l: string) => undefined);
+    setup({ level: { ...LEVEL, onChange } });
+    fireEvent.click(screen.getByRole("button", { name: "Approval level: Ask when risky" }));
+    const items = screen.getAllByRole("menuitemradio");
+    expect(items.map((i) => i.querySelector(".cl-composer__menu-label")?.textContent)).toEqual([
+      "Read only", "Ask first", "Ask when risky", "Accept edits", "Fully automatic",
+    ]);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Accept edits/ }));
+    expect(onChange).toHaveBeenCalledWith("accept-edits");
+  });
+
+  test("a card arriving closes the menu, and the pills wait while it is pending (review item 1)", () => {
+    const props = { botName: "Alpha", value: "", onChange: () => undefined, onSend: () => undefined, model: MODELS, level: LEVEL };
+    const { rerender } = render(<Composer {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    rerender(<Composer {...props} cardPending />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect((screen.getByRole("button", { name: /^Model:/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /^Approval level:/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("Send and Stop never look alike", () => {
+    setup({ value: "and use staging", running: true, onStop: () => undefined });
+    const send = screen.getByRole("button", { name: "Send" });
+    const stop = screen.getByRole("button", { name: "Stop" });
+    expect(send.className).toBe("cl-composer__send");
+    expect(stop.className).toBe("cl-composer__stop");
   });
 
   test("push-to-talk: press starts, release ends, by pointer or keyboard; listening locks the field", () => {
@@ -189,6 +244,33 @@ describe("model, voice and actions", () => {
     expect(field.readOnly).toBe(true);
     expect(field.placeholder).toBe("Listening… release to stop");
     expect(screen.getByRole("button", { name: "Hold to talk" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("push-to-talk never sticks on: blur, a lost pointer, a hidden or unfocused window, or unmounting end it (review item 7)", () => {
+    const onPressStart = mock(() => undefined);
+    const onPressEnd = mock(() => undefined);
+    const { unmount } = render(<Composer botName="Alpha" value="" onChange={() => undefined} onSend={() => undefined} voice={{ listening: false, onPressStart, onPressEnd }} />);
+    const mic = screen.getByRole("button", { name: "Hold to talk" });
+    // Only the primary button holds.
+    fireEvent.pointerDown(mic, { pointerId: 1, button: 2 });
+    expect(onPressStart).toHaveBeenCalledTimes(0);
+    const ends: [string, () => void][] = [
+      ["blur", () => fireEvent.blur(mic)],
+      ["lost capture", () => fireEvent(mic, new Event("lostpointercapture", { bubbles: true }))],
+      ["window blur", () => window.dispatchEvent(new Event("blur"))],
+    ];
+    for (const [, end] of ends) {
+      fireEvent.pointerDown(mic, { pointerId: 1, button: 0 });
+      end();
+    }
+    expect(onPressStart).toHaveBeenCalledTimes(3);
+    expect(onPressEnd).toHaveBeenCalledTimes(3);
+    // A second press while held starts nothing new; an end with nothing held ends nothing.
+    fireEvent.pointerDown(mic, { pointerId: 1, button: 0 });
+    fireEvent.pointerDown(mic, { pointerId: 1, button: 0 });
+    expect(onPressStart).toHaveBeenCalledTimes(4);
+    unmount();
+    expect(onPressEnd).toHaveBeenCalledTimes(4);
   });
 
   test("composer.action: a plugin replaces one button and hides another", () => {

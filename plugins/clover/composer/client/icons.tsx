@@ -30,3 +30,4 @@ export const IconFile = () => (<Svg><path d="M4.5 2.5h4.5l2.5 2.5v8.5h-7z" /><pa
 export const IconChevronDown = () => (<Svg size={12}><path d="M4 6l4 4 4-4" /></Svg>);
 export const IconCheck = () => (<Svg size={14}><path d="M3.5 8.5l3 3 6-7" /></Svg>);
 export const IconMoon = () => (<Svg><path d="M12.5 9.5A5 5 0 0 1 6.5 3.5a5 5 0 1 0 6 6z" /></Svg>);
+export const IconShield = () => (<Svg size={14}><path d="M8 2.5l4.5 1.8v3.4c0 2.8-1.9 4.9-4.5 5.8-2.6-.9-4.5-3-4.5-5.8V4.3L8 2.5z" /></Svg>);

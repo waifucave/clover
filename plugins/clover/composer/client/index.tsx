@@ -2,6 +2,7 @@
 import "./styles.css";
 
 export { Composer, MAX_ATTACHMENTS, MAX_FIELD_HEIGHT } from "./Composer";
+export { CLOVER_LEVELS, DEFAULT_LEVEL } from "./levels";
 export { canSend, keyAction } from "./keys";
 export type { KeyAction, KeyInfo } from "./keys";
 export { TOKENS } from "./tokens";

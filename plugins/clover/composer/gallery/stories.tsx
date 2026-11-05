@@ -1,7 +1,8 @@
 // Every composer state the gallery shows.
 import { useState, type ReactNode } from "react";
 import { Composer } from "../client/Composer";
-import type { ComposerAttachment, ComposerModelChoice, ComposerProps } from "../client/types";
+import { CLOVER_LEVELS, DEFAULT_LEVEL } from "../client/levels";
+import type { ComposerAttachment, ComposerLevel, ComposerModelChoice, ComposerProps } from "../client/types";
 import type { Story } from "./story";
 
 const noop = () => undefined;
@@ -18,6 +19,8 @@ export const MODELS: ComposerModelChoice = {
   efforts: ["low", "medium", "high", "max"],
   onChange: noop,
 };
+
+export const LEVEL: ComposerLevel = { level: DEFAULT_LEVEL, levels: CLOVER_LEVELS, onChange: noop };
 
 function swatch(a: string, b: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="56" height="56" fill="url(#g)"/></svg>`;
@@ -45,6 +48,7 @@ function Demo(props: Partial<ComposerProps> & { initial?: string }) {
       onAddFiles={noop}
       onStop={noop}
       model={MODELS}
+      level={LEVEL}
       voice={{ listening: false, onPressStart: noop, onPressEnd: noop }}
       {...props}
       attachments={attachments}
@@ -84,13 +88,28 @@ export const stories: Story[] = [
   {
     id: "composer/model-menu",
     title: "Picking the model and effort",
-    notes: "The next turn uses the choice.",
-    height: 340,
+    notes: "The menu opens inside the composer, above the box: it never lies over the conversation, where a card's buttons may sit. The next turn uses the choice.",
     render: () => (
       <Bottom>
-        <Demo initialMenuOpen />
+        <Demo initialMenu="model" />
       </Bottom>
     ),
+  },
+  {
+    id: "composer/level-menu",
+    title: "Picking the approval level",
+    notes: "Clover's five levels (spec §9.1), ask-when-risky the default.",
+    render: () => (
+      <Bottom>
+        <Demo initialMenu="level" />
+      </Bottom>
+    ),
+  },
+  {
+    id: "composer/card-pending",
+    title: "While a card waits",
+    notes: "With a sealed card in the conversation, the pills wait and no menu opens.",
+    render: () => <Demo cardPending running initial="" />,
   },
   {
     id: "composer/listening",
@@ -99,9 +118,9 @@ export const stories: Story[] = [
   },
   {
     id: "composer/minimal",
-    title: "With no attach, model or voice",
+    title: "With no attach, model, level or voice",
     notes: "A bot with no voice plugin, in a host that offers nothing else.",
-    render: () => <Demo model={undefined} voice={undefined} onAttach={undefined} />,
+    render: () => <Demo model={undefined} level={undefined} voice={undefined} onAttach={undefined} />,
   },
   {
     id: "composer/replaced-action",
