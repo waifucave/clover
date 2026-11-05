@@ -90,7 +90,8 @@ export const TerminalId = utf16(128, 1).regex(/^[A-Za-z0-9._:-]+$/);
 /** The most one `terminal.write` carries, in UTF-16 code units; a longer paste goes in pieces. */
 export const TERMINAL_WRITE_MAX = 1_000_000;
 /** What a peer's tree call carries (review N2), as `tool.run` does: the calling session, the calling computer's level
- *  for it, and a signed answer bound to this call where the stricter level asks. A layer's call leaves them out. */
+ *  for it, and a signed answer bound to this call where the stricter level asks. A layer's call leaves them out; a
+ *  receiver refuses a peer's write, remove or move that leaves out `level` (`invalid`). */
 const ViaPeer = {
   session: SessionId.optional(),
   level: Level.optional(),
@@ -196,10 +197,11 @@ export const COMPUTERS_METHODS = {
     doc: "Cancels a running call; if the link is down, the holding computer stops it when the link returns (§6.4).",
   }),
 
-  // Terminals (lane F's request; lane J's PTY): the user's own terminals in the panel. A plugin needs `terminal`,
-  // whose OK says it runs commands on the user's computers. Input counts only from the user's real key presses in the
-  // terminal's component, as a send does: the UI runtime (lane E) passes a `write` only from a trusted key or paste
-  // event in that component's own layer, never from its code.
+  // Terminals (lane F's request; lane J's PTY): the user's own terminals in the panel. A layer needs `terminal`, which
+  // only the bundled `clover` tree holds (review T1; the SDK's `mayHoldCapability`), and whose OK says it runs commands
+  // on the user's computers. What a `write` carries is what lane E's runtime derived from trusted input events in the
+  // terminal panel (a key press's bytes; a paste through the paste door, which brackets it and asks before one of more
+  // than one line): the daemon can't check that, which is why no other plugin may hold `terminal`.
   terminalOpen: defineMethod({
     name: "terminal.open", owner: "J", roles: ["app", "layer"], capability: "terminal",
     params: z.object({
@@ -212,20 +214,19 @@ export const COMPUTERS_METHODS = {
       rows: z.number().int().min(1).max(1000),
     }),
     result: z.object({ terminalId: TerminalId }),
-    doc: "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`.",
+    doc: "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`. A computer at read-only never opens one for a plugin (`refused`).",
   }),
   terminalWrite: defineMethod({
     name: "terminal.write", owner: "J", roles: ["app", "layer"], capability: "terminal",
     params: z.object({
       terminalId: TerminalId,
       data: utf16(TERMINAL_WRITE_MAX),
-      /** A paste, whole, from a real paste event (never typed through as keys). The core wraps it in bracketed-paste
-       *  markers when the program turned them on (`ESC[200~` … `ESC[201~`), and a paste of more than one line waits
-       *  for the user's OK on a card first; a deny drops it. */
+      /** A paste, whole, through the paste door: already bracketed (`ESC[200~` … `ESC[201~`) when the program turned
+       *  bracketed paste on, and confirmed by the user when it holds more than one line. */
       paste: z.boolean().optional(),
     }),
     result: Ok,
-    doc: "The user's key presses, or a paste, into a terminal.",
+    doc: "What lane E's runtime derived from the user's key presses or a paste in the terminal panel.",
   }),
   terminalResize: defineMethod({
     name: "terminal.resize", owner: "J", roles: ["app", "layer"], capability: "terminal",

@@ -1,7 +1,7 @@
 // The capability catalog (spec §5.4 "Capabilities", §5.6). Each capability gates a fixed set of plugin-API calls and
 // live events (`api-calls.ts`); without it, those calls don't exist for that plugin. Capabilities gate the plugin API
 // only: they are not containment (§5.6 "The guards"). Versioned with `engines.clover`.
-import { isPluginId } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, isPluginId } from "@waifucave/clover-protocol";
 
 export interface CapabilityInfo {
   /** The name as a manifest lists it; `call:` and `network:` take an argument. */
@@ -12,6 +12,9 @@ export interface CapabilityInfo {
   readonly ok: string;
   /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "can hear your microphone"). */
   readonly warns: boolean;
+  /** Only the bundled `clover` tree may hold it, as only its process may use `keys.*`: the validator refuses it for any
+   *  other plugin, and the core never grants it to one (`mayHoldCapability`). */
+  readonly bundledOnly?: true;
 }
 
 export const CAPABILITIES: readonly CapabilityInfo[] = [
@@ -27,8 +30,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "approvals", lets: "Hear which cards are pending, never their text, and place their sealed frames", ok: "restyles approval cards", warns: true },
   { name: "files", lets: "Read and write files through the folder tree, inside the fence", ok: "reads and writes files on your computers", warns: false },
   { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false },
-  /** Not in §5.4's table: lane F's request for the terminal panel. */
-  { name: "terminal", lets: "Open terminals on your computers and pass them the user's own key presses and pastes: a paste of several lines asks first", ok: "runs commands on your computers", warns: true },
+  /** Not in §5.4's table: lane F's request for the terminal panel. The bundled `clover` tree only (the controller's
+   *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
+  { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
@@ -36,6 +40,14 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   { name: "network:<host>", lets: "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host", ok: "connects to {host}", warns: false },
 ];
+
+/** Whether a plugin may hold a capability at all: a `bundledOnly` one only in the bundled `clover` tree, which the core
+ *  decides from the install record (`source: "bundled"`, top-level id `clover`), never from the manifest. */
+export function mayHoldCapability(capability: string, plugin: { id: string; source: string }): boolean {
+  if (!CAPABILITIES.find((c) => c.name === capability)?.bundledOnly) return true;
+  const top = plugin.id.includes("/") ? plugin.id.slice(0, plugin.id.indexOf("/")) : plugin.id;
+  return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN;
+}
 
 /** The capabilities that take no argument. */
 export const FIXED_CAPABILITIES: readonly string[] = CAPABILITIES.map((c) => c.name).filter((n) => !n.includes("<"));
