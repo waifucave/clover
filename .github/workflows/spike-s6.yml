@@ -5,7 +5,8 @@ name: Spike S6 · folder-tree mounts
 # Runs on pushes to the lane branch only; results land as artifacts and in the job summaries.
 # A push whose head commit message says [s6-skip-speed] skips the hour-long Linux and Windows
 # speed suites (for pushes that change nothing they measure); [s6-skip-<suite>] or
-# [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs.
+# [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs,
+# and [s6-skip-nfs-speed] or [s6-skip-nfs-plain] all or the plain half of the NFS speed step.
 on:
   push:
     branches: [lane/j-m0]

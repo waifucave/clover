@@ -16,7 +16,7 @@ mount against local disk; failing fast when the computer drops.
 | `bench/tables.ts` | renders the report's tables from `results/` |
 | `ci/prepare.sh` | makes "the other computer's home": a clone of this repo with `node_modules` |
 | `ci/macfuse.sh` | CI only, on a disposable macOS runner: installs macFUSE and turns its FSKit module on by hand |
-| `ci/windows-git.ps1` | CI only: Git for Windows and Git Bash inside the tree, three layouts |
+| `ci/windows-git.ps1` | CI only: Git for Windows and Git Bash inside the tree, four layouts |
 | `results/` | the numbers from CI, as JSON |
 
 No `package.json` here on purpose: `spikes/*` is a workspace glob, so one would join the root
@@ -51,8 +51,9 @@ bun spikes/s6-mounts/bench/tables.ts spikes/s6-mounts/results
 
 macOS over NFS (no extension): build `clover-nfs` (`GOOS=darwin CGO_ENABLED=0 go build -o /tmp/s6/clover-nfs ./cmd/clover-nfs`)
 and pass `--helper none --nfs-helper /tmp/s6/clover-nfs` to `coherence.ts`, `failfast.ts` or
-`speed.ts`. The rig mounts with `mount_nfs` as the user, and falls back to `sudo` if that fails
-(it records which in the results).
+`speed.ts`, with `--policies cached --nfs-ac noac` for the setup the report proposes (the
+kernel's attribute cache off, the helper's event-fed cache in front). The rig mounts with
+`mount_nfs` as the user, and falls back to `sudo` if that fails (it records which in the results).
 
 macOS, FSKit: CI builds the module and stops at "Module … is disabled!" (it cannot be turned on
 without System Settings, and an ad-hoc signature can't carry its entitlement). CI reaches FSKit
@@ -69,4 +70,6 @@ check with the short-read guard on and off, the speed matrix and the fail-fast s
 FSKit volume, then the NFS loopback checks (asking whether a dead helper made macOS show a
 dialog), and removes the app again.
 
-The CI workflow is `.github/workflows/spike-s6.yml`; every push to `lane/j-m0` runs it.
+The CI workflow is `.github/workflows/spike-s6.yml`; every push to `lane/j-m0` runs it. Tags in
+the commit message, such as `[s6-skip-speed]` or `[s6-skip-macos]`, skip the suites a push
+doesn't need (the workflow's header lists them).

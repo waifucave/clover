@@ -1,0 +1,173 @@
+{
+  "spike": "S6",
+  "question": "coherence",
+  "machine": {
+    "os": "darwin",
+    "release": "25.6.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14"
+  },
+  "started": "2026-11-05T02:43:03.627Z",
+  "results": [
+    {
+      "label": "nfs cached, noac",
+      "statOnlyBefore": {
+        "shrink": 200,
+        "grow": 46
+      },
+      "statOnlyShrunkRead": {
+        "ok": true,
+        "length": 200,
+        "bytes": {
+          "B": 46,
+          "·": 154
+        },
+        "head": [
+          66,
+          66,
+          66,
+          66,
+          66,
+          66,
+          66,
+          66
+        ],
+        "tail": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "statOnlyShrinkVerdict": "WRONG: 46 'B' then 154 bytes the holder never sent",
+      "statOnlyGrownRead": {
+        "ok": true,
+        "length": 46,
+        "bytes": {
+          "C": 46
+        },
+        "head": [
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67
+        ],
+        "tail": [
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67
+        ]
+      },
+      "statOnlyGrowVerdict": "stale: 46 bytes {\"C\":46}",
+      "before": {
+        "stat": 200,
+        "read": {
+          "ok": true,
+          "length": 200,
+          "bytes": {
+            "A": 200
+          },
+          "head": [
+            65,
+            65,
+            65,
+            65,
+            65,
+            65,
+            65,
+            65
+          ],
+          "tail": [
+            65,
+            65,
+            65,
+            65,
+            65,
+            65,
+            65,
+            65
+          ]
+        }
+      },
+      "shrunkStatAtOnce": 200,
+      "shrunkRead": {
+        "ok": true,
+        "length": 200,
+        "bytes": {
+          "A": 200
+        },
+        "head": [
+          65,
+          65,
+          65,
+          65,
+          65,
+          65,
+          65,
+          65
+        ],
+        "tail": [
+          65,
+          65,
+          65,
+          65,
+          65,
+          65,
+          65,
+          65
+        ]
+      },
+      "shrinkVerdict": "old version: 200 'A' (stale, but bytes the holder sent)",
+      "sizeFreshAfterMs": 29,
+      "grownRead": {
+        "ok": true,
+        "length": 46,
+        "bytes": {
+          "C": 46
+        },
+        "head": [
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67
+        ],
+        "tail": [
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67,
+          67
+        ]
+      },
+      "growVerdict": "stale: 46 bytes {\"C\":46}",
+      "grownFreshAfterMs": 57,
+      "missingFirst": "ENOENT",
+      "newNameVisibleAfterMs": 30,
+      "deletedGoneAfterMs": 55
+    }
+  ],
+  "finished": "2026-11-05T02:43:04.766Z"
+}

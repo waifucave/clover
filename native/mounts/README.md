@@ -42,8 +42,8 @@ clover-mount --mountpoint /run/user/$UID/clover --self Me=$HOME \
              --remote Desktop1=127.0.0.1:7400 --policy cached                    # Linux
 clover-mount.exe --mountpoint T: --self Me=%USERPROFILE% --remote Desktop1=127.0.0.1:7400   # Windows, one drive
 clover-mount.exe --mountpoint C:\tree\home\Desktop1 --single --remote Desktop1=127.0.0.1:7400  # Windows, folder layout
-clover-nfs --listen 127.0.0.1:12049 --remote Desktop1=127.0.0.1:7400 --policy plain        # macOS, then:
-mount_nfs -o vers=3,tcp,port=12049,mountport=12049,nolocks,locallocks,soft,intr,timeo=10,retrans=2,noresvport,nobrowse,actimeo=1 127.0.0.1:/ ~/tree/home/Desktop1
+clover-nfs --listen 127.0.0.1:12049 --remote Desktop1=127.0.0.1:7400 --policy cached       # macOS, then, as the user:
+mount_nfs -o vers=3,tcp,port=12049,mountport=12049,nolocks,locallocks,soft,intr,timeo=10,retrans=2,deadtimeout=5,noresvport,nobrowse,noac 127.0.0.1:/ ~/tree/home/Desktop1
 mount -F -t clovertree clovertree://127.0.0.1:7400/Desktop1 ~/clover-tree        # macOS FSKit, once enabled
 ```
 
