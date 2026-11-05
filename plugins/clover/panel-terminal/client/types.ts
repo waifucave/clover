@@ -1,7 +1,8 @@
 // The terminal panel's props: a terminal over a PTY feed. The feed's shape is a request to lane B (a
-// `terminal` API beside `files`): the core runs the PTY on the session's computer and hands the view
-// its output as text with styles, and takes the user's input. Until B pins it, the host passes the
-// output it has (`chunks`) and gets the user's input (`onInput`).
+// `terminal` capability beside `files`, with an OK that says it runs commands on a computer, and input
+// that counts only from real key presses, like a send): the core runs the PTY on the chosen computer
+// (lane J) and hands the view its output as text with styles. Until B pins it, the host passes the
+// output it has (`chunks`) and gets the user's keys (`onInput`) and pastes (`onPaste`) apart.
 
 /** A run of output in one style. ANSI colours arrive already parsed into these. */
 export interface TerminalChunk {
@@ -21,8 +22,17 @@ export interface TerminalPanelProps {
   active: string;
   /** The active terminal's output so far. */
   chunks: TerminalChunk[];
-  /** What the user typed, as the bytes a terminal sends (`\r` for Enter, `\x03` for Ctrl+C). */
+  /** What the user typed, key by key, as the bytes a terminal sends (`\r` for Enter, `\x03` for Ctrl+C). */
   onInput?: (data: string) => void;
+  /** What the user pasted, whole: the host brackets it for the shell, and asks before a paste of several
+   *  lines runs. Without it, a paste does nothing. */
+  onPaste?: (text: string) => void;
+}
+
+/** The tabs, in the panel's header. */
+export interface TerminalTabsProps {
+  tabs: TerminalTab[];
+  active: string;
   onSelect?: (id: string) => void;
   onNew?: () => void;
   onClose?: (id: string) => void;

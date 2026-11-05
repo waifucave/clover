@@ -5,4 +5,5 @@ export const S = {
   close: (title: string) => `Close ${title}`,
   output: (title: string) => `${title} output`,
   exited: (code: number) => `Exited with code ${code}`,
+  leaveHint: "The terminal keeps Tab. F6 leaves it.",
 };

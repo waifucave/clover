@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { keyToData } from "../client/keys";
-import { TerminalPanel } from "../client/TerminalPanel";
+import { TerminalPanel, TerminalTabs } from "../client/TerminalPanel";
 import { FEED, TABS } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -21,7 +21,7 @@ describe("the terminal panel", () => {
     expect(container.querySelector(".cl-term__cursor")).toBeNull();
   });
 
-  test("keys go to the PTY as the bytes a terminal sends; paste goes as text", () => {
+  test("keys go to the PTY as the bytes a terminal sends", () => {
     const onInput = mock((_d: string) => undefined);
     render(<TerminalPanel tabs={TABS} active="t1" chunks={FEED} onInput={onInput} />);
     const log = screen.getByRole("log");
@@ -32,15 +32,49 @@ describe("the terminal panel", () => {
     fireEvent.keyDown(log, { key: "ArrowUp" });
     fireEvent.keyDown(log, { key: "c", metaKey: true });
     expect(onInput.mock.calls.map((c) => c[0])).toEqual(["l", "s", "\r", "\x03", "\x1b[A"]);
-    fireEvent.paste(log, { clipboardData: { getData: () => "git status" } });
-    expect(onInput).toHaveBeenLastCalledWith("git status");
+  });
+
+  test("a paste has its own door, whole, so the host can bracket it and ask before several lines run (review SF2)", () => {
+    const onInput = mock((_d: string) => undefined);
+    const onPaste = mock((_t: string) => undefined);
+    const { rerender } = render(<TerminalPanel tabs={TABS} active="t1" chunks={FEED} onInput={onInput} onPaste={onPaste} />);
+    const log = screen.getByRole("log");
+    fireEvent.paste(log, { clipboardData: { getData: () => "rm -rf build\nbun run build\n" } });
+    expect(onPaste).toHaveBeenCalledWith("rm -rf build\nbun run build\n");
+    expect(onInput).not.toHaveBeenCalled();
+    // Without the paste door, a paste goes nowhere: never into the shell as keys.
+    rerender(<TerminalPanel tabs={TABS} active="t1" chunks={FEED} onInput={onInput} />);
+    fireEvent.paste(screen.getByRole("log"), { clipboardData: { getData: () => "echo hi\n" } });
+    expect(onInput).not.toHaveBeenCalled();
+  });
+
+  test("Tab stays the shell's; F6 leaves the terminal and Shift+F6 goes back, and the terminal says so (WCAG 2.1.2)", () => {
+    const onInput = mock((_d: string) => undefined);
+    render(
+      <div>
+        <button type="button">Before</button>
+        <TerminalPanel tabs={TABS} active="t1" chunks={FEED} onInput={onInput} />
+        <button type="button">After</button>
+      </div>,
+    );
+    const log = screen.getByRole("log");
+    log.focus();
+    fireEvent.keyDown(log, { key: "Tab" });
+    expect(onInput).toHaveBeenLastCalledWith("\t");
+    expect(document.activeElement).toBe(log);
+    fireEvent.keyDown(log, { key: "F6" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "After" }));
+    log.focus();
+    fireEvent.keyDown(log, { key: "F6", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Before" }));
+    expect(document.getElementById(log.getAttribute("aria-describedby")!)?.textContent).toBe("The terminal keeps Tab. F6 leaves it.");
   });
 
   test("tabs switch, close and open", () => {
     const onSelect = mock((_id: string) => undefined);
     const onClose = mock((_id: string) => undefined);
     const onNew = mock(() => undefined);
-    render(<TerminalPanel tabs={TABS} active="t1" chunks={[]} onSelect={onSelect} onClose={onClose} onNew={onNew} />);
+    render(<TerminalTabs tabs={TABS} active="t1" onSelect={onSelect} onClose={onClose} onNew={onNew} />);
     expect(screen.getByRole("tab", { name: "zsh" }).getAttribute("aria-selected")).toBe("true");
     fireEvent.click(screen.getByRole("tab", { name: "bun dev" }));
     fireEvent.click(screen.getByRole("button", { name: "Close bun dev" }));
