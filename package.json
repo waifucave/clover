@@ -69,14 +69,12 @@
     "overrides": {
       "shell-quote": ">=1.11.0",
       "fast-uri": ">=3.1.9 <4",
-      "zod": ">=4.6.6 <5",
       "@types/node": "25.9.3"
     }
   },
   "overrides": {
     "shell-quote": ">=1.11.0",
     "fast-uri": ">=3.1.9 <4",
-    "zod": ">=4.6.6 <5",
     "@types/node": "25.9.3"
   }
 }
