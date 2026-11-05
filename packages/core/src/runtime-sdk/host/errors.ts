@@ -69,25 +69,6 @@ export class UnaddressableEntryError extends RuntimeSdkError {
   }
 }
 
-/**
- * D19a: the injected peers are outside the tested compatibility matrix, so construction refuses.
- *
- * `expected`/`actual` are the two fields the plan pins. They are STRINGS, not objects, because the
- * one thing a host does with them is print them: `expected` is the matrix entry that was violated
- * (`"@yanlinglabs/winter-agent-sdk >=0.0.2 <0.1.0"`), `actual` is what the injected peer reported
- * (`"0.0.1"`, or `"unknown (the injected module exports no version identity and no installed copy
- * could be resolved)"`).
- */
-export class RuntimeSdkVersionError extends RuntimeSdkError {
-  readonly expected: string;
-  readonly actual: string;
-  constructor(args: { expected: string; actual: string; message?: string }) {
-    super(args.message ?? `winter-runtime-sdk: version matrix refuses this peer set — expected ${args.expected}, got ${args.actual}`);
-    this.expected = args.expected;
-    this.actual = args.actual;
-  }
-}
-
 /** Which lane of Phase 7b owns a seam that is declared but not yet implemented. */
 export type LaneId = "lane-a" | "lane-b" | "lane-c" | "lane-d";
 

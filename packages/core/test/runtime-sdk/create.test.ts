@@ -3,7 +3,7 @@
 // spawned anywhere here: the topology is exercised through `spawnHookFor`'s RESOLUTION only, which
 // is a pure function of settings/env/paths.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createInMemoryRuntimeDirectoryStore, type RuntimeSdk, type RuntimeSdkOptions } from "../../src/runtime-sdk/host";
+import { createInMemoryRuntimeDirectoryStore, type SessionHost, type SessionHostOptions } from "../../src/runtime-sdk/host";
 import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,32 +71,31 @@ function deps(extra: Partial<WinterRuntimeSdkDeps> = {}): WinterRuntimeSdkDeps {
     settings: () => settings,
     secrets: new FileSecretStore(secretsDir),
     directoryStore: createInMemoryRuntimeDirectoryStore(),
-    capabilities: [],
     ...extra,
   };
 }
 
-/** Build a handle and capture the exact `RuntimeSdkOptions` this file handed the router. The real
- *  factory still runs, so every assertion is against a genuinely-constructed handle. */
+/** Build a handle and capture the exact `SessionHostOptions` this file handed the session host. The
+ *  real factory still runs, so every assertion is against a genuinely-constructed handle. */
 async function build(
   extra: Partial<WinterRuntimeSdkDeps> = {},
   grace?: number,
-): Promise<{ handle: WinterRuntimeSdk; opts: RuntimeSdkOptions; disposeOrder: string[] }> {
-  const { createRuntimeSdk } = await import("../../src/runtime-sdk/host");
+): Promise<{ handle: WinterRuntimeSdk; opts: SessionHostOptions; disposeOrder: string[] }> {
+  const { createSessionHost } = await import("../../src/runtime-sdk/host");
   const disposeOrder: string[] = [];
-  let captured: RuntimeSdkOptions | undefined;
+  let captured: SessionHostOptions | undefined;
   const handle = await createWinterRuntimeSdk(deps(extra), {
     ...(grace === undefined ? {} : { grace }),
-    createRuntimeSdk: (opts) => {
+    createSessionHost: (opts) => {
       captured = opts;
-      const real = createRuntimeSdk(opts);
-      // A proxy rather than a spread: `RuntimeSdk` exposes getters, and spreading would freeze them.
+      const real = createSessionHost(opts);
+      // A proxy rather than a spread: a getter on the host would be frozen by a spread.
       return new Proxy(real, {
         get(target, prop, receiver): unknown {
           if (prop === "dispose") return async () => { disposeOrder.push("sdk.dispose"); await real.dispose(); };
           return Reflect.get(target, prop, receiver);
         },
-      }) as RuntimeSdk;
+      }) as SessionHost;
     },
   });
   handles.push(handle);
@@ -104,13 +103,13 @@ async function build(
   return { handle, opts: captured, disposeOrder };
 }
 
-describe("createWinterRuntimeSdk — the options it hands the router", () => {
+describe("createWinterRuntimeSdk — the options it hands the session host", () => {
   test("constructs a real handle; messaging and directory are live", async () => {
     const { handle, opts } = await build();
     expect(handle.sdk.messaging).toBeDefined();
     expect(typeof handle.sdk.messaging.send).toBe("function");
     expect(handle.sdk.directory).toBeDefined();
-    // Resolved through the injected peer's own `resolveBrand`, and it is OURS.
+    // Resolved through the SDK's own `resolveBrand`, and it is OURS.
     expect(handle.sdk.brand.mcpServerName).toBe("clover");
     expect(handle.sdk.brand.homeDirName).toBe(".clover");
     // test-keychain-isolation fix: no longer the frozen `CORE_BRAND` singleton by identity — it is
@@ -123,16 +122,15 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
     expect(opts.brand!.presetName).toBe("winter_code");
   });
 
-  // WS-23: the official `claude` leg is retired — the router is handed the Clover peer alone, and none
-  // of the options that configured the other leg (its executable, its credential seam, its policy, its
-  // capability-schema bridge, its advisor resolver, its handoff participants).
-  test("WS-23: the Clover peer alone — no claude peer, no official options, nothing for the other leg", async () => {
+  // A-M1 (spec §3.3): the host is handed the SDK itself — no peers, no version matrix, no handle-wide
+  // capability list — and none of the options that configured the retired official leg (WS-23).
+  test("A-M1: the SDK directly — no peers, no peer versions, no capabilities, nothing for the other leg", async () => {
     const { opts } = await build();
-    expect(Object.keys(opts.peers)).toEqual(["winter"]);
-    expect(opts.peerVersions).toEqual({ winterAgentSdk: CLOVER_PEER_VERSIONS.winterAgentSdk });
+    expect(typeof opts.sdk?.query).toBe("function");
+    expect(opts.sdk?.SDK_VERSION).toBe(CLOVER_PEER_VERSIONS.winterAgentSdk);
     const loose = opts as unknown as Record<string, unknown>;
-    for (const key of ["vendoredOfficialRuntime", "official", "toInputShape", "advisor", "keychain"]) expect(key in loose).toBe(false);
-    expect(Object.keys(opts.handoff ?? {}).sort()).toEqual(["resolveEndpoint", "winterHome"]);
+    for (const key of ["peers", "peerVersions", "capabilities", "handoff", "vendoredOfficialRuntime", "official", "toInputShape", "advisor", "keychain"]) expect(key in loose).toBe(false);
+    expect(opts.home).toBe(home);
   });
 
   test("WS-23: a Claude catalog model with an Anthropic key selects the Clover runtime, in Code mode too", async () => {
@@ -155,13 +153,12 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
     expect(Object.keys(opts.messaging?.messaging ?? {})).toEqual(["winter"]);
   });
 
-  test("the directory store, [] capabilities and the daemon's own home", async () => {
+  test("the directory store and the daemon's own home", async () => {
     const store = createInMemoryRuntimeDirectoryStore();
     const { opts } = await build({ directoryStore: store });
     expect(opts.directoryStore).toBe(store);
-    expect(opts.capabilities).toEqual([]);
     // §1.6: the seams must resolve under the daemon's home, not `resolveCloverHome()`'s default.
-    expect(opts.handoff?.winterHome).toBe(home);
+    expect(opts.home).toBe(home);
     // No permission class declared ⇒ no messaging-policy block at all.
     expect(opts.messaging?.messaging).toBeUndefined();
   });
@@ -174,10 +171,10 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
   test("D1-6: the review's resolveEndpoint is the daemon's own registry-backed resolver", async () => {
     const { daemonResolveEndpoint } = await import("../../src/providers/registry");
     const { opts } = await build();
-    expect(opts.handoff?.resolveEndpoint).toBe(daemonResolveEndpoint());
+    expect(opts.resolveEndpoint).toBe(daemonResolveEndpoint());
   });
 
-  test("an offline spine passes no store — the router falls back to its own in-memory one", async () => {
+  test("an offline spine passes no store — the host falls back to its own in-memory one", async () => {
     const { handle, opts } = await build({ directoryStore: undefined });
     expect(opts.directoryStore).toBeUndefined();
     expect(handle.sdk.directory).toBeDefined(); // still a working handle, just not durable
@@ -478,7 +475,7 @@ describe("createWinterRuntimeSdk — run homes (WS-21)", () => {
     expect((opts as unknown as { requireRunHome?: boolean }).requireRunHome).toBe(true);
     expect((opts as unknown as { runHomeFor?: unknown }).runHomeFor).toBe(runHomeFor);
     // L2: `requireRunHome` also requires an explicit `handoff.winterHome` (the store then lives in `<home>/sdk`).
-    expect(opts.handoff?.winterHome).toBe(home);
+    expect(opts.home).toBe(home);
   });
 
   // R.1: this used to pin router 0.0.11 (both answers undefined). The linked router now HAS both doors, and

@@ -31,17 +31,9 @@ import {
  * and passes on the new, which is the only property that makes the table trustworthy for Task 9 and
  * for P8b-25's `hostToolNameFor`.
  *
- * THE ROUTER'S PATH, from the installed `winter-runtime-sdk/dist` (primary source):
- *   * `record[server.name] = server` keys the capability record by the server's own name;
- *   * `mergedMcpServers(...)` merges it into the forwarded `Options.mcpServers` under that key;
- *   * `capabilityServerDescriptor` builds `{ name: server.name, tools: [{ tool: tool.name, … }] }`;
- *   * `door.d.ts`: "PER SERVER, UNDER ITS OWN NAME, so `mcp__<server>__<tool>` is the same canonical
- *     name on both legs".
- *
- * The router does not expose its descriptor record, so the last observable step is read through the
- * guard that IS keyed by it: a query whose own `mcpServers` collides with a capability name is
- * refused, naming that capability, before the leg is picked and before anything is spawned. A probe
- * the guard does NOT refuse is a real query and does spawn a child — `queries` ends every one.
+ * A-M1: the router and its handle-wide capability record are gone (spec §3.3). Every session carries
+ * its capability servers in its own `Options.mcpServers`, keyed by each server's own `name` (P8b-36),
+ * which is the path the tests below derive the wire name through.
  */
 
 let home: string;
@@ -216,78 +208,3 @@ describe("N2: assertNoCapabilityCollision — the guard the router no longer run
   });
 });
 
-describe("P8b-35: the REAL router accepts these servers and keys them by their own name", () => {
-  async function handle(capabilities: readonly McpSdkServerConfigWithInstance[]): Promise<WinterRuntimeSdk> {
-    const h = await createWinterRuntimeSdk({
-      home,
-      settings: () => null,
-      secrets: new FileSecretStore(join(home, "secrets")),
-      capabilities,
-    });
-    handles.push(h);
-    return h;
-  }
-
-  /** The router's capability record, read through the guard that is keyed by it. Throws before the
-   *  leg is picked, so nothing is spawned. */
-  function routerHolds(h: WinterRuntimeSdk, name: string): boolean {
-    const abortController = new AbortController();
-    abortController.abort();
-    try {
-      const q = h.sdk.query({ prompt: "unreachable", options: { abortController, mcpServers: { [name]: { type: "sdk", name, instance: {} } } } });
-      queries.push(q);
-      return false;
-    } catch (err) {
-      return (err as Error).message.includes("is the name of a capability server this handle forwards");
-    }
-  }
-
-  test("createRuntimeSdk accepts all six (so every advertised inputSchema passed its validator)", async () => {
-    // `capabilityServerDescriptors` runs at CONSTRUCTION even on a Clover-only host: it calls every
-    // `instance.listTools()` and refuses any tool whose `inputSchema` is not a JSON-Schema object.
-    // Constructing without a throw IS that proof.
-    const built = Object.values(serversFor("code"));
-    expect(built.length).toBe(CAPABILITY_SERVER_KEYS.length);
-    for (const s of built) expect(isWinterMcpServerInstance(s.instance)).toBe(true);
-    const h = await handle(built);
-    expect(h.sdk.brand.mcpServerName).toBe("clover");
-  });
-
-  test("the router keys each capability by `server.name` — the input to the wire name", async () => {
-    const h = await handle(Object.values(serversFor("code")));
-    for (const key of CAPABILITY_SERVER_KEYS) {
-      expect(routerHolds(h, capabilityServerName(key)), `${capabilityServerName(key)} is not in the router's record`).toBe(true);
-      // The bare key is NOT what the router holds — which is exactly why it must not be the name.
-      expect(routerHolds(h, key)).toBe(false);
-    }
-  });
-
-  test("the unrefused probes leave no winter child behind", async () => {
-    // Matched on the executable this handle ACTUALLY spawns. It is built with no executable option,
-    // so the SDK runs its own platform-package binary whatever `$CLOVER_RUNTIME_EXECUTABLE` says —
-    // measured: under a `dist/winter` build the children are still the package's `bin/winter`. `pgrep -f`
-    // takes a regex (the package path carries `+` and `.`), so the path is escaped.
-    const bin = resolvePlatformPackageWinter();
-    if (bin === undefined) throw new Error("the pinned platform package is not installed — this check needs it");
-    const pattern = bin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const children = () => Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", pattern]).stdout.toString().trim();
-    // Not vacuous: the matcher sees a live child whose command line names that binary (a shell running `sleep` — two commands, so it never execs away its argv — carrying
-    // the path as $0 — the binary itself exits at once without an init frame).
-    const decoy = Bun.spawn(["/bin/sh", "-c", "sleep 30; :", bin], { stdout: "ignore", stderr: "ignore" });
-    let t0 = Date.now();
-    while (children() === "" && Date.now() - t0 < 3000) await Bun.sleep(25);
-    expect(children()).not.toBe("");
-    decoy.kill();
-    await decoy.exited;
-    const h = await handle(Object.values(serversFor("code")));
-    for (const key of CAPABILITY_SERVER_KEYS) expect(routerHolds(h, key)).toBe(false);
-    // Agent SDK 0.0.36+: a query under an already-aborted signal spawns nothing at all, so no probe child
-    // ever appears — and ending the queries leaves none behind either.
-    await Bun.sleep(300);
-    expect(children()).toBe("");
-    for (const q of queries.splice(0)) await endQuery(q);
-    t0 = Date.now();
-    while (children() !== "" && Date.now() - t0 < 5000) await Bun.sleep(50);
-    expect(children()).toBe("");
-  });
-});

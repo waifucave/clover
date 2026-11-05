@@ -1,34 +1,35 @@
-// THE ONE `createRuntimeSdk` handle for the whole daemon (P8b Task 5).
+// THE ONE session-host handle for the whole daemon (P8b Task 5; A-M1: the daemon drives the SDK
+// directly, spec §3.3 — the router is archived and its remaining parts are `./host`).
 //
 // Everything on the Clover leg goes through this object: every session's `query()`, the global
 // messaging router, the runtime directory. It is built ONCE at boot (`daemon.ts`, between the
-// runtime spine and the tool registry) and disposed ONCE at shutdown — the router's own
-// `dispose()` is a use-after-shutdown latch and nothing more (surface map §1.11), so ending the
-// live sessions before it is the HOST's job, which is what this module's `dispose()` is.
+// runtime spine and the tool registry) and disposed ONCE at shutdown — the session host's own
+// `dispose()` is a use-after-shutdown latch and nothing more, so ending the live sessions before it
+// is the daemon's job, which is what this module's `dispose()` is.
 //
-// WHY A WRAPPER RATHER THAN `createRuntimeSdk` AT THE CALL SITE. Three things the daemon has to do
+// WHY A WRAPPER RATHER THAN `createSessionHost` AT THE CALL SITE. Three things the daemon has to do
 // exactly once, in exactly one place, and that a raw handle cannot carry:
 //
 //  1. `spawnHookFor(mode)` — P8b-1's single topology site. Code: path (a), one spawned `winter`
 //     child per session. Chat and dispatch (WS-23): path (b), the runtime EMBEDDED in this process,
 //     one Bun Worker per session (`embedded.ts`) — the change to this one function's return value
 //     P8b-1 promised, with nothing else in the daemon moving.
-//  2. `trackQuery`/`untrack`/`dispose` — G-14's ordering. Every live `Query` ends BEFORE the router
+//  2. `trackQuery`/`untrack`/`dispose` — G-14's ordering. Every live `Query` ends BEFORE the host
 //     disposes and, in `daemon.ts`, before the 8a spine closes: a draining child's last frames
 //     write delivery receipts into `runtime-state.db`, and a closed store loses them.
 //  3. The settings-derived options. Clover's hard rule is that no setting may require a restart, but
-//     `createRuntimeSdk` takes PLAIN VALUES for retention (Clover map §8.3). The door this file uses
-//     to keep it live is a getter-backed retention object (the router reads the property at recovery
-//     time, not at construction), noted at its definition.
+//     the directory takes PLAIN VALUES for retention (Clover map §8.3). The door this file uses
+//     to keep it live is a getter-backed retention object (the directory reads the property at
+//     recovery time, not at construction), noted at its definition.
 //
 // WS-23: the handle serves ONE runtime. The official `claude` peer and everything this file built for
 // it (the peer import and its version guard, the executable ladder, the credential seam, the advisor
 // resolver, the capability-schema bridge, the handoff participants) is gone.
 import { existsSync } from "node:fs";
 import * as clover from "@yanlinglabs/winter-agent-sdk";
-import type { McpSdkServerConfigWithInstance, SpawnClaudeCodeProcess } from "@yanlinglabs/winter-agent-sdk";
-import { createRuntimeSdk as createRouterSdk, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "./host";
-import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectoryStore, RuntimeSdk, RuntimeSdkOptions, RuntimeSelection, SelectionInput, SelectionRefusal } from "./host";
+import type { SpawnClaudeCodeProcess } from "@yanlinglabs/winter-agent-sdk";
+import { createSessionHost, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "./host";
+import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectoryStore, RuntimeSelection, SelectionInput, SelectionRefusal, SessionHost, SessionHostOptions } from "./host";
 import type { PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { SecretStore } from "../auth/secret-store";
 import { retentionFromSettings } from "../runtime-state/retention";
@@ -49,7 +50,7 @@ import { HostStorageFenceUnavailable } from "./host-storage-fence";
 import type { RunnableSessionMode } from "../sessions/session-mode";
 import { loadBundledHostOutputFactory } from "./host-output-loader";
 
-/** `RuntimeDirectoryRetention` is not on the router's barrel; this is the same type. */
+/** `RuntimeDirectoryRetention` is not on the host's barrel; this is the same type. */
 type RuntimeDirectoryRetention = NonNullable<RuntimeDirectoryOptions["retention"]>;
 
 /** The three session modes a runtime child can be started for, as `agent/tools/registry.ts`'s `Mode` already
@@ -102,13 +103,11 @@ export interface WinterRuntimeSdkDeps {
    *  would not parse (the daemon runs with the agent disabled rather than refusing to start). */
   settings: () => Settings | null | undefined;
   secrets: SecretStore;
-  /** 8a's SQLite directory store. `undefined` ⇒ the spine is offline and the router falls back to
+  /** 8a's SQLite directory store. `undefined` ⇒ the spine is offline and the host falls back to
    *  its own in-memory store: messaging works for this process's lifetime, receipts are not
-   *  durable. That is a degraded daemon, never a dead one. */
+   *  durable. That is a degraded daemon, never a dead one. A-M1: there is no handle-wide capability
+   *  list any more — the capability servers ride each session's own `Options.mcpServers` (P8b-36). */
   directoryStore?: RuntimeDirectoryStore;
-  /** Tasks 6–7's capability servers, handle-wide. `[]` is valid and is what the daemon passes: Clover's
-   *  capability servers ride each session's own `Options.mcpServers` instead (P8b-36). */
-  capabilities: readonly McpSdkServerConfigWithInstance[];
   /**
    * WS-10 §13's inbound class for a session this process holds NO live facet for (Task 12).
    *
@@ -152,9 +151,9 @@ export interface WinterRuntimeSdkDeps {
 export interface WinterRuntimeSdkOverrides {
   /** Test seam for `SHUTDOWN_QUERY_GRACE_MS`. */
   grace?: number;
-  /** Test seam for the router factory — a spy wraps it to capture the `RuntimeSdkOptions` this
-   *  file builds while still returning a REAL `RuntimeSdk`. */
-  createRuntimeSdk?: (opts: RuntimeSdkOptions) => RuntimeSdk;
+  /** Test seam for the host factory — a spy wraps it to capture the `SessionHostOptions` this
+   *  file builds while still returning a REAL `SessionHost`. */
+  createSessionHost?: (opts: SessionHostOptions) => SessionHost;
 }
 
 /** `Name: message`, first line only, capped — an import failure's message names a missing global
@@ -168,8 +167,8 @@ export function describeLoadError(err: unknown): string {
 }
 
 export interface WinterRuntimeSdk {
-  /** The router handle itself. Every later lane reaches `query`/`messaging`/`directory` here. */
-  readonly sdk: RuntimeSdk;
+  /** The session host itself. Every later lane reaches `query`/`messaging`/`directory` here. */
+  readonly sdk: SessionHost;
   /**
    * P8b-1: THE ONE SITE for the spawn topology, re-resolved on EVERY call.
    *
@@ -285,7 +284,7 @@ function endWithin(sessionId: string, abort: AbortController, end: () => Promise
 }
 
 export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrides: WinterRuntimeSdkOverrides = {}): Promise<WinterRuntimeSdk> {
-  const factory = overrides.createRuntimeSdk ?? createRouterSdk;
+  const factory = overrides.createSessionHost ?? createSessionHost;
   const codeExecution = deps.codeExecution ?? new HostCodeExecutionService(deps.home, undefined, undefined, {
     createOutputTransport: deps.hostOutputTransportFactory ?? loadBundledHostOutputFactory(deps.log),
   });
@@ -294,45 +293,39 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
   // once at module load from `CLOVER_HOME`/`CLOVER_PROFILE` env vars alone, which a daemon booted
   // via `startDaemon({ home })` (every real-binary e2e test) never sets — so the singleton could
   // never see `deps.home` and therefore could never honour `CLOVER_KEYCHAIN_SERVICE`'s default-home
-  // guard for it. This IS the value the router hands to a spawned Clover child (`brand.keychainService`
-  // seeds the child's OWN Bun.secrets read, including the D30 advisor default fallback with no
+  // guard for it. This IS the value the host hands every Clover session (`brand.keychainService`
+  // seeds the session's OWN Bun.secrets read, including the D30 advisor default fallback with no
   // explicit `authRef` — see `mode-options.ts`'s `buildCloverOptions` header), so it is the one that
   // must be home-aware.
   const homeAwareBrand = buildCoreBrand(undefined, deps.home);
-  // WS-23: THE CLOVER PEER ALONE. The official `claude` peer, its executable, its credential seam, its
-  // advisor resolver, its capability bridge and its handoff participants are gone with the leg they
-  // served; the router routes every family to the Clover runtime (`hasClaudePeer: false` below).
+  // A-M1 (spec §3.3): THE SDK, DIRECTLY. The host calls the agent SDK's own `query()`; the wrapper
+  // below only checks each generation's options against the host-code broker first.
   const sdk = factory({
-    peers: { winter: { ...clover, query: (input) => {
-      // Covers both ordinary session queries and the router's own cold-resume path.
+    sdk: { ...clover, query: (input) => {
+      // Covers both ordinary session queries and the messaging router's own cold-resume path.
       codeExecution.assertQueryOptions(input.options);
       return clover.query(input);
-    } } },
-    // P8b-4: host-declared, and the ONLY probe that answers inside a compiled `$bunfs` binary.
-    peerVersions: { winterAgentSdk: CLOVER_PEER_VERSIONS.winterAgentSdk },
-    // R-1. Resolved once here, through the injected peer's own `resolveBrand`.
+    } },
+    // R-1. Resolved once in the host, through the SDK's own `resolveBrand`.
     brand: homeAwareBrand,
-    // 8a's durable store when the spine opened; the router's in-memory default when it did not.
-    directoryStore: deps.directoryStore,
-    capabilities: deps.capabilities,
-    // §1.6: this is what fills `SeamContext.winterHome`, so the session store `reviewSwitch` reads and
+    // 8a's durable store when the spine opened; the host's in-memory default when it did not.
+    ...(deps.directoryStore === undefined ? {} : { directoryStore: deps.directoryStore }),
+    // §1.6: this is what fills `SeamContext.home`, so the session store `reviewSwitch` reads and
     // `reconcileRootForRecovery` writes resolve under the daemon's OWN home — without it they fall back
     // to `resolveCloverHome(undefined, brand)`, which is `~/.clover` for a daemon booted on a temp home
-    // with no `CLOVER_HOME` in its environment, i.e. every test. A `requireRunHome` router refuses to
+    // with no `CLOVER_HOME` in its environment, i.e. every test. A `requireRunHome` host refuses to
     // construct without it.
-    handoff: {
-      winterHome: deps.home,
-      // Winter Phase 10b (D1-6, R6-R8 review, CRITICAL): without this `reviewSwitch` falls back to
-      // `defaultEndpointResolver()` — a registry with NO adapters registered, which reports
-      // `readableState: "none"` for every model and silently over-warns a real lossless
-      // exposed-reasoning transfer (measured: DeepSeek -> GLM came back `warned-lossy` with no resolver
-      // injected). `daemonResolveEndpoint()` is the daemon's own catalog-backed registry
-      // (`providers/registry.ts`), memoised for the process's life.
-      resolveEndpoint: daemonResolveEndpoint(),
-    },
+    home: deps.home,
+    // Winter Phase 10b (D1-6, R6-R8 review, CRITICAL): without this `reviewSwitch` falls back to
+    // `defaultEndpointResolver()` — a registry with NO adapters registered, which reports
+    // `readableState: "none"` for every model and silently over-warns a real lossless
+    // exposed-reasoning transfer (measured: DeepSeek -> GLM came back `warned-lossy` with no resolver
+    // injected). `daemonResolveEndpoint()` is the daemon's own catalog-backed registry
+    // (`providers/registry.ts`), memoised for the process's life.
+    resolveEndpoint: daemonResolveEndpoint(),
     // G-12. The CLOVER adapter's `permissionClass` (Task 12) fails inbound delivery closed without it.
     //
-    // CARRY FOR TASKS 13/16: `directory` carries `retention` and nothing else, so the router's own
+    // CARRY FOR TASKS 13/16: `directory` carries `retention` and nothing else, so the directory's own
     // `RuntimeDirectoryRecoveryHooks` (`revalidateProcessIdentity`, `reattachSupervised`) stay
     // unset and its `recoverDirectory` reattaches nothing. That is correct — 8a owns recovery, and its
     // twelve steps have already run by the time this handle exists — but the day a Clover child must
@@ -344,10 +337,9 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
         ? {}
         : { messaging: { winter: { permissionClass: deps.sessionPermissionClass } } }),
     },
-    // WS-21 (spec §3.1): only when the linked router applies run homes. `RuntimeSdkOptions` of the
-    // published 0.0.11 does not declare these, hence the widening; an older router never sees them.
-    ...(deps.runHomeFor === undefined ? {} : ({ requireRunHome: true, runHomeFor: deps.runHomeFor } as Record<string, unknown>)),
-  } as RuntimeSdkOptions);
+    // WS-21 (spec §3.1): every generation carries a run home whenever the daemon builds them.
+    ...(deps.runHomeFor === undefined ? {} : { requireRunHome: true, runHomeFor: deps.runHomeFor }),
+  });
 
   const buildSelectionInput = async (input: { mode: SessionMode; model?: string; persisted?: RuntimeSelection }): Promise<SelectionInput> => {
     const credentials = await credentialPresenceFrom(deps.secrets);
@@ -382,7 +374,7 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
       // claude.ai subscription auth never shipped, and the one runtime left never takes it (D28).
       claudeOauthApproved: false,
       ...(input.persisted === undefined ? {} : { persisted: input.persisted }),
-      versions: selectionVersionsFrom(sdk.versions),
+      versions: selectionVersionsFrom(CLOVER_PEER_VERSIONS.winterAgentSdk),
     };
   };
 

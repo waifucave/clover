@@ -21,8 +21,6 @@ import {
   UNKNOWN_VERSION,
 } from "../../../../src/runtime-sdk/host/selection/select-runtime";
 import { isSelectionRefusal, SelectionRefusedError } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
-import { createRuntimeSdk } from "../../../../src/runtime-sdk/host/sdk";
-import { createFakeKeychain, createFakeWinterPeer } from "../testing/index";
 import type { RuntimeSelection, SelectionAuthFamily, SelectionInput, SelectionRefusal } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
 import { claudeFamily, credentials, gptFamily, listing, NOW, PROVIDER_VIEWS, row, VERSIONS } from "./fixtures";
 
@@ -391,23 +389,18 @@ describe("the structural rules", () => {
     expect("engineVersion" in bare).toBe(false);
   });
 
-  test("the handle's selectRuntime throws the refusal that the function returns", () => {
-    // The plan pins two signatures that disagree: the module function returns
-    // `RuntimeSelection | SelectionRefusal`, the `RuntimeSdk` METHOD returns `RuntimeSelection` alone.
-    // `SelectionRefusedError` is the reconciliation, and this is the test that it carries the refusal
-    // verbatim rather than collapsing it into a message.
-    const { peer } = createFakeWinterPeer();
-    const sdk = createRuntimeSdk({ peers: { winter: peer }, keychain: createFakeKeychain() });
+  test("the module function returns the refusal, and SelectionRefusedError carries it verbatim", () => {
+    // A-M1: the router's handle method that threw it is gone with the router (the daemon calls the
+    // module function and unwraps either shape, `create.ts`'s `selectRuntimeFor`). The error class
+    // stays the one typed carrier, and this is the test that it keeps the refusal whole.
     const refusing = input({ credentials: credentials([]) });
-    expect(() => sdk.selectRuntime(refusing)).toThrow(SelectionRefusedError);
-    try {
-      sdk.selectRuntime(refusing);
-    } catch (error) {
-      expect(error).toBeInstanceOf(SelectionRefusedError);
-      expect((error as SelectionRefusedError).refusal).toEqual(refused({ credentials: credentials([]) }));
-    }
+    const refusal = selectRuntime(refusing);
+    expect(isSelectionRefusal(refusal)).toBe(true);
+    expect(refusal).toEqual(refused({ credentials: credentials([]) }));
+    const error = new SelectionRefusedError(refusal as SelectionRefusal);
+    expect(error.refusal).toEqual(refusal as SelectionRefusal);
     // …and the accepted path returns the record itself.
-    expect(sdk.selectRuntime(input({ hasClaudePeer: false })).runtimeKind).toBe("winter-agent");
+    expect((selectRuntime(input({ hasClaudePeer: false })) as RuntimeSelection).runtimeKind).toBe("winter-agent");
   });
 
   test("officialServesBackend agrees with OFFICIAL_SERVED_AUTH_FAMILIES for every auth family", () => {
@@ -437,14 +430,9 @@ describe("the structural rules", () => {
     expect(ruleIdOf(withReason("D13-2: real"))).toBe("D13-2");
   });
 
-  test("selectionVersionsFrom carries the Winter peer's identity out of the constructor's matrix report", () => {
-    const versions = selectionVersionsFrom({
-      winterAgentSdk: { packageName: "w", packageVersion: "0.0.3", source: "peer-export", supported: ">=0.0.21 <0.1.0", protocolVersion: "1.0" },
-      supported: { winterAgentSdk: ">=0.0.21 <0.1.0" },
-      supportedProtocolVersions: ["1.0"],
-      checkedAt: NOW,
-    });
-    expect(versions).toEqual({ winterSdkVersion: "0.0.3" });
+  test("selectionVersionsFrom stamps the SDK version the daemon runs", () => {
+    // A-M1: from the SDK's own `SDK_VERSION`, now that no version matrix sits between the two.
+    expect(selectionVersionsFrom("0.0.3")).toEqual({ winterSdkVersion: "0.0.3" });
   });
 });
 

@@ -69,7 +69,7 @@ export interface GlobalMessagingContext extends SeamContext {
 export interface GlobalMessagingOptions extends InboundPolicyHooks {
   now?: () => number;
   /** Passed to the Winter adapter this factory builds (cold-resume options, child resume context). */
-  winter?: Omit<WinterMessagingAdapterDeps, "peers" | "directory" | "sessions" | "runHomes">;
+  winter?: Omit<WinterMessagingAdapterDeps, "sdk" | "directory" | "sessions" | "runHomes">;
   /**
    * R-7b-4's one behavioural seam, forwarded to the core: how a THROW out of an adapter is classified.
    *
@@ -143,7 +143,7 @@ export function createGlobalMessaging(context: GlobalMessagingContext, options: 
 
   // WS-21: the cold resume's run-home door is the ROUTER's own (`internal`), laid over whatever a host
   // passed — the public options type does not even name it.
-  const winterAdapter = createWinterMessagingAdapter({ peers: context.peers, directory, sessions: winterSessions, ...(options.winter ?? {}), ...(internal.winterRunHomes === undefined ? {} : { runHomes: internal.winterRunHomes }) });
+  const winterAdapter = createWinterMessagingAdapter({ sdk: context.sdk, directory, sessions: winterSessions, ...(options.winter ?? {}), ...(internal.winterRunHomes === undefined ? {} : { runHomes: internal.winterRunHomes }) });
   const adapters = new Map<RuntimeKind, RouterMessagingAdapter>([["winter-agent", winterAdapter]]);
 
   const policy: InboundPolicy = createInboundPolicy({

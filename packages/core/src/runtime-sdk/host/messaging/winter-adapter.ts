@@ -21,7 +21,7 @@
 import type { Options } from "@yanlinglabs/winter-agent-sdk";
 import { delivered, deliveryUncertain, notFound, refused, resumedAndDelivered, queued, serializeRuntimeAddress, unavailable } from "@yanlinglabs/winter-agent-sdk/messaging";
 
-import type { RuntimeSdkPeers } from "../sdk";
+import type { HostSdk } from "../session-host";
 import { entryToListedRuntimeObject, owningSessionIdOf, parentAddressOf, sessionAddressOf } from "../directory/entries";
 import type { RuntimeDirectory } from "../seams/directory";
 import type { RuntimeDirectoryEntry } from "../seams/directory-store";
@@ -47,7 +47,7 @@ export interface WinterColdResumeRunHomes {
 }
 
 export interface WinterMessagingAdapterDeps {
-  peers: RuntimeSdkPeers;
+  sdk: HostSdk;
   directory: RuntimeDirectory;
   sessions: AttachedSessionRegistry<AttachedWinterSession>;
   /**
@@ -218,7 +218,7 @@ export function createWinterMessagingAdapter(deps: WinterMessagingAdapterDeps): 
     const prompt = renderAttributedTurn(message, { winterSessionId: entry.parsed.winterSessionId });
     let seen = 0;
     try {
-      const query = deps.peers.winter.query({ prompt, options });
+      const query = deps.sdk.query({ prompt, options });
       for await (const sdkMessage of query) {
         seen += 1;
         if (sdkMessage.type === "assistant" || sdkMessage.type === "result") return resumedAndDelivered(message.messageId);

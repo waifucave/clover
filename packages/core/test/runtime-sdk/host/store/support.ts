@@ -4,8 +4,8 @@
 // layout is driven by an INJECTED env rather than `process.env`; nothing reads `~/.winter`, `~/.claude`
 // or the Keychain, and no test in this directory starts a network listener.
 //
-// THE CONTEXT IS THE REAL ONE. `createRuntimeSdk` builds exactly one `SeamContextWithDirectory` and
-// hands it to every seam factory; `runtimeSdkInternals` reaches it. Building a hand-rolled context here
+// THE CONTEXT IS THE REAL ONE. `createSessionHost` builds exactly one `SeamContextWithDirectory` and
+// hands it to every seam factory; its `context` member reaches it. Building a hand-rolled context here
 // would test the shape this lane's factories were written against rather than the one they will be
 // handed.
 import { mkdtempSync, rmSync } from "node:fs";
@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 
 import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
 
-import { createRuntimeSdk, runtimeSdkInternals, type RuntimeSdkPeers } from "../../../../src/runtime-sdk/host/index";
+import { createSessionHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import type { SeamContextWithDirectory } from "../../../../src/runtime-sdk/host/seams/context";
 import { createInMemoryRuntimeDirectoryStore, type RuntimeDirectoryEntry, type RuntimeDirectoryStore } from "../../../../src/runtime-sdk/host/seams/directory-store";
 import type { RuntimeKind, RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
@@ -23,31 +23,29 @@ import { createFakeKeychain, createFakeWinterPeer } from "../testing/index";
 import { createSharedSessionStore, type MirrorPolicy, type SharedSessionStore } from "../../../../src/runtime-sdk/host/store/index";
 
 /**
- * A Winter peer that also carries the concrete store.
+ * A fake SDK that also carries the concrete store.
  *
- * The spine's fake exports the five members `createRuntimeSdk` touches; Lane C's factories read
- * `WinterCompatibilitySessionStore` and `resolveWinterHome` off the peer as well, because WS-05 §6's
- * "the identical package/version" is a statement about the injected instance. Spreading the REAL class
- * onto the fake is what keeps that true in a test.
+ * The fake exports the members `createSessionHost` touches; Lane C's factories read
+ * `WinterCompatibilitySessionStore` and `resolveWinterHome` off the SDK as well, because WS-05 §6's
+ * "the identical package/version" is a statement about the instance the host was handed. Spreading the
+ * REAL class onto the fake is what keeps that true in a test.
  */
-export function storePeers(overrides: Partial<{ store: unknown }> = {}): RuntimeSdkPeers {
+export function storeSdk(overrides: Partial<{ store: unknown }> = {}): HostSdk {
   const { peer } = createFakeWinterPeer();
   return {
-    winter: {
-      ...peer,
-      WinterCompatibilitySessionStore: overrides.store ?? WinterCompatibilitySessionStore,
-      resolveWinterHome: () => {
-        throw new Error("a hermetic test must never resolve the real Winter home");
-      },
-    } as unknown as RuntimeSdkPeers["winter"],
-  };
+    ...peer,
+    WinterCompatibilitySessionStore: overrides.store ?? WinterCompatibilitySessionStore,
+    resolveWinterHome: () => {
+      throw new Error("a hermetic test must never resolve the real Winter home");
+    },
+  } as unknown as HostSdk;
 }
 
 export interface StoreBed {
   home: string;
   /** A temp root for D18's layout, injected as `<PREFIX>TMPDIR` rather than exported. */
   tempBase: string;
-  peers: RuntimeSdkPeers;
+  sdk: HostSdk;
   shared: SharedSessionStore;
   context: SeamContextWithDirectory;
   directoryStore: RuntimeDirectoryStore;
@@ -72,18 +70,18 @@ export async function withStoreBed<T>(fn: (bed: StoreBed) => Promise<T>, options
   try {
     const home = join(root, "home");
     const tempBase = join(root, "temp");
-    const peers = storePeers(options.store === undefined ? {} : { store: options.store });
+    const sdk = storeSdk(options.store === undefined ? {} : { store: options.store });
     const directoryStore = options.directoryStore ?? createInMemoryRuntimeDirectoryStore();
-    const sdk = createRuntimeSdk({ peers, keychain: createFakeKeychain(), directoryStore });
-    const context = runtimeSdkInternals(sdk)!.context;
-    const shared = createSharedSessionStore({ peers, winterHome: home, ...(options.policy === undefined ? {} : { policy: options.policy }) });
+    const host = createSessionHost({ sdk, directoryStore });
+    const context = host.context;
+    const shared = createSharedSessionStore({ sdk, winterHome: home, ...(options.policy === undefined ? {} : { policy: options.policy }) });
     const key: SessionKey = { projectKey: "-lane-c-project", sessionId: "11111111-2222-4333-8444-555555555555" };
 
     let parent: string | null = null;
     const bed: StoreBed = {
       home,
       tempBase,
-      peers,
+      sdk,
       shared,
       context,
       directoryStore,

@@ -34,14 +34,14 @@ import { randomUUID } from "node:crypto";
 import type { BrandProfile, SessionKey, SessionStore, SessionStoreEntry, SessionSummaryEntry } from "@yanlinglabs/winter-agent-sdk";
 
 import { RuntimeSdkError } from "../errors";
-import type { RuntimeSdkPeers } from "../sdk";
+import type { HostSdk } from "../session-host";
 
 // --- the pieces of the SDK's concrete store this package uses --------------------------------------
 
 /**
  * The concrete store's surface, as the router uses it.
  *
- * STRUCTURAL, not `InstanceType<typeof peers.winter.WinterCompatibilitySessionStore>`, for the same
+ * STRUCTURAL, not `InstanceType<typeof sdk.WinterCompatibilitySessionStore>`, for the same
  * reason `seams/official-sdk-shapes.ts` types the official module structurally: the peer is INJECTED,
  * so the router must describe what it needs rather than name a class it never imports. The four
  * Winter-only members below are on the concrete class and deliberately NOT on the pinned
@@ -398,7 +398,7 @@ export function assertOneSharedStore(shared: SharedSessionStore, ...options: Rea
 }
 
 export interface SharedSessionStoreInput {
-  peers: RuntimeSdkPeers;
+  sdk: HostSdk;
   winterHome: string;
   /** WS-21: the directory the canonical store is rooted at. Absent = `winterHome` (the pre-WS-21 layout). */
   storeHome?: string;
@@ -417,7 +417,7 @@ export interface SharedSessionStoreInput {
  * the same argument `createRuntimeSdk` already makes for `resolveBrand`/`InvalidBrandError`.
  */
 export function createSharedSessionStore(input: SharedSessionStoreInput): SharedSessionStore {
-  const Store = (input.peers.winter as unknown as { WinterCompatibilitySessionStore?: CanonicalSessionStoreConstructor }).WinterCompatibilitySessionStore;
+  const Store = (input.sdk as unknown as { WinterCompatibilitySessionStore?: CanonicalSessionStoreConstructor }).WinterCompatibilitySessionStore;
   if (typeof Store !== "function") throw new SharedStoreUnavailableError();
   const storeHome = input.storeHome ?? input.winterHome;
   // The concrete store's option is still called `winterHome`: it is the ROOT it resolves `projects/`
@@ -427,7 +427,7 @@ export function createSharedSessionStore(input: SharedSessionStoreInput): Shared
   const now = input.now ?? (() => new Date());
   const identity: SharedStoreIdentity = {
     packageName: "@yanlinglabs/winter-agent-sdk",
-    packageVersion: readPeerVersion(input.peers),
+    packageVersion: readPeerVersion(input.sdk),
     instanceId: randomUUID(),
     winterHome: input.winterHome,
     storeHome,
@@ -733,7 +733,7 @@ export function createSharedSessionStore(input: SharedSessionStoreInput): Shared
  * and a host that already has a store passes it and never reaches this at all.
  */
 export function lazySharedSessionStore(input: {
-  peers: RuntimeSdkPeers;
+  sdk: HostSdk;
   winterHome?: string;
   /** WS-21: the store's root when it is not the home itself (`sdkHomeOf(winterHome)`). */
   storeHome?: string;
@@ -752,7 +752,7 @@ export function lazySharedSessionStore(input: {
       input.winterHome ??
       (() => {
         const resolveWinterHome = (
-          input.peers.winter as unknown as {
+          input.sdk as unknown as {
             resolveWinterHome?: (env?: Record<string, string | undefined>, brand?: Pick<BrandProfile, "envPrefix" | "homeDirName">) => string;
           }
         ).resolveWinterHome;
@@ -761,7 +761,7 @@ export function lazySharedSessionStore(input: {
         }
         return resolveWinterHome(undefined, input.brand);
       })();
-    resolved = createSharedSessionStore({ peers: input.peers, winterHome, ...(input.storeHome === undefined ? {} : { storeHome: input.storeHome }), ...(input.policy === undefined ? {} : { policy: input.policy }) });
+    resolved = createSharedSessionStore({ sdk: input.sdk, winterHome, ...(input.storeHome === undefined ? {} : { storeHome: input.storeHome }), ...(input.policy === undefined ? {} : { policy: input.policy }) });
     return resolved;
   };
 }
@@ -773,8 +773,8 @@ export function lazySharedSessionStore(input: {
  * it has already run by the time anything builds a store. This is a label, so an unlabelled peer gets
  * the honest string rather than a throw.
  */
-function readPeerVersion(peers: RuntimeSdkPeers): string {
-  const winter = peers.winter as unknown as { SDK_VERSION?: unknown; VERSION?: unknown };
+function readPeerVersion(sdk: HostSdk): string {
+  const winter = sdk as unknown as { SDK_VERSION?: unknown; VERSION?: unknown };
   if (typeof winter.SDK_VERSION === "string") return winter.SDK_VERSION;
   if (typeof winter.VERSION === "string") return winter.VERSION;
   return "unknown";

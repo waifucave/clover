@@ -47,7 +47,7 @@ describeWithWinterBinary("item 10 probe: MCP image content through a capability 
     // child writes its transcript where the record says (`sdk/projects`).
     const runHomes = recordedRunHomes(home);
     const runtime = await createWinterRuntimeSdk({
-      home, settings: () => settings, secrets, capabilities: [],
+      home, settings: () => settings, secrets,
       runHomeFor: async (ctx) => runHomes.deps.build(runHomes.deps.inputFor({ mode: ctx.mode, dispatchChild: false, leg: ctx.leg, cwd: ctx.cwd })),
     });
     const calls: Array<{ name: string; args: unknown }> = [];

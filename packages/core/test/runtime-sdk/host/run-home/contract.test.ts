@@ -1,4 +1,4 @@
-// WS-21 CONTRACT A — the router's run-home surface, as the daemon (lane L3) consumes it.
+// WS-21 CONTRACT A — the session host's run-home surface (the router's, until A-M1), as the daemon consumes it.
 //
 // What is pinned here is the SHAPE a host builds against: the two path helpers, the constants, the
 // attach points on both `query()` overloads and the `requireRunHome` refusal. The builder's behaviour
@@ -6,21 +6,7 @@
 import { describe, expect, test } from "bun:test";
 
 import * as router from "../../../../src/runtime-sdk/host/index";
-import { createFakeKeychain, createFakeWinterPeer } from "../testing/index";
-import type { RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
-
-const keychain = createFakeKeychain();
-
-const claudeSelection: RuntimeSelection = {
-  runtimeKind: "claude-agent",
-  providerId: "anthropic",
-  modelRef: "claude-sonnet-4-5",
-  family: "claude",
-  authFamily: "api-key",
-  sdkVersion: "0.0.2",
-  reason: "the contract test",
-  decidedAt: new Date(0).toISOString(),
-};
+import { createFakeWinterPeer } from "../testing/index";
 
 describe("WS-21 Contract A: helpers and constants", () => {
   test("sdkHomeOf joins `sdk` onto the daemon home", () => {
@@ -153,7 +139,7 @@ describe("WS-21 Contract A: helpers and constants", () => {
 describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation without a run home", () => {
   test("the Winter overload refuses `run_home_required` synchronously, before the peer is called", () => {
     const { peer, calls } = createFakeWinterPeer();
-    const sdk = router.createRuntimeSdk({ peers: { winter: peer }, keychain, requireRunHome: true, handoff: { winterHome: "/tmp/ws21-contract-home" } });
+    const sdk = router.createSessionHost({ sdk: peer, requireRunHome: true, home: "/tmp/ws21-contract-home" });
     let caught: unknown;
     try {
       sdk.query({ prompt: "hello", options: { cwd: "/tmp/nowhere" } });
@@ -165,23 +151,10 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
     expect(calls).toHaveLength(0);
   });
 
-  test("a selection-bearing call refuses `run_home_required` too, before anything opens", () => {
-    const { peer, calls } = createFakeWinterPeer();
-    const sdk = router.createRuntimeSdk({ peers: { winter: peer }, keychain, requireRunHome: true, handoff: { winterHome: "/tmp/ws21-contract-home" } });
-    let caught: unknown;
-    try {
-      sdk.query({ prompt: "hello", options: { cwd: "/tmp/nowhere", runtime: { selection: claudeSelection } } });
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(router.RunHomeError);
-    expect((caught as router.RunHomeError).code).toBe("run_home_required");
-    expect(calls).toHaveLength(0);
-  });
 
   test("without `requireRunHome` an existing caller is unchanged (feature detection: the daemon opts in)", () => {
     const { peer, calls } = createFakeWinterPeer();
-    const sdk = router.createRuntimeSdk({ peers: { winter: peer }, keychain });
+    const sdk = router.createSessionHost({ sdk: peer });
     const options = { cwd: "/tmp/nowhere" };
     sdk.query({ prompt: "hello", options });
     expect(calls).toHaveLength(1);
@@ -190,7 +163,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
 
   test("the handle carries the two exit/recovery doors, and an unknown run id is `pending`", () => {
     const { peer } = createFakeWinterPeer();
-    const sdk = router.createRuntimeSdk({ peers: { winter: peer }, keychain, requireRunHome: true, handoff: { winterHome: "/tmp/ws21-contract-home" } });
+    const sdk = router.createSessionHost({ sdk: peer, requireRunHome: true, home: "/tmp/ws21-contract-home" });
     expect(typeof sdk.runHomeOutcome).toBe("function");
     expect(typeof sdk.reconcileRootForRecovery).toBe("function");
     expect(sdk.runHomeOutcome("never-seen")).toBe("pending");
@@ -198,7 +171,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
 
   test("a run-home router must name its home — its store is rooted at the shared runtime home under it", () => {
     const { peer } = createFakeWinterPeer();
-    expect(() => router.createRuntimeSdk({ peers: { winter: peer }, keychain, requireRunHome: true })).toThrow(/handoff\.winterHome/);
+    expect(() => router.createSessionHost({ sdk: peer, requireRunHome: true })).toThrow(/the home must be named/);
   });
 
   test("`runHomeFor` is accepted at creation (the cold-resume callback)", () => {
@@ -206,7 +179,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
     const runHomeFor: router.RunHomeFor = async () => {
       throw new Error("not called in this test");
     };
-    const sdk = router.createRuntimeSdk({ peers: { winter: peer }, keychain, requireRunHome: true, runHomeFor, handoff: { winterHome: "/tmp/ws21-contract-home" } });
+    const sdk = router.createSessionHost({ sdk: peer, requireRunHome: true, runHomeFor, home: "/tmp/ws21-contract-home" });
     expect(sdk.brand.projectDirName).toBe(".winter");
   });
 });

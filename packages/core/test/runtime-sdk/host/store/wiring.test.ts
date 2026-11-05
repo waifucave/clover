@@ -19,7 +19,7 @@ import {
 } from "../../../../src/runtime-sdk/host/store/index";
 import type { SharedSessionStore } from "../../../../src/runtime-sdk/host/store/index";
 import { createFakeWinterPeer } from "../testing/index";
-import { storePeers, withStoreBed } from "./support";
+import { storeSdk, withStoreBed } from "./support";
 
 describe("the shared store (WS-05 §6)", () => {
   test("both branches are handed the SAME object, and two stores over one home are refused", async () => {
@@ -31,7 +31,7 @@ describe("the shared store (WS-05 §6)", () => {
       // Identity, not shape: this is the whole point of §6's "the identical package/version".
       expect(() => assertOneSharedStore(bed.shared, winterOptions, officialOptions)).not.toThrow();
 
-      const second = createSharedSessionStore({ peers: bed.peers, winterHome: bed.home });
+      const second = createSharedSessionStore({ sdk: bed.sdk, winterHome: bed.home });
       expect(second.store).not.toBe(bed.shared.store);
       expect(() => assertOneSharedStore(bed.shared, second.attach({}))).toThrow(SharedStoreOptionsError);
       expect(() => assertOneSharedStore(bed.shared, {})).toThrow(SharedStoreOptionsError);
@@ -40,7 +40,7 @@ describe("the shared store (WS-05 §6)", () => {
 
   test("the store class comes from the INJECTED peer, and a peer without one refuses loudly", () => {
     const { peer } = createFakeWinterPeer();
-    expect(() => createSharedSessionStore({ peers: { winter: peer }, winterHome: "/nowhere" })).toThrow(SharedStoreUnavailableError);
+    expect(() => createSharedSessionStore({ sdk: peer, winterHome: "/nowhere" })).toThrow(SharedStoreUnavailableError);
   });
 
   test("the identity records the version BOTH branches are therefore on", async () => {
@@ -250,10 +250,10 @@ describe("the decoration registry (WS-13 §8.2's no-wash-back mechanism)", () =>
 });
 
 describe("the peer is the injection point", () => {
-  test("`storePeers` really is the spine's own peer, widened", () => {
-    const peers = storePeers();
-    expect((peers.winter as unknown as { SDK_VERSION: string }).SDK_VERSION).toBe("0.0.21"); // R.4 (0.0.12): the fake winter peer's default (src/testing/peers.ts)
-    expect((peers.winter as unknown as { WinterCompatibilitySessionStore: unknown }).WinterCompatibilitySessionStore).toBe(WinterCompatibilitySessionStore);
+  test("`storeSdk` really is the spine's own peer, widened", () => {
+    const sdk = storeSdk();
+    expect((sdk as unknown as { SDK_VERSION: string }).SDK_VERSION).toBe("0.0.21"); // R.4 (0.0.12): the fake SDK's default (testing/peers.ts)
+    expect((sdk as unknown as { WinterCompatibilitySessionStore: unknown }).WinterCompatibilitySessionStore).toBe(WinterCompatibilitySessionStore);
   });
 });
 
@@ -305,7 +305,7 @@ describe("the mirror cannot be poisoned (review r1, F10/F12)", () => {
           }
         }
       }
-      const shared = createSharedSessionStore({ peers: storePeers({ store: Reenters }), winterHome: bed.home });
+      const shared = createSharedSessionStore({ sdk: storeSdk({ store: Reenters }), winterHome: bed.home });
       live = shared;
       await shared.store.append(bed.key, [bed.entry()]);
       const report = await shared.settle(bed.key);
@@ -319,7 +319,7 @@ describe("the mirror cannot be poisoned (review r1, F10/F12)", () => {
 describe("`attach()` is the one door WS-05 §6 is enforced at (review r1, nit 2)", () => {
   test("options that already carry a DIFFERENT store are refused rather than silently overwritten", async () => {
     await withStoreBed(async (bed) => {
-      const second = createSharedSessionStore({ peers: bed.peers, winterHome: bed.home });
+      const second = createSharedSessionStore({ sdk: bed.sdk, winterHome: bed.home });
       expect(() => bed.shared.attach({ sessionStore: second.store })).toThrow(SharedStoreOptionsError);
       // The same store is idempotent, not a conflict.
       expect(bed.shared.attach({ sessionStore: bed.shared.store }).sessionStore).toBe(bed.shared.store);

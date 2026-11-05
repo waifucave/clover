@@ -1673,10 +1673,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       }),
       secrets,
       directoryStore: runtime?.directory,
-      // EMPTY ON PURPOSE (P8b-36) — this list is handle-wide and construction-time, which is
-      // exactly what a per-session capability set must not be. Clover's capability servers ride each
-      // session's own `Options.mcpServers` instead (`buildSessionCapabilities` above).
-      capabilities: [],
       // Task 12's seam, filled by Task 16: the inbound class of a session this process holds no
       // live facet for — a parked (`resumable`) Clover session answers `unavailable` instead of
       // holding its mail forever, and is never cold-resumed behind the daemon's back.

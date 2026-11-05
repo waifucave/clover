@@ -265,6 +265,6 @@ export interface Bed {
 export function createBed(options: { messages?: SdkMessage[] } = {}): Bed {
   const store = createInMemoryRuntimeDirectoryStore();
   const fake = createFakeWinterPeer(options.messages === undefined ? {} : { messages: options.messages });
-  const context: SeamContext = { peers: { winter: fake.peer }, keychain: createFakeKeychain(), brand: WINTER_BRAND, directoryStore: store };
+  const context: SeamContext = { sdk: fake.peer, brand: WINTER_BRAND, directoryStore: store };
   return { store, context, clock: createClock(), peerCalls: fake.calls };
 }

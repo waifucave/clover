@@ -35,7 +35,7 @@ import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sd
 import { createSwitchReviewer, providerStateSidecarPath, type SwitchReviewerDeps, type SwitchReviewerHandle } from "../../../../src/runtime-sdk/host/store/index";
 import type { RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
 import { withStoreBed, type StoreBed } from "./support";
-import { createRuntimeSdk, runtimeSdkInternals, sdkHomeOf } from "../../../../src/runtime-sdk/host/index";
+import { createSessionHost, sdkHomeOf } from "../../../../src/runtime-sdk/host/index";
 import type { SharedSessionStore } from "../../../../src/runtime-sdk/host/store/wiring";
 import { createFakeKeychain } from "../testing/index";
 
@@ -582,8 +582,8 @@ describe("integration Important: under WS-21 (`requireRunHome`) the review reads
   /** The ROUTER's own reviewer over the shared runtime home `<home>/sdk` — not one built on the bed's pre-WS-21 store. */
   function routerOf(bed: StoreBed): { barrier: SwitchReviewerHandle; shared: SharedSessionStore; storeHome: string } {
     mkdirSync(bed.home, { recursive: true, mode: 0o700 }); // the daemon's home always exists; the store creates `sdk/` under it
-    const sdk = createRuntimeSdk({ peers: bed.peers, keychain: createFakeKeychain(), directoryStore: bed.directoryStore, requireRunHome: true, handoff: { winterHome: bed.home, resolveEndpoint: fixtureResolveEndpoint } });
-    const barrier = runtimeSdkInternals(sdk)!.barrier;
+    const sdk = createSessionHost({ sdk: bed.sdk, directoryStore: bed.directoryStore, requireRunHome: true, home: bed.home, resolveEndpoint: fixtureResolveEndpoint });
+    const barrier = sdk.reviewer;
     return { barrier, shared: barrier.shared, storeHome: sdkHomeOf(bed.home) };
   }
 

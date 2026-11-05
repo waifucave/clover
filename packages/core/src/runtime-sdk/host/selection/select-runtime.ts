@@ -38,7 +38,6 @@
 // asserting which branch was taken read the same token instead of substring-matching prose.
 import type { CredentialRef, ModelFamilyListing } from "@yanlinglabs/winter-agent-sdk";
 
-import type { VersionMatrixReport } from "../version-matrix";
 import type {
   CredentialPresence,
   ProviderAuthView,
@@ -662,12 +661,10 @@ export function reviewPersistedSelection(input: SelectionInput & { persisted: Ru
 // --- convenience ---------------------------------------------------------------------------------
 
 /**
- * The version identities the constructor already measured, in the shape a selection stamps.
- *
- * `RuntimeSdk.versions` is a `VersionMatrixReport`; `SelectionInput.versions` is what the record
- * needs. This is the one-line bridge, so a host does not hand-copy two fields and get the second one
- * wrong for the runtime it did not test.
+ * The version identities a selection stamps, from the SDK version the daemon runs (its `SDK_VERSION`).
+ * The router derived this from its version matrix over the injected peer; the session host has none,
+ * and the daemon's version lock (`embeddedVersionCheck`) is what holds the runtime to that version.
  */
-export function selectionVersionsFrom(report: VersionMatrixReport): SelectionVersions {
-  return { winterSdkVersion: report.winterAgentSdk.packageVersion };
+export function selectionVersionsFrom(sdkVersion: string): SelectionVersions {
+  return { winterSdkVersion: sdkVersion };
 }

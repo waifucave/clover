@@ -61,11 +61,11 @@ export class SwitchReviewError extends RuntimeSdkError {
 export function createSwitchReviewer(context: SeamContextWithDirectory, deps: SwitchReviewerDeps = {}): SwitchReviewerHandle {
   // EVERYTHING THE STORE TOUCHES IS RESOLVED ON FIRST USE: most handles never review a switch, and a
   // test peer with no store class must still construct one. See `lazySharedSessionStore`.
-  const winterHome = deps.winterHome ?? context.winterHome;
+  const winterHome = deps.winterHome ?? context.home;
   const storeHome = deps.storeHome ?? context.storeHome;
   const sharedOf =
     deps.shared === undefined
-      ? lazySharedSessionStore({ peers: context.peers, brand: context.brand, ...(winterHome === undefined ? {} : { winterHome }), ...(storeHome === undefined ? {} : { storeHome }) })
+      ? lazySharedSessionStore({ sdk: context.sdk, brand: context.brand, ...(winterHome === undefined ? {} : { winterHome }), ...(storeHome === undefined ? {} : { storeHome }) })
       : () => deps.shared!;
   const homeOf = (): string => winterHome ?? sharedOf().identity.winterHome;
   // The STORE home: under WS-21 the child writes the sidecar beside the canonical transcript in the

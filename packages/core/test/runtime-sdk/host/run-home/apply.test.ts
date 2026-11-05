@@ -10,17 +10,15 @@ import { existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { WINTER_BRAND, WinterCompatibilitySessionStore, resolveBrand, type SessionStore } from "@yanlinglabs/winter-agent-sdk";
 
-import { buildRunHome, createRuntimeSdk, protectedPathRules, RunHomeError, type RunHome, type RuntimeSdkPeers } from "../../../../src/runtime-sdk/host/index";
-import { createFakeKeychain, createFakeWinterPeer } from "../testing/index";
+import { buildRunHome, createSessionHost, protectedPathRules, RunHomeError, type HostSdk, type RunHome, type SessionHostOptions } from "../../../../src/runtime-sdk/host/index";
+import { createFakeWinterPeer } from "../testing/index";
 import { cleanupRunHomeBeds, inputFor, put, runHomeBed, type RunHomeBed } from "./support";
 import { declaredClasses, sessionAddress, sessionEntry } from "../messaging/support";
 
 afterAll(cleanupRunHomeBeds);
 
-const keychain = createFakeKeychain([{ ref: { kind: "keychain", account: "loopback", service: "com.example.apply" }, material: "sk-apply" }]);
-
 /** A Winter peer with the concrete store, whose home resolution throws: this bed always names its home. */
-function storePeer(): { peer: RuntimeSdkPeers["winter"]; calls: ReturnType<typeof createFakeWinterPeer>["calls"] } {
+function storePeer(): { peer: HostSdk; calls: ReturnType<typeof createFakeWinterPeer>["calls"] } {
   const { peer, calls } = createFakeWinterPeer();
   return {
     peer: {
@@ -29,14 +27,14 @@ function storePeer(): { peer: RuntimeSdkPeers["winter"]; calls: ReturnType<typeo
       resolveWinterHome: () => {
         throw new Error("a hermetic test must never resolve the real Winter home");
       },
-    } as unknown as RuntimeSdkPeers["winter"],
+    } as unknown as HostSdk,
     calls,
   };
 }
 
 function winterRouter(bed: RunHomeBed, extra: { requireRunHome?: boolean } = {}) {
   const { peer, calls } = storePeer();
-  const sdk = createRuntimeSdk({ peers: { winter: peer }, keychain, requireRunHome: extra.requireRunHome ?? true, handoff: { winterHome: bed.home } });
+  const sdk = createSessionHost({ sdk: peer, requireRunHome: extra.requireRunHome ?? true, home: bed.home });
   return { sdk, calls };
 }
 
@@ -103,10 +101,10 @@ describe("the Winter leg", () => {
             yield* [];
             throw new Error("unexpected process death");
           })();
-          return Object.assign(failing, { interrupt: async () => undefined }) as unknown as ReturnType<RuntimeSdkPeers["winter"]["query"]>;
+          return Object.assign(failing, { interrupt: async () => undefined }) as unknown as ReturnType<HostSdk["query"]>;
         },
       });
-      const sdk = createRuntimeSdk({ peers: { winter: { ...peer, WinterCompatibilitySessionStore } as unknown as RuntimeSdkPeers["winter"] }, keychain, requireRunHome: true, handoff: { winterHome: bed.home } });
+      const sdk = createSessionHost({ sdk: { ...peer, WinterCompatibilitySessionStore } as unknown as HostSdk, requireRunHome: true, home: bed.home });
       const query = sdk.query({ prompt: "hi", options: { cwd: bed.cwd, runtime: { runHome } } });
       expect(sdk.runHomeOutcome(runHome.runId)).toBe("pending");
       await expect(query.next()).rejects.toThrow("unexpected process death");
@@ -138,8 +136,8 @@ describe("the Winter leg", () => {
     const bed = runHomeBed();
     const { peer } = createFakeWinterPeer();
     let returned: unknown;
-    const wrapped = { ...peer, WinterCompatibilitySessionStore, query: (args: Parameters<RuntimeSdkPeers["winter"]["query"]>[0]) => (returned = peer.query(args)) } as unknown as RuntimeSdkPeers["winter"];
-    const sdk = createRuntimeSdk({ peers: { winter: wrapped }, keychain });
+    const wrapped = { ...peer, WinterCompatibilitySessionStore, query: (args: Parameters<HostSdk["query"]>[0]) => (returned = peer.query(args)) } as unknown as HostSdk;
+    const sdk = createSessionHost({ sdk: wrapped });
     const query = sdk.query({ prompt: "hi", options: { cwd: bed.cwd } });
     expect(query).toBe(returned as typeof query);
   });
@@ -231,14 +229,13 @@ describe("the Winter leg", () => {
 // ------------------------------------------------------------------------------------------------
 
 describe("the cold resume runs on a run home too", () => {
-  const world = (bed: RunHomeBed, runHomeFor?: Parameters<typeof createRuntimeSdk>[0]["runHomeFor"]) => {
+  const world = (bed: RunHomeBed, runHomeFor?: SessionHostOptions["runHomeFor"]) => {
     const { peer, calls } = storePeer();
     const declared = declaredClasses();
-    const sdk = createRuntimeSdk({
-      peers: { winter: peer },
-      keychain,
+    const sdk = createSessionHost({
+      sdk: peer,
       requireRunHome: true,
-      handoff: { winterHome: bed.home },
+      home: bed.home,
       ...(runHomeFor === undefined ? {} : { runHomeFor }),
       messaging: { messaging: { winter: { permissionClass: declared.winter.permissionClass } } },
     });
@@ -283,14 +280,13 @@ describe("the cold resume runs on a run home too", () => {
 });
 
 describe("the cwd check compares CANONICAL forms (L3 round 4: the daemon's cold resume passes a realpath'd cwd)", () => {
-  const world = (bed: RunHomeBed, runHomeFor: NonNullable<Parameters<typeof createRuntimeSdk>[0]["runHomeFor"]>) => {
+  const world = (bed: RunHomeBed, runHomeFor: NonNullable<SessionHostOptions["runHomeFor"]>) => {
     const { peer, calls } = storePeer();
     const declared = declaredClasses();
-    const sdk = createRuntimeSdk({
-      peers: { winter: peer },
-      keychain,
+    const sdk = createSessionHost({
+      sdk: peer,
       requireRunHome: true,
-      handoff: { winterHome: bed.home },
+      home: bed.home,
       runHomeFor,
       messaging: { messaging: { winter: { permissionClass: declared.winter.permissionClass } } },
     });

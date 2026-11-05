@@ -18,10 +18,10 @@
 // is read from the module namespace once and cached. Tests pin either answer with the seam below and
 // must restore it.
 import * as routerModule from "./host";
-import type { RecoveryReport, RunHome, RunHomeInput, RunHomeOutcome, RuntimeSdk } from "./host";
+import type { RecoveryReport, RunHome, RunHomeInput, RunHomeOutcome, SessionHost } from "./host";
 
-/** The router HANDLE's run-home members (`createRuntimeSdk(...)`'s result on a run-home router). */
-export type RouterRunHomeHandle = Pick<RuntimeSdk, "runHomeOutcome" | "reconcileRootForRecovery">;
+/** The session host's run-home members (`createSessionHost(...)`). */
+export type RouterRunHomeHandle = Pick<SessionHost, "runHomeOutcome" | "reconcileRootForRecovery">;
 
 /** True when `router` (a module namespace or any object) exports a callable `buildRunHome`. */
 export function routerSupportsRunHome(router: unknown): router is { buildRunHome: (i: RunHomeInput) => Promise<RunHome> } {
@@ -38,7 +38,7 @@ export function linkedRunHomeBuilder(): ((input: RunHomeInput) => Promise<RunHom
   return (input) => build(input);
 }
 
-/** A router handle's run-home members, when it has them (a run-home router's `createRuntimeSdk`). */
+/** A host handle's run-home members, when it has them (the session host always does; a test double may not). */
 export function runHomeHandleOf(sdk: unknown): RouterRunHomeHandle | undefined {
   if (typeof sdk !== "object" || sdk === null) return undefined;
   const h = sdk as Partial<RouterRunHomeHandle>;

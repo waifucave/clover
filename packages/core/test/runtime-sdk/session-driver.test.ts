@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options, Query } from "@yanlinglabs/winter-agent-sdk";
 import * as clover from "@yanlinglabs/winter-agent-sdk";
-import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk, RunHomeError } from "../../src/runtime-sdk/host";
+import { createInMemoryRuntimeDirectoryStore, createSessionHost, RunHomeError } from "../../src/runtime-sdk/host";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FakeProvider } from "../../src/agent/fake-provider";
 import { SessionTitler, TITLE_INSTRUCTION } from "../../src/agent/titles";
@@ -97,7 +97,7 @@ class FakeQuery {
 
 const result = (): Frame => ({ type: "result", subtype: "success", is_error: false, permission_denials: [], result: "" });
 
-function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<string, unknown> = {}, wrapSdk?: (sdk: ReturnType<typeof createRuntimeSdk>) => ReturnType<typeof createRuntimeSdk>, opts: { legacyRouter?: boolean; runHomes?: Parameters<typeof recordedRunHomes>[1] } = {}) {
+function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<string, unknown> = {}, wrapSdk?: (sdk: ReturnType<typeof createSessionHost>) => ReturnType<typeof createSessionHost>, opts: { legacyRouter?: boolean; runHomes?: Parameters<typeof recordedRunHomes>[1] } = {}) {
   // `legacyRouter`: the PRE-run-home branch (router 0.0.11) the daemon still keeps behind its feature
   // detection — the support flag pinned false, a router without `requireRunHome`, and no run-home deps.
   // Dead once R.4 pins a run-home router for good; kept only for the tests of that branch.
@@ -109,13 +109,11 @@ function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<stri
   const records = new RuntimeSessionRecords(rs);
   const checkpoints = new ProjectionCheckpoints(rs);
   const queries: FakeQuery[] = [];
-  const sdk = createRuntimeSdk({
-    peers: { winter: { ...clover, query: (({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FakeQuery(prompt, options); queries.push(q); return q as unknown as Query; }) as unknown as typeof clover.query } },
-    peerVersions: CLOVER_PEER_VERSIONS,
-    keychain: { read: async () => undefined },
+  const sdk = createSessionHost({
+    sdk: { ...clover, query: (({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FakeQuery(prompt, options); queries.push(q); return q as unknown as Query; }) as unknown as typeof clover.query },
     brand: CORE_BRAND,
     directoryStore: createInMemoryRuntimeDirectoryStore(),
-    handoff: { winterHome: home },
+    home,
     // WS-21: the production shape — a run-home router (`create.ts` passes this whenever run homes are wired);
     // its store is the shared runtime home, the only store a run home may be applied against.
     ...(opts.legacyRouter === true ? {} : { requireRunHome: true }),
@@ -681,7 +679,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
     const secretsHome = mkdtempSync(join(tmpdir(), "clover-console-select-"));
     const secrets = new FileSecretStore(join(secretsHome, "secrets.json"));
     await seed(secrets);
-    const handle = await createWinterRuntimeSdk({ home: secretsHome, settings: () => null, secrets, capabilities: [] });
+    const handle = await createWinterRuntimeSdk({ home: secretsHome, settings: () => null, secrets });
     const t = table({ secrets }, { selectRuntimeFor: (input: Parameters<WinterRuntimeSdk["selectRuntimeFor"]>[0]) => handle.selectRuntimeFor(input) });
     return {
       t, secrets,
@@ -1752,7 +1750,7 @@ describe("WS-21: run homes on the Clover leg (the router's real buildRunHome, re
   const querySpy = () => {
     const calls: Array<{ options: Options & { runtime?: { runHome?: { runId: string } } } }> = [];
     let failNext = false;
-    const wrap = (sdk: ReturnType<typeof createRuntimeSdk>) => new Proxy(sdk, {
+    const wrap = (sdk: ReturnType<typeof createSessionHost>) => new Proxy(sdk, {
       get(target, prop, receiver) {
         if (prop !== "query") return Reflect.get(target, prop, receiver);
         return (args: { prompt: AsyncIterable<string>; options: Options }) => {

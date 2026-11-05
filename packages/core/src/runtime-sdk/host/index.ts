@@ -11,9 +11,11 @@
 //   * the shared transcript store (`store/`): the model-switch review and crash recovery;
 //   * the selection record (`selection/`): the `RuntimeSelection` a session persists.
 //
-// What the router did not keep: its `peers` injection, its version matrix over the injected peer and
-// its capability-server merge. The daemon imports the SDK itself (`create.ts`), checks one version
-// lock (`embedded.ts`'s `embeddedVersionCheck`) and hands each session its own `mcpServers`.
+// The router's `createRuntimeSdk` door is `createSessionHost` (`session-host.ts`): the run home applied,
+// then the SDK's own `query()`. What the router did not keep: its `peers` injection, its version matrix
+// over the injected peer, selections carried in `Options.runtime` and its capability-server merge. The
+// daemon imports the SDK itself (`create.ts`), checks one version lock (`embedded.ts`'s
+// `embeddedVersionCheck`) and hands each session its own `mcpServers`.
 export { buildRunHome } from "./run-home/build";
 export { escapeRulePath, fsRootAnchored, protectedPathRules, PROTECTED_ITEM_DIRS, RUN_HOME_CONTRACT_VERSION, RUN_HOME_PERSISTENT_ENTRIES, sdkHomeOf } from "./run-home/types";
 export { escapeSandboxGlobPath } from "./run-home/settings";
@@ -24,10 +26,8 @@ export type { RunHomeErrorCode } from "./run-home/errors";
 export { reconcileLocalWriteRoot } from "./store/reconcile";
 export type { ReconcileReport, TailComparison, TranscriptReconcileOutcome } from "./store/reconcile";
 
-export { createRuntimeSdk, forwardableOptions, runtimeSdkInternals, ROUTER_ONLY_OPTION_KEYS } from "./sdk";
-export type { RouterOnlyOptionKey, RouterOptions, RouterRuntimeInput, RuntimeSdk, RuntimeSdkInternals, RuntimeSdkOptions, RuntimeSdkPeers, WinterLegRuntimeInput } from "./sdk";
-export { assertVersionMatrix, parseVersion, readExportedVersion, readResolvedManifestVersion, satisfiesRange, SUPPORTED, SUPPORTED_PROTOCOL_VERSIONS, VERSION_EXPORT_NAMES } from "./version-matrix";
-export type { PeerVersionIdentity, PeerVersionSource, VersionMatrixReport } from "./version-matrix";
+export { createSessionHost } from "./session-host";
+export type { HostQueryOptions, HostSdk, SessionHost, SessionHostOptions } from "./session-host";
 
 export { isSelectionRefusal, selectChildRuntime, selectRuntime, SelectionRefusedError } from "./selection/runtime-selection";
 export type { ChildSelectionInput, CredentialPresence, RuntimeKind, RuntimeSelection, SelectionAlternative, SelectionInput, SelectionRefusal } from "./selection/runtime-selection";
@@ -43,7 +43,7 @@ export { TRAFFIC_OPT_OUT_VARIABLES, TRAFFIC_OPT_OUT_VARIABLE_NAMES } from "./run
 
 export * from "./seams/index";
 
-export { NotImplementedYet, RuntimeLaunchInputError, RuntimeSdkDisposedError, RuntimeSdkError, RuntimeSdkVersionError, UnaddressableEntryError } from "./errors";
+export { NotImplementedYet, RuntimeLaunchInputError, RuntimeSdkDisposedError, RuntimeSdkError, UnaddressableEntryError } from "./errors";
 
 export { renderAttributedTurn } from "./messaging/index";
 export { createRuntimeMessaging, createAttachedSessionRegistry } from "./messaging/index";

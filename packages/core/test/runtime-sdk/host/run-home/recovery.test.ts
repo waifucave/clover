@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
 import { toClaudeReady } from "@yanlinglabs/winter-provider-runtime";
 
-import { createRuntimeSdk, runtimeSdkInternals, type RuntimeSdkPeers } from "../../../../src/runtime-sdk/host/index";
+import { createSessionHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import { defaultEndpointResolver } from "../../../../src/runtime-sdk/host/default-endpoint-resolver";
 import { createSharedSessionStore, type SharedSessionStore } from "../../../../src/runtime-sdk/host/store/wiring";
 import { reconcileRootForRecovery, recoveryOutcomeOf } from "../../../../src/runtime-sdk/host/run-home/exit";
@@ -22,17 +22,15 @@ const KEY: SessionKey = { projectKey: "-ws21-recovery", sessionId: "33333333-444
 
 function router(bed: RunHomeBed, requireRunHome = true, Store: typeof WinterCompatibilitySessionStore = WinterCompatibilitySessionStore) {
   const { peer } = createFakeWinterPeer();
-  const peers = {
-    winter: {
-      ...peer,
-      WinterCompatibilitySessionStore: Store,
-      resolveWinterHome: () => {
-        throw new Error("a hermetic test must never resolve the real Winter home");
-      },
-    } as unknown as RuntimeSdkPeers["winter"],
-  };
-  const sdk = createRuntimeSdk({ peers, keychain: createFakeKeychain(), requireRunHome, handoff: { winterHome: bed.home } });
-  const shared = (runtimeSdkInternals(sdk)!.barrier as unknown as { shared: SharedSessionStore }).shared;
+  const fake = {
+    ...peer,
+    WinterCompatibilitySessionStore: Store,
+    resolveWinterHome: () => {
+      throw new Error("a hermetic test must never resolve the real Winter home");
+    },
+  } as unknown as HostSdk;
+  const sdk = createSessionHost({ sdk: fake, requireRunHome, home: bed.home });
+  const shared = (sdk.reviewer as unknown as { shared: SharedSessionStore }).shared;
   return { sdk, shared };
 }
 
@@ -253,8 +251,8 @@ describe("minors round: the recovery door's own branches", () => {
   function recoveryBed(resolverThrows: boolean) {
     const bed = runHomeBed();
     const { peer } = createFakeWinterPeer();
-    const peers = { winter: { ...peer, WinterCompatibilitySessionStore } as unknown as RuntimeSdkPeers["winter"] };
-    const shared = createSharedSessionStore({ peers, winterHome: bed.home, storeHome: bed.sdk, policy: { batchWindowMs: 1 } });
+    const sdk = { ...peer, WinterCompatibilitySessionStore } as unknown as HostSdk;
+    const shared = createSharedSessionStore({ sdk, winterHome: bed.home, storeHome: bed.sdk, policy: { batchWindowMs: 1 } });
     const resolver = defaultEndpointResolver();
     const input = {
       shared,
@@ -518,8 +516,8 @@ describe("review N-1 on the recovery door: journals are proved byte for byte, ne
   test("a journal needs no fold: with the claude target unresolvable, a behind run journal is still appended (a transcript's tail is quarantined there)", async () => {
     const bed = runHomeBed();
     const { peer } = createFakeWinterPeer();
-    const peers = { winter: { ...peer, WinterCompatibilitySessionStore } as unknown as RuntimeSdkPeers["winter"] };
-    const shared = createSharedSessionStore({ peers, winterHome: bed.home, storeHome: bed.sdk, policy: { batchWindowMs: 1 } });
+    const sdk = { ...peer, WinterCompatibilitySessionStore } as unknown as HostSdk;
+    const shared = createSharedSessionStore({ sdk, winterHome: bed.home, storeHome: bed.sdk, policy: { batchWindowMs: 1 } });
     const input = {
       shared,
       home: bed.home,

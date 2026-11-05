@@ -15,28 +15,29 @@
 // the keychain seam — which only the official leg's spawn-time credential fetch read — is optional.
 import type { BrandProfile } from "@yanlinglabs/winter-agent-sdk";
 
-import type { RuntimeSdkPeers } from "../sdk";
+import type { HostSdk } from "../session-host";
 import type { RuntimeDirectory } from "./directory";
 import type { RuntimeDirectoryStore } from "./directory-store";
 import type { KeychainSeam } from "./keychain";
 
 /** Everything the directory itself needs. */
 export interface SeamContext {
-  peers: RuntimeSdkPeers;
+  /** The agent SDK's module namespace (`session-host.ts`'s `HostSdk`): the real one, or a test's fake. */
+  sdk: HostSdk;
   /** WS-14 §12: the host's credential reads, when it passed any. Nothing in this package reads it (WS-23). */
   keychain?: KeychainSeam;
   /**
    * The RESOLVED profile (I2) — never `Partial`, never a literal, resolved exactly once at
-   * construction through the INJECTED peer's own `resolveBrand`. Every Winter-owned name any seam
+   * construction through the SDK's own `resolveBrand`. Every Winter-owned name any seam
    * spells derives from this.
    */
   brand: BrandProfile;
   directoryStore: RuntimeDirectoryStore;
-  /** An explicit home for the shared store's lazy resolver (defaults to the peer's own resolution under `brand`). */
-  winterHome?: string;
+  /** The daemon's home, for the shared store's lazy resolver and the quarantine (defaults to the SDK's own resolution under `brand`). */
+  home?: string;
   /**
-   * WS-21: the shared runtime home (`sdkHomeOf(winterHome)`) the canonical store is rooted at. Set only
-   * for a router created with `requireRunHome`; absent, the store is rooted at `winterHome` as before.
+   * WS-21: the shared runtime home (`sdkHomeOf(home)`) the canonical store is rooted at. The session
+   * host always sets it; absent (a test's bare context), the store is rooted at `home` as before WS-21.
    */
   storeHome?: string;
 }

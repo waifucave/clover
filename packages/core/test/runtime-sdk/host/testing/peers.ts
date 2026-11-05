@@ -1,18 +1,18 @@
 // FAKE PEERS — the one place this package casts to a module-namespace type.
 //
-// `RuntimeSdkPeers.winter` is `typeof import("@yanlinglabs/winter-agent-sdk")`: a 231-export module
+// `HostSdk` is `typeof import("@yanlinglabs/winter-agent-sdk")`: a 231-export module
 // namespace. Nothing a test can build satisfies that structurally, and nothing should have to — a
 // test of the DOOR needs `query` and a version identity, not two hundred re-exports. So the cast
 // lives here, ONCE, with this explanation, and every lane's test gets a typed fake instead.
 //
-// WHAT THE FAKE IS FOR, precisely: proving the router forwards. It records the exact `prompt` and
+// WHAT THE FAKE IS FOR, precisely: proving the session host forwards. It records the exact `prompt` and
 // `options` VALUES it was handed (by reference — `test/spine/query-passthrough.test.ts` asserts
 // identity, not deep equality) and yields exactly the messages it was scripted with, so "the stream
 // passes through verbatim" is checkable rather than assumed.
 import { InvalidBrandError, resolveBrand, transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
 import type { AccountInfo, AgentInfo, EffortLevel, ModelFamilyListing, ModelInfo, Options, PermissionMode, Query, RewindFilesResult, SdkMessage } from "@yanlinglabs/winter-agent-sdk";
 
-import type { RuntimeSdkPeers } from "../../../../src/runtime-sdk/host/sdk";
+import type { HostSdk } from "../../../../src/runtime-sdk/host/session-host";
 
 export interface RecordedQueryCall {
   prompt: string | AsyncIterable<string>;
@@ -20,8 +20,8 @@ export interface RecordedQueryCall {
 }
 
 export interface FakeWinterPeer {
-  /** Pass this as `peers.winter`. */
-  peer: RuntimeSdkPeers["winter"];
+  /** Pass this as the session host's `sdk`. */
+  peer: HostSdk;
   /** Every `query()` the router made, in order, with the values it forwarded. */
   calls: RecordedQueryCall[];
   /** The exact message objects the fake yields — for identity assertions on the stream. */
@@ -138,5 +138,5 @@ export function createFakeWinterPeer(options: FakeWinterPeerOptions = {}): FakeW
       return options.query === undefined ? scriptedQuery(scripted) : options.query(args);
     },
   };
-  return { peer: namespace as unknown as RuntimeSdkPeers["winter"], calls, scripted };
+  return { peer: namespace as unknown as HostSdk, calls, scripted };
 }
