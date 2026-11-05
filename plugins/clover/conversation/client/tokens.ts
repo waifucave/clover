@@ -1,45 +1,57 @@
-// The theme tokens this part wears. A token named `color.text` in the catalog arrives in CSS as
-// `--clover-color-text`; the catalog itself (names, types, defaults) is lane B's, in the plugin SDK,
-// and this list is what to check against it. test/styles.test.ts fails if styles.css uses a token
-// this list does not name, or this list names one styles.css does not use.
-export const TOKENS = {
-  "color.surface": "The content plane the conversation sits on",
-  "color.raised": "Cards, tool output and code blocks: one step above the surface",
-  "color.control": "Chips and small controls",
-  "color.bubble": "The user's own message bubble",
-  "color.hairline": "Dividers on the surface",
-  "color.hairline-raised": "Dividers and rims drawn on raised planes",
-  "color.hover": "A row or control under the pointer",
-  "color.selected": "A chosen option",
-  "color.text": "Body text",
-  "color.text-secondary": "Secondary text: tool lines, quotes",
-  "color.text-muted": "Quiet meta: times, notes, labels",
-  "color.text-placeholder": "Placeholder text in fields",
-  "color.link": "Links and link-like buttons",
-  "color.accent": "Brand accent: selected options, event rules",
-  "color.strong": "The primary action's fill",
-  "color.on-strong": "Text on the primary action",
-  "color.danger": "Failures",
-  "color.warning": "Held calls, the safety check, warnings",
-  "color.diff-added": "Added-line counts",
-  "color.diff-removed": "Removed-line counts",
-  "color.focus": "The keyboard focus ring",
-  "color.shadow": "Shadows under floating controls",
-  "font.body": "The body face",
-  "font.display": "Headings in Markdown",
-  "font.mono": "Code and tool output",
-  "text.body": "Body size",
-  "text.small": "Secondary size: tool lines, notes",
-  "text.caption": "Meta size: times, chips",
-  "text.code": "Code size",
-  "line.body": "Body line height",
-  "radius.bubble": "The user's bubble",
-  "radius.card": "Cards and code blocks",
-  "radius.control": "Small controls and options",
-  "radius.pill": "Pills",
-} as const;
+// The theme tokens this part wears, by lane B's catalog names (`packages/plugin-sdk/src/catalogs/tokens.ts`,
+// B-M0 cde691273): `color.text.muted` arrives in CSS as `--clover-color-text-muted`. test/styles.test.ts
+// fails if styles.css uses a token this list doesn't name, or this list names one styles.css doesn't use.
+// The shell's gallery test checks every catalog name here against a snapshot of B's catalog.
 
-export type Token = keyof typeof TOKENS;
+/** Tokens from lane B's catalog. */
+export const CATALOG_TOKENS = [
+  "bubble.radius",
+  "bubble.user.background",
+  "color.accent",
+  "color.accent.text",
+  "color.attention.text",
+  "color.control",
+  "color.danger",
+  "color.diff.added",
+  "color.diff.removed",
+  "color.focus",
+  "color.hairline",
+  "color.hairline.raised",
+  "color.hover",
+  "color.raised",
+  "color.selected",
+  "color.surface",
+  "color.text",
+  "color.text.inverse",
+  "color.text.muted",
+  "color.text.placeholder",
+  "color.text.secondary",
+  "font.display",
+  "font.line.body",
+  "font.line.tight",
+  "font.mono",
+  "font.sans",
+  "font.size.body",
+  "font.size.caption",
+  "font.size.code",
+  "font.size.control",
+  "radius.large",
+  "radius.medium",
+  "radius.round",
+  "radius.small",
+  "space.m",
+  "space.s",
+  "space.xs",
+] as const;
 
-/** `color.text` → `--clover-color-text`. */
-export const cssVariable = (token: string) => `--clover-${token.replace(/\./g, "-")}`;
+/** Part-local tokens, named as B's rule has a plugin's own (`<top-level id>.<name>`, so `clover.…`), each
+ *  a request to B for a catalog entry (listed in the PR body). A theme sets them like any other. */
+export const PART_TOKENS = [
+  "clover.line.code",
+] as const;
+
+export const TOKENS: readonly string[] = [...CATALOG_TOKENS, ...PART_TOKENS];
+
+/** `color.text.muted` → `--clover-color-text-muted`; a hyphen inside a segment would become `_` (B's
+ *  `cssProperty`), and none of these has one. */
+export const cssVariable = (token: string) => `--clover-${token.replace(/-/g, "_").replace(/\./g, "-")}`;

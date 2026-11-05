@@ -10,6 +10,7 @@ import type { BotItem, ConversationItem, ToolCall } from "../client/types";
 import {
   APPROVAL_PENDING,
   APPROVAL_STATES,
+  OTHER_CARDS,
   ATTACHMENTS,
   BASIC,
   BLENDER_CALL_ID,
@@ -69,6 +70,7 @@ const runtime = mockRuntime({
 
 const COMMON: Omit<ConversationViewProps, "items"> = {
   bot: BOT,
+  session: "s_alpha",
   now: NOW,
   device: DEVICE,
   format: FORMAT,
@@ -101,7 +103,7 @@ function Parts({ children }: { children: ReactNode }) {
   );
 }
 
-const CTX: MessageContext = { botName: BOT.name, now: NOW, format: FORMAT, device: DEVICE, turnLive: false, actions: COMMON };
+const CTX: MessageContext = { botName: BOT.name, session: "s_alpha", now: NOW, format: FORMAT, device: DEVICE, turnLive: false, actions: COMMON };
 
 /** The `tool.result` spot in use: a plugin draws its own tool's result. */
 function blenderResult(call: ToolCall): ReactNode | undefined {
@@ -158,7 +160,7 @@ export const stories: Story[] = [
   {
     id: "conversation/tools",
     title: "Tool runs in every state",
-    notes: "Grouped runs, outputs cut at 40 lines, diffs, web sites, an MCP Apps page, a plugin's own result view (tool.result), a failure, an interruption, and a call under the safety check.",
+    notes: "Grouped runs, outputs cut at 16 lines, diffs, web sites, an MCP Apps page, a plugin's own result view (tool.result), a failure, an interruption, and a call under the safety check.",
     render: () => (
       <View items={TOOLS} turn={{ running: true, phase: "working" }} initialExpanded={TOOLS_OPEN} renderToolResult={blenderResult} />
     ),
@@ -172,8 +174,14 @@ export const stories: Story[] = [
   {
     id: "conversation/approval-states",
     title: "Approvals after the fact, and one with a deadline",
-    notes: "Approved on the phone, denied, expired, withdrawn by an interrupt; a routine's card is denied after 10 minutes.",
+    notes: "Approved on the phone, denied, expired, withdrawn when a turn ended; a routine's card is denied after 10 minutes (the core's sealed expires field says when).",
     render: () => <View items={APPROVAL_STATES} />,
+  },
+  {
+    id: "conversation/approval-kinds",
+    title: "A plugin's confirm and a sign-in link",
+    notes: "Lane B's confirm card names the asking plugin, its id and source in the sealed source field; the elicitation card seals the link's host and the link itself. One sealed button per option.",
+    render: () => <View items={OTHER_CARDS} />,
   },
   {
     id: "conversation/questions",

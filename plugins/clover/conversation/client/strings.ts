@@ -1,10 +1,16 @@
 // Every string the conversation view shows, in one place, so moving them to `clover.` keys behind
 // `t()` (plan, F-M3) is one mechanical change.
-import { formatDuration } from "./format";
 
 const n = (count: number, one: string, many: string) => (count === 1 ? one : many.replace("#", String(count)));
 
 export const S = {
+  // Days and durations (format.ts).
+  today: "Today",
+  yesterday: "Yesterday",
+  seconds: (n: number) => `${n}s`,
+  minutes: (n: number) => `${n} min`,
+  hours: (n: number) => `${n} h`,
+
   empty: (bot: string) => `This is the start of your conversation with ${bot}.`,
   showEarlier: "Show earlier messages",
   jumpToLatest: "Jump to latest",
@@ -32,7 +38,7 @@ export const S = {
   // Thinking.
   thinkingLive: "Thinking",
   thinkingDone: "Thought",
-  thinkingFor: (ms: number) => `Thought for ${formatDuration(ms)}`,
+  thinkingFor: (duration: string) => `Thought it through · ${duration}`,
   thinkingHidden: "The provider kept this reasoning hidden.",
   thinkingTruncated: "Cut short: the rest was too long to keep.",
 
@@ -46,6 +52,7 @@ export const S = {
   toolOnComputer: (computer: string) => `on ${computer}`,
   toolNoOutput: "No output",
   toolMoreLines: (count: number) => n(count, "1 more line", "# more lines"),
+  toolMore: (count: number) => n(count, "1 more", "# more"),
   toolMoreCharacters: "The rest is too long to show here.",
   toolOpenDiff: (path: string) => `Open the diff for ${path}`,
   toolShowDetails: "Show details",
@@ -53,11 +60,11 @@ export const S = {
 
   // Approvals.
   approvalPending: "Needs your OK",
-  approvalExpiresIn: (minutes: number) => n(minutes, "Denied in 1 minute unless you answer", "Denied in # minutes unless you answer"),
   approvalApproved: "Approved",
   approvalDenied: "Denied",
   approvalExpired: "Denied: no answer in time",
-  approvalWithdrawn: "Withdrawn when you interrupted",
+  approvalWithdrawn: "Withdrawn when the turn ended",
+  approvalWithdrawnInterrupt: "Withdrawn when you interrupted",
   answeredOn: (device: string) => `on ${device}`,
 
   // Questions.
@@ -67,7 +74,9 @@ export const S = {
   questionSubmit: "Send answer",
   questionAnswered: "You answered",
   questionExpired: (bot: string) => `No answer in time; ${bot} went on without it.`,
-  questionWithdrawn: "Withdrawn when you interrupted",
+  questionWithdrawn: "Withdrawn when the turn ended",
+  questionWithdrawnInterrupt: "Withdrawn when you interrupted",
+  questionSendFailed: "Your answer didn't go through. Try again.",
   questionGoesOnIn: (bot: string, minutes: number) =>
     n(minutes, `${bot} goes on without an answer in 1 minute`, `${bot} goes on without an answer in # minutes`),
   questionPreview: "Preview",
@@ -97,15 +106,16 @@ export const S = {
   showLess: "Show less",
 
   // Agent reports.
-  reportFrom: (name: string) => `From ${name}`,
+  reportFrom: "From",
   reportAgent: (backend?: string) => (backend ? `${backend} agent` : "agent"),
   reportBot: "bot",
   reportSession: "session",
+  reportPlugin: (id: string) => `plugin ${id}`,
   reportFolded: "joined the turn",
 
   // Notes.
-  notePlugin: (name: string) => `${name} (plugin)`,
-  noteHook: (plugin: string) => `Hook from ${plugin}`,
+  notePluginId: "plugin",
+  noteHookFrom: "Hook from",
 
   // Sealed cards with no UI runtime under them.
   sealedUnavailable: "This approval card can only show in Clover's own window.",

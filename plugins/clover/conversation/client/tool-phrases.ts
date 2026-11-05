@@ -56,12 +56,13 @@ function phraseFor(name: string): Phrase {
   return p("used", "using", "use", thing, `${thing} # times`);
 }
 
-/** Done, still going, or held for the user's OK. */
-export type PhraseForm = "done" | "doing" | "waiting";
+/** Done, still going, held for the user's OK, or cut off by an interrupt (it may have run in part). */
+export type PhraseForm = "done" | "doing" | "waiting" | "stopped";
 
 export function formOf(status: ToolStatus): PhraseForm {
   if (status === "waiting") return "waiting";
   if (status === "running") return "doing";
+  if (status === "interrupted") return "stopped";
   return "done";
 }
 
@@ -71,6 +72,7 @@ export function toolFragment(name: string, count: number, form: PhraseForm = "do
   const object = count === 1 ? phrase.one : phrase.many.replace("#", String(count));
   if (form === "doing") return `${phrase.doing} ${object}`;
   if (form === "waiting") return `waiting to ${phrase.base} ${object}`;
+  if (form === "stopped") return `stopped ${phrase.doing} ${object}`;
   return `${phrase.past} ${object}`;
 }
 
@@ -86,11 +88,23 @@ export function stretches(calls: readonly ToolCall[]): { name: string; form: Phr
   return out;
 }
 
-/** The whole run as one sentence, first letter capitalized. */
+/** How many fragments a summary line names before it says "and N more". */
+export const SUMMARY_FRAGMENTS = 3;
+
+/** The whole run as one summary line, first letter capitalized: "Ran a command, edited 2 files, and
+ *  read a file"; past three stretches, the rest count as calls ("…, and 3 more"). */
 export function toolSentence(calls: readonly ToolCall[]): string {
-  const sentence = stretches(calls)
-    .map((s) => toolFragment(s.name, s.calls.length, s.form))
-    .join(", ");
+  const all = stretches(calls);
+  const named = all.length > SUMMARY_FRAGMENTS ? all.slice(0, SUMMARY_FRAGMENTS - 1) : all;
+  const parts = named.map((s) => toolFragment(s.name, s.calls.length, s.form));
+  const rest = all.slice(named.length).reduce((n, s) => n + s.calls.length, 0);
+  if (rest > 0) parts.push(rest === 1 ? "1 more" : `${rest} more`);
+  const sentence =
+    parts.length <= 1
+      ? (parts[0] ?? "")
+      : parts.length === 2
+        ? `${parts[0]} and ${parts[1]}`
+        : `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 

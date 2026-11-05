@@ -1,3 +1,4 @@
+import { safeAsset } from "../links";
 import type { ReactNode } from "react";
 import type { MessageContext } from "../context";
 import { formatTime } from "../format";
@@ -33,15 +34,15 @@ function withChips(text: string, attachments: readonly Attachment[]): ReactNode[
 export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext }) {
   const attachments = item.attachments ?? [];
   const images = attachments.filter((a) => a.kind === "image");
-  const otherDevice = item.device !== undefined && item.device !== ctx.device;
+  const otherDevice = item.device !== undefined && item.device.id !== ctx.device?.id;
   const time = formatTime(item.at, ctx.format);
   return (
     <article className="cl-conv-user" data-kind="user" aria-label={S.you}>
       {images.length > 0 && (
         <div className="cl-conv-user__images">
           {images.map((a) =>
-            a.previewUrl ? (
-              <img key={a.n} className="cl-conv-user__thumb" src={a.previewUrl} alt={a.name} title={a.path} />
+            safeAsset(a.previewUrl) ? (
+              <img key={a.n} className="cl-conv-user__thumb" src={safeAsset(a.previewUrl)} alt={a.name} title={a.path} />
             ) : (
               <span key={a.n} className="cl-conv-user__chip" title={a.path}>
                 <IconImage />
@@ -54,7 +55,7 @@ export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext
       <div className="cl-conv-user__bubble">{withChips(item.text, attachments)}</div>
       <div className="cl-conv-user__meta" data-always={otherDevice || item.late || undefined}>
         <time dateTime={new Date(item.at).toISOString()}>{time}</time>
-        {otherDevice && <span>{S.fromDevice(item.device ?? "")}</span>}
+        {otherDevice && <span>{S.fromDevice(item.device?.name ?? "")}</span>}
         {item.late && <span>{S.arrivedLate}</span>}
       </div>
     </article>

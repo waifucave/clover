@@ -1,5 +1,6 @@
 // Pure formatting. Absolute times only, so nothing on screen ticks by itself: the host re-renders
 // with a new `now` when a relative phrase ("in 9 min") must move.
+import { S } from "./strings";
 import type { ConversationFormat, SharedTime } from "./types";
 
 const MINUTE = 60_000;
@@ -37,8 +38,8 @@ export function formatTime(at: SharedTime, format: ConversationFormat = {}): str
 /** "Today", "Yesterday", "Monday, November 3", or with the year when it is not this year's. */
 export function dayLabel(at: SharedTime, now: SharedTime, format: ConversationFormat = {}): string {
   const day = dayKey(at, format);
-  if (day === dayKey(now, format)) return "Today";
-  if (day === dayKey(now - 24 * HOUR, format)) return "Yesterday";
+  if (day === dayKey(now, format)) return S.today;
+  if (day === dayKey(now - 24 * HOUR, format)) return S.yesterday;
   const sameYear = dateParts(at, format).y === dateParts(now, format).y;
   return new Intl.DateTimeFormat(format.locale, {
     timeZone: format.timeZone,
@@ -51,11 +52,11 @@ export function dayLabel(at: SharedTime, now: SharedTime, format: ConversationFo
 
 /** "4s", "12 min", "1 h 5 min". */
 export function formatDuration(ms: number): string {
-  if (ms < MINUTE) return `${Math.max(1, Math.round(ms / 1000))}s`;
-  if (ms < HOUR) return `${Math.round(ms / MINUTE)} min`;
+  if (ms < MINUTE) return S.seconds(Math.max(1, Math.round(ms / 1000)));
+  if (ms < HOUR) return S.minutes(Math.round(ms / MINUTE));
   const h = Math.floor(ms / HOUR);
   const m = Math.round((ms - h * HOUR) / MINUTE);
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+  return m === 0 ? S.hours(h) : `${S.hours(h)} ${S.minutes(m)}`;
 }
 
 /** Whole minutes from `now` until `at`, never below zero. */

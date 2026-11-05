@@ -4,7 +4,7 @@
 .mock-sealed {
   display: block;
   color: var(--clover-card-text);
-  font-family: var(--clover-card-font);
+  font-family: var(--clover-card-font-family);
 }
 
 .mock-sealed[data-field="title"] {
@@ -13,10 +13,10 @@
 
 .mock-sealed[data-field="command"] {
   padding: 8px 10px;
-  border: 1px solid var(--clover-card-border);
+  border: 1px solid var(--clover-card-rim);
   border-radius: 8px;
   background: var(--clover-card-background);
-  font-family: var(--clover-card-mono);
+  font-family: var(--clover-font-mono);
   font-size: 12.5px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -50,21 +50,21 @@
   min-height: 32px;
   padding: 0 14px;
   border-radius: var(--clover-card-radius);
-  font-family: var(--clover-card-font);
+  font-family: var(--clover-card-font-family);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .mock-sealed-button[data-kind="approve"] {
-  background: var(--clover-card-approve);
-  color: var(--clover-card-on-approve);
+  background: var(--clover-card-approve-background);
+  color: var(--clover-card-approve-text);
 }
 
 .mock-sealed-button[data-kind="deny"] {
-  border: 1px solid var(--clover-card-border);
-  background: var(--clover-card-deny);
-  color: var(--clover-card-on-deny);
+  border: 1px solid var(--clover-card-rim);
+  background: var(--clover-card-deny-background);
+  color: var(--clover-card-deny-text);
 }
 
 .mock-app {
@@ -112,4 +112,31 @@
   color: var(--clover-color-text-muted);
   font-size: 11px;
   text-align: center;
+}
+
+/* The mock core's frames for the fields lane B's card data added. */
+.mock-card {
+  display: contents;
+}
+
+.mock-sealed[data-field="what"] {
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.mock-sealed[data-field="source"],
+.mock-sealed[data-field="host"],
+.mock-sealed[data-field="expires"],
+.mock-sealed[data-field="paths"],
+.mock-sealed[data-field="detail"] {
+  color: var(--clover-card-muted);
+}
+
+.mock-sealed[data-field="paths"],
+.mock-sealed[data-field="host"] {
+  font-family: var(--clover-font-mono);
+}
+
+.mock-sealed-button[data-always] {
+  background: var(--clover-card-deny-background);
+  color: var(--clover-card-deny-text);
 }

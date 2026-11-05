@@ -2,17 +2,26 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cssVariable, TOKENS } from "../client/tokens";
-import { COLOR_LITERAL, frameUnsafeRules, parseCss, subjectOf } from "./css";
+import { COLOR_LITERAL, frameUnsafeRules, parseCss, positionedRules, subjectOf } from "./css";
 
 const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
 /** Leaf decorations that never hold a sealed frame: icons, the caret, breathing status text. */
-const LEAVES = [".cl-conv-icon", ".cl-conv-chevron", "::after", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph", ".cl-conv-working__text"];
+/** Leaf decorations that never hold a sealed frame: icons, the caret (a pseudo-element, which can hold
+ *  nothing), breathing status text, a copy button's label. Overlap is the positioned check's business. */
+const LEAVES = [
+  ".cl-conv-icon", ".cl-conv-chevron", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph",
+  ".cl-conv-working__text", ".cl-conv-copy__label", "::after",
+];
+
+/** The only out-of-flow elements, each a leaf inside its own box: a copied label over its button,
+ *  and the screen-reader line (1 by 1 pixels). */
+const POSITIONED = [".cl-conv-bot__actions .cl-conv-copy__label", ".cl-conv__announce"];
 
 describe("the conversation stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
     const used = new Set([...css.matchAll(/var\((--clover-[a-z0-9-]+)/g)].map((m) => m[1]));
-    const listed = new Set(Object.keys(TOKENS).map(cssVariable));
+    const listed = new Set(TOKENS.map(cssVariable));
     expect([...used].filter((v) => !listed.has(v!))).toEqual([]);
     expect([...listed].filter((v) => !used.has(v))).toEqual([]);
   });
@@ -33,6 +42,24 @@ describe("the conversation stylesheet", () => {
     expect(frameUnsafeRules(".cl-conv__column { transform: scale(0.98); }", LEAVES)).toEqual([".cl-conv__column"]);
     expect(frameUnsafeRules("@keyframes f { to { opacity: 0 } } .cl-conv__unit { animation: f 1s; }", LEAVES)).toEqual([".cl-conv__unit"]);
     expect(frameUnsafeRules(".cl-conv__unit { transform: translateY(4px); opacity: 1; filter: none; }", LEAVES)).toEqual([]);
+  });
+
+  test("positions nothing out of the flow but its listed leaves, and nothing reaches outside the part", () => {
+    const positioned = positionedRules(css);
+    expect(positioned.map((p) => p.selector).sort()).toEqual([...POSITIONED].sort());
+    expect(positioned.filter((p) => p.escapes)).toEqual([]);
+  });
+
+  test("the overlap guard catches a menu that leaves its part", () => {
+    expect(positionedRules(".m { position: absolute; bottom: 100%; }")[0]?.escapes).toBe(true);
+    expect(positionedRules(".m { position: fixed; }")[0]?.escapes).toBe(true);
+    expect(positionedRules(".m { position: absolute; top: -4px; }")[0]?.escapes).toBe(true);
+    expect(positionedRules(".m { position: absolute; top: 2px; right: 0; }")[0]?.escapes).toBe(false);
+  });
+
+  test("clip and mask count as hiding too", () => {
+    expect(frameUnsafeRules(".cl-conv__unit { clip-path: inset(0 0 4px 0); }", LEAVES)).toEqual([".cl-conv__unit"]);
+    expect(frameUnsafeRules(".cl-conv__unit { mask-image: linear-gradient(transparent, black); }", LEAVES)).toEqual([".cl-conv__unit"]);
   });
 
   test("only a disclosure chevron turns (a status mark never does)", () => {

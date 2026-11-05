@@ -13,12 +13,16 @@ import {
   APPROVAL_STATES,
   ATTACHMENTS,
   BOT,
+  CONFIRM_CARD,
   DEVICE,
   DEVICES,
+  ELICITATION_CARD,
   EVENTS,
   FORMAT,
+  INTERRUPT,
   NOTES,
   NOW,
+  OTHER_CARDS,
   QUESTION_FREE,
   QUESTION_MULTI,
   QUESTION_SINGLE,
@@ -156,7 +160,7 @@ describe("user and bot messages", () => {
     expect(screen.getByText("from clover.waifucave.com")).toBeTruthy();
     expect(screen.getByText("arrived late")).toBeTruthy();
     // A message from this device does not repeat where it came from.
-    expect(screen.queryByText(`from ${DEVICE}`)).toBeNull();
+    expect(screen.queryByText(`from ${DEVICE.name}`)).toBeNull();
   });
 
   test("Markdown shows raw HTML as text, drops unsafe links and hands links to the host", () => {
@@ -174,9 +178,72 @@ describe("user and bot messages", () => {
     const event = new MouseEvent("click", { bubbles: true, cancelable: true });
     within(md).getByText("safe").dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
-    expect(onOpenLink).toHaveBeenCalledWith("https://example.com");
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com/");
     fireEvent.click(within(md).getByText("Image: pic"));
     expect(onOpenLink).toHaveBeenLastCalledWith("https://example.com/p.png");
+  });
+
+  test("one link rule: only absolute http, https and mailto reach the host; footnotes stay inside", () => {
+    const onOpenLink = mock((_url: string) => undefined);
+    const { container } = renderView({
+      items: [
+        bot(
+          at(0, 1, 0),
+          "[rel](/settings) [proto](//evil.example/x) [file](file:///etc/passwd) [mail](mailto:hi@clover.dev) [web](https://clover.dev/a) Note[^1]\n\n[^1]: The footnote.",
+        ),
+      ],
+      onOpenLink,
+    });
+    const md = container.querySelector(".cl-conv-md") as HTMLElement;
+    for (const name of ["rel", "proto", "file"]) {
+      const el = within(md).getByText(name);
+      expect(el.tagName).toBe("SPAN");
+      fireEvent.click(el);
+    }
+    expect(onOpenLink).not.toHaveBeenCalled();
+    // A footnote link scrolls inside the view and never goes to the host.
+    const footnote = md.querySelector('a[href^="#"]') as HTMLAnchorElement;
+    expect(footnote).toBeTruthy();
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    footnote.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(onOpenLink).not.toHaveBeenCalled();
+    fireEvent.click(within(md).getByText("mail"));
+    expect(onOpenLink).toHaveBeenLastCalledWith("mailto:hi@clover.dev");
+    // A middle-click never navigates by itself; it goes to the host like a click.
+    const middle = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
+    within(md).getByText("web").dispatchEvent(middle);
+    expect(middle.defaultPrevented).toBe(true);
+    expect(onOpenLink).toHaveBeenLastCalledWith("https://clover.dev/a");
+  });
+
+  test("nothing in the conversation loads an image from the web", () => {
+    const { container } = renderView({
+      items: [
+        tool(at(0, 1, 0), {
+          name: "mcp__clover__WebSearch",
+          detail: "clover",
+          sites: [
+            { url: "https://clover.dev/", icon: "https://clover.dev/favicon.ico" },
+            { url: "https://example.com/", icon: "data:image/png;base64,iVBORw0KGgo=" },
+            { url: "javascript:alert(1)" },
+          ],
+        }),
+        user(at(0, 1, 1), "See these", {
+          attachments: [
+            { n: 1, kind: "image", name: "a.png", path: "a.png", previewUrl: "https://tracker.example/a.png" },
+            { n: 2, kind: "image", name: "b.png", path: "b.png", previewUrl: "blob:clover/b" },
+          ],
+        }),
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Searched the web/ }));
+    const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src") ?? "");
+    expect(sources.filter((src) => /^(https?:)?\/\//i.test(src))).toEqual([]);
+    expect(sources).toContain("data:image/png;base64,iVBORw0KGgo=");
+    expect(sources).toContain("blob:clover/b");
+    // An unsafe site draws as text, never as a link.
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull();
   });
 
   test("a code block copies its text as written", () => {
@@ -212,7 +279,7 @@ describe("thinking", () => {
     expect(thinkingLabel(thinking(0, { live: true }), true)).toBe("Thinking");
     // A live block whose turn ended reads as done, never as thinking forever.
     expect(thinkingLabel(thinking(0, { live: true }), false)).toBe("Thought");
-    expect(thinkingLabel(thinking(0, { durationMs: 8_000 }), false)).toBe("Thought for 8s");
+    expect(thinkingLabel(thinking(0, { durationMs: 8_000 }), false)).toBe("Thought it through · 8s");
   });
 
   test("a done row opens to its text; a hidden block says the provider kept it; a live row does not open", () => {
@@ -228,7 +295,7 @@ describe("thinking", () => {
     expect(mapping.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(mapping);
     expect(screen.getByText("The old sync keeps a cursor.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Thought for 1s/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Thought it through · 1s/ }));
     expect(screen.getByText("The provider kept this reasoning hidden.")).toBeTruthy();
     const live = screen.getByRole("button", { name: /Live one/ }) as HTMLButtonElement;
     expect(live.disabled).toBe(true);
@@ -239,20 +306,24 @@ describe("thinking", () => {
 describe("tool runs", () => {
   test("a run reads as one sentence with its computer, and opens to each call", () => {
     renderView({ items: TOOLS.slice(0, 6) });
-    const summary = screen.getByRole("button", { name: /Ran 3 commands, read 2 files/ });
+    const summary = screen.getByRole("button", { name: /Ran 3 commands and read 2 files/ });
     expect(summary.textContent).toContain("on Studio");
     expect(summary.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(summary);
     expect(summary.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("git status --short")).toBeTruthy();
     expect(screen.getByText(/84 pass/)).toBeTruthy();
-    // 56 lines of build log draw as 40 plus a count.
+    // 56 lines of build log draw as MAX_OUTPUT_LINES plus a count of the rest.
     expect(screen.getByText(`${56 - MAX_OUTPUT_LINES} more lines`)).toBeTruthy();
   });
 
   test("output previews bound lines and characters", () => {
     expect(outputPreview("a\nb").moreLines).toBe(0);
-    expect(outputPreview(Array(45).fill("x").join("\n"))).toEqual({ text: Array(40).fill("x").join("\n"), moreLines: 5, cut: false });
+    expect(outputPreview(Array(45).fill("x").join("\n"))).toEqual({
+      text: Array(MAX_OUTPUT_LINES).fill("x").join("\n"),
+      moreLines: 45 - MAX_OUTPUT_LINES,
+      cut: false,
+    });
     expect(outputPreview("y".repeat(5000)).cut).toBe(true);
   });
 
@@ -297,31 +368,55 @@ describe("tool runs", () => {
 });
 
 describe("approvals", () => {
-  test("a pending card places the core's sealed frames: fields, then deny and approve", () => {
+  test("a pending card places every sealed field it has and one sealed button per option, deny first", () => {
     const { container } = renderView({ items: APPROVAL_PENDING });
     const card = container.querySelector(`[data-sealed-card="${APPROVAL_PENDING_CARD}"]`) as HTMLElement;
     expect(card).toBeTruthy();
+    // Every one of lane B's fields has a holder; the mock core draws the ones this card has.
+    expect([...card.querySelectorAll("[data-slot]")].map((f) => (f as HTMLElement).dataset.slot).sort()).toEqual(
+      ["source", "what", "host", "command", "paths", "computer", "risk", "reason", "detail", "expires"].sort(),
+    );
     expect([...card.querySelectorAll("[data-sealed-field]")].map((f) => (f as HTMLElement).dataset.sealedField)).toEqual([
-      "title", "command", "computer", "risk", "reason",
+      "title", "command", "computer", "risk", "reason", "expires",
     ]);
-    expect([...card.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.sealedButton)).toEqual(["deny", "approve"]);
-    // A card from a turn the user started waits: no deadline.
-    expect(screen.queryByText(/unless you answer/)).toBeNull();
+    const buttons = [...card.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
+    expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_once", "allow_always"]);
+    expect(buttons.map((b) => b.dataset.sealedButton)).toEqual(["deny", "approve", "approve"]);
+    // The view adds no deadline words of its own: the core's sealed field says when.
+    expect(screen.queryByText(/Denied in/)).toBeNull();
     // The call it holds says it is waiting, not that it ran.
     expect(screen.getByText("Waiting to run a command")).toBeTruthy();
   });
 
-  test("a card from a turn the user did not start says when it is denied", () => {
-    renderView({ items: APPROVAL_STATES });
-    // Issued at 16:22 and denied 10 minutes later; it is 16:30.
-    expect(screen.getByText("Denied in 2 minutes unless you answer")).toBeTruthy();
+  test("with no options known, it places the first deny and the first approve", () => {
+    const { container } = renderView({ items: [approval(at(0, 1, 0), { cardId: "card-routine" })] });
+    const buttons = [...container.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
+    expect(buttons.map((b) => [b.dataset.sealedButton, b.dataset.option ?? ""])).toEqual([["deny", ""], ["approve", ""]]);
   });
 
-  test("resolved cards say how they ended and where", () => {
+  test("a card from a turn the user did not start places the core's own deadline", () => {
+    const { container } = renderView({ items: APPROVAL_STATES });
+    const routine = container.querySelector('[data-sealed-card="card-routine"]') as HTMLElement;
+    expect(within(routine).getByText("Denied at 4:32 PM unless you answer")).toBeTruthy();
+  });
+
+  test("a plugin's confirm names the plugin through sealed fields; a sign-in link seals its host", () => {
+    const { container } = renderView({ items: OTHER_CARDS });
+    const confirm = container.querySelector(`[data-sealed-card="${CONFIRM_CARD}"]`) as HTMLElement;
+    expect(within(confirm).getByText(/tarot-panel/).closest("[data-slot]")?.getAttribute("data-slot")).toBe("source");
+    const link = container.querySelector(`[data-sealed-card="${ELICITATION_CARD}"]`) as HTMLElement;
+    expect(within(link).getByText("linear.app").closest("[data-slot]")?.getAttribute("data-slot")).toBe("host");
+    expect([...link.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.option)).toEqual(["decline", "open_link"]);
+  });
+
+  test("resolved cards say how they ended and where, and why a card was withdrawn", () => {
     renderView({ items: APPROVAL_STATES });
     expect(screen.getByText("Approved on iPhone")).toBeTruthy();
     expect(screen.getByText("Denied on Studio")).toBeTruthy();
     expect(screen.getByText("Denied: no answer in time")).toBeTruthy();
+    expect(screen.getByText("Withdrawn when the turn ended")).toBeTruthy();
+    cleanup();
+    renderView({ items: INTERRUPT });
     expect(screen.getByText("Withdrawn when you interrupted")).toBeTruthy();
   });
 
@@ -344,6 +439,22 @@ describe("questions", () => {
     expect(onAnswerQuestion).toHaveBeenCalledWith(QUESTION_SINGLE.callId, { answers: { "Which database should the hub use?": "SQLite" } });
     // Sent once: the card does not send twice.
     expect(send.disabled).toBe(true);
+  });
+
+  test("an answer that didn't go through gives the card back, with a note", async () => {
+    let fail: (e: Error) => void = () => undefined;
+    const onAnswerQuestion = mock((_id: string, _a: unknown) => new Promise<void>((_, reject) => (fail = reject)));
+    renderView({ items: [QUESTION_SINGLE], onAnswerQuestion });
+    fireEvent.click(screen.getByRole("radio", { name: /^SQLite/ }));
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    fireEvent.click(send);
+    expect(send.disabled).toBe(true);
+    await act(async () => {
+      fail(new Error("offline"));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("alert").textContent).toBe("Your answer didn't go through. Try again.");
+    expect(send.disabled).toBe(false);
   });
 
   test("typed text wins over a single choice; several choices join with the typed text", () => {
@@ -415,21 +526,35 @@ describe("events and notes", () => {
     expect(screen.getByRole("button", { name: "Show less" }).getAttribute("aria-expanded")).toBe("true");
   });
 
-  test("messages from other sessions name their sender, never the user", () => {
-    renderView({ items: EVENTS });
-    expect(screen.getByText("From Claude Code")).toBeTruthy();
-    expect(screen.getByText("From Luna")).toBeTruthy();
+  test("messages from other sessions and plugins name their sender, never the user", () => {
+    const { container } = renderView({ items: EVENTS });
+    const titles = [...container.querySelectorAll(".cl-conv-event__title")].map((t) => t.textContent);
+    expect(titles).toEqual(expect.arrayContaining(["From Claude Code", "From Luna", "From Tarot panel"]));
     expect(screen.getByText(/joined the turn/)).toBeTruthy();
+    // A plugin's message (conversation.post, an MCP Apps page's ui/message) says it is a plugin's and
+    // is never a user bubble.
+    const fromPlugin = container.querySelector('[data-kind="agent-report"][data-from="plugin"]') as HTMLElement;
+    expect(fromPlugin.textContent).toContain("plugin tarot-panel");
+    expect(fromPlugin.closest(".cl-conv-user")).toBeNull();
+    for (const bubble of container.querySelectorAll(".cl-conv-user")) expect(bubble.textContent).not.toContain("pinned");
   });
 
   test("notes are plain text and name a plugin's or a hook's source", () => {
     const { container } = renderView({ items: NOTES });
     expect(screen.getByRole("separator", { name: "Alpha summarized the conversation up to here" })).toBeTruthy();
-    expect(screen.getByText("Tarot panel (plugin):")).toBeTruthy();
-    expect(screen.getByText("Hook from lint-guard:")).toBeTruthy();
+    const sources = [...container.querySelectorAll(".cl-conv-note__source")].map((n) => n.textContent);
+    expect(sources).toEqual(["Tarot panel (plugin tarot-panel)", "Hook from lint-guard", "Story mode (plugin story-mode)"]);
+    // A plugin's divider can copy the core's words, but never its look: it names who drew it.
+    const plugin = container.querySelector('.cl-conv-divider[data-from="plugin"]') as HTMLElement;
+    expect(plugin.getAttribute("aria-label")).toBe("Story mode (plugin story-mode): Alpha summarized the conversation up to here");
+    // Names the plugin chose sit in <bdi>, so bidi controls in them can't reorder the label.
+    expect([...plugin.querySelectorAll("bdi")].map((b) => b.textContent)).toEqual(["Story mode", "story-mode"]);
     expect(container.querySelector('.cl-conv-note[data-tone="error"]')).toBeTruthy();
-    renderView({ items: [{ kind: "note", id: "n-md", at: at(0, 1, 0), text: "**not bold**", from: { kind: "plugin", id: "p", name: "P" } }] });
-    expect(screen.getByText("**not bold**")).toBeTruthy();
+    cleanup();
+    const plain = renderView({ items: [{ kind: "note", id: "n-md", at: at(0, 1, 0), text: "**not bold**", from: { kind: "plugin", id: "p", name: "P" } }] });
+    const text = plain.container.querySelector(".cl-conv-note__text") as HTMLElement;
+    expect(text.textContent).toBe("P (plugin p): **not bold**");
+    expect(text.querySelector("strong")).toBeNull();
   });
 });
 

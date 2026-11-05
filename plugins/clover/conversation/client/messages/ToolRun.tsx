@@ -1,15 +1,17 @@
 import { useId, type ReactNode } from "react";
 import type { MessageContext } from "../context";
-import { basename, clip, firstLine, hostOf } from "../format";
+import { clip, firstLine, hostOf } from "../format";
 import { IconChevron } from "../icons";
 import { StatusGlyph } from "../parts";
+import { Link } from "../Link";
+import { safeAsset } from "../links";
 import { AppView } from "../sdk";
 import { S } from "../strings";
 import { runStatus, sharedComputer, splitPluginTool, toolSentence } from "../tool-phrases";
 import type { ToolCall } from "../types";
 
 /** Bounds on what one output block DRAWS (the core already capped what it stores). */
-export const MAX_OUTPUT_LINES = 40;
+export const MAX_OUTPUT_LINES = 16;
 export const MAX_OUTPUT_CHARACTERS = 4000;
 /** The longest failure line a collapsed run shows. */
 export const MAX_FAILURE_SUMMARY = 140;
@@ -52,7 +54,7 @@ function DiffChip({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
   if (!diff) return null;
   const body = (
     <>
-      <span className="cl-conv-diff__path">{basename(diff.path)}</span>
+      <span className="cl-conv-diff__path">{diff.path.split("/").slice(-2).join("/")}</span>
       <span className="cl-conv-diff__removed">-{diff.removed}</span>
       <span className="cl-conv-diff__added">+{diff.added}</span>
     </>
@@ -75,17 +77,10 @@ function Sites({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
     <ul className="cl-conv-sites">
       {call.sites.map((site) => (
         <li key={site.url}>
-          <a
-            className="cl-conv-sites__link"
-            href={site.url}
-            onClick={(e) => {
-              e.preventDefault();
-              ctx.actions.onOpenLink?.(site.url);
-            }}
-          >
-            {site.iconUrl ? <img className="cl-conv-sites__icon" src={site.iconUrl} alt="" /> : null}
+          <Link className="cl-conv-sites__link" href={site.url} onOpenLink={ctx.actions.onOpenLink} title={site.url}>
+            {safeAsset(site.icon) ? <img className="cl-conv-sites__icon" src={safeAsset(site.icon)} alt="" /> : null}
             {hostOf(site.url)}
-          </a>
+          </Link>
         </li>
       ))}
     </ul>
@@ -132,7 +127,7 @@ export function ToolRun({ calls, ctx, expanded, onToggle, renderResult }: ToolRu
         type="button"
         className="cl-conv-tools__summary"
         aria-expanded={expanded}
-        aria-controls={bodyId}
+        aria-controls={expanded ? bodyId : undefined}
         title={expanded ? S.toolHideDetails : S.toolShowDetails}
         onClick={onToggle}
       >
@@ -180,7 +175,9 @@ export function ToolRun({ calls, ctx, expanded, onToggle, renderResult }: ToolRu
         </ol>
       )}
       {apps.map((call) => (
-        <AppView key={call.callId} call={call.callId} className="cl-conv-app" />
+        <div key={call.callId} className="cl-conv-app">
+          <AppView call={{ session: ctx.session, callId: call.callId }} />
+        </div>
       ))}
     </div>
   );

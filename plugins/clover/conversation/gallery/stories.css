@@ -14,7 +14,7 @@
 .story-render__image {
   height: 150px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--clover-color-accent), var(--clover-color-bubble));
+  background: linear-gradient(135deg, var(--clover-color-accent), var(--clover-bubble-user-background));
 }
 
 .story-render figcaption {

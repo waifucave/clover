@@ -1,9 +1,10 @@
-// The bot's Markdown. Raw HTML shows as the text it is, never as markup; `javascript:` and other
-// unsafe link targets are dropped (react-markdown's default URL transform); links and images go to
-// the host's `onOpenLink`, so nothing here ever navigates or loads a remote image.
+// The bot's Markdown. Raw HTML shows as the text it is, never as markup. Every link and image goes
+// through `Link` (`links.ts`): only absolute http, https and mailto targets reach the host's
+// `onOpenLink`, footnotes scroll inside the view, and an image is a link that never loads.
 import { memo, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link } from "./Link";
 import { CopyButton } from "./parts";
 import { S } from "./strings";
 
@@ -37,24 +38,17 @@ export interface MarkdownProps {
 }
 
 function components(onOpenLink: MarkdownProps["onOpenLink"], onCopy: MarkdownProps["onCopy"]): Components {
-  const open = (url: string | undefined) => (event: { preventDefault(): void }) => {
-    event.preventDefault();
-    if (url) onOpenLink?.(url);
-  };
   return {
     a: ({ href, children }) => (
-      <a className="cl-conv-md__link" href={href} onClick={open(href)}>
+      <Link className="cl-conv-md__link" href={href} onOpenLink={onOpenLink}>
         {children}
-      </a>
+      </Link>
     ),
-    img: ({ src, alt }) => {
-      const url = typeof src === "string" ? src : undefined;
-      return (
-        <a className="cl-conv-md__image-link" href={url} onClick={open(url)}>
-          {S.imageLink(alt ?? "")}
-        </a>
-      );
-    },
+    img: ({ src, alt }) => (
+      <Link className="cl-conv-md__image-link" href={typeof src === "string" ? src : undefined} onOpenLink={onOpenLink}>
+        {S.imageLink(alt ?? "")}
+      </Link>
+    ),
     pre: ({ node, children }) => {
       const code = (node as HastNode | undefined)?.children?.find((c) => c.type === "element");
       const language = languageOf(code);

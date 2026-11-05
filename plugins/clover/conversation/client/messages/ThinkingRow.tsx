@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import type { MessageContext } from "../context";
 import { formatDuration } from "../format";
-import { IconChevron } from "../icons";
+import { IconChevron, IconClover } from "../icons";
 import { S } from "../strings";
 import type { ThinkingItem } from "../types";
 
@@ -13,7 +13,7 @@ export function thinkingLabel(item: ThinkingItem, turnLive: boolean): string {
   const running = item.live && turnLive;
   if (title) return running || item.durationMs === undefined ? title : `${title} · ${formatDuration(item.durationMs)}`;
   if (running) return S.thinkingLive;
-  return item.durationMs === undefined ? S.thinkingDone : S.thinkingFor(item.durationMs);
+  return item.durationMs === undefined ? S.thinkingDone : S.thinkingFor(formatDuration(item.durationMs));
 }
 
 export function ThinkingRow({ item, ctx, defaultOpen = false }: { item: ThinkingItem; ctx: MessageContext; defaultOpen?: boolean }) {
@@ -32,7 +32,9 @@ export function ThinkingRow({ item, ctx, defaultOpen = false }: { item: Thinking
         disabled={!canOpen}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="cl-conv-thinking__glyph" aria-hidden="true">✻</span>
+        <span className="cl-conv-thinking__glyph" aria-hidden="true">
+          <IconClover />
+        </span>
         <span className="cl-conv-thinking__label">{thinkingLabel(item, ctx.turnLive)}</span>
         {canOpen && (
           <span className="cl-conv-chevron" aria-hidden="true">

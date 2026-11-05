@@ -66,7 +66,7 @@ describe("tool phrases", () => {
     expect(stretches(calls).map((s) => [s.name, s.calls.length])).toEqual([
       ["Read", 2], ["Glob", 1], ["Bash", 3], ["Read", 1],
     ]);
-    expect(toolSentence(calls)).toBe("Read 2 files, looked for files, ran 3 commands, read a file");
+    expect(toolSentence(calls)).toBe("Read 2 files, looked for files, and 4 more");
   });
 
   test("a call still going reads in the present, a held one as waiting; done ones stay past", () => {
@@ -78,9 +78,9 @@ describe("tool phrases", () => {
     expect(toolFragment("Edit", 2, "doing")).toBe("making 2 edits");
     expect(toolFragment("mcp__clover__WebSearch", 1, "doing")).toBe("searching the web");
     expect(toolFragment("mcp__blender__Render", 1, "waiting")).toBe("waiting to use Render (blender)");
-    expect(toolSentence([call("Bash"), call("Bash"), call("Bash", { status: "running" })])).toBe("Ran 2 commands, running a command");
+    expect(toolSentence([call("Bash"), call("Bash"), call("Bash", { status: "running" })])).toBe("Ran 2 commands and running a command");
     expect(toolSentence([call("Bash", { status: "waiting" })])).toBe("Waiting to run a command");
-    expect(toolSentence([call("Edit"), call("Bash", { status: "interrupted" })])).toBe("Made an edit, ran a command");
+    expect(toolSentence([call("Edit"), call("Bash", { status: "interrupted" })])).toBe("Made an edit and stopped running a command");
   });
 
   test("a run's status: still going outranks failed outranks interrupted", () => {
@@ -162,3 +162,33 @@ describe("following the bottom", () => {
     expect(afterContentChange(false, { scrollTop: 600, scrollHeight: 1000, clientHeight: 400 })).toEqual({ scrollToBottom: false, showJump: false });
   });
 });
+
+describe("summary lines and days (review items 10 and the run summary)", () => {
+  test("past three stretches, the rest count as calls: \"…, and N more\"", () => {
+    const calls = [call("Bash"), call("Edit"), call("Edit"), call("Read"), call("Grep"), call("Bash")];
+    expect(toolSentence(calls)).toBe("Ran a command, made 2 edits, and 3 more");
+    expect(toolSentence([call("Bash"), call("Edit"), call("Read")])).toBe("Ran a command, made an edit, and read a file");
+    expect(toolSentence([call("Bash"), call("Edit"), call("Read"), call("Bash")])).toBe("Ran a command, made an edit, and 2 more");
+    expect(toolSentence([call("Bash")])).toBe("Ran a command");
+  });
+
+  test("an interrupted call never reads as one that ran", () => {
+    expect(formOf("interrupted")).toBe("stopped");
+    expect(toolSentence([call("Bash", { status: "interrupted" })])).toBe("Stopped running a command");
+  });
+
+  test("days only move forward: a late arrival from yesterday stays under today, and no day shows twice", () => {
+    const items: ConversationItem[] = [
+      user(at(-1, 23, 58), "Before midnight"),
+      bot(at(0, 0, 1), "After midnight"),
+      user(at(-1, 23, 59), "Late, from yesterday", { late: true }),
+      bot(at(0, 0, 2), "Still today"),
+    ];
+    const units = buildTimeline(items, NOW, FORMAT);
+    const days = units.filter((u) => u.type === "day");
+    expect(days.map((d) => d.label)).toEqual(["Yesterday", "Today"]);
+    const keys = units.map((u) => u.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+

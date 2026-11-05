@@ -45,7 +45,12 @@ function Answered({ item }: { item: QuestionItem }) {
 }
 
 function Closed({ item, ctx }: { item: QuestionItem; ctx: MessageContext }) {
-  const text = item.state === "expired" ? S.questionExpired(ctx.botName) : S.questionWithdrawn;
+  const text =
+    item.state === "expired"
+      ? S.questionExpired(ctx.botName)
+      : item.withdrawnBy === "interrupt"
+        ? S.questionWithdrawnInterrupt
+        : S.questionWithdrawn;
   return (
     <section className="cl-conv-question" data-kind="question" data-state={item.state}>
       <div className="cl-conv-question__head">
@@ -147,6 +152,7 @@ export function QuestionMessage({
 }) {
   const [drafts, setDrafts] = useState<QuestionDraft[]>(() => item.questions.map((_, i) => initialDraft?.[i] ?? emptyDraft()));
   const [sent, setSent] = useState(false);
+  const [failed, setFailed] = useState(false);
   if (item.state === "answered") return <Answered item={item} />;
   if (item.state !== "pending") return <Closed item={item} ctx={ctx} />;
 
@@ -160,7 +166,15 @@ export function QuestionMessage({
       keyed[q.question] = answers[i] ?? "";
     });
     setSent(true);
-    ctx.actions.onAnswerQuestion?.(item.callId, { answers: keyed });
+    setFailed(false);
+    const result = ctx.actions.onAnswerQuestion?.(item.callId, { answers: keyed });
+    // A host that reports delivery gets the card back if the answer didn't go through.
+    if (result && typeof (result as Promise<unknown>).then === "function") {
+      (result as Promise<unknown>).then(undefined, () => {
+        setSent(false);
+        setFailed(true);
+      });
+    }
   };
   const minutes = item.expiresAt === undefined ? undefined : minutesUntil(item.expiresAt, ctx.now);
   const several = item.questions.length > 1;
@@ -187,6 +201,11 @@ export function QuestionMessage({
           {S.questionSubmit}
         </button>
       </div>
+      {failed && (
+        <div className="cl-conv-question__failed" role="alert">
+          {S.questionSendFailed}
+        </div>
+      )}
     </section>
   );
 }

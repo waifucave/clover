@@ -23,10 +23,12 @@ function continuesWork(unit: Unit | undefined): boolean {
 
 export function buildTimeline(items: readonly ConversationItem[], now: SharedTime, format: ConversationFormat = {}): Unit[] {
   const units: Unit[] = [];
+  // Days only move forward: a late arrival from yesterday, placed after today's answer (spec §6.4),
+  // stays under today's divider rather than reopening yesterday's, so no day shows twice.
   let day: string | undefined;
   for (const item of items) {
     const key = dayKey(item.at, format);
-    if (key !== day) {
+    if (day === undefined || key > day) {
       day = key;
       units.push({ type: "day", key: `day:${key}`, label: dayLabel(item.at, now, format) });
     }

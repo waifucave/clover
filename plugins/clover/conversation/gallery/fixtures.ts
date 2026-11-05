@@ -21,7 +21,10 @@ export const FORMAT: ConversationFormat = { locale: "en-US", timeZone: "UTC" };
 /** Thursday, November 5, 2026, 16:30 UTC. */
 export const NOW = Date.UTC(2026, 10, 5, 16, 30);
 export const BOT = { id: "alpha", name: "Alpha" };
-export const DEVICE = "Studio";
+export const DEVICE = { id: "dev_studio", name: "Studio" };
+const IPHONE = { id: "dev_iphone", name: "iPhone" };
+const LAPTOP = { id: "dev_laptop", name: "Laptop" };
+const WEB = { id: "dev_web", name: "clover.waifucave.com" };
 
 /** A time on a day relative to NOW's day (0 = today, -1 = yesterday). */
 export const at = (dayOffset: number, h: number, m: number) => Date.UTC(2026, 10, 5 + dayOffset, h, m);
@@ -88,7 +91,7 @@ export const BASIC: ConversationItem[] = [
       "The full list is on [GitHub](https://github.com/waifucave/clover/pulls).",
     ].join("\n"),
   ),
-  user(at(0, 9, 12), "Thanks! What's on my calendar today?", { device: "iPhone" }),
+  user(at(0, 9, 12), "Thanks! What's on my calendar today?", { device: IPHONE }),
   bot(at(0, 9, 12), "Three things today:\n\n- **10:30** design review with the island team\n- **13:00** lunch with Mira\n- **16:00** dentist, so I'll keep the afternoon quiet"),
 ];
 
@@ -190,14 +193,42 @@ export const APPROVAL_PENDING: ConversationItem[] = [
   tool(at(0, 16, 1), { name: "Bash", detail: "git log --oneline -3", computer: "Studio", output: "c2002b2 C0: the lockfiles name the renamed packages\n747580b CI runs on demand only\nd6b8c9a README says where Clover stands" }),
   bot(at(0, 16, 2), "Everything is committed. Pushing needs your OK, since it rewrites the remote branch."),
   tool(at(0, 16, 2), { name: "Bash", detail: "git push origin main --force-with-lease", computer: "Studio", status: "waiting" }),
-  approval(at(0, 16, 2), { cardId: APPROVAL_PENDING_CARD, computer: "Studio" }),
+  approval(at(0, 16, 2), {
+    cardId: APPROVAL_PENDING_CARD,
+    computer: "Studio",
+    options: [
+      { id: "allow_once", kind: "approve" },
+      { id: "allow_always", kind: "approve", remember: "always" },
+      { id: "deny", kind: "deny" },
+    ],
+  }),
+];
+
+export const CONFIRM_CARD = "card-confirm";
+export const ELICITATION_CARD = "card-elicitation";
+
+/** Lane B's other card kinds: a plugin's `confirm(text)`, and an MCP server's sign-in link. */
+export const OTHER_CARDS: ConversationItem[] = [
+  bot(at(0, 16, 5), "The Tarot panel wants to post today's spread to your journal. That's its own question, so it asks you:"),
+  approval(at(0, 16, 5), {
+    cardId: CONFIRM_CARD,
+    cardKind: "confirm",
+    pluginId: "tarot-panel",
+    options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }],
+  }),
+  bot(at(0, 16, 6), "Linear needs you to sign in again before I can read the sprint board."),
+  approval(at(0, 16, 6), {
+    cardId: ELICITATION_CARD,
+    cardKind: "elicitation",
+    options: [{ id: "open_link", kind: "approve" }, { id: "decline", kind: "deny" }],
+  }),
 ];
 
 export const APPROVAL_STATES: ConversationItem[] = [
   approval(at(0, 9, 0), { cardId: "card-approved", state: "approved", answeredOn: "iPhone" }),
   approval(at(0, 9, 5), { cardId: "card-denied", state: "denied", answeredOn: "Studio" }),
   approval(at(0, 9, 10), { cardId: "card-expired", state: "expired" }),
-  approval(at(0, 9, 15), { cardId: "card-withdrawn", state: "withdrawn" }),
+  approval(at(0, 9, 15), { cardId: "card-withdrawn", state: "withdrawn", withdrawnBy: "turn-end" }),
   note(at(0, 16, 22), "The Nightly backup routine needs your OK:", { tone: "info" }),
   approval(at(0, 16, 22), { cardId: "card-routine", computer: "Studio", expiresAt: at(0, 16, 32) }),
 ];
@@ -209,16 +240,32 @@ export const SEALED_CARDS: Record<string, SealedCardData> = {
     computer: "Studio",
     risk: "Rewrites a remote branch",
     reason: "The safety reviewer asks because a force push can drop other people's commits.",
+    expires: "Waits for your answer",
   },
   "card-approved": { title: "Delete 14 files in home/Studio/Downloads" },
   "card-denied": { title: "Buy a domain: clover-bots.app ($12)" },
   "card-expired": { title: "Install a plugin: tarot-panel" },
   "card-withdrawn": { title: "Run a command on Laptop" },
+  "card-migrate": { title: "Run a command on Studio" },
+  [CONFIRM_CARD]: {
+    title: "A plugin asks",
+    source: "Tarot panel · tarot-panel · from the plugin index",
+    what: "Post today's spread to your journal?",
+    expires: "Waits for your answer",
+  },
+  [ELICITATION_CARD]: {
+    title: "Sign in to Linear",
+    source: "MCP server linear (Linear's own)",
+    what: "Open this sign-in link in your browser?",
+    host: "linear.app",
+    command: "https://linear.app/oauth/authorize?client_id=clover&state=7f2c",
+  },
   "card-routine": {
     title: "Run a command on Studio",
     command: "restic backup ~/Projects --exclude node_modules",
     computer: "Studio",
     risk: "Writes to the backup bucket",
+    expires: "Denied at 4:32 PM unless you answer",
   },
 };
 
@@ -343,6 +390,11 @@ export const EVENTS: ConversationItem[] = [
     text: "I drew the tarot for today's reading: **The Star**. Pass it on when you talk to them?",
   } satisfies AgentReportItem,
   {
+    kind: "agent-report", id: "ar-3", at: at(0, 10, 30),
+    from: { kind: "plugin", id: "tarot-panel", name: "Tarot panel" },
+    text: "The user pinned **The Star** to today's page.",
+  } satisfies AgentReportItem,
+  {
     kind: "task-notification", id: "tn-1", at: at(0, 10, 44),
     task: { kind: "agent", agentId: "agent-island", name: "Claude Code", backend: "Claude Code · opus, high effort", computer: "Studio" },
     status: "completed",
@@ -381,6 +433,11 @@ export const NOTES: ConversationItem[] = [
   note(at(0, 8, 6), "Drew The Star for today's reading.", { from: { kind: "plugin", id: "tarot-panel", name: "Tarot panel" } }),
   note(at(0, 8, 7), "Blocked a write to package-lock.json.", { tone: "warning", from: { kind: "hook", plugin: "lint-guard" } }),
   note(at(0, 8, 9), "The provider stopped answering (HTTP 529). Send another message to try again.", { tone: "error" }),
+  // A plugin's divider that copies the core's compaction words: it still says who drew it.
+  note(at(0, 8, 10), "Alpha summarized the conversation up to here", {
+    variant: "divider",
+    from: { kind: "plugin", id: "story-mode", name: "Story mode" },
+  }),
 ];
 
 // ---------------------------------------------------------------- interrupts, devices, status
@@ -390,17 +447,17 @@ export const INTERRUPT: ConversationItem[] = [
   tool(at(0, 16, 0), { name: "Bash", detail: "bun run build", computer: "Studio", output: "Built in 14.2s" }),
   bot(at(0, 16, 1), "Built. Now running the migrations against production, then I'll", { interrupted: true }),
   tool(at(0, 16, 1), { name: "Bash", detail: "bun run migrate --env production", computer: "Studio", status: "interrupted" }),
-  approval(at(0, 16, 1), { cardId: "card-withdrawn", state: "withdrawn" }),
+  approval(at(0, 16, 1), { cardId: "card-migrate", state: "withdrawn", withdrawnBy: "interrupt" }),
   user(at(0, 16, 2), "Stop, use the staging database first."),
   thinking(at(0, 16, 2), { title: "Switching to staging", live: true }),
 ];
 
 export const DEVICES: ConversationItem[] = [
-  user(at(0, 12, 0), "Remind me what the fix for the login loop was.", { device: "iPhone" }),
+  user(at(0, 12, 0), "Remind me what the fix for the login loop was.", { device: IPHONE }),
   bot(at(0, 12, 0), "The refresh token was rotated twice when two devices refreshed together. Now only the refresher refreshes."),
-  user(at(0, 12, 3), "And who's the refresher now?", { device: "clover.waifucave.com" }),
+  user(at(0, 12, 3), "And who's the refresher now?", { device: WEB }),
   bot(at(0, 12, 3), "Studio, your main computer."),
-  user(at(0, 12, 2), "Also, check the lease logs", { device: "Laptop", late: true }),
+  user(at(0, 12, 2), "Also, check the lease logs", { device: LAPTOP, late: true }),
   bot(at(0, 12, 4), "The lease logs are clean: Studio renewed every 30 seconds all night."),
 ];
 

@@ -34,7 +34,7 @@ export interface UserItem extends ItemBase {
   text: string;
   attachments?: Attachment[];
   /** The device it was sent from (spec §9.1: each user message says so). */
-  device?: string;
+  device?: DeviceRef;
   /** Its stamp fell before output the model had already produced, so it was placed after that
    *  output; `at` still shows the real send time (spec §6.4). */
   late?: boolean;
@@ -92,7 +92,8 @@ export interface ToolCall {
   output?: string;
   diff?: ToolDiff;
   /** Sites a web tool's result named, with the icon the tool reported. */
-  sites?: { url: string; iconUrl?: string }[];
+  /** The sites a web tool named. `icon` is an asset the host resolved (never a web URL): see `links.ts`. */
+  sites?: { url: string; icon?: string }[];
   /** The safety reviewer is judging this call right now. */
   reviewing?: boolean;
   /** MCP Apps: the tool named a `ui://` page, which shows where the result shows (spec §5.5). */
@@ -108,9 +109,31 @@ export interface ToolItem extends ItemBase {
  *  the core's sealed frames (spec §5.5). */
 export type ApprovalState = "pending" | "approved" | "denied" | "expired" | "withdrawn";
 
+/** A device by its id (what comparisons use) and its name (what shows). */
+export interface DeviceRef {
+  id: string;
+  name: string;
+}
+
+/** What a card is about (lane B's `CARD_KINDS`). */
+export type ApprovalCardKind = "tool" | "agent-permission" | "plugin-ok" | "change" | "confirm" | "elicitation";
+
+/** An option as a plugin hears it (lane B's `CardMeta.options`): never its label. */
+export interface ApprovalOption {
+  id: string;
+  kind: "approve" | "deny";
+  remember?: "always";
+}
+
 export interface ApprovalItem extends ItemBase {
   kind: "approval";
   cardId: string;
+  /** What the card asks about. Absent: a tool call. */
+  cardKind?: ApprovalCardKind;
+  /** The card's options, in the core's order: one sealed button each. Absent: one Deny, one Approve. */
+  options?: ApprovalOption[];
+  /** A plugin's card (`confirm`, `plugin-ok`): whose. The sealed `source` field names it too. */
+  pluginId?: string;
   computer?: string;
   /** The tool call it holds, when it holds one. */
   callId?: string;
@@ -120,6 +143,8 @@ export interface ApprovalItem extends ItemBase {
   expiresAt?: SharedTime;
   /** The device whose answer won (every device shows the card; the first answer wins). */
   answeredOn?: string;
+  /** Why it was withdrawn, when it was: the user's interrupt, or the turn ending another way. */
+  withdrawnBy?: "interrupt" | "turn-end";
 }
 
 export interface QuestionOption {
@@ -150,6 +175,8 @@ export interface QuestionItem extends ItemBase {
   notes?: Record<string, string>;
   answeredOn?: string;
   expiresAt?: SharedTime;
+  /** Why it was withdrawn, when it was: the user's interrupt, or the turn ending another way. */
+  withdrawnBy?: "interrupt" | "turn-end";
 }
 
 /** A routine's run happened in a side thread and posted this short result (spec §7). */
@@ -184,7 +211,9 @@ export interface TaskNotificationItem extends ItemBase {
  *  works, or another bot. It folded into the running turn after a tool call (spec §6.4). */
 export interface AgentReportItem extends ItemBase {
   kind: "agent-report";
-  from: { kind: "agent" | "bot" | "session"; id: string; name: string; backend?: string; computer?: string };
+  /** Who sent it: a background agent, another bot, another session, or a plugin (`conversation.post`, or
+   *  an MCP Apps page's `ui/message`, spec §5.4, §5.5). A plugin's message is never drawn as the user's. */
+  from: { kind: "agent" | "bot" | "session" | "plugin"; id: string; name: string; backend?: string; computer?: string };
   /** Markdown. */
   text: string;
   /** It joined a turn already running rather than starting one. */
@@ -247,7 +276,8 @@ export interface QuestionAnswer {
 /** Callbacks the host routes back. Every one is optional: a view without one draws that control as
  *  plain text. */
 export interface ConversationActions {
-  onAnswerQuestion?: (callId: string, answer: QuestionAnswer) => void;
+  /** May return a promise: if it rejects, the card takes answers again. */
+  onAnswerQuestion?: (callId: string, answer: QuestionAnswer) => void | Promise<unknown>;
   /** Open a link in the user's browser; the view never navigates itself. */
   onOpenLink?: (url: string) => void;
   onOpenFile?: (path: string) => void;

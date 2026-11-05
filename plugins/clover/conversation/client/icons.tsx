@@ -43,3 +43,14 @@ export const IconFile = () => (<Svg><path d="M4.5 2.5h4.5l2.5 2.5v8.5h-7z" /><pa
 export const IconImage = () => (<Svg><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><circle cx="6" cy="6.8" r="1" /><path d="M13.5 10.5l-3-3-5 5" /></Svg>);
 export const IconArrowDown = () => (<Svg><path d="M8 3.5v9M4.5 9l3.5 3.5L11.5 9" /></Svg>);
 export const IconMessage = () => (<Svg><path d="M3 4.5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11h0a1.5 1.5 0 0 1-1-1.5z" /></Svg>);
+/** Clover's own mark: four round leaves around a centre, filled in the text colour. */
+export const IconClover = () => (
+  <svg className="cl-conv-icon cl-conv-mark" width={16} height={16} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <g fill="currentColor">
+      <circle cx="8" cy="4.6" r="2.9" />
+      <circle cx="11.4" cy="8" r="2.9" />
+      <circle cx="8" cy="11.4" r="2.9" />
+      <circle cx="4.6" cy="8" r="2.9" />
+    </g>
+  </svg>
+);

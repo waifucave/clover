@@ -13,9 +13,9 @@
   min-height: 0;
   background: var(--clover-color-surface);
   color: var(--clover-color-text);
-  font-family: var(--clover-font-body);
-  font-size: var(--clover-text-body);
-  line-height: var(--clover-line-body);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+  line-height: var(--clover-font-line-body);
 }
 
 .cl-conv button {
@@ -49,6 +49,7 @@
 }
 
 .cl-conv__footer {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
@@ -61,18 +62,17 @@
   margin: 6px 0 8px;
   padding: 5px 12px;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-pill);
+  border-radius: var(--clover-radius-round);
   background: var(--clover-color-control);
   color: var(--clover-color-text);
-  font-size: var(--clover-text-small);
-  box-shadow: 0 2px 10px var(--clover-color-shadow);
+  font-size: var(--clover-font-size-control);
   cursor: pointer;
 }
 
 .cl-conv__empty {
   margin: 48px auto;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   text-align: center;
 }
 
@@ -82,8 +82,8 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--clover-color-link);
-  font-size: var(--clover-text-small);
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-control);
   cursor: pointer;
 }
 
@@ -120,7 +120,7 @@
   gap: 12px;
   margin: 6px 0;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-day::before,
@@ -149,8 +149,8 @@
   box-sizing: border-box;
   max-width: min(80%, 560px);
   padding: 9px 14px;
-  border-radius: var(--clover-radius-bubble);
-  background: var(--clover-color-bubble);
+  border-radius: var(--clover-bubble-radius);
+  background: var(--clover-bubble-user-background);
   color: var(--clover-color-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -169,7 +169,7 @@
   max-width: 180px;
   max-height: 140px;
   border: 1px solid var(--clover-color-hairline);
-  border-radius: var(--clover-radius-card);
+  border-radius: var(--clover-radius-large);
   object-fit: cover;
 }
 
@@ -179,10 +179,10 @@
   gap: 4px;
   margin: 0 2px;
   padding: 0 7px;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: var(--clover-color-control);
   color: var(--clover-color-text);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   vertical-align: baseline;
 }
 
@@ -191,13 +191,7 @@
   gap: 6px;
   padding: 0 4px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
-  visibility: hidden;
-}
-
-.cl-conv-user:hover .cl-conv-user__meta,
-.cl-conv-user__meta[data-always] {
-  visibility: visible;
+  font-size: var(--clover-font-size-caption);
 }
 
 /* The bot's message, and Markdown wherever it shows. */
@@ -205,7 +199,7 @@
 .cl-conv-bot__interrupted {
   margin-top: 6px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-bot__actions {
@@ -229,10 +223,10 @@
   gap: 4px;
   padding: 3px 6px;
   border: none;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: transparent;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
   cursor: pointer;
 }
 
@@ -267,7 +261,7 @@
 .cl-conv-md h4 {
   margin: 18px 0 8px;
   font-family: var(--clover-font-display);
-  line-height: 1.3;
+  line-height: var(--clover-font-line-tight);
 }
 
 .cl-conv-md h1 {
@@ -307,17 +301,17 @@
 .cl-conv-md a,
 .cl-conv-md__link,
 .cl-conv-md__image-link {
-  color: var(--clover-color-link);
+  color: var(--clover-color-accent-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .cl-conv-md code {
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: var(--clover-radius-small);
   background: var(--clover-color-control);
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-code);
+  font-size: var(--clover-font-size-code);
 }
 
 .cl-conv-md pre code {
@@ -350,7 +344,7 @@
   margin: 0 0 10px;
   overflow: hidden;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-card);
+  border-radius: var(--clover-radius-large);
   background: var(--clover-color-raised);
 }
 
@@ -361,7 +355,7 @@
   padding: 3px 6px 3px 12px;
   border-bottom: 1px solid var(--clover-color-hairline-raised);
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-code__pre {
@@ -369,19 +363,23 @@
   padding: 12px;
   overflow-x: auto;
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-code);
-  line-height: 1.5;
+  font-size: var(--clover-font-size-code);
+  line-height: var(--clover-clover-line-code);
 }
 
-/* The streaming caret: a leaf after the last block. */
-.cl-conv-bot[data-streaming] .cl-conv-md > :last-child::after,
+/* The streaming caret: a leaf at the end of the last line of text, inside a list's last item or a
+   code block's last line rather than below them. */
+.cl-conv-bot[data-streaming] .cl-conv-md > :last-child:not(ul):not(ol):not(.cl-conv-code):not(.cl-conv-md__table)::after,
+.cl-conv-bot[data-streaming] .cl-conv-md > ul:last-child > li:last-child::after,
+.cl-conv-bot[data-streaming] .cl-conv-md > ol:last-child > li:last-child::after,
+.cl-conv-bot[data-streaming] .cl-conv-md > .cl-conv-code:last-child .cl-conv-code__pre > code::after,
 .cl-conv-bot[data-streaming] .cl-conv-md[data-empty]::after {
   content: "";
   display: inline-block;
   width: 7px;
   height: 1em;
   margin-left: 2px;
-  border-radius: 1px;
+  border-radius: var(--clover-radius-small);
   background: currentColor;
   vertical-align: text-bottom;
   animation: cl-conv-caret 1s steps(1) infinite;
@@ -403,10 +401,10 @@
   padding: 2px 6px;
   margin-left: -6px;
   border: none;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: none;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   text-align: left;
   cursor: pointer;
 }
@@ -431,14 +429,14 @@
   padding-left: 12px;
   border-left: 2px solid var(--clover-color-hairline);
   color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   white-space: pre-wrap;
 }
 
 .cl-conv-thinking__truncated {
   margin-top: 6px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-thinking[data-running] .cl-conv-thinking__glyph,
@@ -463,7 +461,7 @@
   align-items: center;
   gap: 6px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 /* A disclosure chevron: a leaf that turns when its row opens. */
@@ -480,9 +478,16 @@
 
 /* Tool runs. */
 
+/* A run reads as one quiet line, the way the rest of the window is quiet: the summary in muted text
+   with the chevron after it, and a status mark only when the run needs a look (still going, held,
+   failed, cut off). A click opens the calls below it. */
 .cl-conv-tools {
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-small);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-conv-tools[data-status="succeeded"] .cl-conv-tools__summary > .cl-conv-status {
+  display: none;
 }
 
 .cl-conv-tools__summary {
@@ -493,7 +498,7 @@
   padding: 3px 6px;
   margin-left: -6px;
   border: none;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: none;
   color: inherit;
   text-align: left;
@@ -521,9 +526,9 @@
 .cl-conv-tools__reviewing {
   padding: 0 7px;
   border: 1px solid currentColor;
-  border-radius: var(--clover-radius-pill);
-  color: var(--clover-color-warning);
-  font-size: var(--clover-text-caption);
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-color-attention-text);
+  font-size: var(--clover-font-size-caption);
   white-space: nowrap;
 }
 
@@ -531,7 +536,7 @@
   margin: 2px 0 0 22px;
   color: var(--clover-color-text);
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
   overflow-wrap: anywhere;
 }
 
@@ -570,7 +575,7 @@
   min-width: 0;
   overflow: hidden;
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -579,7 +584,7 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--clover-color-link);
+  color: var(--clover-color-accent-text);
   text-align: left;
   cursor: pointer;
 }
@@ -592,7 +597,7 @@
   margin-top: 6px;
   overflow: hidden;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: var(--clover-color-raised);
 }
 
@@ -600,15 +605,16 @@
   border-color: var(--clover-color-danger);
 }
 
+/* Exactly the lines the cell keeps (MAX_OUTPUT_LINES): never a scroll box that cuts a line in half. */
 .cl-conv-output__text {
-  max-height: 320px;
   margin: 0;
   padding: 8px 10px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   color: var(--clover-color-text);
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-caption);
-  line-height: 1.5;
+  font-size: var(--clover-font-size-caption);
+  line-height: var(--clover-clover-line-code);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -617,7 +623,7 @@
   padding: 4px 10px;
   border-top: 1px solid var(--clover-color-hairline-raised);
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-diff {
@@ -627,11 +633,11 @@
   margin-top: 6px;
   padding: 2px 8px;
   border: none;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: var(--clover-color-control);
   color: var(--clover-color-text);
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-tools__diffs .cl-conv-diff {
@@ -668,17 +674,17 @@ button.cl-conv-diff:hover {
   align-items: center;
   gap: 5px;
   padding: 2px 9px;
-  border-radius: var(--clover-radius-pill);
+  border-radius: var(--clover-radius-round);
   background: var(--clover-color-control);
   color: var(--clover-color-text);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
   text-decoration: none;
 }
 
 .cl-conv-sites__icon {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: var(--clover-radius-small);
 }
 
 .cl-conv-app {
@@ -701,7 +707,7 @@ button.cl-conv-diff:hover {
 }
 
 .cl-conv-status[data-status="waiting"] {
-  color: var(--clover-color-warning);
+  color: var(--clover-color-attention-text);
 }
 
 .cl-conv-status[data-status="failed"] {
@@ -716,7 +722,7 @@ button.cl-conv-diff:hover {
   gap: 8px;
   padding: 14px 16px;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-card);
+  border-radius: var(--clover-radius-large);
   background: var(--clover-color-raised);
 }
 
@@ -764,7 +770,7 @@ button.cl-conv-diff:hover {
   gap: 6px;
   margin-top: 6px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-approval__resolved {
@@ -773,7 +779,7 @@ button.cl-conv-diff:hover {
   align-items: center;
   gap: 4px 10px;
   color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-conv-approval__outcome {
@@ -802,7 +808,7 @@ button.cl-conv-diff:hover {
   gap: 12px;
   padding: 14px 16px;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-card);
+  border-radius: var(--clover-radius-large);
   background: var(--clover-color-raised);
 }
 
@@ -817,7 +823,7 @@ button.cl-conv-diff:hover {
   align-items: center;
   gap: 8px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   font-weight: 500;
 }
 
@@ -840,10 +846,10 @@ button.cl-conv-diff:hover {
 
 .cl-conv-question__chip {
   padding: 1px 8px;
-  border-radius: var(--clover-radius-pill);
+  border-radius: var(--clover-radius-round);
   background: var(--clover-color-control);
   color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
   font-weight: 600;
 }
 
@@ -869,7 +875,7 @@ button.cl-conv-diff:hover {
   gap: 10px;
   padding: 8px 10px;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: var(--clover-color-surface);
   cursor: pointer;
 }
@@ -901,7 +907,7 @@ button.cl-conv-diff:hover {
 
 .cl-conv-question__option-description {
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-conv-question__other {
@@ -913,13 +919,13 @@ button.cl-conv-diff:hover {
 
 .cl-conv-question__other-label {
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-question__input {
   padding: 7px 10px;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: var(--clover-color-surface);
   color: var(--clover-color-text);
   font: inherit;
@@ -933,7 +939,7 @@ button.cl-conv-diff:hover {
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: var(--clover-color-surface);
 }
 
@@ -941,7 +947,7 @@ button.cl-conv-diff:hover {
   padding: 4px 10px;
   border-bottom: 1px solid var(--clover-color-hairline-raised);
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-question__preview pre {
@@ -949,7 +955,7 @@ button.cl-conv-diff:hover {
   padding: 8px 10px;
   color: var(--clover-color-text);
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
   white-space: pre-wrap;
 }
 
@@ -963,15 +969,15 @@ button.cl-conv-diff:hover {
 .cl-conv-question__deadline {
   margin-right: auto;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-question__send {
   padding: 7px 14px;
   border: none;
-  border-radius: var(--clover-radius-pill);
-  background: var(--clover-color-strong);
-  color: var(--clover-color-on-strong);
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-text);
+  color: var(--clover-color-text-inverse);
   font-weight: 600;
   cursor: pointer;
 }
@@ -991,7 +997,7 @@ button.cl-conv-diff:hover {
 
 .cl-conv-question__answer dt {
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-conv-question__answer dd {
@@ -1002,7 +1008,7 @@ button.cl-conv-diff:hover {
 
 .cl-conv-question__closed {
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 /* Routine results, task notifications and agent reports: events with a header. */
@@ -1030,13 +1036,13 @@ button.cl-conv-diff:hover {
   align-items: center;
   gap: 4px 8px;
   color: var(--clover-color-text-secondary);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-conv-event__title,
 .cl-conv-event__head .cl-conv-link-button.cl-conv-event__title {
   color: var(--clover-color-text);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
   font-weight: 600;
 }
 
@@ -1046,24 +1052,24 @@ button.cl-conv-diff:hover {
 }
 
 .cl-conv-event__sub {
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-event__badge {
   padding: 0 7px;
   border: 1px solid currentColor;
-  border-radius: var(--clover-radius-pill);
+  border-radius: var(--clover-radius-round);
   color: var(--clover-color-danger);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-event__command {
   align-self: flex-start;
   padding: 2px 6px;
-  border-radius: 5px;
+  border-radius: var(--clover-radius-small);
   background: var(--clover-color-control);
   font-family: var(--clover-font-mono);
-  font-size: var(--clover-text-caption);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-conv-event__actions {
@@ -1091,7 +1097,7 @@ button.cl-conv-diff:hover {
   align-items: flex-start;
   gap: 6px;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-small);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-conv-note .cl-conv-icon {
@@ -1099,7 +1105,7 @@ button.cl-conv-diff:hover {
 }
 
 .cl-conv-note[data-tone="warning"] .cl-conv-icon {
-  color: var(--clover-color-warning);
+  color: var(--clover-color-attention-text);
 }
 
 .cl-conv-note[data-tone="error"] {
@@ -1121,4 +1127,57 @@ button.cl-conv-diff:hover {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Every sealed field sits in a holder of the view's own; a field the card doesn't have draws nothing,
+   and its holder takes no room. */
+.cl-conv-approval__field:empty {
+  display: none;
+}
+
+.cl-conv-approval__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clover-space-xs) var(--clover-space-m);
+}
+
+.cl-conv-approval__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+}
+
+/* A sealed button keeps at least the 24 by 24 the core counts clicks on. */
+.cl-conv-approval__button {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.cl-conv-note__id {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-question__failed {
+  margin-top: var(--clover-space-s);
+  color: var(--clover-color-danger);
+  font-size: var(--clover-font-size-control);
+}
+
+/* Read by screen readers, drawn nowhere. A leaf. */
+.cl-conv__announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.cl-conv-mark {
+  color: var(--clover-color-accent);
+}
+
+.cl-conv-app {
+  margin-top: var(--clover-space-s);
 }

@@ -9,10 +9,10 @@
 // Nothing in this view may overlap the conversation's own content: an approval card's sealed buttons
 // count a click only while nothing covers them (spec §5.5), so the "Jump to latest" pill lives in a
 // strip below the scrolling area rather than over it.
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageContext } from "./context";
 import { afterContentChange, isAtBottom } from "./follow";
-import { IconArrowDown } from "./icons";
+import { IconArrowDown, IconClover } from "./icons";
 import { AgentReport } from "./messages/AgentReport";
 import { ApprovalMessage } from "./messages/ApprovalMessage";
 import { BotMessage } from "./messages/BotMessage";
@@ -37,6 +37,7 @@ import type {
   RoutineResultItem,
   SharedTime,
   TaskNotificationItem,
+  DeviceRef,
   ToolCall,
   TurnState,
   UserItem,
@@ -75,8 +76,12 @@ export interface ConversationViewProps extends ConversationActions {
   turn?: TurnState;
   /** The shared clock's now, for deadlines and day labels. */
   now?: SharedTime;
+  /** The session this conversation is. */
+  session?: string;
+  /** Files dropped on the conversation, for the host to attach. Without it, a drop does nothing. */
+  onDropFiles?: (files: File[]) => void;
   /** The device this view is on. */
-  device?: string;
+  device?: DeviceRef;
   format?: ConversationFormat;
   /** Older items exist beyond what the host has handed over. */
   hasEarlier?: boolean;
@@ -184,7 +189,9 @@ export function ConversationView(props: ConversationViewProps) {
     onOpenAgent,
     onCopy,
   } = props;
-  const now = props.now ?? Date.now();
+  // The clock the view was opened at, when the host passes none: never a new one per render.
+  const [openedAt] = useState(() => Date.now());
+  const now = props.now ?? openedAt;
   const format = props.format ?? {};
   const renderers = useMemo(() => ({ ...DEFAULT_RENDERERS, ...props.renderers }), [props.renderers]);
   const units = useMemo(() => buildTimeline(items, now, format), [items, now, format.locale, format.timeZone]);
@@ -193,8 +200,8 @@ export function ConversationView(props: ConversationViewProps) {
     [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy],
   );
   const ctx = useMemo<MessageContext>(
-    () => ({ botName: bot.name, now, format, device, turnLive: turn?.running === true, actions }),
-    [bot.name, now, format.locale, format.timeZone, device, turn?.running, actions],
+    () => ({ botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
+    [bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions],
   );
 
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set((initialExpanded ?? []).map((id) => `tools:${id}`)));
@@ -219,6 +226,19 @@ export function ConversationView(props: ConversationViewProps) {
     if (next.scrollToBottom) el.scrollTop = el.scrollHeight;
     setShowJump(next.showJump);
   }, [growth]);
+  // Content can also grow inside an item already drawn (a code block's last line, a tool run opening, an
+  // app page sizing itself): while following, any growth of the column keeps the bottom in view.
+  const column = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = viewport.current;
+    const inner = column.current;
+    if (!el || !inner || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (following.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, []);
   const onScroll = () => {
     const el = viewport.current;
     if (!el) return;
@@ -235,9 +255,21 @@ export function ConversationView(props: ConversationViewProps) {
 
   const status = workingText(turn, bot.name, units[units.length - 1]);
   return (
-    <div className="cl-conv" data-turn={turn?.running ? turn.phase ?? "running" : undefined}>
+    <div
+      className="cl-conv"
+      data-turn={turn?.running ? turn.phase ?? "running" : undefined}
+      onDragOver={(e) => {
+        // A file dropped here is the host's to take (as an attachment), never the page's to open.
+        if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const files = Array.from(e.dataTransfer?.files ?? []);
+        if (files.length > 0) props.onDropFiles?.(files);
+      }}
+    >
       <div className="cl-conv__viewport" ref={viewport} onScroll={onScroll} role="log" aria-label={S.conversationLabel(bot.name)} tabIndex={0}>
-        <div className="cl-conv__column">
+        <div className="cl-conv__column" ref={column}>
           {hasEarlier && onLoadEarlier && (
             <button type="button" className="cl-conv__earlier" onClick={onLoadEarlier}>
               {S.showEarlier}
@@ -264,14 +296,20 @@ export function ConversationView(props: ConversationViewProps) {
             ),
           )}
           {status && (
-            <div className="cl-conv-working" data-phase={turn?.phase ?? "thinking"} role="status">
-              <span className="cl-conv-working__glyph" aria-hidden="true">✻</span>
+            <div className="cl-conv-working" data-phase={turn?.phase ?? "thinking"}>
+              <span className="cl-conv-working__glyph" aria-hidden="true">
+                <IconClover />
+              </span>
               <span className="cl-conv-working__text">{status}</span>
             </div>
           )}
         </div>
       </div>
       <div className="cl-conv__footer">
+        {/* The turn's state for screen readers: outside the log, so the log only ever gains messages. */}
+        <span className="cl-conv__announce" role="status">
+          {status ?? ""}
+        </span>
         {showJump && (
           <button type="button" className="cl-conv__jump" onClick={jump}>
             <IconArrowDown />
