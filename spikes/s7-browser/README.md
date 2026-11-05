@@ -40,7 +40,7 @@ CI only (each is one job in `spike-s7.yml`):
 
 | Question | What runs | Command |
 | :- | :- | :- |
-| 1, 2, 6 on macOS, Windows, Linux X11 | the Electron probe: hidden ⇄ shown moves, throttling (with the throttling-on controls), pictures, cost, the streamed view, a resting tab waking in the host, one host for four tabs, the host's invariants (focus, click-through, Windows styles; X11 needs `xdotool`) | `bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out=out/results/electron.json` (Linux: under `xvfb-run`, `-- --ozone-platform=x11`) |
+| 1, 2, 6 on macOS, Windows, Linux X11 | the Electron probe: hidden ⇄ shown moves, throttling (with the throttling-on controls), pictures, cost, the streamed view, a resting tab waking in the host, one host for four tabs, the host's invariants (focus, click-through, Windows styles, and on X11 the shaped host; X11 needs `xdotool` and `xwininfo`) | `bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out=out/results/electron.json` (Linux: under `xvfb-run`, `-- --ozone-platform=x11`) |
 | 2, at a device scale factor of 2 | pictures (and the 1x override), cost and the shared host at 2× | `bun scripts/probe.ts --checks=capture,cost,shared --out=out/results/electron-dsf2.json -- --force-device-scale-factor=2` |
 | 3, Wayland | the same probe under a headless Weston, no X server | `scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out=out/results/electron-wayland.json -- --ozone-platform=wayland` |
 | 4, Electron where no display exists | the probe on Ozone's headless platform, x64 and arm64 | `bun scripts/probe.ts --checks=move,throttle,capture,cost,wake,shared,hostcheck -- --ozone-platform=headless` |
@@ -76,7 +76,11 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
   final/         the first full run on the PR (on 5bae76e66): every job, macOS's opacity-0 1x1 host included
   round8/        the review's experiments: throttling-on controls under a cover, Linux Chrome for Testing
                  sandboxed from the start, a device scale factor of 2, persist: partitions, the wake from rest,
-                 one shared host, the host's invariants, and assertions in every runner
+                 one shared host, the host's invariants, and assertions in every runner. Two jobs failed them: on
+                 X11 a click at the 1x1 host's pixel landed on the host, and at a scale factor of 2 on Windows a
+                 host tab without the CDP override laid out at 0x0 and drew nothing
+  round9/        the X11 host with an empty window shape (setShape([])), the scale-factor-2 runs asserting the
+                 design (the override), captures scaled to 1280x800, and tab capture's own error on Wayland
 ```
 
 The report quotes round two for the Electron tables (rounds three, five and eight re-ran them and agreed), and later

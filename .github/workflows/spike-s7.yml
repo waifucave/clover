@@ -89,11 +89,11 @@ jobs:
           tail -n 15 "$RESULTS/linux-sandbox-no-profile.txt"
           rm -f "$RESULTS/sandbox-no-profile.json"
           exit 0
-      - name: Linux — the AppArmor profile a deb would install, and xdotool for the click-through check
+      - name: Linux — the AppArmor profile a deb would install, and xdotool and xwininfo for the host check
         if: runner.os == 'Linux'
         run: |
           scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
-          sudo apt-get install -y -qq xdotool >/dev/null
+          sudo apt-get install -y -qq xdotool x11-utils >/dev/null
       - name: Probe (move, throttle, capture, cost, stream, wake, shared host, host invariants)
         run: |
           checks=move,throttle,capture,cost,stream,wake,shared,hostcheck

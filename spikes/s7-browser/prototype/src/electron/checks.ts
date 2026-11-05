@@ -340,6 +340,10 @@ export interface CaptureRow {
   cpuMsPerPicture?: number;
   /** beginFrameSubscription / paint: frames per second delivered while there. */
   framesPerSec?: number;
+  /** Round nine: scaling a capturePage picture in the display's pixels to the agent's 1280x800, plus JPEG (ms). */
+  scaleMs?: ReturnType<typeof summarize>;
+  /** Round nine: the view's bounds, its window's content bounds and the page's layout, when the captures began. */
+  geometry?: string;
 }
 
 const empty = summarize([]);
@@ -370,6 +374,8 @@ export async function captureCheck(host: TabHost, log: Log): Promise<CaptureRow[
       if (p.fit) await host.fit(tab);
       await sleep(1500);
       const snap = await host.snapshot(tab);
+      const box = (b: { x: number; y: number; width: number; height: number } | undefined): string => (b === undefined ? "-" : `${b.x},${b.y} ${b.width}x${b.height}`);
+      const geometry = `view ${box(tab.view?.getBounds())} in content ${box(tab.win?.getContentBounds())}; page ${snap.innerWidth}x${snap.innerHeight} at ${snap.dpr ?? "?"}x`;
       const osr = p.place === "osr" || p.place === "osrView";
       const methods = osr ? ["osrPaint", "capturePage", "cdpJpeg"] : ["capturePageHidden", "capturePage", "cdpJpeg", "frameSub", ...(p.place === "shown" ? ["cdpPng"] : [])];
       for (const method of methods) {
@@ -402,6 +408,8 @@ export async function captureCheck(host: TabHost, log: Log): Promise<CaptureRow[
           errors: [...new Set(results.map((r) => r.error).filter((e): e is string => e !== undefined))],
           visibilityEvents: vis,
           cpuMsPerPicture: ((spent.total / 100) * spent.seconds * 1000) / results.length,
+          ...(good.some((r) => r.scaleMs !== undefined) ? { scaleMs: summarize(good.map((r) => r.scaleMs ?? Number.NaN)) } : {}),
+          geometry,
         };
         rows.push(row);
         log(`  capture ${p.place}${p.pump ? "+pump" : ""}/${method}: ${row.ok}/${row.tries} ok, ${row.decoded} decoded, p50 ${row.ms.p50} ms, stale p50 ${row.staleMs.p50} ms, ${row.size}${row.errors.length ? ` errors: ${row.errors.join("; ")}` : ""}`);
@@ -645,15 +653,23 @@ export async function wakeCheck(host: TabHost, log: Log, cycles = 4, restSec = 1
 
 export interface SharedResult {
   tabs: Array<{ rates?: Rates; capture: { ok: number; tries: number; ms: ReturnType<typeof summarize>; staleMs: ReturnType<typeof summarize>; size: string } }>;
+  /** Round nine: each tab held at 1280x800 and a device scale factor of 1 by the CDP override. */
+  fitted?: boolean;
   error?: string;
 }
 
 /** Four animated tabs as stacked views in ONE 1x1 host window: does each draw, and can each be pictured? */
 export async function sharedHostCheck(host: TabHost, log: Log, n = 4): Promise<SharedResult> {
-  const result: SharedResult = { tabs: [] };
+  // round nine: every tab held at the agent's 1280x800 and a device scale factor of 1, as the design has it (round
+  // eight's tabs without the override laid out at 0x0 and drew nothing at a scale factor of 2 on Windows)
+  const result: SharedResult = { tabs: [], fitted: true };
   const tabs: Tab[] = [];
   try {
-    for (let i = 0; i < n; i++) tabs.push(await host.create({ place: "sharedTinyWindow", partition: `persist:bot-shared-${i}`, throttling: false, path: "/pages/probe.html?scenario=anim&sse=0" }));
+    for (let i = 0; i < n; i++) {
+      const t = await host.create({ place: "sharedTinyWindow", partition: `persist:bot-shared-${i}`, throttling: false, path: "/pages/probe.html?scenario=anim&sse=0" });
+      tabs.push(t);
+      await host.fit(t);
+    }
     await sleep(2000);
     const a = [];
     for (const t of tabs) a.push(await host.snapshot(t));
@@ -687,7 +703,89 @@ export interface HostInvariants {
   windowsStyles?: { style: string; exStyle: string; toolWindow: boolean; noActivate: boolean; transparent: boolean; layered: boolean; appWindow: boolean } | string;
   /** X11 and Windows: a real click at the host's point. */
   clickThrough?: { at: string; tool: string; belowClicks: number; hostClicks: number } | string;
+  /** Round nine, X11: what the X server says of the plain host (xwininfo: map state, override-redirect, shape). */
+  x11?: Record<string, string> | string;
+  /** Round nine, X11: the host with an empty window shape (`setShape([])`). */
+  shaped?: ShapedHost;
   error?: string;
+}
+
+/**
+ * Round nine, X11. Electron's click-through keeps a 1x1 input region at the window's top-left corner on X11 and
+ * Wayland (electron_desktop_window_tree_host_linux.cc), so a 1x1 host takes a click on its only pixel (round eight).
+ * An empty window shape takes every pixel of the window off the screen and out of input on X11 (Chromium has no
+ * window shapes on Wayland). Does the host still draw and get pictured that way, and does a click go through?
+ */
+export interface ShapedHost {
+  xwininfo?: Record<string, string> | string;
+  rates?: Rates;
+  capture?: { ok: number; tries: number; ms: ReturnType<typeof summarize>; size: string };
+  clickThrough?: { at: string; tool: string; belowClicks: number; hostClicks: number };
+  /** The same shaped host with throttling on: does Chromium take a window with no shape as covered? */
+  controlRates?: Rates;
+  error?: string;
+}
+
+type Run = (file: string, args: string[], opts: { encoding: "utf8"; timeout: number }) => string;
+
+function xwininfo(win: InstanceType<typeof import("electron").BaseWindow>, run: Run): Record<string, string> | string {
+  try {
+    const h = win.getNativeWindowHandle();
+    const xid = h.length >= 8 ? h.readBigUInt64LE(0) : BigInt(h.readUInt32LE(0));
+    const text = run("xwininfo", ["-shape", "-id", `0x${xid.toString(16)}`], { encoding: "utf8", timeout: 10_000 });
+    const pick = (re: RegExp): string => re.exec(text)?.[1]?.trim() ?? "";
+    return {
+      id: `0x${xid.toString(16)}`,
+      size: `${pick(/Width:\s*(\d+)/)}x${pick(/Height:\s*(\d+)/)}`,
+      mapState: pick(/Map State:\s*(.+)/),
+      overrideRedirect: pick(/Override Redirect State:\s*(.+)/),
+      shape: text.split("\n").filter((l) => /shape/i.test(l)).map((l) => l.trim()).join("; "),
+    };
+  } catch (e) {
+    return `not read: ${errorText(e)}`;
+  }
+}
+
+async function shapedHostCheck(host: TabHost, below: InstanceType<typeof import("electron").BrowserWindow>, x: number, y: number, run: Run, log: Log): Promise<ShapedHost> {
+  const out: ShapedHost = {};
+  let t: Tab | undefined;
+  let control: Tab | undefined;
+  try {
+    t = await host.create({ place: "tinyWindow", partition: "persist:bot-shaped", throttling: false, path: "/pages/probe.html?scenario=anim&sse=0" });
+    t.win!.setShape([]);
+    t.win!.moveTop();
+    await sleep(1500);
+    out.xwininfo = xwininfo(t.win!, run);
+    const a = await host.snapshot(t);
+    await sleep(3000);
+    out.rates = rates(a, await host.snapshot(t));
+    const caps: CaptureResult[] = [];
+    for (let k = 0; k < 4; k++) { caps.push(await host.capture(t, "capturePage", AGENT_W, 3000)); await sleep(100); }
+    const good = caps.filter((c) => c.ok);
+    out.capture = { ok: good.length, tries: caps.length, ms: summarize(good.map((c) => c.ms)), size: good[0] ? `${good[0].width}x${good[0].height}` : "-" };
+    const hostBefore = (await host.snapshot(t)).observers.clicks;
+    const belowBefore = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
+    run("xdotool", ["mousemove", String(x), String(y), "click", "1"], { encoding: "utf8", timeout: 15_000 });
+    await sleep(800);
+    const hostAfter = (await host.snapshot(t)).observers.clicks;
+    const belowAfter = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
+    out.clickThrough = { at: `${x},${y}`, tool: "xdotool", belowClicks: belowAfter - belowBefore, hostClicks: hostAfter - hostBefore };
+    await host.close(t);
+    t = undefined;
+    control = await host.create({ place: "tinyWindow", partition: "persist:bot-shaped-control", throttling: true, path: "/pages/probe.html?scenario=anim&sse=0" });
+    control.win!.setShape([]);
+    await sleep(1500);
+    const c0 = await host.snapshot(control);
+    await sleep(3000);
+    out.controlRates = rates(c0, await host.snapshot(control));
+  } catch (e) {
+    out.error = errorText(e);
+  } finally {
+    if (t !== undefined) await host.close(t);
+    if (control !== undefined) await host.close(control);
+  }
+  log(`  shaped host: ${JSON.stringify(out.xwininfo)}; rAF ${out.rates?.rafHz?.toFixed(0) ?? "-"} Hz, capturePage ${out.capture?.ok ?? "-"}/${out.capture?.tries ?? "-"}, click ${JSON.stringify(out.clickThrough ?? "-")}; throttling on: rAF ${out.controlRates?.rafHz?.toFixed(0) ?? "-"} Hz, ${out.controlRates?.visibility ?? "-"}${out.error ? `; error ${out.error}` : ""}`);
+  return out;
 }
 
 /**
@@ -754,6 +852,13 @@ export async function hostCheck(host: TabHost, server: SpikeServer, log: Log): P
       const hostAfter = (await host.snapshot(tab)).observers.clicks;
       const belowAfter = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
       result.clickThrough = { at: `${x},${y}`, tool, belowClicks: belowAfter - belowBefore, hostClicks: hostAfter - hostBefore };
+    }
+    if (tool === "xdotool") {
+      const run: Run = (file, args, opts) => execFileSync(file, args, opts);
+      result.x11 = xwininfo(hw, run);
+      await host.close(tab);
+      tab = undefined;
+      result.shaped = await shapedHostCheck(host, below, x, y, run, log);
     }
     log(`  host: focused ${result.focusedAtStart} → after the page's grab ${result.focusedAfterPageGrab} (focused window "${result.focusedWindowTitle}"); styles ${JSON.stringify(result.windowsStyles ?? "-")}; click ${JSON.stringify(result.clickThrough)}`);
   } catch (e) {

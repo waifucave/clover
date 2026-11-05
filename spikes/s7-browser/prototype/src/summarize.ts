@@ -48,16 +48,16 @@ function electron(name: string, j: J): string {
   }
   if (c.capture) {
     out.push("**Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)", "");
-    out.push(table(["place", "throttling", "method", "ok", "decoded", "ms", "stale ms", "size", "CPU ms/picture", "frames/s", "visibility events", "errors"],
-      c.capture.map((r: J) => [`${r.place}${r.pump ? " + pump" : ""}${r.variant ? `, ${r.variant}` : ""}`, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", (r.errors ?? []).join("; ")])));
+    out.push(table(["place", "throttling", "method", "ok", "decoded", "ms", "stale ms", "size", "to 1280×800 + JPEG ms", "CPU ms/picture", "frames/s", "visibility events", "geometry; errors"],
+      c.capture.map((r: J) => [`${r.place}${r.pump ? " + pump" : ""}${r.variant ? `, ${r.variant}` : ""}`, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, r.scaleMs ? ms(r.scaleMs) : "–", f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", [r.geometry, ...(r.errors ?? [])].filter(Boolean).join("; ")])));
     out.push("");
   }
   if (c.cost) {
     const k = c.cost;
     out.push("**Q2 cost**", "");
     out.push(table(["idle hidden tabs", "memory MiB", "kind", "RSS MiB", "processes", "CPU %"], (k.idle ?? []).map((s: J) => [f1(s.tabs, 0), f1(s.memBest / 1048576, 0), s.memKind, f1(s.memRss / 1048576, 0), f1(s.procs, 0), f1(s.cpuPct)])));
-    out.push("", `Per idle hidden tab: **${f1(k.perIdleTabMiB, 0)} MiB**, ${f1(k.perIdleTabCpuPct, 2)}% CPU. Four tabs: one partition +${f1(k.partitions?.samePartitionMiB, 0)} MiB, four partitions +${f1(k.partitions?.ownPartitionsMiB, 0)} MiB.${k.error ? ` Error: ${k.error}` : ""}`, "");
-    if (k.host) out.push(`Quiet tabs (no rAF loop) working in one shared 1×1 host: **${f1(k.host.perTabMiB, 0)} MiB** and ${f1(k.host.perTabCpuPct, 2)}% CPU a tab (${(k.host.steps ?? []).map((s: J) => `${s.tabs}: ${f1(s.memBest / 1048576, 0)} MiB / ${f1(s.cpuPct)}%`).join(", ")}).`, "");
+    out.push("", `Per idle tab resting in the never-shown window (a still page): **${f1(k.perIdleTabMiB, 0)} MiB**, ${f1(k.perIdleTabCpuPct, 2)}% CPU. Four tabs: one partition +${f1(k.partitions?.samePartitionMiB, 0)} MiB, four partitions +${f1(k.partitions?.ownPartitionsMiB, 0)} MiB.${k.error ? ` Error: ${k.error}` : ""}`, "");
+    if (k.host) out.push(`Quiet tabs working in one shared 1×1 host (no rAF loop; the page repaints twice a second): **${f1(k.host.perTabMiB, 0)} MiB** and ${f1(k.host.perTabCpuPct, 2)}% CPU a tab (${(k.host.steps ?? []).map((s: J) => `${s.tabs}: ${f1(s.memBest / 1048576, 0)} MiB / ${f1(s.cpuPct)}%`).join(", ")}).`, "");
     out.push(table(["animated tab", "all CPU %", "renderer %", "GPU %", "rAF Hz"], (k.animated ?? []).map((a: J) => [a.config, f1(a.cpuPct), f1(a.rendererPct), f1(a.gpuPct), f1(a.rafHz, 0)])));
     out.push("");
   }
@@ -65,11 +65,15 @@ function electron(name: string, j: J): string {
     out.push(`**Waking a resting tab into the host** (never-shown window, throttling on, ${c.wake.cycles?.length ?? 0} cycles): first rAF ${ms(c.wake.firstRafMs)} ms, fresh picture ${ms(c.wake.freshPictureMs)} ms; resting rates ${(c.wake.cycles ?? []).map((x: J) => `${f1(x.restRates?.intervalHz)} Hz / rAF ${f1(x.restRates?.rafHz)}`).join(", ")}; awake rAF ${(c.wake.cycles ?? []).map((x: J) => f1(x.awakeRates?.rafHz, 0)).join(", ")}${c.wake.error ? `; error ${c.wake.error}` : ""}`, "");
   }
   if (c.shared) {
-    out.push(`**One host, ${c.shared.tabs?.length ?? 0} tabs:** ${(c.shared.tabs ?? []).map((t: J, i: number) => `tab ${i + 1} rAF ${f1(t.rates?.rafHz, 0)} Hz, capturePage ${t.capture?.ok}/${t.capture?.tries} in ${ms(t.capture?.ms)} ms (${t.capture?.size})`).join("; ")}${c.shared.error ? `; error ${c.shared.error}` : ""}`, "");
+    out.push(`**One host, ${c.shared.tabs?.length ?? 0} tabs${c.shared.fitted ? " (each held at 1280×800, 1×)" : ""}:** ${(c.shared.tabs ?? []).map((t: J, i: number) => `tab ${i + 1} rAF ${f1(t.rates?.rafHz, 0)} Hz, capturePage ${t.capture?.ok}/${t.capture?.tries} in ${ms(t.capture?.ms)} ms (${t.capture?.size})`).join("; ")}${c.shared.error ? `; error ${c.shared.error}` : ""}`, "");
   }
   if (c.hostcheck) {
     const h = c.hostcheck;
-    out.push(`**The host's invariants:** host ${h.hostBounds}, focused at start ${f1(h.focusedAtStart)}, after its page grabs focus ${f1(h.focusedAfterPageGrab)} (focused window "${h.focusedWindowTitle}"); Windows styles ${typeof h.windowsStyles === "object" ? JSON.stringify(h.windowsStyles) : h.windowsStyles ?? "–"}; click-through ${typeof h.clickThrough === "object" ? JSON.stringify(h.clickThrough) : h.clickThrough ?? "–"}${h.error ? `; error ${h.error}` : ""}`, "");
+    out.push(`**The host's invariants:** host ${h.hostBounds}, focused at start ${f1(h.focusedAtStart)}, after its page grabs focus ${f1(h.focusedAfterPageGrab)} (focused window "${h.focusedWindowTitle}"); Windows styles ${typeof h.windowsStyles === "object" ? JSON.stringify(h.windowsStyles) : h.windowsStyles ?? "–"}; click-through ${typeof h.clickThrough === "object" ? JSON.stringify(h.clickThrough) : h.clickThrough ?? "–"}${h.x11 !== undefined ? `; X11 ${JSON.stringify(h.x11)}` : ""}${h.error ? `; error ${h.error}` : ""}`, "");
+    if (h.shaped) {
+      const sh = h.shaped;
+      out.push(`**X11, the host with an empty window shape:** ${JSON.stringify(sh.xwininfo)}; rAF ${f1(sh.rates?.rafHz, 0)} Hz (${sh.rates?.visibility ?? "–"}), capturePage ${sh.capture?.ok ?? "–"}/${sh.capture?.tries ?? "–"} in ${ms(sh.capture?.ms)} ms (${sh.capture?.size ?? "–"}); click-through ${JSON.stringify(sh.clickThrough ?? "–")}; with throttling on: ${f1(sh.controlRates?.intervalHz)} Hz / rAF ${f1(sh.controlRates?.rafHz, 0)} (${sh.controlRates?.visibility ?? "–"})${sh.error ? `; error ${sh.error}` : ""}`, "");
+    }
   }
   if (Array.isArray(j.assertions) && j.assertions.length) out.push(`**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`, "");
   if (c.stream) {

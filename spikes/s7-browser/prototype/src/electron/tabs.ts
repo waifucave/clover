@@ -88,6 +88,9 @@ export interface CaptureResult {
   staleMs?: number;
   frame?: number;
   error?: string;
+  /** Round nine: a capturePage picture in the display's pixels (2560x1600 at 2x), scaled to the agent's 1280x800 and
+   *  encoded as JPEG, as a bot would get it (ms). */
+  scaleMs?: number;
 }
 
 let nextId = 1;
@@ -376,7 +379,14 @@ export class TabHost {
         throw new Error(`unknown method ${method}`);
       }
       const ms = Date.now() - start;
-      return { method, askedAt: start, ms, ...decodeImage(image, innerWidth, start) };
+      const decoded = decodeImage(image, innerWidth, start);
+      if ((method === "capturePage" || method === "capturePageHidden") && decoded.ok && (decoded.width !== AGENT_W || decoded.height !== AGENT_H)) {
+        const s0 = Date.now();
+        const px = nativeImage.createFromBitmap(image.toBitmap(), { width: decoded.width, height: decoded.height, scaleFactor: 1 });
+        px.resize({ width: AGENT_W, height: AGENT_H, quality: "good" }).toJPEG(80);
+        decoded.scaleMs = Date.now() - s0;
+      }
+      return { method, askedAt: start, ms, ...decoded };
     } catch (e) {
       return { method, ok: false, askedAt: start, ms: Date.now() - start, width: 0, height: 0, empty: true, error: errorText(e) };
     }

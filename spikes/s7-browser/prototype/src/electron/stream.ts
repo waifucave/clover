@@ -260,8 +260,14 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
         try {
           via = await exec(streamer.webContents, `window.__st.captureTab(${JSON.stringify(sourceId)}, 1280, 800, 30)`);
         } catch (e) {
+          const tabCaptureError = errorText(e);
           session.defaultSession.setDisplayMediaRequestHandler((_req, cb) => cb({ video: t.wc.mainFrame }));
-          via = { tabCaptureError: errorText(e), ...(await exec<Record<string, unknown>>(streamer.webContents, "window.__st.captureDisplay(30)")) };
+          try {
+            via = { tabCaptureError, ...(await exec<Record<string, unknown>>(streamer.webContents, "window.__st.captureDisplay(30)")) };
+          } catch (e2) {
+            // keep both: round eight recorded only the fallback's error, and lost the tab capture's own
+            throw new Error(`${tabCaptureError}; then ${errorText(e2)}`);
+          }
         }
         stop = async () => { await exec(streamer.webContents, "window.__st.stop()").catch(() => undefined); await exec(viewer.webContents, "window.__v.stop()").catch(() => undefined); };
         if (p.road.startsWith("webrtc")) {

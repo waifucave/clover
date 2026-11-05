@@ -65,8 +65,13 @@ function assertAll(): Assertion[] {
   }
   const cap = results.capture as CaptureRow[] | undefined;
   if (cap !== undefined) {
+    // round nine: at a scale factor other than 1 the design holds a bot's tab at 1280x800 and 1x by the CDP override
+    // (round eight, Windows at 2x: a host tab without it laid out at 0x0 and drew nothing), so only that is asserted
+    const dsf = screen.getPrimaryDisplay().scaleFactor;
     const r = cap.find((x) => x.place === "tinyWindow" && x.method === "capturePage" && x.variant === undefined);
-    add("capturePage works in the 1x1 host", r !== undefined && r.tries > 0 && r.ok === r.tries, { ok: r?.ok, tries: r?.tries, errors: r?.errors });
+    if (dsf === 1) add("capturePage works in the 1x1 host", r !== undefined && r.tries > 0 && r.ok === r.tries, { ok: r?.ok, tries: r?.tries, errors: r?.errors });
+    const f = cap.find((x) => x.place === "tinyWindow" && x.method === "capturePage" && x.variant === "fit 1280x800 at 1x");
+    add("capturePage works in the 1x1 host with the agent's 1280x800 at 1x held", f !== undefined && f.tries > 0 && f.ok === f.tries, { dsf, ok: f?.ok, tries: f?.tries, size: f?.size, errors: f?.errors });
   }
   const hc = results.hostcheck as HostInvariants | undefined;
   if (hc !== undefined) {
@@ -77,8 +82,16 @@ function assertAll(): Assertion[] {
       add("Windows: the host is a no-activate, click-through tool window, not an app window",
         typeof w === "object" && w.toolWindow && w.noActivate && w.transparent && !w.appWindow, w ?? "missing");
     }
-    if (typeof hc.clickThrough === "object") {
-      add("a real click at the host's point reaches the window below", hc.clickThrough.belowClicks >= 1 && hc.clickThrough.hostClicks === 0, hc.clickThrough);
+    // round nine: on X11 the plain host takes a click on its one pixel (Electron keeps a 1x1 input region), so the
+    // design's X11 host is the shaped one; the plain host's click is recorded, not asserted, there
+    if (typeof hc.clickThrough === "object" && process.platform === "win32") {
+      add("Windows: a real click at the host's point reaches the window below", hc.clickThrough.belowClicks >= 1 && hc.clickThrough.hostClicks === 0, hc.clickThrough);
+    }
+    if (hc.shaped !== undefined) {
+      const sh = hc.shaped;
+      add("X11: the host with an empty window shape draws and is pictured", sh.error === undefined && (sh.rates?.rafHz ?? 0) > 10 && sh.capture !== undefined && sh.capture.tries > 0 && sh.capture.ok === sh.capture.tries,
+        { rafHz: sh.rates?.rafHz, capture: sh.capture, error: sh.error });
+      add("X11: a real click at the shaped host's point reaches the window below", sh.clickThrough !== undefined && sh.clickThrough.belowClicks >= 1 && sh.clickThrough.hostClicks === 0, sh.clickThrough ?? sh.error ?? "missing");
     }
   }
   const wake = results.wake as WakeResult | undefined;
