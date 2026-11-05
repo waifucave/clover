@@ -14,6 +14,7 @@ const pause = ms => new Promise(r => setTimeout(r, ms));
 app.setPath('userData', join(process.env.CLOVER_HOME, 'userData'));
 app.setPath('sessionData', join(process.env.CLOVER_HOME, 'sessionData'));
 app.setName('Clover S9');
+app.on('window-all-closed', () => {}); // Variants deliberately close their last window.
 app.commandLine.appendSwitch('site-per-process');
 app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch('dns-prefetch-disable');
