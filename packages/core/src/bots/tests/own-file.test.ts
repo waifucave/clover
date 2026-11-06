@@ -76,9 +76,9 @@ describe("links a bot planted are never followed", () => {
     engine.stop();
   });
 
-  test("starter memories (Winter's _assistant ones included) never copy a link to another bot's memory", () => {
+  test("starter memories (an earlier install's included) never copy a link to another bot's memory", () => {
     const { home, alpha, luna } = twoBots();
-    const from = join(tempDir(), "winter-memory");
+    const from = join(tempDir(), "old-memory");
     mkdirSync(from, { recursive: true });
     writeFileSync(join(from, "likes-tea.md"), "Green tea.\n");
     symlinkSync(join(luna.memory, "MEMORY.md"), join(from, "MEMORY.md"));

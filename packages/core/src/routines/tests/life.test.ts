@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLOVER_ERR, SESSIONS_METHODS as M, type Caller } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, RoutineResultEvent, SESSIONS_METHODS as M, type Caller } from "@waifucave/clover-protocol";
+import { projectRecords } from "../../sessions/wire";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakePluginHost } from "../../contracts/fakes/plugin-host";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
@@ -49,6 +50,30 @@ describe("the Routine tool and the engine on the bot side", () => {
     const posted = b.host.history("b_alpha").filter((r) => r.type === "input" && r.input.from === "routine");
     expect(posted.map((r) => (r.type === "input" && r.input.from === "routine" ? r.input.text : ""))).toEqual(["Two new issues, nothing urgent."]);
     expect(b.side.routines!.runs(view!.id).runs[0]).toMatchObject({ outcome: "done", summary: "Two new issues, nothing urgent." });
+    await b.shutdown();
+  });
+
+  test("a routine's result says whether it failed: false when the run ended on its own; true on an error, a timeout or a refusal", async () => {
+    const { b, clock, routine } = await side();
+    for (const [i, name] of ["Ok", "Error", "Timeout", "Refusal"].entries()) {
+      await routine().run({ name, instructions: `Run ${name}.`, schedule: `${i} 8 * * *` });
+    }
+    clock.advance(10 * 60_000);
+    await flush();
+    const threads = b.host.list({ kind: "side-thread" });
+    const end = (title: string, e: Parameters<FakeSessionDriver["end"]>[0]) => b.drivers.for(threads.find((t) => t.title === title)!.id).end(e);
+    end("Ok", { text: "All good." });
+    end("Error", { reason: "failed", failure: "error" });
+    end("Timeout", { reason: "failed", failure: "stalled" });
+    end("Refusal", { reason: "refusal", text: "I won't do that." });
+    await flush();
+    const results = projectRecords(b.host.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "routine_result");
+    const failedOf = (name: string) => results.find((e) => e.type === "routine_result" && e.name === name)!;
+    expect(failedOf("Ok")).toMatchObject({ failed: false, text: "All good." });
+    for (const name of ["Error", "Timeout", "Refusal"]) expect([name, (failedOf(name) as unknown as { failed: boolean }).failed]).toEqual([name, true]);
+    for (const r of results) expect(RoutineResultEvent.safeParse(r).success).toBe(true);
+    const outcomes = Object.fromEntries(b.side.routines!.list().map((v) => [v.name, b.side.routines!.runs(v.id).runs[0]?.outcome]));
+    expect(outcomes).toEqual({ Ok: "done", Error: "failed", Timeout: "failed", Refusal: "failed" });
     await b.shutdown();
   });
 

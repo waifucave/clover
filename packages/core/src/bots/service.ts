@@ -411,11 +411,14 @@ export class BotService {
     await host.deliver(session, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: run.text });
     const end = await ended;
     const summary = sideThreadResult(end);
+    // Only a turn that ended on its own went well; a refusal, a failure (a timeout among them), a stop or a cut-off
+    // didn't (lane G's routineFailed).
+    const failed = end.reason !== "end_turn";
     const main = host.get(live.mainSession);
     if (main !== undefined && main.status !== "stopped" && main.status !== "failed") {
       // To the computer running the bot, wherever that is (the host forwards it, review S1).
       try {
-        await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary });
+        await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary, failed });
       } catch (err) {
         this.#warn(`the side thread ${session}'s result didn't reach ${live.mainSession}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -423,7 +426,7 @@ export class BotService {
     await host.stop(session, "the run ended");
     return {
       routine: run.routine, session, startedAt, endedAt: this.#o.clock.now(),
-      outcome: end.reason === "end_turn" || end.reason === "refusal" ? "done" : "failed", summary,
+      outcome: failed ? "failed" : "done", summary,
     };
   }
 
@@ -570,7 +573,7 @@ export class BotService {
       try {
         const main = host.get(mainSession);
         if (s.routine !== undefined && main !== undefined && main.status !== "stopped" && main.status !== "failed") {
-          await host.deliver(mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }) });
+          await host.deliver(mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }), failed: true });
         }
         await host.stop(s.id, "the daemon restarted");
       } catch (err) {

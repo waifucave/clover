@@ -63,7 +63,9 @@ export type DeliveredInput =
   | { from: "bot"; bot: string; session: string; text: string }
   | { from: "agent"; agent: string; text: string }
   | { from: "task-notification"; agent: string; backend: string; stopReason: AgentStopReason; text: string; transcript: string; usage?: { inputTokens: number; outputTokens: number } }
-  | { from: "routine"; routine: string; name: string; sideThread: string; text: string }
+  /** `failed`, on a result posted to the bot's conversation: the run didn't finish well (an error, a timeout, a
+   *  refusal, stopped or cut off). */
+  | { from: "routine"; routine: string; name: string; sideThread: string; text: string; failed?: boolean }
   /** A plugin's `conversation.send`, or an MCP Apps page's `ui/message` (`app`), which is never the user's (§5.5). */
   | { from: "plugin"; pluginId: string; text: string; app?: { callId: string } }
   | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } };
