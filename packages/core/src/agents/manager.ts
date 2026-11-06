@@ -1,0 +1,563 @@
+// The agent manager: what the `Agent` and `TaskStop` tools, lane D's session hooks, the bridge and the `agent.*` methods do
+// (spec §9.3, plan §4 K-M1). It owns no session state of its own beyond each agent's wiring; the session host keeps
+// the sessions (a background agent is a session like any other), and its task notifications.
+//
+// `start` (the `Agent` tool, and `agent.start` for a coding session the user drives):
+// 1. Local placement only in M1: the computer is this one, and the root folder must be on it. Another computer and
+//    vendor clouds come with K-M3.
+// 2. The root is a folder-tree path, resolved to a real path here; the fence refuses a root that holds the Clover home
+//    or a development folder (`checkAgentRoot`, §9.3).
+// 3. A new bridge token, the transcript folder, the daemon's own record (records.ts), and a session opened in the
+//    host with an `AgentDriver`. The task is delivered as the session's first input, so `start` returns at once and
+//    the agent starts in its first turn.
+// 4. In that first turn, before anything launches: an agent that isn't sandboxed, or is outside its tested versions,
+//    needs the user's OK, which comes with K-M2's card; until then it isn't started (review 2, §9.3 [D] "Clover never
+//    quietly runs an unsandboxed agent"). At read-only, an agent that acts without asking starts in its read-only
+//    mode or not at all (§9.3 [P], item 78).
+// 5. The agent's permission requests go to the ApprovalBroker (level, then card), answered `allow_once` or
+//    `reject_once`; a request naming the session's bridge server and one of the bridge's own tools exactly is
+//    answered at once (S5 edit 7), and one touching a fenced path is always a card (the broker's rules 2 and 3). Its
+//    paths are resolved against the root, with their real paths, before the broker sees them (review 8).
+// 6. A reattach after a restart trusts the host's view and the daemon's own record, never the bot's folder, and
+//    checks the root again (review 1).
+//
+// The bridge's server name is `clover_` and a random suffix, new for each session (review 14), so no MCP server of
+// the user's own can share it. The bridge's methods land here too: `SendMessage` from an agent folds into its bot's
+// conversation (§9.3), and only into another session of the same bot.
+import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { extname } from "node:path";
+import type { Level, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
+import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
+import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
+import type { Clock } from "../contracts/clock";
+import { ContractError } from "../contracts/common";
+import type { Fence } from "../contracts/fence";
+import type { SessionHost, TurnInput } from "../contracts/session-host";
+import type { Tree } from "../contracts/tree";
+import type { AcpStartSpec, AgentWire } from "./backend";
+import { BridgeTokens } from "./bridge/tokens";
+import type { BridgeHandlers } from "./bridge/endpoint";
+import { BRIDGE_ENV } from "./bridge/server";
+import { BRIDGE_OWN_TOOLS, NO_PLUGIN_TOOLS, bridgeInstructions, type BridgeToolSource } from "./bridge/tools";
+import { AgentDriver } from "./driver";
+import { agentPaths } from "./paths";
+import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
+import { AgentTranscript, type AgentRecordFile } from "./transcript";
+import type { StallWatchdog } from "./watchdog";
+
+export interface AgentManagerOptions {
+  /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
+  home: string;
+  /** This computer's name in the folder tree. */
+  computer: string;
+  host: SessionHost;
+  approvals: ApprovalBroker;
+  tree: Pick<Tree, "resolve">;
+  fence: Pick<Fence, "checkAgentRoot" | "policy">;
+  /** The backends the plugins contribute (`agentBackends`); read at each start. */
+  backends: () => readonly AgentBackend[];
+  tokens: BridgeTokens;
+  /** How an agent starts the bridge (`bridgeCommand()`), and where it finds the daemon. */
+  bridge: { command: string; args: readonly string[]; socketPath: string; serverName?: string };
+  watchdog: StallWatchdog;
+  clock: Clock;
+  pluginTools?: BridgeToolSource;
+  glossary?: BridgeHandlers["glossary"];
+  /** A computer's level (§9.1), for an agent that acts without asking; read-only when it isn't known. */
+  levelOf?: (computer: string) => Level | undefined;
+  /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
+  startUnsandboxedForTests?: boolean;
+  log?: (line: string) => void;
+}
+
+/** Lane K's side of lane D's hooks, in #176's shapes: `BotToolsDeps.agents`, `SessionsMethodsDeps.setAgentModel` and
+ *  `BotServiceOptions.reattach`. */
+export interface AgentSessionHooks {
+  agents: { list(): SessionView[] };
+  setAgentModel(id: string, model: string, effort?: string): Promise<void>;
+  reattach(views: SessionView[]): void;
+}
+
+/** Who asks for an agent: a bot from one of its sessions, or the user (a coding session, `clover code`). */
+export type AgentCaller =
+  | { kind: "bot"; bot: string; session: string; origin: TurnOrigin; level?: Level }
+  | { kind: "user"; device: string; sentAt?: number; clientMessageId: string };
+
+export interface AgentRequest {
+  caller: AgentCaller;
+  backend: string;
+  /** The task: the agent's first prompt. A coding session may start without one. */
+  prompt: string;
+  /** A short title for the tab and `ListAgents`. */
+  title?: string;
+  model?: string;
+  effort?: string;
+  /** The computer to run on; this one by default. */
+  computer?: string;
+  /** The root folder, as a folder-tree path (`home/<Computer>/…`). */
+  root: string;
+}
+
+interface Entry {
+  id: string;
+  backend: AgentBackend;
+  bot?: string;
+  parent?: string;
+  computer: string;
+  root: string;
+  rootPath: string;
+  model?: string;
+  effort?: string;
+  level?: Level;
+  transcript: AgentTranscript;
+  driver: AgentDriver;
+  token: string;
+  serverName: string;
+  bridgeTools: string[];
+  unwatch?: () => void;
+  /** The bot's copy (`agent.json`) and the daemon's own (records.ts). */
+  record: AgentRecordFile;
+  daemon: DaemonAgentRecord;
+  session?: AgentSession;
+}
+
+/** The bridge's server name starts with this; a random suffix follows, new for each session. */
+export const BRIDGE_SERVER_PREFIX = "clover_";
+const MAX_CARD_CODE = 60_000;
+
+export class AgentManager {
+  readonly #o: AgentManagerOptions;
+  readonly #entries = new Map<string, Entry>();
+
+  constructor(opts: AgentManagerOptions) {
+    this.#o = opts;
+  }
+
+  #serverNameFor(): string {
+    return this.#o.bridge.serverName ?? `${BRIDGE_SERVER_PREFIX}${randomBytes(8).toString("hex")}`;
+  }
+
+  /** A root's real path: a folder in this computer's home that holds none of Clover's own folders. */
+  #rootPath(root: string): string {
+    const loc = this.#o.tree.resolve(root);
+    if (loc.area !== "home") throw new ContractError("refused", "an agent's root folder is a folder in a computer's home (home/<Computer>/…)");
+    if (loc.computer !== this.#o.computer) {
+      throw new ContractError("refused", `${root} is on ${loc.computer}; an agent runs on the computer that holds its root, which comes with K-M3`);
+    }
+    const verdict = this.#o.fence.checkAgentRoot(loc.path);
+    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${verdict.reason})`, { path: verdict.path });
+    return loc.path;
+  }
+
+  /** The hooks an ACP backend takes for a session: its transcript, and the token's binding to the agent's pid. */
+  wire(sessionId: string): AgentWire {
+    const e = this.#entries.get(sessionId);
+    if (!e) return {};
+    return {
+      tap: (dir, msg, replay) => e.transcript.wire(dir, msg, replay, this.#o.clock.now()),
+      stderr: (chunk) => e.transcript.stderr(chunk),
+      launched: (pid) => this.#o.tokens.bind(sessionId, pid),
+    };
+  }
+
+  async start(req: AgentRequest): Promise<{ sessionId: string; transcript: string }> {
+    const backend = this.#o.backends().find((b) => b.id === req.backend);
+    if (!backend) throw new ContractError("not_installed", `no agent backend named ${req.backend}`);
+    if (backend.quirks.placement !== "local") throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which comes with K-M3`);
+    const computer = req.computer ?? this.#o.computer;
+    if (computer !== this.#o.computer) {
+      throw new ContractError("refused", `placing an agent on ${computer} comes with K-M3; for now an agent runs on ${this.#o.computer}`);
+    }
+    const rootPath = this.#rootPath(req.root);
+
+    const id = `agent_${randomBytes(9).toString("base64url")}`;
+    const bot = req.caller.kind === "bot" ? req.caller.bot : undefined;
+    const parent = req.caller.kind === "bot" ? req.caller.session : undefined;
+    const level = req.caller.kind === "bot" ? req.caller.level : undefined;
+    const transcript = new AgentTranscript(this.#o.home, id, bot);
+    const startedAt = this.#o.clock.now();
+    const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    writeAgentRecord(this.#o.home, daemon);
+    const record: AgentRecordFile = {
+      v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+    };
+    transcript.writeRecord(record);
+    const entry = this.#entry(id, backend, transcript, record, daemon, rootPath);
+    this.#o.host.open({
+      id, kind: bot === undefined ? "coding" : "agent", computer, backend: backend.id, root: req.root,
+      ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }),
+      ...(req.title === undefined ? {} : { title: req.title }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+    }, entry.driver);
+    try {
+      // A coding session the user opens with no prompt waits for their first message; the agent starts with it.
+      if (req.caller.kind === "bot") await this.#o.host.deliver(id, { from: "bot", bot: req.caller.bot, session: req.caller.session, text: req.prompt });
+      else if (req.prompt.length > 0) await this.#o.host.sendUser(id, { text: req.prompt, device: req.caller.device, clientMessageId: req.caller.clientMessageId, sentAt: req.caller.sentAt ?? this.#o.clock.now() });
+    } catch (err) {
+      await this.#o.host.stop(id, "failed to start").catch(() => {});
+      throw err;
+    }
+    return { sessionId: id, transcript: transcript.treeWirePath };
+  }
+
+  /** Reattaches a background agent or a coding session after a daemon restart: the host restored the session dormant,
+   *  and the agent resumes in its next turn, with an honest `resume` or a `load` whose replay is dropped, and a new
+   *  token. Who the session is comes from the host's view; the daemon's own record must agree with it and adds only
+   *  the agent's session id and a routine's raised level; the root is checked again (review 1). False, and logged,
+   *  when any of that fails: the session stays as the host left it. */
+  reattach(view: SessionView): boolean {
+    if ((view.kind !== "agent" && view.kind !== "coding") || this.#entries.has(view.id)) return false;
+    const refuse = (why: string) => {
+      this.#o.log?.(`agents: not reattaching ${view.id}: ${why}`);
+      return false;
+    };
+    if (view.status === "stopped" || view.status === "failed") return refuse("it has ended");
+    if (view.computer !== this.#o.computer) return refuse(`it runs on ${view.computer}`);
+    if (!view.backend || !view.root) return refuse("the host's view names no backend or root");
+    if ((view.kind === "agent") !== (view.bot !== undefined)) return refuse("its kind and its bot disagree");
+    const daemon = readAgentRecord(this.#o.home, view.id);
+    if (!daemon?.agentSessionId) return refuse("the daemon's record of it is missing");
+    if (daemon.backend !== view.backend || daemon.root !== view.root || daemon.computer !== view.computer || daemon.bot !== view.bot || daemon.parent !== view.parent) {
+      return refuse("the daemon's record doesn't match the session");
+    }
+    const backend = this.#o.backends().find((b) => b.id === view.backend);
+    if (!backend) return refuse(`no backend named ${view.backend}`);
+    let rootPath: string;
+    try {
+      rootPath = this.#rootPath(view.root);
+    } catch (err) {
+      return refuse(err instanceof Error ? err.message : String(err));
+    }
+    const transcript = new AgentTranscript(this.#o.home, view.id, view.bot);
+    const record: AgentRecordFile = {
+      v: 1, sessionId: view.id, backend: backend.id, computer: view.computer, root: view.root, startedAt: daemon.startedAt, agentSessionId: daemon.agentSessionId,
+      ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
+      ...(view.model === undefined ? {} : { model: view.model }), ...(view.effort === undefined ? {} : { effort: view.effort }),
+    };
+    const entry = this.#entry(view.id, backend, transcript, record, daemon, rootPath, { agentSessionId: daemon.agentSessionId });
+    this.#o.host.open({
+      id: view.id, kind: view.kind, computer: view.computer, backend: backend.id, root: view.root,
+      ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
+      ...(view.title === undefined ? {} : { title: view.title }),
+      ...(view.model === undefined ? {} : { model: view.model }), ...(view.effort === undefined ? {} : { effort: view.effort }),
+    }, entry.driver);
+    return true;
+  }
+
+  #entry(id: string, backend: AgentBackend, transcript: AgentTranscript, record: AgentRecordFile, daemon: DaemonAgentRecord, rootPath: string, reattach?: { agentSessionId: string }): Entry {
+    const token = this.#o.tokens.mint(id);
+    transcript.redact(token);
+    const entry = {
+      id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
+      serverName: this.#serverNameFor(), bridgeTools: BRIDGE_OWN_TOOLS.map((t) => t.name),
+      ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
+      ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
+      ...(daemon.level === undefined ? {} : { level: daemon.level }),
+    } as Entry;
+    entry.driver = new AgentDriver({
+      start: () => this.#startAgent(entry, reattach),
+      promptOf: (input) => promptOf(input),
+      redact: (v) => transcript.redacted(v),
+      ended: () => {
+        this.#o.tokens.revoke(id);
+        entry.unwatch?.();
+        // Every way a session ends takes its cards with it (rule 7, review 3).
+        this.#o.approvals.cancelSession(id);
+        if (this.#entries.get(id) === entry) {
+          this.#entries.delete(id);
+          removeAgentRecord(this.#o.home, id);
+        }
+      },
+    });
+    this.#entries.set(id, entry);
+    return entry;
+  }
+
+  /** The level the session's permission requests are judged at: a routine's raised level, or its computer's. */
+  #levelOf(e: Entry): Level {
+    return e.level ?? this.#o.levelOf?.(e.computer) ?? "read-only";
+  }
+
+  /** Before an agent launches: an agent that isn't sandboxed, or is outside its tested versions, needs the user's OK. */
+  async #admit(e: Entry): Promise<void> {
+    const d = await e.backend.detect();
+    if (!d.installed) throw new ContractError("not_installed", d.reason ?? `${e.backend.id} isn't installed on this computer`);
+    if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${e.backend.id}'s program isn't its publisher's`);
+    const why: string[] = [];
+    if (!d.sandboxed) why.push("it has no sandbox Clover can count on here");
+    if (!d.versionOk) why.push(`its version ${d.version ?? "(unknown)"} is outside the versions Clover was tested with`);
+    if (why.length === 0) return;
+    await this.#requireOk(e, d.version ?? "unknown", why.join("; "));
+  }
+
+  /** The user's OK for an agent `#admit` doesn't let through. Its card comes with K-M2; until then the agent isn't
+   *  started (fail closed), except in tests. */
+  async #requireOk(e: Entry, _version: string, reason: string): Promise<void> {
+    if (this.#o.startUnsandboxedForTests === true) return;
+    throw new ContractError("refused", `${e.backend.id} wasn't started: ${reason}, and Clover can't ask for your OK to run it that way yet`);
+  }
+
+  async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
+    await this.#admit(e);
+    const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
+    e.bridgeTools = [...BRIDGE_OWN_TOOLS.map((t) => t.name), ...tools.map((t) => t.name)];
+    const spec: AcpStartSpec = {
+      sessionId: e.id,
+      root: e.rootPath,
+      ...(e.model === undefined ? {} : { model: e.model }),
+      ...(e.effort === undefined ? {} : { effort: e.effort }),
+      instructions: bridgeInstructions({ ...(e.bot === undefined ? {} : { bot: e.bot }), serverName: e.serverName }),
+      bridge: {
+        name: e.serverName,
+        command: this.#o.bridge.command,
+        args: [...this.#o.bridge.args],
+        env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
+        tools: e.bridgeTools,
+      },
+      fence: this.#o.fence.policy(),
+      ...(reattach ? { reattach } : {}),
+      ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
+    };
+    const session = await e.backend.start(spec);
+    e.session = session;
+    const pid = (session as { pid?: number }).pid;
+    if (pid) this.#o.tokens.bind(e.id, pid);
+    e.daemon = { ...e.daemon, agentSessionId: session.agentSessionId };
+    writeAgentRecord(this.#o.home, e.daemon);
+    e.record = { ...e.record, agentSessionId: session.agentSessionId };
+    e.transcript.writeRecord(e.record);
+    session.onPermission((ask) => this.#permission(e, ask));
+    const s = session as { openCalls?: () => { id: string; kind: string; startedAtWall: number }[]; waitingOnUser?: () => boolean };
+    e.unwatch = this.#o.watchdog.watch({
+      pid: pid ?? 0,
+      lastProgressAt: () => session.lastProgressAt(),
+      busy: () => e.driver.busy(),
+      waitingOnUser: () => s.waitingOnUser?.() ?? false,
+      runningCommands: () => (s.openCalls?.() ?? []).filter((c) => c.kind === "execute"),
+    }, () => {
+      this.#o.log?.(`agents: ${e.id} made no progress for 10 minutes; stopping it`);
+      void e.driver.stall();
+    });
+    return session;
+  }
+
+  async #permission(e: Entry, raw: AgentPermissionAsk): Promise<AgentPermissionAnswer> {
+    const origin = e.driver.currentOrigin() ?? "agent";
+    const signal = e.driver.currentSignal();
+    // The token never reaches a card, and the fence sees each path as it really is (reviews 8 and 9).
+    const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths: agentPaths(raw.paths, e.rootPath) };
+    const req: ApprovalRequest = {
+      kind: "agent-permission",
+      session: e.id,
+      ...(e.bot === undefined ? {} : { bot: e.bot }),
+      origin,
+      computers: [e.computer],
+      ...(e.level === undefined ? {} : { level: e.level }),
+      effect: effectOf(ask.toolKind),
+      paths: ask.paths,
+      ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
+      fields: cardFields(e, ask),
+      agent: {
+        backend: e.backend.id,
+        toolCallId: ask.toolCallId,
+        toolKind: ask.toolKind,
+        title: ask.title,
+        ...(ask.rawInput === undefined ? {} : { rawInput: ask.rawInput }),
+        ...(ask.mcp === undefined ? {} : { mcp: ask.mcp }),
+        bridge: { server: e.serverName, tools: e.bridgeTools },
+        options: ask.options,
+      },
+    };
+    const decision = await this.#o.approvals.request(req, signal ? { signal } : {});
+    e.transcript.call({
+      ts: this.#o.clock.now(), type: "permission", toolCallId: ask.toolCallId, toolKind: ask.toolKind,
+      allowed: decision.allowed, by: decision.by, ...(decision.cardId ? { cardId: decision.cardId } : {}), ...(decision.remembered ? { remembered: true } : {}),
+    });
+    return acpOutcomeFor(decision, ask.options);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The bot's tools
+  // ---------------------------------------------------------------------------------------------
+
+  /** `TaskStop`: a bot stops one of its own agents (the user may stop any). */
+  async stop(sessionId: string, by: { bot?: string } = {}): Promise<void> {
+    const view = this.#o.host.get(sessionId);
+    if (!view || (view.kind !== "agent" && view.kind !== "coding")) throw new ContractError("not_found", `no agent ${sessionId}`);
+    if (by.bot !== undefined && view.bot !== by.bot) throw new ContractError("refused", "a bot may stop only its own agents");
+    await this.#o.host.stop(sessionId, "stopped");
+  }
+
+  /** The background agents, as lane D's `ListAgents` lists them (in place of the host's own `agent` rows). The user's
+   *  coding sessions stay the host's rows. Views carry no content. */
+  list(): SessionView[] {
+    return this.#o.host.list().filter((v) => v.kind === "agent");
+  }
+
+  /** Reattaches every agent and coding session a restart left dormant (lane D's `reattach` hook). */
+  reattachAll(views: readonly SessionView[]): void {
+    for (const v of views) {
+      try {
+        this.reattach(v);
+      } catch (err) {
+        this.#o.log?.(`agents: reattaching ${v.id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /** Lane K's side of lane D's hooks (#176): `agents` for `botToolDefs`' `ListAgents`, `setAgentModel` for
+   *  `sessionsMethods`' `session.setModel`, and `reattach` for `BotService`'s dormant agent sessions. */
+  sessionHooks(): AgentSessionHooks {
+    return {
+      agents: { list: () => this.list() },
+      setAgentModel: (id, model, effort) => this.setModel(id, model, effort),
+      reattach: (views) => this.reattachAll(views),
+    };
+  }
+
+  /** `session.setModel` on an agent or coding session (item 90's model picker). */
+  async setModel(sessionId: string, model: string, effort?: string): Promise<void> {
+    const e = this.#entries.get(sessionId);
+    if (!e) throw new ContractError("not_found", `no agent ${sessionId} on this computer`);
+    await e.driver.setModel(model, effort);
+    e.record = { ...e.record, model, ...(effort === undefined ? {} : { effort }) };
+    e.transcript.writeRecord(e.record);
+  }
+
+  /** The daemon is closing: every agent's process ends and its token goes, and the daemon's records stay, so the
+   *  next daemon reattaches the sessions the host restores. */
+  async close(): Promise<void> {
+    const entries = [...this.#entries.values()];
+    this.#entries.clear();
+    await Promise.all(entries.map(async (e) => {
+      e.unwatch?.();
+      this.#o.tokens.revoke(e.id);
+      this.#o.approvals.cancelSession(e.id);
+      await e.driver.detach();
+    }));
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The bridge
+  // ---------------------------------------------------------------------------------------------
+
+  /** The bridge's methods, for the endpoint. */
+  bridgeHandlers(): BridgeHandlers {
+    const source = this.#o.pluginTools ?? NO_PLUGIN_TOOLS;
+    return {
+      sessionInfo: (id) => {
+        const e = this.#entries.get(id);
+        return e ? { ...(e.bot === undefined ? {} : { bot: e.bot }) } : undefined;
+      },
+      tools: async (id) => {
+        const e = this.#entries.get(id);
+        const plugin = await source.tools(id).catch(() => []);
+        const own = await source.instructions?.(id).catch(() => "");
+        const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
+        return { tools: [...BRIDGE_OWN_TOOLS, ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
+      },
+      call: (id, c) => source.call(id, c),
+      sendMessage: (id, m) => this.agentMessage(id, m.text, m.to),
+      glossary: (id, q) => (this.#o.glossary ? this.#o.glossary(id, q) : Promise.resolve({ results: [], loaded: [] })),
+    };
+  }
+
+  /** An agent's `SendMessage` (§9.3): it folds into its bot's conversation like any bot message. */
+  async agentMessage(sessionId: string, text: string, to?: string): Promise<void> {
+    const e = this.#entries.get(sessionId);
+    if (!e) throw new ContractError("not_found", `no agent ${sessionId}`);
+    const target = to ?? e.parent;
+    if (!target) throw new ContractError("refused", "this session has no bot to message");
+    if (target === sessionId) throw new ContractError("refused", "that is this agent's own session; SendMessage reaches another one");
+    const view = this.#o.host.get(target);
+    if (!view || view.bot === undefined || view.bot !== e.bot) throw new ContractError("refused", "an agent may message only its own bot's sessions");
+    await this.#o.host.deliver(target, { from: "agent", agent: sessionId, text });
+  }
+}
+
+const EFFECTS: Record<string, ActionEffect> = {
+  read: "read", edit: "edit", delete: "delete", move: "move", search: "search", execute: "execute", think: "think", fetch: "fetch",
+};
+
+/** ACP's tool kind as the level table's effect; anything else is `other` (the reviewer judges it at ask-risky). */
+export function effectOf(toolKind: string): ActionEffect {
+  return EFFECTS[toolKind] ?? "other";
+}
+
+/** The key a card's "always" saves as Clover's own rule (S5 edit 5): a command exactly, or an MCP tool, each under the
+ *  agent's backend, so an agent's rule never covers a bot's own tool of the same name, or the reverse (review 4). */
+export function ruleKeyOf(backend: string, ask: AgentPermissionAsk): string | undefined {
+  if (ask.mcp) return `Agent(${backend}):mcp__${ask.mcp.server}__${ask.mcp.tool}`;
+  const command = (ask.rawInput as { command?: unknown } | undefined)?.command;
+  if (ask.toolKind === "execute" && typeof command === "string" && command.length > 0 && command.length <= 2000) return `Agent(${backend}):Bash(${command})`;
+  return undefined;
+}
+
+const TITLES: Record<ActionEffect, string> = {
+  read: "An agent wants to read files", search: "An agent wants to search files", think: "An agent wants to think",
+  fetch: "An agent wants to fetch from the web", edit: "An agent wants to edit files", move: "An agent wants to move files",
+  delete: "An agent wants to delete files", execute: "An agent wants to run a command", screen: "An agent wants to control the screen",
+  purchase: "An agent wants to buy something", other: "An agent wants to use a tool",
+};
+
+function sealedText(s: string, max: number): string {
+  const w = s.toWellFormed();
+  return w.length > max ? w.slice(0, max) : w;
+}
+
+/** The card's sealed fields: headings from this table, the agent's own words only as code or row values. */
+function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"] {
+  const effect = effectOf(ask.toolKind);
+  const raw = ask.rawInput as { command?: unknown } | undefined;
+  const code = typeof raw?.command === "string" ? raw.command : ask.rawInput === undefined ? ask.title : JSON.stringify(ask.rawInput, null, 2);
+  const fields: Partial<Record<string, SealedValue>> = {
+    title: { type: "text", text: TITLES[effect] },
+    what: { type: "text", text: "Allow it this once?" },
+    command: { type: "code", code: sealedText(code, MAX_CARD_CODE) },
+    computer: { type: "text", text: e.computer },
+    source: { type: "rows", rows: [
+      { label: "Agent", value: sealedText(e.backend.id, 4000) },
+      { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
+      { label: "Folder", value: sealedText(e.root, 4000) },
+    ] },
+    detail: { type: "rows", rows: [{ label: "The agent's title", value: sealedText(ask.title, 4000) }] },
+  };
+  if (ask.paths.length > 0) fields["paths"] = { type: "list", items: ask.paths.slice(0, 200).map((p) => sealedText(p, 4000)) };
+  return fields as ApprovalRequest["fields"];
+}
+
+const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
+
+/** What a session input says to the agent: a message from its bot is its next prompt as written (§9.3). */
+export async function promptOf(input: TurnInput): Promise<{ text: string; images?: { mimeType: string; data: string }[] }> {
+  switch (input.from) {
+    case "user": {
+      const images = (input.images ?? []).flatMap((img) => {
+        const mimeType = IMAGE_TYPES[extname(img.path).toLowerCase()];
+        if (!mimeType) return [];
+        try {
+          return [{ mimeType, data: readFileSync(img.path).toString("base64") }];
+        } catch {
+          return [];
+        }
+      });
+      const files = (input.files ?? []).map((f) => `[File #${f.n}: ${f.path}]`).join("\n");
+      return { text: files ? `${input.text}\n\n${files}` : input.text, ...(images.length ? { images } : {}) };
+    }
+    case "bot":
+      return { text: input.text };
+    case "agent":
+      return { text: `Message from agent ${input.agent}:\n\n${input.text}` };
+    case "task-notification":
+      return { text: `Agent ${input.agent} (${input.backend}) finished: ${input.stopReason}. Transcript: ${input.transcript}\n\n${input.text}` };
+    case "routine":
+      return { text: `From the routine "${input.name}":\n\n${input.text}` };
+    case "plugin":
+      return { text: `Message from the plugin ${input.pluginId}:\n\n${input.text}` };
+    case "note":
+      return { text: `[${input.label}] ${input.text}` };
+  }
+}
