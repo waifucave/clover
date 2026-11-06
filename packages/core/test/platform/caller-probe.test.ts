@@ -130,11 +130,18 @@ describe("the caller check's OS probe", () => {
     const claimed = claimDaemonChildren();
     if (process.platform === "linux") expect(claimed.subreaper).toBe(true);
     if (process.platform === "win32") expect(claimed.job).toBe(true);
-    // A child that starts a grandchild and exits at once: the grandchild is orphaned.
-    const script = `const g = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 20000)"], { stdio: ["ignore", "ignore", "ignore"] }); g.unref(); console.log(g.pid); process.exit(0);`;
+    // A child that starts a grandchild. On POSIX it exits at once, orphaning the grandchild (a double fork); on
+    // Windows it stays, since libuv's own job ends a child's children with it (measured), so a grandchild there
+    // outlives its parent only by breaking away, which the daemon's job refuses.
+    const leave = process.platform === "win32" ? "" : "process.exit(0);";
+    const script = `const g = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 20000)"], { stdio: ["ignore", "ignore", "ignore"] }); g.unref(); console.log(g.pid); ${leave} setTimeout(() => {}, 20000);`;
     const child = Bun.spawn([process.execPath, "-e", script], { stdout: "pipe", stderr: "ignore", windowsHide: true });
-    const g = Number((await new Response(child.stdout).text()).trim());
-    await child.exited;
+    const reader = child.stdout.getReader();
+    let text = "";
+    while (!/\n/.test(text)) { const { value, done } = await reader.read(); if (done) break; text += new TextDecoder().decode(value); }
+    reader.releaseLock();
+    const g = Number(text.trim());
+    if (process.platform !== "win32") await child.exited;
     await Bun.sleep(200);
     const ancestors = ancestry(g);
     if (process.platform === "linux") expect(ancestors[0]).toBe(process.pid); // re-parented to us, not to init
@@ -142,5 +149,6 @@ describe("the caller check's OS probe", () => {
     expect(spawnedByDaemon(child.pid, [process.pid])).toBe(true);
     expect(spawnedByDaemon(process.pid, ancestry(process.pid))).toBe(false); // the daemon itself
     try { process.kill(g); } catch { /* gone */ }
+    child.kill();
   }, 30_000);
 });

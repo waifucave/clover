@@ -1476,7 +1476,7 @@ function currentLoginSpec(app?: string): LoginSpec {
   };
 }
 
-const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|remove|start|status [--json] [--app <path to the app>]";
+const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path to the app>]";
 
 /** Whether a process's executable is the daemon's binary (`bin`, or this CLI's own when they're one binary). */
 function isDaemonImage(image: string | null, bin: string): boolean {
@@ -1516,7 +1516,7 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
   return "stopped through the OS";
 }
 
-/** `clover autostart enable|disable|remove|start|status [--json] [--app <path>]`: login start on this OS. The
+/** `clover autostart enable|disable|stop|remove|start|status [--json] [--app <path>]`: login start on this OS. The
  *  definitions run `clover-core supervise` on the running binary (`process.execPath`); lane M's
  *  installer invokes the installed binary, and passes the app's path with `--app` so the daemon can
  *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
@@ -1562,6 +1562,13 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
       console.log(stopped === null
         ? `autostart disabled (${spec.profile}); Clover can still be started, and keeps running`
         : `autostart disabled (${spec.profile}); the daemon: ${stopped}`);
+      break;
+    }
+    case "stop": {
+      // An upgrade (lane M, #174): the running pair stopped cleanly, the login entry kept as it is, so the new
+      // version starts at the next login or `autostart start`. Succeeds when nothing is running.
+      const stopped = await stopRunningDaemon(spec);
+      console.log(`the daemon: ${stopped}; autostart unchanged (${spec.profile})`);
       break;
     }
     case "remove": {
@@ -3426,7 +3433,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)
