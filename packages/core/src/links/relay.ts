@@ -12,7 +12,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { fromBase64, toBase64 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
-import { type FileDeviceRegistry, peerUpdateStatement } from "../devices/registry";
+import { type FileDeviceRegistry, type PeerUpdate, peerUpdateStatement } from "../devices/registry";
 
 export type RelayParams = z.input<typeof DEVICES_METHODS.peerSessionDeliver.params>;
 
@@ -45,7 +45,7 @@ export function mountUserMessageRelay(
 export const DEVICE_UPDATE = "link.device.update";
 
 interface UpdateWire {
-  update: { name?: string; answerKey?: { publicKey: string; held: string } | null; at: number };
+  update: PeerUpdate;
   signature: string;
 }
 
@@ -59,7 +59,10 @@ export function shareDeviceUpdates(
     // Strictly after the last one sent, so a receiver's replay check never drops a real change.
     const at = Math.max(Math.floor(o.clock.now()), lastAt + 1);
     lastAt = at;
-    const update = { name: self.name, answerKey: self.answerKey ? { publicKey: self.answerKey.publicKey, held: self.answerKey.held } : null, at };
+    const update: PeerUpdate = {
+      name: self.name, ...(self.computer ? { computer: self.computer } : {}),
+      answerKey: self.answerKey ? { publicKey: self.answerKey.publicKey, held: self.answerKey.held } : null, at,
+    };
     return { update, signature: toBase64(o.key.sign(peerUpdateStatement(self.id, update))) };
   };
   let lastAt = 0;
@@ -71,7 +74,8 @@ export function shareDeviceUpdates(
     const m = raw as Partial<UpdateWire> | undefined;
     const sig = typeof m?.signature === "string" ? fromBase64(m.signature) : null;
     if (!m?.update || typeof m.update.at !== "number" || !sig) return;
-    void o.registry.applyPeerUpdate(from, m.update as Parameters<FileDeviceRegistry["applyPeerUpdate"]>[1], sig);
+    // Only the sender's own record: `from` is the device the link authenticated, so no peer updates a third one.
+    void o.registry.applyPeerUpdate(from, m.update, sig);
   }));
   // Once per link coming up, not on every change of its path or round trip.
   const up = new Set<string>();

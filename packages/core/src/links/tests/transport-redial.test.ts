@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { SystemClock } from "../../clock/system-clock";
 import { FileDeviceRegistry } from "../../devices/registry";
 import { MemoryNetwork } from "../memory-wire";
-import { makeDeviceKey, recordFor } from "../testing";
+import { makeDeviceKey, makeLinkCluster, recordFor } from "../testing";
 import { CloverLinkTransport } from "../transport";
 import { WireOffline, type DialOptions, type DialTarget, type WireConn, type WireEndpoint } from "../wire";
 
@@ -54,6 +54,35 @@ async function pairOf(hangA: number) {
   stops.push(() => ta.close(), () => tb.close());
   tb.handle("who", () => "b");
   return { ka, kb, ta, tb, wa };
+}
+
+describe("a connection that loses the rank", () => {
+  test("still answers the request it is serving before it closes", async () => {
+    const c = await makeLinkCluster(["a", "b"], { clock });
+    stops.push(() => c.close());
+    const a = c.devices.get("a")!;
+    const b = c.devices.get("b")!;
+    b.transport.handle("slow", async () => {
+      await Bun.sleep(300);
+      return "done";
+    });
+    const link = await a.transport.connect(b.id);
+    const inFlight = link.request<string>("slow", null);
+    await Bun.sleep(30);
+    // B dials too (its network changed): the new connection outranks the one serving A's request.
+    b.transport.networkChanged();
+    expect(await inFlight).toBe("done");
+    await waitForCond(() => a.transport.link(b.id).sessions.size === 1 && b.transport.link(a.id).sessions.size === 1);
+    expect(await link.request<string>("slow", null)).toBe("done");
+  });
+});
+
+async function waitForCond(cond: () => boolean, ms = 4000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error("timed out waiting");
+    await Bun.sleep(10);
+  }
 }
 
 describe("a hung dial", () => {

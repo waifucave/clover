@@ -86,6 +86,9 @@ type ResolvedLinkOptions = Required<Omit<LinkTransportOptions, "relayLabel" | "e
 
 const PRIORITY_OF: Record<number, LinkPriority> = { 3: "control", 2: "tokens", 1: "screenshots", 0: "files" };
 
+/** How long a retired, idle connection stays open before its dialler closes it, so its last bytes get out. */
+const RETIRE_LINGER_MS = 250;
+
 type Handler = (params: unknown, from: string) => unknown | Promise<unknown>;
 
 const offline = (peer: string) => new ContractError("offline", `${peer} can't be reached`, { peer });
@@ -452,7 +455,11 @@ class PeerLink implements Link {
       },
       (err: unknown) => {
         if (this.#dialing === p) this.#dialing = undefined;
-        this.#lastDialFailedAt = this.#t.opts.clock.monotonic();
+        const unpaired = isContractError(err) && err.detail?.unpaired === true;
+        const revoked = isContractError(err) && err.detail?.revoked === true;
+        if (!unpaired) this.#lastDialFailedAt = this.#t.opts.clock.monotonic();
+        // A link someone wants keeps trying, unless the peer revoked this device.
+        if (this.wanted && !revoked && !this.revoked && !this.#t.closedFlag && !this.#best) this.#scheduleRedial();
         throw isContractError(err) ? err : offline(this.peer);
       },
     );
@@ -596,7 +603,12 @@ class Session {
     this.#link.starting.add(this);
     this.conn.onStream((ws) => this.#incomingStream(ws));
     this.conn.onPath(() => this.#link.pathChanged(this));
-    void this.conn.closed.then((c) => this.#end(c.code === CLOSE_REVOKED ? new ContractError("refused", `${this.#link.peer} was revoked`) : offline(this.#link.peer)));
+    void this.conn.closed.then((c) => this.#end(
+      c.code === CLOSE_REVOKED ? new ContractError("refused", `${this.#link.peer} was revoked`, { peer: this.#link.peer, revoked: true })
+        // Just after a pairing the peer may not have added this device yet: a refusal to retry, not a dead path.
+        : c.code === CLOSE_UNPAIRED && !c.local ? new ContractError("refused", `${this.#link.peer} doesn't know this device yet`, { peer: this.#link.peer, unpaired: true })
+          : offline(this.#link.peer),
+    ));
     this.#helloTimer = t.opts.clock.setTimeout(() => {
       if (!this.#ready) this.close(CLOSE_PROTOCOL, "no hello in time");
     }, t.opts.helloTimeoutMs);
@@ -606,8 +618,14 @@ class Session {
       const hello = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.current, device: t.self, epoch: t.opts.epoch?.() ?? 0, features: [...t.opts.features], connSeq: proposed };
       const p = this.#send("control", ["q", 0, "peer.hello", hello]);
       this.#pending.set(0, {
-        resolve: (v) => this.#helloAnswered(v),
-        reject: (e) => this.#fail(e),
+        resolve: (v) => {
+          this.#pending.delete(0);
+          this.#helloAnswered(v);
+        },
+        reject: (e) => {
+          this.#pending.delete(0);
+          this.#fail(e);
+        },
       });
       p.catch((e: unknown) => this.#fail(e instanceof Error ? e : new Error(String(e))));
     }
@@ -670,16 +688,34 @@ class Session {
       return;
     }
     if (now - this.#lastOut >= this.#t.opts.keepaliveMs) void this.#send("control", ["p"]).catch(() => undefined);
-    if (this.retiring && this.#pending.size === 0 && this.#streams.size === 0) this.close(CLOSE_SUPERSEDED, "a newer connection took over");
+    this.#closeWhenIdle();
   }
 
-  /** A better session took over: stop starting work here and close once nothing is in flight. */
+  /** A better session took over: stop starting work here and close once nothing is in flight either way. */
   retire(): void {
     if (this.retiring) return;
     this.retiring = true;
     const grace = this.#t.opts.retireGraceMs;
     this.#t.opts.clock.setTimeout(() => this.close(CLOSE_SUPERSEDED, "a newer connection took over"), grace);
-    if (this.#pending.size === 0 && this.#streams.size === 0) queueMicrotask(() => this.close(CLOSE_SUPERSEDED, "a newer connection took over"));
+    this.#closeWhenIdle();
+  }
+
+  /** Requests this side is still answering. */
+  #serving = 0;
+  #lingering = false;
+
+  /** A retired session closes once nothing is in flight either way: no request of ours waiting, none of the peer's
+   *  being answered here, no stream open. Only the side that dialled it closes it (both sides rank alike, so both
+   *  retire it), and only after a short linger, since closing a QUIC connection drops bytes not yet sent: the last
+   *  answer must reach the peer first. The grace timer closes it anyway. */
+  #closeWhenIdle(): void {
+    if (!this.retiring || this.#ended || !this.conn.outbound || this.#lingering) return;
+    if (this.#pending.size > 0 || this.#serving > 0 || this.#streams.size > 0) return;
+    this.#lingering = true;
+    this.#t.opts.clock.setTimeout(() => {
+      this.#lingering = false;
+      if (this.#pending.size === 0 && this.#serving === 0 && this.#streams.size === 0) this.close(CLOSE_SUPERSEDED, "a newer connection took over");
+    }, RETIRE_LINGER_MS);
   }
 
   close(code: number, reason: string): void {
@@ -773,6 +809,7 @@ class Session {
       const settle = () => {
         if (p.timer) clock.clearTimeout(p.timer);
         this.#pending.delete(id);
+        this.#closeWhenIdle();
       };
       p.resolve = (v) => {
         settle();
@@ -812,6 +849,7 @@ class Session {
 
   streamEnded(s: SessionStream): void {
     this.#streams.delete(s);
+    this.#closeWhenIdle();
   }
 
   // ---- receiving ----
@@ -932,16 +970,22 @@ class Session {
   }
 
   async #serve(lane: number, id: number, method: string, params: unknown): Promise<void> {
-    let ok = true;
-    let value: unknown;
+    this.#serving++;
     try {
-      value = await this.#t.serve(method, params, this.#link.peer);
-    } catch (err) {
-      ok = false;
-      value = errorToWire(err);
+      let ok = true;
+      let value: unknown;
+      try {
+        value = await this.#t.serve(method, params, this.#link.peer);
+      } catch (err) {
+        ok = false;
+        value = errorToWire(err);
+      }
+      if (this.#ended) return;
+      await this.#reply(lane, id, ok, value).catch(() => undefined);
+    } finally {
+      this.#serving--;
+      this.#closeWhenIdle();
     }
-    if (this.#ended) return;
-    await this.#reply(lane, id, ok, value).catch(() => undefined);
   }
 }
 

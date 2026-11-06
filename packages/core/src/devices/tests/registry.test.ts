@@ -11,7 +11,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { DeviceKey } from "../../identity/device-key";
 import { toBase64 } from "../../identity/bytes";
 import { generateEd25519 } from "../../identity/keys";
-import { answerKeyStatement, FileDeviceRegistry, peerUpdateStatement } from "../registry";
+import { answerKeyStatement, computerNameFor, FileDeviceRegistry, peerUpdateStatement } from "../registry";
 
 const home = () => mkdtempSync(join(tmpdir(), "clover-h-registry-"));
 
@@ -48,6 +48,14 @@ describe("FileDeviceRegistry", () => {
     expect(seed).toBe(1);
     const text = readFileSync(file, "utf8");
     expect(text).not.toContain((await store.get({ owner: { kind: "device" }, name: "device:link-key" }))!.value.reveal());
+  });
+
+  test("a computer's tree name follows its name, in the form the tree takes", async () => {
+    const { registry, key } = await open();
+    await registry.rename(key.id, "Studio 2 (Mac)");
+    expect(registry.self()).toMatchObject({ name: "Studio 2 (Mac)", computer: "Studio-2-Mac" });
+    expect(computerNameFor("  ~~ ")).toBe("");
+    expect(computerNameFor("Café Laptop")).toBe("Cafe-Laptop");
   });
 
   test("every computer has its tree name; a phone has none", async () => {

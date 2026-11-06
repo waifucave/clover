@@ -12,7 +12,7 @@
 // * the guided rotation a revocation starts: the synced keys the revoked device held, to be rotated (§8.1).
 import { join } from "node:path";
 import type { DeviceKind, Os } from "@waifucave/clover-protocol";
-import { AnswerKeyHolder } from "@waifucave/clover-protocol";
+import { AnswerKeyHolder, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import {
@@ -123,7 +123,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
       id: opts.key.id, name: opts.self.name, kind, runsCore, publicKey: opts.key.publicKeyBase64,
       addedAt: opts.clock.now(), addedBy: "self",
       ...(opts.self.os === undefined ? {} : { os: opts.self.os }),
-      ...(runsCore ? { computer: opts.self.computer ?? opts.self.name } : {}),
+      ...(runsCore ? { computer: opts.self.computer ?? (computerNameFor(opts.self.name) || "Computer") } : {}),
       ...(opts.self.hasDisplay === undefined ? {} : { hasDisplay: opts.self.hasDisplay }),
     };
     const state: FileShape = { v: 1, self: self.id, devices: [self], pairs: [], rotations: [], updates: {}, boxKeys: {} };
@@ -155,7 +155,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (!KINDS.includes(device.kind)) throw new ContractError("invalid", `unknown device kind ${String(device.kind)}`);
     if (device.answerKey !== undefined) this.#checkAnswerKey(device.answerKey);
     // Every computer has its tree name (§9.1; lane J's ask): a device that runs clover-core and names none takes its own.
-    const computer = device.runsCore ? { computer: device.computer ?? device.name } : {};
+    const computer = device.runsCore ? { computer: device.computer ?? (computerNameFor(device.name) || "Computer") } : {};
     const record: DeviceRecord = { ...stripUndefined(device), ...computer, addedAt: this.#clock.now(), addedBy: proof.via };
     this.#state.devices.push(record);
     this.#save();
@@ -187,6 +187,12 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (!d || d.revokedAt !== undefined) throw new ContractError("not_found", `no device ${id}`);
     if (!NAME_RE.test(name)) throw new ContractError("invalid", "a device name is 1–63 characters");
     d.name = name;
+    // A computer's tree name follows its name (§9.1; lane J keeps the old one as an alias). This device's own change
+    // reaches every peer's device list over the link (`shareDeviceUpdates`), since a hello no longer renames.
+    if (d.runsCore) {
+      const tree = computerNameFor(name);
+      if (tree) d.computer = tree;
+    }
     this.#save();
     this.#listeners.emit({ type: "changed", device: { ...d } });
   }
@@ -234,7 +240,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
   }
 
   /** Takes a peer's new answer key or name from what it sent, signed with its link key (`peerUpdateStatement`). */
-  async applyPeerUpdate(id: string, update: { name?: string; answerKey?: { publicKey: string; held: AnswerKeyHolder } | null; at: number }, signature: Uint8Array): Promise<boolean> {
+  async applyPeerUpdate(id: string, update: PeerUpdate, signature: Uint8Array): Promise<boolean> {
     const d = this.#find(id);
     if (!d || d.revokedAt !== undefined || id === this.#state.self) return false;
     if (!(await this.verify(id, peerUpdateStatement(id, update), signature))) return false;
@@ -242,6 +248,10 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (update.name !== undefined) {
       if (!NAME_RE.test(update.name)) return false;
       d.name = update.name;
+    }
+    if (update.computer !== undefined && d.runsCore) {
+      if (!COMPUTER_NAME_RE.test(update.computer) || update.computer.length > 63) return false;
+      d.computer = update.computer;
     }
     if (update.answerKey === null) delete d.answerKey;
     else if (update.answerKey !== undefined) {
@@ -348,9 +358,23 @@ export class FileDeviceRegistry implements DeviceRegistry {
 }
 
 /** What a device signs to tell its peers about a new name or answer key. */
-export function peerUpdateStatement(id: string, update: { name?: string; answerKey?: { publicKey: string; held: string } | null; at: number }): Uint8Array {
+export interface PeerUpdate {
+  name?: string;
+  /** A computer's tree name. */
+  computer?: string;
+  answerKey?: { publicKey: string; held: AnswerKeyHolder } | null;
+  at: number;
+}
+
+export function peerUpdateStatement(id: string, update: { name?: string; computer?: string; answerKey?: { publicKey: string; held: string } | null; at: number }): Uint8Array {
   const ak = update.answerKey === undefined ? "-" : update.answerKey === null ? "none" : `${update.answerKey.publicKey}:${update.answerKey.held}`;
-  return utf8(`clover/device-update/1\n${id}\n${update.at}\n${update.name ?? "-"}\n${ak}`);
+  return utf8(`clover/device-update/2\n${id}\n${update.at}\n${update.name ?? "-"}\n${update.computer ?? "-"}\n${ak}`);
+}
+
+/** A computer's tree name from its display name: letters and digits, the rest as single hyphens (`Studio 2` →
+ *  `Studio-2`); empty when nothing usable is left. */
+export function computerNameFor(name: string): string {
+  return name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63).replace(/-+$/, "");
 }
 
 function stripUndefined<T extends object>(o: T): T {

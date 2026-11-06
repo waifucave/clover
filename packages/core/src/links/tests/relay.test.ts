@@ -74,6 +74,23 @@ describe("the user-message relay", () => {
     expect(got.map((g) => g.signed)).toEqual([true, false, false]);
   });
 
+  test("a computer renamed on itself is renamed in its peers' device lists, tree name included (lane J's ask)", async () => {
+    const net = new MemoryNetwork();
+    const studio = await daemon(net, "Studio");
+    const server = await daemon(net, "Server");
+    await pair(studio, server);
+    await waitFor(() => server.transport.links().some((l) => l.peer === studio.key.id && l.up));
+    await studio.registry.rename(studio.key.id, "Studio 2");
+    expect(studio.registry.self()).toMatchObject({ name: "Studio 2", computer: "Studio-2" });
+    await waitFor(() => server.registry.get(studio.key.id)?.computer === "Studio-2");
+    expect(server.registry.get(studio.key.id)?.name).toBe("Studio 2");
+    // An update another device signed for it doesn't take.
+    const stale = { name: "Hijacked", computer: "Hijacked", at: Date.now() + 10_000 };
+    const { peerUpdateStatement } = await import("../../devices/registry");
+    expect(await server.registry.applyPeerUpdate(studio.key.id, stale, server.key.sign(peerUpdateStatement(studio.key.id, stale)))).toBe(false);
+    expect(server.registry.get(studio.key.id)?.computer).toBe("Studio-2");
+  });
+
   test("only a paired computer relays, and bad params are refused before D's host sees them", async () => {
     const net = new MemoryNetwork();
     const a = await daemon(net, "Studio");
