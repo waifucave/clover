@@ -138,6 +138,23 @@ interface Incarnation {
 /** The events the host projects itself; the runtime's echoes of them are dropped. */
 const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
 
+/** Servers that share a name prefix (the bundled tree's children all read `mcp__clover__…`: the browser's, the web
+ *  plugin's) are one server to the runtime, with every tool; a tool name two of them give keeps the first, by plugin
+ *  id, as the registry keeps a name (§6.7 "Tool names are unique"). */
+export function mergedServers(servers: readonly BotMcpServer[]): BotMcpServer[] {
+  const out = new Map<string, BotMcpServer>();
+  for (const s of [...servers].sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0))) {
+    const had = out.get(s.server);
+    if (had === undefined) {
+      out.set(s.server, { ...s, tools: [...s.tools] });
+      continue;
+    }
+    const names = new Set(had.tools.map((t) => t.name));
+    out.set(s.server, { ...had, tools: [...had.tools, ...s.tools.filter((t) => !names.has(t.name))] });
+  }
+  return [...out.values()];
+}
+
 /** A uuid from a session id: the runtime keys its transcript by a uuid. */
 function backendIdFor(): string {
   return crypto.randomUUID();
@@ -304,7 +321,7 @@ export class BotSessionDriver implements SessionDriver {
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
     if (this.#d.mcp !== undefined) {
-      for (const server of servers) {
+      for (const server of mergedServers(servers)) {
         if (server.server === "clover_core" || mcpServers[server.server] !== undefined) continue;
         mcpServers[server.server] = routedMcpServer({
           server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource,

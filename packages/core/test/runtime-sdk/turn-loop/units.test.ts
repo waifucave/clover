@@ -226,3 +226,17 @@ describe("how each input reads", () => {
     expect(formatTurnInput({ from: "note", label: "L", text: "t", by: { kind: "hook", pluginId: "p", hook: "h" } }, "bot")).toContain('from="p (h)"');
   });
 });
+
+describe("plugin MCP servers sharing a name", () => {
+  test("the bundled tree's children are one server to the runtime; a tool name given twice keeps the first plugin's", async () => {
+    const { mergedServers } = await import("../../../src/runtime-sdk/turn-loop/driver");
+    const obj = { type: "object" as const };
+    const merged = mergedServers([
+      { server: "clover", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: obj }, { name: "WebFetch", inputSchema: obj }] },
+      { server: "clover", plugin: "clover/browser", tools: [{ name: "Browser", inputSchema: obj }, { name: "WebFetch", description: "theirs", inputSchema: obj }] },
+      { server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: obj }] },
+    ]);
+    expect(merged.map((s) => [s.server, s.tools.map((t) => t.name)])).toEqual([["blender", ["Render"]], ["clover", ["Browser", "WebFetch", "WebSearch"]]]);
+    expect(merged[1]!.tools.find((t) => t.name === "WebFetch")!.description).toBe("theirs");
+  });
+});

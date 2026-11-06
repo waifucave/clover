@@ -1025,6 +1025,19 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/web:
+    dependencies:
+      '@waifucave/clover-web':
+        specifier: 0.0.66
+        version: 0.0.66
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   services/accounts:
     devDependencies:
       '@cloudflare/vitest-plugin':
