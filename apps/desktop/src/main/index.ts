@@ -1186,7 +1186,9 @@ async function smoke(): Promise<void> {
       win.webContents.emit("unresponsive");
     }
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
-    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v)) break;
+    // A sealed run (E-M3) also waits until its click landed: otherwise the loop breaks before the card's frames load.
+    const sealedWait = process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
     // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
     // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says
@@ -1347,9 +1349,15 @@ async function smoke(): Promise<void> {
           const bounds = w.getBounds();
           const centerX = Math.round(bounds.x + buttonRect.x + buttonRect.width / 2);
           const centerY = Math.round(bounds.y + buttonRect.y + buttonRect.height / 2);
+          // The fallback's own gates: the pointer must enter after the window shows, and a second after it shows.
+          // Move there first so pointerover fires, wait out the 1 s, then press.
+          void w.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
+          await new Promise((r) => setTimeout(r, 1300));
+          if (w.isDestroyed()) break;
           log(`sealed-click: fallback press sent at ${centerX},${centerY}`);
           void w.webContents.sendInputEvent({ type: "mouseDown", x: centerX, y: centerY, button: "left" });
           void w.webContents.sendInputEvent({ type: "mouseUp", x: centerX, y: centerY, button: "left" });
+          sealedClicked = true;
         }
         break;
       }
