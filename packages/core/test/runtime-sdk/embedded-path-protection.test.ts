@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EmbeddedWorkerProcess, SpawnEmbeddedWorkerOptions } from "@yanlinglabs/winter-agent-runtime/embedded-host";
+import type { EmbeddedWorkerProcess, SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
 import { createEmbeddedSessionHost, EmbeddedRuntimeUnavailable } from "../../src/runtime-sdk/embedded";
 import { embeddedHostPathProtection, embeddedContextProtectionSupported, embeddedFileProtectionSupported, type EmbeddedProtectionCapability, type EmbeddedHostPathProtection } from "../../src/runtime-sdk/embedded-path-protection";
 import { registerHostStorageFences, refreshHostStoragePolicies } from "../../src/runtime-sdk/host-storage-fence";

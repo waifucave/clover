@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HookCallbackMatcher, PostToolUseHookInput, PreToolUseHookInput } from "@yanlinglabs/winter-agent-sdk";
+import type { HookCallbackMatcher, PostToolUseHookInput, PreToolUseHookInput } from "@waifucave/clover-agent-sdk";
 import { BashReviewer, ReviewerNoRunnableModel } from "../../src/agent/reviewer";
 import type { LspManager } from "../../src/agent/lsp/manager";
 import { readStoredDiff } from "../../src/diffs/store";

@@ -9,9 +9,10 @@ import { join } from "node:path";
 import {
   mcpToolName, resolveBrand, resolveWinterHome as sdkResolveHome, WINTER_BRAND,
   type BrandProfile,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import { keychainService } from "../../src/profile";
 import { buildCoreBrand, CORE_BRAND } from "../../src/runtime-sdk/brand";
+import { CORE_VERSION } from "../../src/version";
 import { resolveCloverHome } from "../../src/clover-dir";
 
 /** The fourteen fields `BrandProfile` has (surface map §1.5 / global constraints). */
@@ -28,12 +29,14 @@ describe("CORE_BRAND", () => {
   test("all fourteen fields are present, string, and non-empty — and there are no others", () => {
     for (const f of FIELDS) {
       expect(typeof CORE_BRAND[f]).toBe("string");
-      expect(CORE_BRAND[f].length).toBeGreaterThan(0);
+      expect((CORE_BRAND[f] as string).length).toBeGreaterThan(0);
     }
     // The count is pinned against WINTER_BRAND rather than a literal 14, so a future SDK field
     // makes this fail here (where the fix is one line) instead of at a child's first session.
-    expect(Object.keys(CORE_BRAND).sort()).toEqual(Object.keys(WINTER_BRAND).sort());
-    expect(Object.keys(CORE_BRAND).sort()).toEqual([...FIELDS].sort());
+    // A-M1: plus `productVersion` (SDK 0.0.63), which Winter's own brand leaves out.
+    expect(Object.keys(CORE_BRAND).sort()).toEqual([...Object.keys(WINTER_BRAND), "productVersion"].sort());
+    expect(Object.keys(CORE_BRAND).sort()).toEqual([...FIELDS, "productVersion"].sort());
+    expect(CORE_BRAND.productVersion).toBe(CORE_VERSION);
   });
 
   test("the SDK's own resolveBrand reports it valid", () => {
@@ -61,6 +64,7 @@ describe("CORE_BRAND", () => {
       tempRootName: "clover",
       pluginManifestDir: ".clover-plugin",
       contactUrl: "https://github.com/waifucave/clover",
+      productVersion: CORE_VERSION,
     });
   });
 

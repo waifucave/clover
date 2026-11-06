@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -55,14 +55,14 @@ function survivors(home: string): number[] {
     .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
 }
 
-async function bootOn(bin: string) {
+async function bootOn() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-spawn-stop-")));
   const cwd = join(home, "work");
   mkdirSync(cwd);
   writeFileSync(join(home, "settings.json"), JSON.stringify({
     schemaVersion: 3,
     provider: { model: "winter-test/hang" },
-    runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 },
+    runtimes: { winterIdleTimeoutSec: 10 },
   }, null, 2));
   const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
   const client = await TestClient.connect(daemon.socketPath);
@@ -70,10 +70,10 @@ async function bootOn(bin: string) {
   return { home, cwd, daemon, client };
 }
 
-describeWithWinterBinary("a child spawned while the daemon stops does not outlive it", (bin) => {
+describeWithEmbeddedRuntime("a child spawned while the daemon stops does not outlive it", () => {
   for (const offsetMs of [0, 2, 10, 30, 80, 200]) {
     test(`Dispatch's SpawnSession: stop ${offsetMs} ms into the spawn`, async () => {
-      const { home, cwd, daemon, client } = await bootOn(bin);
+      const { home, cwd, daemon, client } = await bootOn();
       const dispatchId = ((await client.request(METHODS.sessionDispatch, {})).result as { sessionId: string }).sessionId;
       const servers = daemon.buildSessionCapabilities({ sessionId: dispatchId, mode: "dispatch", cwd: home, roots: [home] });
       const sessions = servers["clover__sessions"]!.instance as { callTool(name: string, args: Record<string, unknown>): Promise<unknown> };
@@ -90,7 +90,7 @@ describeWithWinterBinary("a child spawned while the daemon stops does not outliv
     }, 60_000);
 
     test(`a session's first message: stop ${offsetMs} ms after it`, async () => {
-      const { home, cwd, daemon, client } = await bootOn(bin);
+      const { home, cwd, daemon, client } = await bootOn();
       const created = await client.request(METHODS.sessionCreate, { scope: "e2e", mode: "code", model: "winter-test/hang", cwd, approvalPolicy: "auto" });
       const sessionId = (created.result as { sessionId: string }).sessionId;
 

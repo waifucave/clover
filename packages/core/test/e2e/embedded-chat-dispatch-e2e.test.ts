@@ -1,11 +1,11 @@
-// WS-23 (ruling R1) — CHAT AND DISPATCH RUN EMBEDDED, end to end, through a REAL daemon.
+// WS-23 (ruling R1) — CHAT AND DISPATCH RUN EMBEDDED, end to end, through a REAL daemon. A-M1 (spec
+// §3.3): CODE DOES TOO.
 //
 // A real `startDaemon` on a temp home and a real NDJSON client on its socket; every model is a
 // `winter-test/<double>` (nothing reaches a network or a Keychain). The Clover executable is set to a
-// path that DOES NOT EXIST: a code session therefore refuses typed (`winter_executable_unavailable` —
-// code still resolves the binary ladder), while chat and dispatch run anyway, in a Bun Worker each
+// path that DOES NOT EXIST, and every mode runs anyway, in a Bun Worker each
 // (`runtime-sdk/embedded.ts`), observed through `daemon.embedded` by their backend session ids. That
-// contrast is the proof that no binary is involved, and why this file needs no CLOVER_RUNTIME_EXECUTABLE.
+// is the proof that no binary is involved, and why this file needs no CLOVER_RUNTIME_EXECUTABLE.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,7 +81,7 @@ const E2E_TEST_MS = 180_000;
 const TURN = ["user_message", "turn_started", "assistant_message", "turn_completed"];
 const turnKinds = (log: SessionEvent[]): string[] => log.map((e) => e.type).filter((t) => TURN.includes(t));
 
-describe("chat and dispatch run embedded — a Worker per session inside a real daemon", () => {
+describe("every mode runs embedded — a Worker per session inside a real daemon", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let rt: RuntimeStateWiring;
@@ -163,17 +163,31 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
     expect(driver.init?.tools).not.toContain("Bash");
   }, E2E_TEST_MS);
 
-  test("a CODE session on the same daemon still resolves the binary ladder — and refuses the missing one typed", async () => {
-    const r = await client.request(METHODS.sessionCreate, { scope: "e2e", mode: "code", cwd: home, model: "winter-test/echo" });
-    let refusal = r.error;
-    if (refusal === undefined) {
-      // The refusal may land at the first incarnation rather than at create — either way it is typed.
-      const { sessionId } = r.result as { sessionId: string };
-      refusal = (await client.request(METHODS.sessionSend, { sessionId, text: "hello" })).error;
-    }
-    expect(refusal).toBeDefined();
-    expect((refusal!.data as { code?: string }).code).toBe("winter_executable_unavailable");
-    expect(refusal!.message).toContain(missingBinary());
+  test("A-M1: a CODE session runs embedded too — in a Worker, though the configured binary does not exist", async () => {
+    // spec §3.3: code sessions stop spawning the `winter` binary. The settings name a binary that does
+    // not exist; before A-M1 this exact session refused `winter_executable_unavailable`.
+    const { sessionId: sid } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", cwd: home, model: "winter-test/echo" });
+    await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
+    await sendAndSettle(sid, "hello code");
+    const driver = daemon!.clover.get(sid)!;
+    expect(driver.mode).toBe("code");
+    expect(driver.state).toBe("live");
+    expect(workerLive(sid)).toBe(true);
+    expect(turnKinds(daemon!.sessions.read(sid))).toEqual(TURN);
+    expect(daemon!.sessions.read(sid).filter((e) => e.type === "agent_error")).toEqual([]);
+    // Code's whole tool surface is there, the file tools and Bash with it...
+    for (const tool of ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]) expect(driver.init?.tools).toContain(tool);
+    // ...and Bash RUNS from the Worker, in the session's own cwd, on the Worker's env.
+    await driver.end();
+    daemon!.sessions.setModel(sid, "winter-test/lanec");
+    await sendAndSettle(sid, "run the shell");
+    const shellLog = daemon!.sessions.read(sid);
+    expect(JSON.stringify(shellLog.filter((e) => e.type === "tool_result").at(-1))).toContain("winter-t8-lanec");
+    expect(shellLog.filter((e) => e.type === "agent_error")).toEqual([]);
+    expect(workerLive(sid)).toBe(true);
+    // The daemon's own working directory is untouched by a code session (a Worker's chdir would be process-wide).
+    expect(process.cwd()).not.toBe(home);
+    await daemon!.clover.get(sid)?.end();
   }, E2E_TEST_MS);
 
   test("a DISPATCH session runs embedded too", async () => {

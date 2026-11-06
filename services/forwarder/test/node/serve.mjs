@@ -1,5 +1,5 @@
 // Runs the forwarder Worker on wrangler's local runtime (workerd), for the forwarder plugin's end-to-end test
-// (plugins/clover/forwarder/test/e2e.test.ts), which talks to it over real sockets from Bun.
+// (plugins/clover/plugins/forwarder/test/e2e.test.ts), which talks to it over real sockets from Bun.
 //
 // Input:  FORWARDER_E2E (environment, JSON): { jwks, issuer, tagKeys, accountIdKey, ticketSecret }, all made
 //         by the test in memory for this run. Nothing is written to disk but wrangler's own local state folder.

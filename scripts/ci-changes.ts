@@ -1,7 +1,8 @@
 // Which CI jobs a change needs (ci.yml's `changes` job). Each area lists the paths its jobs read; a change to CI itself,
 // the toolchain, the root manifest or a lockfile runs every area. The names-and-layout checks and the gate run always.
 //
-//   bun scripts/ci-changes.ts --base <rev>   the files changed between <rev> and HEAD decide
+//   bun scripts/ci-changes.ts --base <rev>   the files changed between <rev> and HEAD decide (a pull request's base,
+//                                            or the main a merge-queue group was built on)
 //   bun scripts/ci-changes.ts --all          every area (a push to main, a manual run)
 //
 // Prints `<area>=true|false` per area, and appends the same lines to $GITHUB_OUTPUT when it is set.

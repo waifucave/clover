@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { ToolRegistry, type ToolContext } from "../../src/agent/tools/registry";
 import { registerDocsTool, type DocsToolDeps } from "../../src/agent/tools/docs";
 import { registerSheetsTool } from "../../src/agent/tools/sheets";

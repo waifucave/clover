@@ -1,4 +1,4 @@
-import type { RuntimeKind } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeKind } from "../runtime-sdk/host";
 import type { RuntimeStateDb } from "./db";
 
 /**

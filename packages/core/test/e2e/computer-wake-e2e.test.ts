@@ -15,13 +15,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { sandboxAvailable } from "../../src/workflows/sandbox";
 import { guardHeadlessNotifications, type NotificationGuard } from "../helpers/headless-notifications";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { FakeHelper } from "../computer-use/fake-helper";
 import { FakeWakeBackend } from "../computer-use/wake-fakes";
 
@@ -93,9 +93,9 @@ const script = (code: string, extra: string[] = []): string => [
   ...extra,
 ].join("\n");
 
-const run = sandboxAvailable() ? describeWithWinterBinary : (name: string, _fn: (bin: string) => void) => test.skip(`${name} (no sandbox)`, () => {});
+const run = sandboxAvailable() ? describeWithEmbeddedRuntime : (name: string, _fn: () => void) => test.skip(`${name} (no sandbox)`, () => {});
 
-run("ComputerV2 wake triggers through a real daemon (fake helper, fake wake backend)", (bin) => {
+run("ComputerV2 wake triggers through a real daemon (fake helper, fake wake backend)", () => {
   let home: string;
   let cwd: string;
   let daemon: RunningDaemon | undefined;
@@ -140,7 +140,7 @@ run("ComputerV2 wake triggers through a real daemon (fake helper, fake wake back
       provider: { model: "winter-test/calls" },
       // Notes is allowed ALWAYS (a trigger needs a session or always grant); TextEdit is not — the "once" case.
       computerUse: { enabled: true, apps: { "com.apple.Notes": { grant: "always" } } },
-      runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 30 },
+      runtimes: { winterIdleTimeoutSec: 30 },
     }, null, 2));
     await boot();
   });

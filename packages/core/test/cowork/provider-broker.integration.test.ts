@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CoworkProviderBroker, type CoworkProviderRequest, type CoworkProviderScope } from "../../src/cowork/provider-broker";
-import type { ResolvedModel } from "@yanlinglabs/winter-provider-runtime";
+import type { ResolvedModel } from "@waifucave/clover-provider-runtime";
 const candidate = process.env.COWORK_PROVIDER_PROXY_CANDIDATE;
 const integration = candidate ? test : test.skip;
 const KEY = "fixture-provider-secret-kept-on-host-only";
