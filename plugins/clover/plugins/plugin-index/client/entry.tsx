@@ -55,6 +55,16 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [indexes, setIndexes] = useState<IndexView[]>([]);
   const [results, setResults] = useState<IndexResult[]>([]);
   const [installs, setInstalls] = useState<Record<string, InstallState>>({});
+  // Whether the user has confirmed they're 18 or older (`plugin.list`'s `adultConfirmed`, lane B's #187): the gate asks
+  // once, not before every adult plugin.
+  const [adultOk, setAdultOk] = useState(false);
+  useEffect(() => {
+    let live = true;
+    core?.call("plugin.list", {}).then((l) => live && setAdultOk((l as { adultConfirmed?: unknown }).adultConfirmed === true), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [core]);
 
   useEffect(() => {
     if (!core) return;
@@ -89,13 +99,16 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     );
   };
   // An adult plugin passes the 18+ gate first (§5.7).
-  const install = (r: IndexResult) => (r.adult ? setGate(r) : fetchIt(r));
+  const install = (r: IndexResult) => (r.adult && !adultOk ? setGate(r) : fetchIt(r));
   const confirmAge = () => {
     const r = gate;
     setGate(undefined);
     if (!core || !r) return;
     core.call("plugin.confirmAdult", {}).then(
-      () => fetchIt(r),
+      () => {
+        setAdultOk(true);
+        fetchIt(r);
+      },
       () => setInstalls((s) => ({ ...s, [r.id]: "failed" })),
     );
   };

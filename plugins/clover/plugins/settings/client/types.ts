@@ -28,6 +28,8 @@ export interface SettingsPlugin {
   oks: string[];
   /** The settings its manifest declares (§5.1 "Settings"), with their values. */
   settings?: SettingField[];
+  /** Its manifest says it may contain adult content (§5.7): it stays off until the user confirms they're 18 or older. */
+  adult?: boolean;
 }
 
 /** One setting a plugin's manifest declares (lane B's `PluginSettingView`, with the manifest's options and limits). A
@@ -93,6 +95,8 @@ export interface SettingsValues {
   devices: SettingsDevice[];
   /** The bots, for the Bots page: each opens in the bot editor. */
   bots?: { id: string; name: string }[];
+  /** The user has confirmed they're 18 or older (§5.7; `plugin.list`'s `adultConfirmed`). */
+  adultConfirmed?: boolean;
 }
 
 /** A section a plugin adds (`settings.section`): its title, and what its page draws. */
@@ -117,6 +121,8 @@ export interface SettingsModalProps {
   onOpenPluginManager?: () => void;
   /** A found plugin's OK, reviewed on a sealed card (§5.1, §5.5): loading it is a sensitive change. */
   onReviewOk?: (id: string) => void;
+  /** The user confirms they're 18 or older (`plugin.confirmAdult`), before an adult plugin is switched on (§5.7). */
+  onConfirmAdult?: () => Promise<void>;
   /** Change one of a plugin's declared settings (`plugin.settings.set`); `null` goes back to the default. */
   onPluginSetting?: (pluginId: string, key: string, value: unknown) => void;
   /** A plugin's logs (spec §5.8). */

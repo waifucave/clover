@@ -190,6 +190,20 @@ export const S = {
   get notifierNoSettings() {
     return t("clover.settings.notifierNoSettings");
   },
+  // The 18+ gate (§5.7).
+  get adult() {
+    return t("clover.settings.adult");
+  },
+  get gateTitle() {
+    return t("clover.settings.gateTitle");
+  },
+  gateText: (name: string) => t("clover.settings.gateText", { name }),
+  get gateCancel() {
+    return t("clover.settings.gateCancel");
+  },
+  get gateConfirm() {
+    return t("clover.settings.gateConfirm");
+  },
   // A plugin's declared settings.
   get pluginSettings() {
     return t("clover.settings.pluginSettings");

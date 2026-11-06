@@ -31,7 +31,7 @@ export const VALUES: SettingsValues = {
         { key: "apiKey", type: "secret", title: "API key", set: true, required: true },
       ],
     },
-    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "stopped", enabled: true, reason: "Stopped after three crashes in two minutes", oks: [] },
+    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "stopped", enabled: true, adult: true, reason: "Stopped after three crashes in two minutes", oks: [] },
   ],
   themes: [
     { id: "clover", name: "Clover" },

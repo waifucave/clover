@@ -52,17 +52,45 @@ function Row({ label, detail, mark, children }: { label: string; detail?: string
 
 /** What a plugin's row offers (review S2): a found plugin's OK is reviewed on a sealed card, never by a switch; a
  *  blocked, refused or invalid one has nothing to switch; and Clover's own plugin, which Settings is part of, stays on. */
-function PluginSwitch({ plugin: p, props }: { plugin: SettingsPluginRow; props: SettingsModalProps }) {
+function PluginSwitch({ plugin: p, props, ask }: { plugin: SettingsPluginRow; props: SettingsModalProps; ask: (p: SettingsPluginRow, go: () => void) => void }) {
   if (p.id === CLOVER_ID) return <span className="cl-settings__detail">{S.pluginBuiltIn}</span>;
   if (p.state === "found") {
     return props.onReviewOk ? (
-      <button type="button" className="cl-settings__button cl-settings__button--primary" aria-label={S.reviewOkFor(p.name)} onClick={() => props.onReviewOk?.(p.id)}>
+      <button type="button" className="cl-settings__button cl-settings__button--primary" aria-label={S.reviewOkFor(p.name)} onClick={() => ask(p, () => props.onReviewOk?.(p.id))}>
         {S.reviewOk}
       </button>
     ) : null;
   }
   if (NO_SWITCH.has(p.state)) return null;
-  return <Toggle label={p.name} on={p.enabled} onChange={(v) => props.onChange(`plugins.${p.id}.enabled`, v)} />;
+  // Switching an adult plugin on passes the 18+ gate first; switching anything off never asks.
+  return <Toggle label={p.name} on={p.enabled} onChange={(v) => (v ? ask(p, () => props.onChange(`plugins.${p.id}.enabled`, true)) : props.onChange(`plugins.${p.id}.enabled`, false))} />;
+}
+
+/** The 18+ gate (§5.7), in place of the plugin list: an adult plugin stays off until the user confirms they're 18 or
+ *  older. Confirming says so to the core (`plugin.confirmAdult`), then the switch goes on, or its OK is asked for. */
+function AdultGate({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
+  const id = useId();
+  return (
+    <div className="cl-settings__gate" role="alertdialog" aria-labelledby={id} onKeyDown={(e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCancel();
+      }
+    }}>
+      <h3 className="cl-settings__subhead" id={id}>
+        {S.gateTitle}
+      </h3>
+      <p className="cl-settings__note">{S.gateText(name)}</p>
+      <div className="cl-settings__gate-actions">
+        <button type="button" className="cl-settings__button" onClick={onCancel} autoFocus>
+          {S.gateCancel}
+        </button>
+        <button type="button" className="cl-settings__button cl-settings__button--primary" onClick={onConfirm}>
+          {S.gateConfirm}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const CLOVER_ID = "clover";
@@ -174,8 +202,23 @@ function Pairing({ props }: { props: SettingsModalProps }) {
 
 function Page({ props }: { props: SettingsModalProps }) {
   const { section, values, onChange } = props;
+  const [gate, setGate] = useState<{ plugin: SettingsPluginRow; go: () => void } | undefined>(undefined);
+  const ask = (p: SettingsPluginRow, go: () => void) => (p.adult && !values.adultConfirmed ? setGate({ plugin: p, go }) : go());
   const extra = props.extraSections?.find((x) => x.id === section);
   if (extra) return <>{extra.render()}</>;
+  if (section === "plugins" && gate) {
+    return (
+      <AdultGate
+        name={gate.plugin.name}
+        onCancel={() => setGate(undefined)}
+        onConfirm={() => {
+          const { go } = gate;
+          setGate(undefined);
+          void (props.onConfirmAdult?.() ?? Promise.resolve()).then(go, () => undefined);
+        }}
+      />
+    );
+  }
   if (section === "plugins" && props.logs) {
     const { name, lines, onBack } = props.logs;
     return (
@@ -266,6 +309,11 @@ function Page({ props }: { props: SettingsModalProps }) {
                   <span className="cl-settings__state" data-state={p.state}>
                     {S.pluginState[p.state]}
                   </span>
+                  {p.adult && (
+                    <span className="cl-settings__state" data-tone="adult">
+                      {S.adult}
+                    </span>
+                  )}
                 </span>
                 <span className="cl-settings__detail">{p.source}</span>
                 {p.reason && <span className="cl-settings__detail cl-settings__reason">{p.reason}</span>}
@@ -277,7 +325,7 @@ function Page({ props }: { props: SettingsModalProps }) {
                     {S.pluginLogs}
                   </button>
                 )}
-                <PluginSwitch plugin={p} props={props} />
+                <PluginSwitch plugin={p} props={props} ask={ask} />
               </div>
               {p.settings && p.settings.length > 0 && <PluginSettingsDisclosure plugin={p} props={props} />}
             </div>

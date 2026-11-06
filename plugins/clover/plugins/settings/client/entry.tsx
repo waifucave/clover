@@ -62,6 +62,8 @@ const languageOf = (lang: string): Language => ({ id: lang, ...(LANGUAGE_NAMES[l
 
 interface Loaded {
   plugins: PluginSummary[];
+  /** The user has confirmed they're 18 or older (`plugin.list`'s `adultConfirmed`, lane B's #187). */
+  adultConfirmed: boolean;
   /** Each plugin's declared settings, by its id (those that declare any). */
   settings: Record<string, SettingField[]>;
   /** The plugins that notify (`notifiers`). */
@@ -124,6 +126,7 @@ async function load(core: CoreClient): Promise<Loaded> {
   for (const p of pluginUi?.plugins ?? []) for (const l of p.locales) langs.add(l.lang);
   return {
     plugins,
+    adultConfirmed: (list as { adultConfirmed?: unknown } | undefined)?.adultConfirmed === true,
     details,
     settings,
     notifiers,
@@ -154,6 +157,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [logs, setLogs] = useState<{ name: string; lines: string[] } | undefined>(undefined);
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [revision, setRevision] = useState(0);
+  // Confirmed in this window: the gate doesn't ask again before the list says so.
+  const [confirmedHere, setConfirmedHere] = useState(false);
   const [computers, setComputers] = useState<Awaited<ReturnType<NonNullable<NonNullable<typeof api.computers>["list"]>>>>([]);
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
@@ -205,6 +210,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       ...(p.reason ? { reason: p.reason } : {}),
       oks: loaded?.details[p.id] ? okWords(loaded.details[p.id]!) : [],
       ...(loaded?.settings[p.id]?.length ? { settings: loaded.settings[p.id] } : {}),
+      ...(p.adult ? { adult: true } : {}),
     })),
     themes: loaded?.themes ?? [],
     theme: loaded?.globalTheme ?? loaded?.themes[0]?.id ?? "",
@@ -212,6 +218,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     levelOptions: (["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const).map((id) => ({ id, label: S.levelName(id) })),
     devices: devices.map((d) => ({ id: d.id, name: d.name, kind: deviceKind(d), ...(d.isThis ? { here: true } : {}), ...(d.isMain ? { main: true } : {}) })),
     bots,
+    adultConfirmed: confirmedHere || loaded?.adultConfirmed === true,
   };
 
   const onChange = (path: string, value: unknown) => {
@@ -248,6 +255,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       section={section}
       {...(core
         ? {
+            onConfirmAdult: () => core.call("plugin.confirmAdult", {}).then(() => setConfirmedHere(true)),
             onPluginSetting: (id: string, key: string, value: unknown) =>
               void core.call("plugin.settings.set", { id, key, value: value as never }).then(() => setRevision((r) => r + 1), () => setRevision((r) => r + 1)),
           }

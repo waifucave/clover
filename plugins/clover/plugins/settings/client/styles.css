@@ -521,6 +521,27 @@
   white-space: pre-wrap;
 }
 
+/* The 18+ gate, in place of the plugin list. */
+.cl-settings__gate {
+  max-width: 480px;
+  margin: var(--clover-space-l) auto 0;
+  padding: var(--clover-space-xl);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-surface);
+}
+
+.cl-settings__gate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-l);
+}
+
+.cl-settings__state[data-tone="adult"] {
+  color: var(--clover-color-danger);
+}
+
 .cl-settings__reason {
   color: var(--clover-color-attention-text);
 }

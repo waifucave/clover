@@ -136,6 +136,11 @@
     "clover.settings.secretStored": "Stored",
     "clover.settings.secretNone": "Not set",
     "clover.settings.secretRemove": "Remove {name}",
-    "clover.settings.save": "Save"
+    "clover.settings.save": "Save",
+    "clover.settings.adult": "18+",
+    "clover.settings.gateTitle": "Adult content",
+    "clover.settings.gateText": "{name} says it may contain adult content. Clover keeps plugins like it off until you confirm you're 18 or older.",
+    "clover.settings.gateCancel": "Cancel",
+    "clover.settings.gateConfirm": "I'm 18 or older"
   }
 }

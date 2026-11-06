@@ -9,8 +9,9 @@ import { ENTRIES, INDEXES, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
-async function mount(params: { spot?: string; key?: string } = {}, installState: "found" | "running" | "refused" = "found") {
+async function mount(params: { spot?: string; key?: string } = {}, installState: "found" | "running" | "refused" = "found", adultConfirmed = false) {
   const core = fakeCore({
+    "plugin.list": () => ({ plugins: [], ...(adultConfirmed ? { adultConfirmed: true } : {}) }) as never,
     "plugin.index.list": () => ({ indexes: INDEXES }),
     "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || plain(e.name).toLowerCase().includes(query.toLowerCase())) }),
     "plugin.confirmAdult": () => ({ ok: true }),
@@ -115,6 +116,14 @@ describe("the plugin index", () => {
     await act(() => settle());
     expect(installs()).toEqual(["plugin.confirmAdult", "plugin.install"]);
     expect(within(rows()[4]!).getByRole("status").textContent).toBe("Waiting for your OK");
+  });
+
+  test("once the user has confirmed they're 18 or older, the gate doesn't ask again", async () => {
+    const { core } = await mount({}, "found", true);
+    fireEvent.click(screen.getByRole("button", { name: "Install Story mode" }));
+    await act(() => settle());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(core.calls.filter((c) => c.method === "plugin.install" || c.method === "plugin.confirmAdult").map((c) => c.method)).toEqual(["plugin.install"]);
   });
 
   test("from a placeholder: says what it is looking for, and searches for the key", async () => {

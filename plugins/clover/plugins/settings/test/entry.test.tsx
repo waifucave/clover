@@ -15,6 +15,8 @@ const PLUGINS = [
   summary("clover/notifications", "Desktop notifications"),
   summary("weather-routine", "Weather routine", { state: "found", enabled: false, source: "index" }),
   summary("story-mode", "Story mode", { state: "stopped", reason: "Stopped after three crashes in two minutes", source: "local" }),
+  summary("night-tales", "Night tales", { state: "found", enabled: false, source: "local", adult: true }),
+  summary("dusk", "Dusk", { state: "off", enabled: false, source: "local", adult: true }),
 ];
 const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => pluginDetail(p, { capabilities, networkHosts });
 
@@ -39,6 +41,7 @@ async function mount(params: { section?: string; item?: string } = {}, extra: { 
             ],
     }),
     "plugin.settings.set": () => ({ applied: true }),
+    "plugin.confirmAdult": () => ({ ok: true }),
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("midnight", [{ id: "night", file: "night.css" }], [{ lang: "de", file: "de.json" }])] }),
@@ -176,6 +179,26 @@ describe("settings on the runtime", () => {
       { id: "weather-routine", key: "hour", value: 6 },
       { id: "weather-routine", key: "apiKey", value: "sk-new" },
     ]);
+  });
+
+  test("the 18+ gate: an adult plugin is switched on, or its OK asked for, only after the user confirms their age; off never asks", async () => {
+    const { core } = await mount({ section: "plugins" });
+    const asked = () => core.calls.filter((c) => c.method === "plugin.confirmAdult" || c.method === "plugin.setEnabled").map((c) => [c.method, c.params]);
+    expect(screen.getByRole("group", { name: "Night tales" }).textContent).toContain("18+");
+    fireEvent.click(screen.getByRole("button", { name: "Review Night tales's OK" }));
+    const gate = screen.getByRole("alertdialog", { name: "Adult content" });
+    expect(gate.textContent).toContain("Night tales says it may contain adult content");
+    fireEvent.click(within(gate).getByRole("button", { name: "Cancel" }));
+    expect(asked()).toEqual([]);
+    fireEvent.click(screen.getByRole("switch", { name: "Dusk" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "I'm 18 or older" }));
+    await act(() => settle());
+    expect(asked()).toEqual([["plugin.confirmAdult", {}], ["plugin.setEnabled", { id: "dusk", enabled: true }]]);
+    // Confirmed: the next one goes straight on.
+    fireEvent.click(screen.getByRole("button", { name: "Review Night tales's OK" }));
+    await act(() => settle());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked().at(-1)).toEqual(["plugin.setEnabled", { id: "night-tales", enabled: true }]);
   });
 
   test("devices: choosing the main computer and pairing go through the core", async () => {
