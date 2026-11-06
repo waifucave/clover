@@ -81,5 +81,7 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     exclude: ["test/node/**"],
     testTimeout: 20_000,
+    // The files share the fake project above (its outage switch and its call count): one file at a time.
+    fileParallelism: false,
   },
 });
