@@ -10,7 +10,7 @@ import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
 } from "./common";
-import { SignedCardAnswer } from "./approvals";
+import { Card, SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 export const ComputerState = z.enum(["online", "offline", "asleep"]);
@@ -110,9 +110,16 @@ export const COMPUTERS_METHODS = {
     doc: "One computer, by name or alias.",
   }),
   computerSetLevel: defineMethod({
-    name: "computer.setLevel", owner: "J", roles: ["app", "cli", "remote"], userOnly: true, change: "sensitive",
-    params: z.object({ name: ComputerName, level: Level }), result: ChangeResult,
-    doc: "Changes a computer's approval level: a sealed card unless made in the user's own terminal (§5.5).",
+    name: "computer.setLevel", owner: "J", roles: ["app", "cli", "remote", "peer"], userOnly: true, change: "sensitive",
+    params: z.union([
+      z.object({ name: ComputerName, level: Level }),
+      /** A peer asks the receiver to change its own level (levels per computer, J-M2): a lowering applies; a raise
+       *  needs the user's answer signed for the receiver's own card (`levelRaiseCall`), or it is refused with
+       *  `NeedsAnswer`. */
+      z.object({ level: Level, answer: SignedCardAnswer.optional() }),
+    ]),
+    result: z.union([ChangeResult, z.object({ applied: z.literal(true) })]),
+    doc: "Changes a computer's approval level: a sealed card unless made in the user's own terminal (§5.5); from a peer, the receiver's own level.",
   }),
   computerRename: defineMethod({
     name: "computer.rename", owner: "J", roles: ["app", "cli"], userOnly: true, change: "core",
@@ -221,8 +228,69 @@ export const COMPUTERS_METHODS = {
   }),
   toolCancel: defineMethod({
     name: "tool.cancel", owner: "J", roles: ["peer"],
-    params: z.object({ callId: utf16(128, 1) }), result: Ok,
+    params: z.object({ callId: utf16(128, 1), session: SessionId.optional() }), result: Ok,
     doc: "Cancels a running call; if the link is down, the holding computer stops it when the link returns (§6.4).",
+  }),
+
+  // The direct path between computers (J-M1's S1): the destination's holder takes the files straight from the source's
+  // over one link stream. The caller asks `tree.receive` of the destination; the destination opens a `tree.send`
+  // stream (priority `files`, meta `TreeSendMeta`) to the source, which sends the entries in order; once they are in
+  // place the destination tells the source `tree.sent`, and a move's source removes what it sent. Each holder judges
+  // the whole operation once, before anything lands (`tree.judge` asks first and spends no answer). One card names both
+  // computers and the whole move or copy (ruling R15): its single signed answer binds the full description, each holder
+  // checks it against its own rebuilt card, and a holder whose own rule is stricter (read-only) still refuses.
+  treeJudge: defineMethod({
+    name: "tree.judge", owner: "J", roles: ["peer"],
+    params: z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level }),
+    result: Ok,
+    doc: "Whether this holder would take its part of a move or copy at this level; refused with `NeedsAnswer` when the user's answer would lift it.",
+  }),
+  treeReceive: defineMethod({
+    name: "tree.receive", owner: "J", roles: ["peer"],
+    params: z.object({
+      from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level,
+      /** The one signed answer for the whole operation (R15), bound to `tree.move` or `tree.copy` with `from` and `to`. */
+      answer: SignedCardAnswer.optional(),
+    }),
+    result: z.object({ files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), kept: z.number().int().nonnegative() }),
+    doc: "Makes this computer the destination of a move or copy from another: it takes the files over `tree.send` and renames them into place, never over something there. `kept`: a move's entries that changed at the source meanwhile, and stay there too.",
+  }),
+  treeSent: defineMethod({
+    name: "tree.sent", owner: "J", roles: ["peer"],
+    params: z.object({ sendId: utf16(128, 1) }), result: z.object({ kept: z.number().int().nonnegative() }),
+    doc: "The destination has the files in place: a move's source removes what it sent, keeping what changed meanwhile.",
+  }),
+
+  // Holds on another computer's screen live on that computer (J-M1 review minor 4): its registry decides, with its own
+  // user-working marks, and a dropped link lets go of every hold the other computer took there.
+  computerTakeHold: defineMethod({
+    name: "computer.takeHold", owner: "J", roles: ["peer"],
+    params: z.object({ target: HoldTarget, pluginId: AnyPluginId, session: SessionId.optional() }), result: z.object({ hold: HoldView }),
+    doc: "Takes a hold on the receiver's own screen, for the calling computer's session.",
+  }),
+  computerReleaseHold: defineMethod({
+    name: "computer.releaseHold", owner: "J", roles: ["peer"],
+    params: z.object({ id: utf16(128, 1) }), result: Ok,
+    doc: "Lets go of a hold the calling computer took here.",
+  }),
+  computerReleaseSession: defineMethod({
+    name: "computer.releaseSession", owner: "J", roles: ["peer"],
+    params: z.object({ session: SessionId }), result: z.object({ released: z.number().int().nonnegative() }),
+    doc: "Lets go of every hold the calling computer took here for one session, at its turn's end.",
+  }),
+  computerHolds: defineMethod({
+    name: "computer.holds", owner: "J", roles: ["peer"],
+    params: Empty, result: z.object({ holds: z.array(HoldView), userWorking: z.boolean() }),
+    doc: "The receiver's holds and whether the user is working there.",
+  }),
+
+  // MCP across computers (J-M2): a tool call on another computer is `tool.run` with `mcp__<server>__<tool>`, judged there
+  // (R1); `mcp.mirror` installs a server there.
+  mcpMirror: defineMethod({
+    name: "mcp.mirror", owner: "J", roles: ["peer"],
+    params: z.object({ server: utf16(256, 1), config: z.unknown(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() }),
+    result: Ok,
+    doc: "Installs an MCP server on the receiver: always the user's answer for its own card, bound to the server and its config, whatever the levels, since a server runs commands.",
   }),
 
   // Terminals (lane F's request; lane J's PTY): the user's own terminals in the panel. A layer needs `terminal`, which
@@ -231,40 +299,53 @@ export const COMPUTERS_METHODS = {
   // terminal panel (a key press's bytes; a paste through the paste door, which brackets it and asks before one of more
   // than one line): the daemon can't check that, which is why no other plugin may hold `terminal`.
   terminalOpen: defineMethod({
-    name: "terminal.open", owner: "J", roles: ["app", "layer"], capability: "terminal",
-    params: z.object({
-      computer: ComputerName,
-      /** A folder in the tree on that computer; its home folder when left out. */
-      cwd: TreePath.optional(),
-      /** The session it belongs to, which shows it in its panel. */
-      session: SessionId.optional(),
-      cols: z.number().int().min(2).max(1000),
-      rows: z.number().int().min(1).max(1000),
-    }),
+    name: "terminal.open", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal",
+    params: z.union([
+      z.object({
+        computer: ComputerName,
+        /** A folder in the tree on that computer; its home folder when left out. */
+        cwd: TreePath.optional(),
+        /** The session it belongs to, which shows it in its panel. */
+        session: SessionId.optional(),
+        cols: z.number().int().min(2).max(1000),
+        rows: z.number().int().min(1).max(1000),
+      }),
+      /** A peer opens one on the receiver, fenced at `cwd` and judged as `tool.run` is: an interactive shell has
+       *  nothing for a reviewer to read, so below `automatic` it takes the user's answer bound to `terminal.open`
+       *  with its folder (R1). */
+      z.object({
+        cwd: TreePath,
+        cols: z.number().int().min(2).max(1000),
+        rows: z.number().int().min(1).max(1000),
+        session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(),
+      }),
+    ]),
     result: z.object({ terminalId: TerminalId }),
     doc: "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`. A computer at read-only never opens one for a plugin (`refused`).",
   }),
   terminalWrite: defineMethod({
-    name: "terminal.write", owner: "J", roles: ["app", "layer"], capability: "terminal",
+    name: "terminal.write", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal",
     params: z.object({
       terminalId: TerminalId,
       data: utf16(TERMINAL_WRITE_MAX),
       /** A paste, whole, through the paste door: already bracketed (`ESC[200~` … `ESC[201~`) when the program turned
        *  bracketed paste on, and confirmed by the user when it holds more than one line. */
       paste: z.boolean().optional(),
+      /** A peer's call: the session the terminal was opened for. */
+      session: SessionId.optional(),
     }),
     result: Ok,
     doc: "What lane E's runtime derived from the user's key presses or a paste in the terminal panel.",
   }),
   terminalResize: defineMethod({
-    name: "terminal.resize", owner: "J", roles: ["app", "layer"], capability: "terminal",
-    params: z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000) }),
+    name: "terminal.resize", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal",
+    params: z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional() }),
     result: Ok,
     doc: "The terminal's new size in cells.",
   }),
   terminalClose: defineMethod({
-    name: "terminal.close", owner: "J", roles: ["app", "layer"], capability: "terminal",
-    params: z.object({ terminalId: TerminalId }), result: Ok,
+    name: "terminal.close", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal",
+    params: z.object({ terminalId: TerminalId, session: SessionId.optional() }), result: Ok,
     doc: "Ends the terminal's shell and closes it.",
   }),
 } as const;
@@ -273,7 +354,22 @@ export const ComputerChangedEvent = coreEvent("computer_changed", { computer: Co
 export const ComputerRemovedEvent = coreEvent("computer_removed", { name: ComputerName });
 export const HoldsChangedEvent = coreEvent("holds_changed", { computer: ComputerName, holds: z.array(HoldView), userWorking: z.boolean() });
 export const ActionRunningEvent = coreEvent("action_running", { computer: ComputerName, running: z.boolean() });
-export const ToolOutputEvent = coreEvent("tool_output", { callId: utf16(128, 1), chunk: utf16(1_000_000), stream: z.enum(["stdout", "stderr"]) });
+export const ToolOutputEvent = coreEvent("tool_output", { callId: utf16(128, 1), session: SessionId.optional(), chunk: utf16(1_000_000), stream: z.enum(["stdout", "stderr"]) });
+
+/** What a refusal carries when the user's answer would lift it (ruling R1): the holder's own card for the call, for the
+ *  calling computer to show on any of the user's devices; the signed answer then travels with the call again. In a
+ *  JSON-RPC error's `data.detail`, with `data.code` `refused`. */
+export const NeedsAnswer = z.object({
+  needsAnswer: z.literal(true),
+  computer: ComputerName,
+  method: utf16(128, 1),
+  card: Card.pick({ kind: true, change: true, binds: true, fields: true, options: true, children: true }).optional(),
+});
+export type NeedsAnswer = z.infer<typeof NeedsAnswer>;
+
+/** A `tree.send` stream's meta (the direct path): what the source is to send, and the operation's one answer. */
+export const TreeSendMeta = z.object({ from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
+export type TreeSendMeta = z.infer<typeof TreeSendMeta>;
 export const TreeChangedEvent = coreEvent("tree_changed", {
   watchId: utf16(128, 1),
   /** The tree paths that changed, coalesced. */
@@ -336,7 +432,7 @@ export const COMPUTERS_EVENTS = {
     doc: "A computer introduces itself to a peer when a link opens and when it changes: its name, level, agents and where its part of the tree lives.",
   }),
   terminalOutput: defineEvent({
-    type: "terminal_output", owner: "J", roles: ["app", "layer"], capability: "terminal", schema: TerminalOutputEvent, transient: true,
+    type: "terminal_output", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal", schema: TerminalOutputEvent, transient: true,
     fixture: { type: "terminal_output", ts: 1781270000000, terminalId: "term_1", data: "$ " },
     doc: "A terminal's output; `exited` once its shell ends.",
   }),

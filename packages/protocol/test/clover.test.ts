@@ -9,6 +9,7 @@ import {
 import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
 import { Caller as CallerSchema } from "../src/common";
 import { PEER_STREAM_GRANTS } from "../src/devices";
+import { NeedsAnswer } from "../src/computers";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
@@ -429,6 +430,22 @@ describe("B-M1's contract asks (lanes E, G, J, K, L)", () => {
     expect(params("tree.write").safeParse({ path: "home/Studio/a.sh", data: { encoding: "utf8", text: "x" }, executable: true }).success).toBe(true);
     expect(params("tree.grep").safeParse({ pattern: "x", cwd: "home/Studio", ignoreCase: true }).success).toBe(true);
     for (const type of ["tree_changed", "computer_hello"]) expect([type, CLOVER_EVENTS.get(type)?.roles]).toEqual([type, ["peer"]]);
+  });
+
+  test("lane J's peer side: the direct path, holds, levels, Mirror, terminals, and the refusal an answer lifts", () => {
+    for (const name of ["tree.judge", "tree.receive", "tree.sent", "computer.takeHold", "computer.releaseHold", "computer.releaseSession", "computer.holds", "mcp.mirror"]) {
+      expect([name, CLOVER_METHODS.get(name)?.roles]).toEqual([name, ["peer"]]);
+    }
+    // One answer for a move or copy between computers (R15).
+    expect(params("tree.receive").safeParse({ from: "home/Laptop1/p", to: "home/Studio/p", move: true, level: "ask-risky" }).success).toBe(true);
+    // A peer sets the receiver's own level; the app names the computer.
+    expect(params("computer.setLevel").safeParse({ level: "automatic" }).success).toBe(true);
+    expect(params("computer.setLevel").safeParse({ name: "Studio", level: "ask" }).success).toBe(true);
+    expect(CLOVER_METHODS.get("computer.setLevel")!.roles).toContain("peer");
+    expect(params("terminal.open").safeParse({ cwd: "home/Studio/p", cols: 80, rows: 24, level: "ask-risky" }).success).toBe(true);
+    expect(params("terminal.open").safeParse({ computer: "Studio", cols: 80, rows: 24 }).success).toBe(true);
+    expect(params("tool.cancel").safeParse({ callId: "c1", session: "s_alpha" }).success).toBe(true);
+    expect(NeedsAnswer.safeParse({ needsAnswer: true, computer: "Studio", method: "tree.write" }).success).toBe(true);
   });
 
   test("the plugin host carries the call an API call was made in (R7), and a layer's plugin view is complete (lane E)", () => {

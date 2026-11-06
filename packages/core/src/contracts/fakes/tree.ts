@@ -27,7 +27,8 @@ export interface FakeTreeComputer {
   botsRoot?: string;
   online?: boolean;
   aliases?: string[];
-  fence?: Pick<Fence, "check">;
+  /** The computer's fence: its verdicts, and the fenced set a harness reads (lane J's ask). */
+  fence?: Pick<Fence, "check" | "fencedSet">;
   /** The computer's approval level, which a peer's change is judged at (`DEFAULT_LEVEL` when unset). */
   level?: Level;
 }
