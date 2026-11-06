@@ -1,9 +1,11 @@
 // Windows Bash under Clover's fence (lane C, C-M2 part 2; spec §4, §9.1, items 76 and 1116, §14.1 item 2).
 //
-// Bots' Bash and PowerShell run as the dedicated sandbox principal `clover-sandbox` through the
+// Bots' Bash and PowerShell run as the dedicated sandbox principal `clover-sb-<8hex>` through the
 // hash-pinned srt-win launcher (Apache-2.0, `anthropics/sandbox-runtime` tag `v0.0.81`, commit
 // `c40cf14…`; source in `vendor/srt-win-src`, built with a static CRT by `scripts/build-srt-win.ps1`).
 // Never as the user, never AppContainer, and never a network-open or unsandboxed fallback.
+// Per Addendum 9: the principal name is `clover-sb-` + first 8 hex chars of SHA-256(user SID), 18 chars total.
+// The full SID is stored in the principal's description field and checked on status/remove to prevent collisions.
 //
 // This module is the pure half: constants, the launcher's argument shapes, its status parsing, the
 // per-launch allow/deny plan and the setup/reset command lists. It runs on every OS (the unit tests
@@ -40,23 +42,41 @@ export async function isProtectedCopy(execPath: string = process.execPath): Prom
 
 export { SRT_WIN_PINS, launcherPinned, authenticodeDigest, srtWinArch, srtWinPath, launcherProblem, launcherDigest, type SrtWinArch } from "./windows-launcher";
 
-/** The dedicated sandbox principal Bash runs as: hidden, local, non-admin, never the user.
- *  Per Addendum 6, the principal is per-user (SID-suffixed) so one user's remove doesn't touch another's. */
+/** The base prefix for the sandbox principal (Addendum 9). Windows account names are capped at 20
+ *  characters, so we use `clover-sb-` (9 chars) + 8 hex chars of SHA-256(SID) = 18 chars total. */
+export const SANDBOX_PRINCIPAL_PREFIX = "clover-sb-";
+
+/** The dedicated sandbox principal base name (for tests and as a prefix).
+ *  The actual per-user principal is `clover-sb-` + first 8 hex chars of SHA-256(user SID). */
 export function sandboxPrincipal(): string {
-  // The base name; the actual principal used at runtime is suffixed with the current user's SID.
-  return "clover-sandbox";
+  return SANDBOX_PRINCIPAL_PREFIX;
 }
 
-/** The full principal name including the current user's SID suffix.
- *  Used for all live operations (setup, remove, status, exec) to ensure per-user isolation. */
+/** Compute the per-user principal name from a Windows SID (Addendum 9).
+ *  Returns `clover-sb-` + first 8 hex characters of SHA-256(SID).
+ *  This is a pure function for testing; the live version uses the current user's SID. */
+export function principalNameFromSid(sid: string): string {
+  const { createHash } = require("node:crypto");
+  const hash = createHash("sha256").update(sid).digest("hex");
+  return `${SANDBOX_PRINCIPAL_PREFIX}${hash.slice(0, 8)}`;
+}
+
+/** The full principal name for the current user (Addendum 9).
+ *  Uses `clover-sb-` + first 8 hex chars of SHA-256(current user's SID).
+ *  The full SID is stored in the principal's description field and verified on status/remove. */
 export async function currentSandboxPrincipal(): Promise<string> {
   const { execSync } = await import("node:child_process");
   const ps = `
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    Write-Output "clover-sandbox-$sid"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($sid)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $hash = $sha.ComputeHash($bytes)
+    $hex = [BitConverter]::ToString($hash).Replace("-", "").ToLower()
+    $short = $hex.Substring(0, 8)
+    Write-Output "clover-sb-$short"
   `.trim();
   const out = execSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
-  return out.trim();
+  return String(out).trim();
 }
 
 /** Clover's WFP sublayer: the launcher's network filters live under this GUID, not its default. */

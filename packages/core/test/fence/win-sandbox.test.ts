@@ -8,6 +8,7 @@ import {
   CLOVER_WFP_SUBLAYER,
   SANDBOX_EXIT,
   sandboxPrincipal,
+  principalNameFromSid,
   SRT_WIN_COMMIT,
   SRT_WIN_TAG,
   SRT_WIN_PINS,
@@ -34,9 +35,19 @@ describe("the pinned launcher", () => {
     expect(SRT_WIN_COMMIT).toBe("c40cf14a65d025e3cd27f071f13a73c12b3b1f92");
   });
 
-  test("the sublayer GUID is a GUID, and the principal is hidden by name", () => {
+  test("the sublayer GUID is a GUID, and the principal uses the Addendum 9 format", () => {
     expect(CLOVER_WFP_SUBLAYER).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i);
-    expect(sandboxPrincipal()).toBe("clover-sandbox");
+    // Base prefix is clover-sb- (10 chars), full name with 8 hex chars = 18 chars
+    expect(sandboxPrincipal()).toBe("clover-sb-");
+    expect(sandboxPrincipal().length).toBe(10);
+    // Test principalNameFromSid produces 18-char name
+    const name = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1001");
+    expect(name).toMatch(/^clover-sb-[0-9a-f]{8}$/);
+    expect(name.length).toBe(18);
+    // Collision test: different SIDs produce different names
+    const name2 = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1002");
+    expect(name2).not.toBe(name);
+    expect(name2.length).toBe(18);
   });
 
   test("the launcher has Authenticode digest pins for x64 and arm64", () => {
@@ -65,13 +76,14 @@ describe("the pinned launcher", () => {
 
 describe("the sandbox command's args", () => {
   test("setup provisions the principal under Clover's sublayer, loopback closed", () => {
+    // Default uses sandboxPrincipal() base prefix; actual per-user name passed by CLI
     const a = setupArgs("C:\\Clover\\srt-win.exe");
-    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sandbox", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
     expect(a.join(" ")).not.toContain("allow-loopback");
   });
 
   test("remove undoes everything; status never elevates", () => {
-    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sandbox-user", "clover-sandbox", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sandbox-user", "clover-sb-", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
     expect(statusArgs("srt-win.exe")).toEqual(["srt-win.exe", "status", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
   });
 
