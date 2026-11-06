@@ -56,6 +56,12 @@ export function seedMemory(
     }
   }
   const realTo = realpathSync(to);
+  let realFrom: string;
+  try {
+    realFrom = realpathSync(from);
+  } catch {
+    return 0;
+  }
   let files = 0;
   let bytes = 0;
   const walk = (src: string, dest: string): boolean => {
@@ -84,6 +90,14 @@ export function seedMemory(
         const opened = fstatSync(inFd);
         if (!opened.isFile() || opened.nlink > 1) {
           warn(`the starter memory ${s} wasn't copied: it isn't a file of its own`);
+          continue;
+        }
+        // Read where it was asked for, not through a folder swapped for a link on the way (the fence review).
+        let realSrc = "";
+        try { realSrc = realpathSync(s); } catch { /* gone */ }
+        const srcThere = realSrc === "" ? undefined : statSync(realSrc, { throwIfNoEntry: false });
+        if (realSrc !== join(realFrom, relative(from, s)) || srcThere === undefined || srcThere.ino !== opened.ino || srcThere.dev !== opened.dev) {
+          warn(`the starter memory ${s} wasn't copied: it is under a link`);
           continue;
         }
         data = readFileSync(inFd);

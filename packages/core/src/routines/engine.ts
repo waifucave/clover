@@ -33,6 +33,7 @@ import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { botSegment, transcriptsDir } from "../sessions/ids";
 import type { SideThreadRun } from "../bots/service";
 import { settingsDir } from "../bots/gate";
+import { readOwnFile } from "../bots/own-file";
 import { parseRoutine, routineHash, triggerSummary, withId, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutineTrigger } from "./file";
 import { firesBetween, nextRunInZone } from "./zone";
 import { isLate, untrusted, WEBHOOK_LATE_MS } from "../../../../plugins/clover/plugins/trigger-webhook/src/webhook";
@@ -390,13 +391,15 @@ export class RoutineEngine {
       for (const file of readdirSync(join(root, folder.name)).filter((n) => n.endsWith(".md")).sort()) {
         const path = join(root, folder.name, file);
         try {
-          const st = lstatSync(path);
-          if (!st.isFile() || st.isSymbolicLink()) continue;
-          if (st.size > ROUTINE_FILE_MAX_BYTES) {
-            this.#warn(`${path} is larger than ${ROUTINE_FILE_MAX_BYTES} bytes; it isn't loaded`);
+          // Never through a link the bot left (toward another bot's routine or data, the fence review): the folder and
+          // the file are read as the bot's own, from the Clover home down.
+          const read = readOwnFile(this.#o.home, path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
+          if (!read.ok) {
+            if (read.why === "too-large") this.#warn(`${path} is larger than ${ROUTINE_FILE_MAX_BYTES} bytes; it isn't loaded`);
+            else if (read.why === "link" || read.why === "moved") this.#warn(`${path} is a link, or under one; it isn't loaded`);
             continue;
           }
-          let text = readFileSync(path, "utf8");
+          let text = read.data.toString("utf8");
           const parsed = parseRoutine(text, basename(file, ".md"));
           if (!parsed.ok) {
             this.#warn(`${path} isn't loaded: ${parsed.reason}`);
