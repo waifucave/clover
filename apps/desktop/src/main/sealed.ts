@@ -207,6 +207,7 @@ export class SealedFrames {
     const opt = card.options.find((o) => o.id === pick);
     if (opt === undefined || (!whole && pick !== want)) return { error: "a button answers its own option" };
     if (this.answered.has(card.id)) return { error: "that card is answered already" };
+    if (this.pending.has(card.id)) return { error: "that card is answering already" };
     this.channels.delete(token);
     const kids = children === undefined ? undefined : [...children];
     const sig = signer.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: pick, at, children: kids })));
@@ -223,9 +224,10 @@ export class SealedFrames {
       const card = this.cards.get(cardId);
       if (card !== undefined) (card as { picked?: string }).picked = pick;
     }
-    // A refused answer leaves the card can answer again from this desktop: only the core's own outcome closes it.
+    // A refused answer leaves the card able to answer again from this desktop: only the core's own outcome closes
+    // the card's frames. An accepted answer burns them.
     this.pending.delete(cardId);
-    this.dropChannels(cardId);
+    if (accepted === true) this.dropChannels(cardId);
   }
 
   /** The core events' reason to drop or keep a card's frames: an outcome names what closed it, and every outcome ends

@@ -299,13 +299,12 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     // The plugin registry (lane B) will check the plugin is installed and has a layer before minting.
     "layer.token": (_conn, p) => ({ token: deps.tokens.mint({ role: "layer", pluginId: (p as { pluginId: string }).pluginId }) }),
     // Whether any computer-use session is driving this desktop right now (lane E's B3). User and app only:
-    // no plugin asks. Fail closed: when the check can't run, there's no `computerUse` seam, the answer is
-    // `running: false`... no — fail closed means refusing when we can't tell, so this handler never
-    // fabricates a running state; `undefined` seam reads as not running, and the app's own gate refuses
-    // when the check errors. The app's `sealedAnswer` treats `running === true` as a refusal and an
-    // `undefined` response (check errored) as "couldn't run", also a refusal.
+    // no plugin asks. Fail closed: when the core has no computer-use seam (plugin-run computer use, lanes J and H
+    // wire the real seam later), answer `running: true` so the app refuses answers rather than guessing. TODO: lane
+    // J and lane H to feed the real computer-use state into this seam.
     "computer.acting": async () => {
       const r = await deps.computerUse?.acting?.();
+      if (r === undefined) return { running: true, session: undefined };
       return { running: r?.running === true, session: r?.session };
     },
   };
