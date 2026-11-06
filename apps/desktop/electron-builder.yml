@@ -1,6 +1,6 @@
-# Clover's desktop app, packaged by electron-builder (lane M owns this file). M-M0 builds only the unsigned,
-# unpacked app on each OS (`bun run dist`); the dmg, the Windows installer, deb/rpm/AppImage, signing and
-# updates come in M1 and M2.
+# Clover's desktop app, packaged by electron-builder (lane M owns this file). `bun run dist` builds the unsigned,
+# unpacked app on each OS (CI's app job). `scripts/build-packages.ts` builds the Linux packages (deb, rpm, AppImage)
+# with the daemon inside; the dmg and the Windows installer come with E-M1's app, signing and updates in M2.
 appId: com.waifucave.clover
 productName: Clover
 copyright: Copyright © 2026 waifucave
@@ -12,6 +12,14 @@ files:
   - out/renderer/**
   - package.json
 asar: true
+# The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it: scripts/build-packages.ts stages
+# the package target's binary in out/daemon first. A plain `bun run dist` has none, and packages the app alone.
+extraResources:
+  - from: out/daemon
+    to: daemon
+    filter:
+      - clover-core
+      - clover-core.exe
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false
@@ -23,6 +31,9 @@ mac:
   category: public.app-category.productivity
   # Unsigned: macOS signing and notarization are M2.
   identity: null
+  # A menu-bar app (spec §3.1: the pair is always on, with no window until the user opens one): no Dock icon.
+  extendInfo:
+    LSUIElement: true
 win:
   target:
     - target: dir
@@ -30,4 +41,79 @@ linux:
   target:
     - target: dir
   category: Utility
+  # The app's own executable, /opt/Clover/clover; `clover` on the PATH is the daemon's command line
+  # (packaging/linux/after-install.sh), as on macOS.
   executableName: clover
+  synopsis: A bot-first, endlessly moddable desktop agent platform
+  # The deb's Maintainer field. Debian wants a name and an email; there is no project email yet (a question for
+  # the owner), so it is the name alone.
+  maintainer: waifucave
+# The deb and the rpm are the main Linux packages: they install the AppArmor profile Electron's sandbox needs on
+# Ubuntu (spec §4). Their scripts and the profile live in packaging/linux/. Besides electron-builder's own
+# dependencies, the daemon's Bash tool needs bubblewrap (spec §4) and its secrets need libsecret.
+# Both are named `clover`: electron-builder would otherwise name the file after the package.json name, whose
+# `@waifucave/` scope puts a folder in the path (the first packages run failed on it).
+deb:
+  packageName: clover
+  artifactName: clover_${version}_${arch}.${ext}
+  # GNOME without the AppIndicator extension shows no tray, so the launcher entry carries Quit (spec §4): the app's
+  # own executable with --quit (E-M1's app quits the pair). `clover` on the PATH is the daemon's command line.
+  desktop:
+    entry:
+      Actions: Quit;
+    desktopActions:
+      Quit:
+        Name: Quit Clover
+        Exec: /opt/Clover/clover --quit
+  afterInstall: ../../packaging/linux/after-install.sh
+  afterRemove: ../../packaging/linux/after-remove.sh
+  appArmorProfile: ../../packaging/linux/apparmor-profile
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - bubblewrap
+  recommends:
+    - libappindicator3-1
+    - gnome-keyring
+rpm:
+  packageName: clover
+  artifactName: clover-${version}.${arch}.${ext}
+  # The same Quit action as the deb's.
+  desktop:
+    entry:
+      Actions: Quit;
+    desktopActions:
+      Quit:
+        Name: Quit Clover
+        Exec: /opt/Clover/clover --quit
+  afterInstall: ../../packaging/linux/after-install.sh
+  afterRemove: ../../packaging/linux/after-remove.sh
+  appArmorProfile: ../../packaging/linux/apparmor-profile
+  depends:
+    - gtk3
+    - libnotify
+    - nss
+    - libXScrnSaver
+    - (libXtst or libXtst6)
+    - xdg-utils
+    - at-spi2-core
+    - (libuuid or libuuid1)
+    - libsecret
+    - bubblewrap
+# The AppImage is the fallback: it can't install the AppArmor profile, and the app copies the daemon out of it
+# (spec §3.1, §4).
+appImage:
+  artifactName: Clover-${version}-${arch}.AppImage
+# The Windows installer, once E-M1's app is there to package: per user, so its uninstall hook
+# (packaging/windows/installer.nsh) runs as the user.
+nsis:
+  oneClick: true
+  perMachine: false
+  include: ../../packaging/windows/installer.nsh
