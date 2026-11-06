@@ -78,6 +78,8 @@ export const PluginDetail = PluginSummary.extend({
   /** The manifest as read (JSON with comments removed); the plugin SDK types it. */
   manifest: z.record(z.string(), z.unknown()),
   provenance: PluginProvenance,
+  /** The capabilities the user GRANTED, not the ones the manifest declares (those are `manifest.capabilities`): what
+   *  its OK covers, empty before the OK, after a refusal or a block. A client gates on this (lane F's message text). */
   capabilities: z.array(utf16(256)).max(256),
   /** The hosts its components can reach (§5.3). */
   networkHosts: z.array(utf16(256)).max(256),

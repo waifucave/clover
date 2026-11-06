@@ -59,7 +59,11 @@ export interface PluginRecord extends PluginSummary {
   cardStylingHeld?: boolean;
   /** As validated: refused contributions and entries left out; undefined when the plugin itself is refused. */
   manifest: Manifest | undefined;
+  /** The capabilities its manifest declares, the folder as it is now. */
   capabilities: readonly string[];
+  /** The capabilities the user granted: those its OK covers, empty before the OK, after a refusal or a block, and for an
+   *  invalid plugin. `PluginDetail.capabilities` is this set. */
+  granted: readonly string[];
   issues: readonly ValidationIssue[];
   provenance: PluginProvenance;
 }

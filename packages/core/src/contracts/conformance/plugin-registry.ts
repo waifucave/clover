@@ -165,6 +165,23 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       expect(await reg.installed("island", "cli")).toEqual({ state: "running" });
     });
 
+    test("a plugin's granted capabilities are its OK's: none before it, after a refusal or a block (F-M3's text gate)", async () => {
+      const withCaps = { ...webhook, manifest: { ...webhook.manifest, capabilities: ["conversation.read", "files"] } };
+      const reg = make({ plugins: [{ ...withCaps, approved: false }, { id: "gone", manifest: m({ name: "Gone", capabilities: ["files"] }), blocked: "malware" }] });
+      expect(reg.get("webhook")).toMatchObject({ state: "found", capabilities: ["conversation.read", "files"], granted: [] });
+      expect(reg.get("gone")).toMatchObject({ capabilities: ["files"], granted: [] });
+      await reg.approve("webhook", hashOf(reg, "webhook"));
+      expect(reg.get("webhook")).toMatchObject({ state: "running", granted: ["conversation.read", "files"] });
+      // Switched off by the user, it keeps what was granted; a new capability waits for a new OK, granting nothing.
+      await reg.setEnabled("webhook", false);
+      expect(reg.get("webhook")?.granted).toEqual(["conversation.read", "files"]);
+      await reg.setEnabled("webhook", true);
+      reg.put({ ...withCaps, manifest: { ...withCaps.manifest, capabilities: ["conversation.read", "files", "network:api.example.com"] } });
+      expect(reg.get("webhook")).toMatchObject({ state: "found", granted: [] });
+      await reg.refuse("webhook");
+      expect(reg.get("webhook")?.granted).toEqual([]);
+    });
+
     test("switching a found plugin on raises its OK card and never loads it; the switch refuses what can't run (S2)", async () => {
       const reg = make({
         plugins: [
