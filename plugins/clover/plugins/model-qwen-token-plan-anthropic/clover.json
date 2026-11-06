@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Alibaba Cloud Token Plan (Anthropic dialect)",
+  "description": "Alibaba Cloud Token Plan (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qwen-token-plan-anthropic",
+        "name": "Alibaba Cloud Token Plan (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Alibaba Cloud Token Plan (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Alibaba Cloud Token Plan (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic"
+        }
+      }
+    ]
+  }
+}

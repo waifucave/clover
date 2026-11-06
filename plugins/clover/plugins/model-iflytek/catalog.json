@@ -1,0 +1,403 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/iflytek/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://xinghuo.xfyun.cn — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://spark-api-open.xf-yun.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "iflytek/4.0Ultra",
+      "providerId": "iflytek",
+      "upstreamId": "4.0Ultra",
+      "displayName": "Spark 4.0 Ultra",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#4.0Ultra",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#4.0Ultra",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#4.0Ultra — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"Spark 4.0Ultra、Max现已支持system、Function Call功能(仅http 协议支持)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"Spark 4.0Ultra、Max现已支持system、Function Call功能(仅http 协议支持)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"最大输出长度 ... Ultra 32K\" — from the HTTP-protocol doc (spark-api-open.xf-yun.com), matching the catalog's actual OpenAI-compatible endpoint",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"Ultra版本已升级至X1.5 快思考模式，FunctionCall 效果显著提升\" — \"the Ultra version has been upgraded to X1.5 fast-thinking mode\"; no request parameter name or effort-level values documented. Note: iFlytek's docs also elsewhere call Ultra its \"most powerful non-thinking model\" (an internal inconsistency across pages) — treated the more specific fast-thinking u...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "4.0ultra",
+      "modelFamily": "other"
+    },
+    {
+      "key": "iflytek/generalv3",
+      "providerId": "iflytek",
+      "upstreamId": "generalv3",
+      "displayName": "Spark Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 8192,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#generalv3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#generalv3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#generalv3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"当前仅Max、Ultra版本支持 (Function Call currently supported by Max and Ultra versions only)\" — this is an exhaustive statement of which versions support Function Call; Pro (generalv3) is not among them",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"当前仅Max、Ultra版本支持 (Function Call currently supported by Max and Ultra versions only)\" — this is an exhaustive statement of which versions support Function Call; Pro (generalv3) is not among them",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"最大输出长度 ... Pro 8K\" — generalv3 = Spark Pro",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "generalv3",
+      "modelFamily": "other"
+    },
+    {
+      "key": "iflytek/generalv3.5",
+      "providerId": "iflytek",
+      "upstreamId": "generalv3.5",
+      "displayName": "Spark Max (V3.5)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#generalv3.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#generalv3.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"Spark 4.0Ultra、Max现已支持...Function Call功能\" — generalv3.5 = \"Max\"; see also retirements — this package is being merged into Ultra",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"Spark 4.0Ultra、Max现已支持...Function Call功能\" — generalv3.5 = \"Max\"; see also retirements — this package is being merged into Ultra",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"最大输出长度 ... Max 8K\" — generalv3.5 = Spark Max (V3.5)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "generalv3.5",
+      "modelFamily": "other"
+    },
+    {
+      "key": "iflytek/lite",
+      "providerId": "iflytek",
+      "upstreamId": "lite",
+      "displayName": "Spark Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 4096,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#lite",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#lite",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#lite — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"当前仅Max、Ultra版本支持\" — Lite excluded from the Max/Ultra-only Function Call support",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"当前仅Max、Ultra版本支持\" — Lite excluded from the Max/Ultra-only Function Call support",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"最大输出长度 ... Lite 4K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "lite",
+      "modelFamily": "other"
+    },
+    {
+      "key": "iflytek/max-32k",
+      "providerId": "iflytek",
+      "upstreamId": "max-32k",
+      "displayName": "Spark Max 32K",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#max-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#max-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#max-32k — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#max-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#max-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"最大输出长度 ... Max-32K 8K\" — Max-32K's max OUTPUT is 8K despite its 32K max INPUT length",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "max-32k",
+      "modelFamily": "other"
+    },
+    {
+      "key": "iflytek/pro-128k",
+      "providerId": "iflytek",
+      "upstreamId": "pro-128k",
+      "displayName": "Spark Pro 128K",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#pro-128k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#pro-128k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/iflytek/index.ts#pro-128k — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"当前仅Max、Ultra版本支持\" — Pro-128K excluded",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"当前仅Max、Ultra版本支持\" — Pro-128K excluded",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://www.xfyun.cn/doc/spark/HTTP调用文档.html (read 2026-09-27): \"最大输出长度 ... Pro-128K 4K\" — the HTTP-protocol doc (matching this catalog's OpenAI-compatible endpoint) states 4096; a separate legacy WebSocket-protocol doc states a different max_tokens request range (131072) for the same model name — flagging this cross-protocol conflict for manual confirmation, reporting the HTTP-doc fig...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "pro-128k",
+      "modelFamily": "other"
+    }
+  ]
+}

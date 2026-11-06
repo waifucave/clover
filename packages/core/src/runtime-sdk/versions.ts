@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.63";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.65";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,14 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.63";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.63 (2026-11-05, A-M1): the SDK is `@waifucave/clover-*` (the repository moved to the
+/** Bumped to 0.0.65 (2026-11-06, A-M2's review): a turn's result states its context (`context_tokens`, which the
+ *  projector reads), a signing adapter runs over its plugin's `net.fetch`, a keyed fetch refusal is final, an
+ *  untrusted plugin's risk and admission are ignored, and Codex's originator is a product token.
+ *  Earlier: bumped to 0.0.64 (2026-11-06, A-M2): every provider a model plugin. The catalog built from a host's model plugins
+ *  (`catalogFromModelPlugins`), the SDK's family adapters keyless on the keyed fetch, and `Options.modelProviders`:
+ *  a session on the host's catalog file, the generic adapters and the adapters the host serves (`model_adapter_*`);
+ *  the Codex adapter's explicit `originator`.
+ *  Earlier: bumped to 0.0.63 (2026-11-05, A-M1): the SDK is `@waifucave/clover-*` (the repository moved to the
  *  `waifucave` owner); the model adapter interface on the keyed fetch, the catalog row schema and the
  *  conformance kit on them; ToolSearch spells the standing twins from the session's brand (so the daemon's
  *  own twin workaround is gone); a brand's `productVersion` and `installBrandIdentity`.

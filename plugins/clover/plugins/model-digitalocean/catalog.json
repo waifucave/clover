@@ -1,0 +1,35 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.digitalocean.com/products/gradient-ai-platform/reference/api/serverless-inference/ — the vendor's own documentation, retrieved 2026-09-06: DigitalOcean documents Serverless Inference on its own base `https://inference.do-ai.run`, independent of the control-plane API, with chat at `https://inference.do-ai.run/v1/chat/completions` and an inference key as a Bearer token.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

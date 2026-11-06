@@ -32,3 +32,6 @@ export * from "../src/model/children";
 export * from "../src/model/preview";
 export * from "../src/model/plume";
 export * from "../src/model/targets";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

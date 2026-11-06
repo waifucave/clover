@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "OpenAI",
+  "description": "OpenAI's models, on its openai-responses endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "openai",
+        "name": "OpenAI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OpenAI API key. Clover keeps it in your credential store and adds it to OpenAI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-responses",
+          "baseUrl": "https://api.openai.com/v1"
+        }
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { advanceAuthorityRevision } from "./authority-revision";
 import { legacyImportOn } from "./migration/legacy-imports";
 import { z } from "zod";
-import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { activeCatalog, activeCatalogGeneration } from "./runtime-sdk/model-plugins/catalog-source";
 import { ensureGlobalGitignore, CLOVER_PERSONAL_IGNORES } from "./global-gitignore";
 import { consoleProfileCredentialFile } from "./runtime-sdk/anthropic-paths";
 import { canonicalModelTag, facingNameToTag, isModelTag, splitTag, UNSTATED_TAG, CLOVER_TEST_PREFIX, type ModelTag } from "./runtime-sdk/model-tag";
@@ -1494,7 +1494,7 @@ export const DEFAULT_PROVIDER = { model: "codex-oauth/gpt-5.6-sol" as ModelTag }
  *  v2→v3 migration rule and the runtime-state/session-row rewrite (`runtime-state/migrations/
  *  tags.ts`, `sessions/store.ts`) both resolve a bare legacy id against. Catalog order. */
 export function providersServingBareId(m: string): string[] {
-  const catalog = loadCatalog();
+  const catalog = activeCatalog();
   const out: string[] = [];
   const seen = new Set<string>();
   for (const row of catalog.models) {
@@ -2134,7 +2134,7 @@ export function modelRoleConstraint(role: ModelRole): ModelRoleConstraint {
  *  that surface's eligible provider/model set is PROVABLY the same one `permitted` can ever name —
  *  reused, never a second hand-copy of this predicate that could drift from it. */
 export function permittedProviders(filterProviderIds?: ReadonlySet<string>): Array<{ providerId: string; displayName: string; models: ModelTag[] }> {
-  const catalog = loadCatalog();
+  const catalog = activeCatalog();
   const out: Array<{ providerId: string; displayName: string; models: ModelTag[] }> = [];
   for (const p of catalog.providers) {
     if (p.risk.class === "blocked") continue;
@@ -2196,7 +2196,7 @@ export interface InternalProviderSnapshot {
   credentialed: ReadonlySet<string>;
 }
 
-let memoisedInternalEligible: ReadonlySet<string> | undefined;
+let memoisedInternalEligible: { ids: ReadonlySet<string>; generation: number } | undefined;
 
 /**
  * WHICH catalog providers Clover's own jobs may run on — derived from the pinned catalog, never a
@@ -2218,10 +2218,11 @@ let memoisedInternalEligible: ReadonlySet<string> | undefined;
  *     (`providers/internal-adapters.ts`). `bedrock`/`vertex` are the exclusions with teeth: their
  *     credential material is `aws`/`gcp-*`, which `providers/credential-store.ts` refuses typed.
  *
- * Memoised: `loadCatalog()` is itself memoised and immutable for the life of the process.
+ * Memoised per catalog generation (`activeCatalogGeneration()`): the installed model plugins' catalog moves when a
+ * plugin is switched on or off, and the SDK's compiled one, the fallback, never does.
  */
 export function internalEligibleProviderIds(): ReadonlySet<string> {
-  if (memoisedInternalEligible !== undefined) return memoisedInternalEligible;
+  if (memoisedInternalEligible !== undefined && memoisedInternalEligible.generation === activeCatalogGeneration()) return memoisedInternalEligible.ids;
   const excluded = new Set<string>(CLAUDE_FIRST_PARTY_PROVIDER_IDS);
   const withSlots = new Set(credentialSlotProviderIds());
   const drivable = internalDrivableAdapterIds();
@@ -2229,11 +2230,11 @@ export function internalEligibleProviderIds(): ReadonlySet<string> {
   for (const p of permittedProviders()) {
     if (excluded.has(p.providerId)) continue;
     if (!withSlots.has(p.providerId)) continue;
-    const adapterId = loadCatalog().providers.find((c) => c.id === p.providerId)?.adapterId;
+    const adapterId = activeCatalog().providers.find((c) => c.id === p.providerId)?.adapterId;
     if (adapterId === undefined || !drivable.has(adapterId)) continue;
     out.add(p.providerId);
   }
-  memoisedInternalEligible = out;
+  memoisedInternalEligible = { ids: out, generation: activeCatalogGeneration() };
   return out;
 }
 
@@ -2858,7 +2859,7 @@ function assertInternalJobRoleTag(tag: string, role: InternalJobRole): void {
     }
     return;
   }
-  const display = loadCatalog().providers.find((p) => p.id === providerId)?.displayName ?? providerId;
+  const display = activeCatalog().providers.find((p) => p.id === providerId)?.displayName ?? providerId;
   const claude = (CLAUDE_FIRST_PARTY_PROVIDER_IDS as readonly string[]).includes(providerId);
   throw new TypeError(
     `${role}: Clover's own background jobs can't run on ${display}. ` +

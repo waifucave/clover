@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Zhipu GLM Coding Plan China (OpenAI dialect)",
+  "description": "Zhipu GLM Coding Plan China (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zhipu-coding",
+        "name": "Zhipu GLM Coding Plan China (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Zhipu GLM Coding Plan China (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Zhipu GLM Coding Plan China (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://open.bigmodel.cn/api/coding/paas/v4"
+        }
+      }
+    ]
+  }
+}

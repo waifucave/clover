@@ -8,3 +8,6 @@ export { validateLive2d, insideFolder, pngSize, mocCounts, LIVE2D_BUDGETS, Live2
 export { urlSource, zipSource, zipDeclared, memorySource, readCapped } from "../src/sources";
 export { openZip, zipEntries, inflateCapped, settingsIn, type ZipArchive, type ZipEntry } from "../src/zip";
 export { mouthPlan, openAndForm, motionSyncValues, MOUTH_OPEN, MOUTH_FORM, type MouthPlan } from "../src/mouth";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

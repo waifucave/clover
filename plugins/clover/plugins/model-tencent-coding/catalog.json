@@ -1,0 +1,168 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://cloud.tencent.com/document/product/1823/130092 — Tencent Cloud Coding Plan documentation, retrieved 2026-09-25: the plan key (`sk-sp-`) is used against `https://api.lkeap.cloud.tencent.com/coding/v3` (OpenAI) and `https://api.lkeap.cloud.tencent.com/coding/anthropic` (Anthropic); billing is the subscription plan.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "tencent-coding/glm-5",
+      "providerId": "tencent-coding",
+      "upstreamId": "glm-5",
+      "displayName": "GLM 5 (Coding Plan)",
+      "aliases": [
+        "glm-5-0"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5: context window 200k tokens; k/M expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxInputTokens": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5: maximum input 200k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5: maximum output 128k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130092 — Coding Plan says available models do not yet support multimodal.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130092 (read 2026-09-27): \"GLM-5 ... 将于2026年10月9日下线\" — same model as tencent-token-plan/glm-5 (深度思考 ✓ / Function Calling ✓ on 130051); this page also carries the sunset date, see retirements",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130092 (read 2026-09-27): \"GLM-5 ... 将于2026年10月9日下线\" — same model as tencent-token-plan/glm-5 (深度思考 ✓ / Function Calling ✓ on 130051); this page also carries the sunset date, see retirements",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tencent-coding/tc-code-latest",
+      "providerId": "tencent-coding",
+      "upstreamId": "tc-code-latest",
+      "displayName": "Auto (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130092 — Coding Plan says available models do not yet support multimodal.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130092 — No model-specific function calling is stated. ",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130092 — No model-specific function calling is stated.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "tc-code-latest",
+      "modelFamily": "other"
+    }
+  ]
+}

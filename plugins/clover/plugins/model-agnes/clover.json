@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Agnes AI",
+  "description": "Agnes AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "agnes",
+        "name": "Agnes AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Agnes AI API key. Clover keeps it in your credential store and adds it to Agnes AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://apihub.agnes-ai.com/v1"
+        }
+      }
+    ]
+  }
+}

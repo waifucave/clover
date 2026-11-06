@@ -1,0 +1,287 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.bigmodel.cn/cn/coding-plan/latest-model — Zhipu GLM Coding Plan (编程套餐) documentation, retrieved 2026-09-25: OpenAI-compatible `https://open.bigmodel.cn/api/coding/paas/v4` and Anthropic `https://open.bigmodel.cn/api/anthropic` with the plan key; the plan serves glm-5.3 and glm-5.3-flash (older ids reroute); billing is the subscription quota.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "zhipu-coding/glm-5.3",
+      "providerId": "zhipu-coding",
+      "upstreamId": "glm-5.3",
+      "displayName": "GLM-5.3 (CN Coding Plan)",
+      "aliases": [
+        "glm-5.2",
+        "glm-5.1"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3 table context 1M tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — text chat input documented for glm-5.3",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — chat completion returns text content",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — forced thinking, reasoning_effort low/high/max (default max), cannot disable",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "max",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint\" -- \"the model can retain reasoning content from previous assistant turns\"; \"All consecutive reasoning_content blocks must exactly match the original sequence\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu-coding/glm-5.3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu-coding/glm-5.3-flash",
+      "providerId": "zhipu-coding",
+      "upstreamId": "glm-5.3-flash",
+      "displayName": "GLM-5.3-FLASH (CN Coding Plan)",
+      "aliases": [
+        "glm-4.7",
+        "glm-5-turbo"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3-flash table context 1M tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3-flash table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Flash/FlashX Input Modality Video/Image/Text/File; page explicitly cites PDF documents; PDF is normalized from File",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Output Modality Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — forced thinking, reasoning_effort low/high/max (default max), cannot disable",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "max",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint\" -- \"the model can retain reasoning content from previous assistant turns\"; \"All consecutive reasoning_content blocks must exactly match the original sequence\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu-coding/glm-5.3-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Qiniu",
+  "description": "Qiniu's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qiniu",
+        "name": "Qiniu",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Qiniu API key. Clover keeps it in your credential store and adds it to Qiniu's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.qnaigc.com/v1"
+        }
+      }
+    ]
+  }
+}

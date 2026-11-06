@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Blackbox AI",
+  "description": "Blackbox AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "blackbox",
+        "name": "Blackbox AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Blackbox AI API key. Clover keeps it in your credential store and adds it to Blackbox AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.blackbox.ai/v1"
+        }
+      }
+    ]
+  }
+}

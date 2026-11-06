@@ -1,0 +1,403 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "The vendor's OpenAI-dialect reasoning replay contract must not be assumed for Anthropic Messages without a dialect-specific document or probe."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://platform.kimi.ai/docs/api/overview — Moonshot's (Kimi platform) API overview, retrieved 2026-09-25: the international platform serves Anthropic Messages at `https://api.moonshot.ai/anthropic` beside OpenAI Chat Completions/Responses at `https://api.moonshot.ai/v1`, with the same platform API key.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "moonshot-anthropic/kimi-k3",
+      "providerId": "moonshot-anthropic",
+      "upstreamId": "kimi-k3",
+      "displayName": "Kimi K3 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 has a 1M-token (1048576) context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 max_completion_tokens can be set up to 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — lists all four IDs as understanding images and video, alongside text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — Messages API defines tools/tool_choice and tool_use blocks",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — output_config.format supports json_schema",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/context-caching — K3 supports cache writes and reads (5m and 1h TTL)",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 always thinks",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/api/messages (.md rendering, read 2026-10-29) — MessagesRequest schema: `model` \"This endpoint currently supports `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, and `kimi-k3`\"; `output_config.effort`: enum low / high / max, default max, \"Reasoning effort: low, high, or max; default max. Changing the level breaks prefix-cache hits, so decide it before the session starts.\" The request schema defines no `thinking` field (thinking appears only as response content blocks).",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-anthropic/kimi-k3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): a response `thinking` block (`thinking`, `signature`) -- \"In multi-turn conversations, pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; the `signature` field: \"keep it unchanged when passing back\". The Anthropic adapter replays the block verbatim on the producing model's next request. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3,
+          "cacheWritePerMTokUsd": 3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat — K3 USD per 1M: input $3, output $15, cached input $0.30, 5m cache write $3 (1h $6); 5m base TTL",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-anthropic/kimi-k3.1-pro",
+      "providerId": "moonshot-anthropic",
+      "upstreamId": "kimi-k3.1-pro",
+      "displayName": "Kimi K3.1 Pro (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat — \"All K3 series models support a 1,048,576-token context window\" (CN: \"K3 系列模型均支持 1,048,576 tokens 上下文窗口\"); the table lists `kimi-k3.1-pro`.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — \"The `kimi-k3.1-pro`, `kimi-k3`, ... models can also understand video content\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart documents image (base64 / ms:// file) and video (`video_url` ms://) input",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — Messages API defines tools/tool_choice and tool_use blocks",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — `output_config.format` supports json_schema",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/context-caching — \"`kimi-k3.1-pro` and `kimi-k3` support Cache Write\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart: \"Context caching is automatic for regular model requests\" (5m default / 1h TTL)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort — \"Kimi K3.1 Pro always reasons and configures reasoning effort with the top-level `reasoning_effort` request field. It supports \\\"low\\\", \\\"high\\\", and \\\"max\\\", with \\\"max\\\" as the default.\"; https://platform.kimi.ai/docs/api/messages: `output_config.effort` enum low/high/max, default max, for every id the Messages schema lists (this one included)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/api/messages (.md rendering, read 2026-10-29) — MessagesRequest schema: `model` \"This endpoint currently supports `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, and `kimi-k3`\"; `output_config.effort`: enum low / high / max, default max, \"Reasoning effort: low, high, or max; default max. Changing the level breaks prefix-cache hits, so decide it before the session starts.\" The request schema defines no `thinking` field (thinking appears only as response content blocks).",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-anthropic/kimi-k3.1-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): a response `thinking` block (`thinking`, `signature`) -- \"In multi-turn conversations, pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; the `signature` field: \"keep it unchanged when passing back\". The Anthropic adapter replays the block verbatim on the producing model's next request. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.2,
+          "cacheWritePerMTokUsd": 2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (read 2026-10-29) — K3 Series Models table, `kimi-k3.1-pro`: Input $2.00 / MTok, Output $10.00 / MTok, Cached Input $0.20 / MTok, 5m writes $2.00 / MTok (1h writes $4.00); \"a default TTL (time-to-live) of 5m\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3.1-pro",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-anthropic/kimi-k3.1-pro-highspeed",
+      "providerId": "moonshot-anthropic",
+      "upstreamId": "kimi-k3.1-pro-highspeed",
+      "displayName": "Kimi K3.1 Pro Highspeed (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat — \"All K3 series models support a 1,048,576-token context window\" (CN: \"K3 系列模型均支持 1,048,576 tokens 上下文窗口\"); the table lists `kimi-k3.1-pro-highspeed`.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\" (stated for K3.1 Pro)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — \"The `kimi-k3.1-pro`, `kimi-k3`, ... models can also understand video content\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart documents image (base64 / ms:// file) and video (`video_url` ms://) input — stated for kimi-k3.1-pro; the Highspeed variant has \"same intelligence\" and Kimi Code lists k3.1-pro-highspeed with \"Image, video\" input (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — Messages API defines tools/tool_choice and tool_use blocks",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/api/messages — `output_config.format` supports json_schema",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/context-caching — \"`kimi-k3.1-pro` and `kimi-k3` support Cache Write\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart: \"Context caching is automatic for regular model requests\" (5m default / 1h TTL) — Highspeed is priced with its own cache rates on https://platform.kimi.ai/docs/pricing/chat",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort — \"Kimi K3.1 Pro always reasons and configures reasoning effort with the top-level `reasoning_effort` request field. It supports \\\"low\\\", \\\"high\\\", and \\\"max\\\", with \\\"max\\\" as the default.\"; https://platform.kimi.ai/docs/api/messages: `output_config.effort` enum low/high/max, default max, for every id the Messages schema lists (this one included) — stated for K3.1 Pro; applied to its Highspeed variant (same model, same Messages/Responses enum)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/api/messages (.md rendering, read 2026-10-29) — MessagesRequest schema: `model` \"This endpoint currently supports `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, and `kimi-k3`\"; `output_config.effort`: enum low / high / max, default max, \"Reasoning effort: low, high, or max; default max. Changing the level breaks prefix-cache hits, so decide it before the session starts.\" The request schema defines no `thinking` field (thinking appears only as response content blocks).",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-anthropic/kimi-k3.1-pro-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): a response `thinking` block (`thinking`, `signature`) -- \"In multi-turn conversations, pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; the `signature` field: \"keep it unchanged when passing back\". The Anthropic adapter replays the block verbatim on the producing model's next request. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 4,
+          "outputPerMTokUsd": 20,
+          "cacheReadPerMTokUsd": 0.2,
+          "cacheWritePerMTokUsd": 4
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (read 2026-10-29) — K3 Series Models table, `kimi-k3.1-pro-highspeed`: Input $4.00 / MTok, Output $20.00 / MTok, Cached Input $0.20 / MTok, 5m writes $4.00 / MTok (1h writes $8.00); \"a default TTL (time-to-live) of 5m\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3.1-pro-highspeed",
+      "modelFamily": "kimi"
+    }
+  ]
+}

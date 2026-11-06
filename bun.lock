@@ -58,17 +58,17 @@
       "name": "@waifucave/clover-core",
       "version": "0.124.0",
       "dependencies": {
-        "@waifucave/clover-agent-runtime": "0.0.63",
-        "@waifucave/clover-agent-sdk": "0.0.63",
+        "@waifucave/clover-agent-runtime": "0.0.65",
+        "@waifucave/clover-agent-sdk": "0.0.65",
         "@waifucave/clover-plugin-sdk": "workspace:*",
         "@waifucave/clover-protocol": "workspace:*",
-        "@waifucave/clover-provider-catalog": "0.0.63",
-        "@waifucave/clover-provider-runtime": "0.0.63",
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
         "unpdf": "^1.6.2",
         "zod": "^4.6.7",
       },
       "devDependencies": {
-        "@waifucave/clover-provider-conformance": "0.0.63",
+        "@waifucave/clover-provider-conformance": "0.0.65",
       },
       "optionalDependencies": {
         "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55",
@@ -197,6 +197,21 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/plugins/companion-web": {
+      "name": "@waifucave/clover-plugin-companion-web",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-service-handshake": "workspace:*",
+        "@waifucave/clover-service-web": "workspace:*",
+        "node-datachannel": "0.33.6",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-core": "workspace:*",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/composer": {
       "name": "@waifucave/clover-plugin-composer",
       "version": "0.0.0",
@@ -292,6 +307,78 @@
       "peerDependencies": {
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
+      },
+    },
+    "plugins/clover/plugins/model-azure-openai": {
+      "name": "@waifucave/clover-plugin-model-azure-openai",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/model-bedrock": {
+      "name": "@waifucave/clover-plugin-model-bedrock",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/model-codex-oauth": {
+      "name": "@waifucave/clover-plugin-model-codex-oauth",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/model-google": {
+      "name": "@waifucave/clover-plugin-model-google",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/model-vertex": {
+      "name": "@waifucave/clover-plugin-model-vertex",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/model-xai-oauth": {
+      "name": "@waifucave/clover-plugin-model-xai-oauth",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-provider-catalog": "0.0.65",
+        "@waifucave/clover-provider-runtime": "0.0.65",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
       },
     },
     "plugins/clover/plugins/notifications": {
@@ -427,6 +514,15 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/plugins/relay-cloudflare": {
+      "name": "@waifucave/clover-plugin-relay-cloudflare",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/settings": {
       "name": "@waifucave/clover-plugin-settings",
       "version": "0.0.0",
@@ -530,12 +626,40 @@
         "react-dom": "^19.3.0",
       },
     },
+    "services/accounts": {
+      "name": "@waifucave/clover-service-accounts",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "1.4.8",
+        "@cloudflare/workers-types": "5.20261023.1",
+        "@types/bun": "1.4.4",
+        "@types/node": "26.6.5",
+        "@waifucave/clover-core": "workspace:*",
+        "@waifucave/clover-test-harness": "workspace:*",
+        "typescript": "5.9.3",
+        "vitest": "4.1.12",
+        "wrangler": "4.153.0",
+      },
+    },
     "services/forwarder": {
       "name": "@waifucave/clover-service-forwarder",
       "version": "0.0.0",
       "devDependencies": {
         "@cloudflare/vitest-plugin": "1.4.8",
         "@cloudflare/workers-types": "5.20261023.1",
+        "@types/node": "26.6.5",
+        "typescript": "5.9.3",
+        "vitest": "4.1.12",
+        "wrangler": "4.153.0",
+      },
+    },
+    "services/handshake": {
+      "name": "@waifucave/clover-service-handshake",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "1.4.8",
+        "@cloudflare/workers-types": "5.20261023.1",
+        "@types/bun": "1.4.4",
         "@types/node": "26.6.5",
         "typescript": "5.9.3",
         "vitest": "4.1.12",
@@ -559,6 +683,33 @@
         "@types/node": "26.6.5",
         "typescript": "5.9.3",
         "vitest": "4.1.12",
+        "wrangler": "4.153.0",
+      },
+    },
+    "services/relay": {
+      "name": "@waifucave/clover-service-relay",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "1.4.8",
+        "@cloudflare/workers-types": "5.20261023.1",
+        "@types/node": "26.6.5",
+        "@waifucave/clover-plugin-relay-cloudflare": "workspace:*",
+        "typescript": "5.9.3",
+        "vitest": "4.1.12",
+        "wrangler": "4.153.0",
+      },
+    },
+    "services/web": {
+      "name": "@waifucave/clover-service-web",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-service-handshake": "workspace:*",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "5.20261023.1",
+        "@types/bun": "1.4.4",
+        "node-datachannel": "0.33.6",
+        "typescript": "5.9.3",
         "wrangler": "4.153.0",
       },
     },
@@ -756,6 +907,24 @@
     "@modelcontextprotocol/core": ["@modelcontextprotocol/core@2.1.0", "", { "dependencies": { "zod": "^4.2.0" } }, "sha512-YdFj5gMRHr0gYNAhTbQDgjLHiEJdIAUYxomhKseUNye7ZGlISQmUoLh2sveFFCiQ7j2YMffT1kgSND0FSfIFjQ=="],
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
+
+    "@node-datachannel/android-arm64": ["@node-datachannel/android-arm64@0.33.6", "", { "os": "android", "cpu": "arm64" }, "sha512-UzSnd1vSN//3pqyvuufbaIQemvRfIHn/7DAy7wjoYk9tzkJp4SMk1FrNhkhmev89SH/h7yTac6PlGxGe5oHcKw=="],
+
+    "@node-datachannel/darwin-arm64": ["@node-datachannel/darwin-arm64@0.33.6", "", { "os": "darwin", "cpu": "arm64" }, "sha512-vE2fN6D0BJJ3yZo5guJo2j1q7JeQbl+VyIs6vbkjEp654tQtTo3y7a4l3xB0bwDD27TOlkOlaSLJQRj6ZXqQdQ=="],
+
+    "@node-datachannel/darwin-x64": ["@node-datachannel/darwin-x64@0.33.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-EtRB2THMR11XMzbNhMEwaZtipaUxFz+PgeVx7hE+er6Ai1Fzzv7XexrMWDG11ahdpEZ8fAxlxuyELs33/WH1Cg=="],
+
+    "@node-datachannel/linux-arm64-gnu": ["@node-datachannel/linux-arm64-gnu@0.33.6", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-phMRjx8NEfW70i768LCQDEF2C6Q2vtYsS4DPXv/zbb2cJClaU5fjKFQfQ1XBCNIi1ClfpSd3Cl/rn/7SS+paTQ=="],
+
+    "@node-datachannel/linux-arm64-musl": ["@node-datachannel/linux-arm64-musl@0.33.6", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-T9bqllJ9YkpgqgRFEfsPpfgfMDXdA7CIiJ4c1XXGPLSeqVFgDbf/WCewkE7q4xA+tKRLoOOtc2XgMGwVnlxXVQ=="],
+
+    "@node-datachannel/linux-x64-gnu": ["@node-datachannel/linux-x64-gnu@0.33.6", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-NUTbne64++ZxwEJ9uppAAmYnFAfJAggf7gboioPdhr13P17GTQRCUgmipYrh1V0D4333x6NCBZyQaNv0n4WmpQ=="],
+
+    "@node-datachannel/linux-x64-musl": ["@node-datachannel/linux-x64-musl@0.33.6", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-dlWP4ycOJrTAl9UvxGofq0zwPhl6iAr1b0ZcBUgDfb2CXmbcJWCvg6OsJ6u8BVSV41eNXALmaRpU0wttas/f1g=="],
+
+    "@node-datachannel/win32-arm64-msvc": ["@node-datachannel/win32-arm64-msvc@0.33.6", "", { "os": "win32", "cpu": "arm64" }, "sha512-ttly7XRUrSOcOOGJvtm9gh2beAPUNOBOUc3Hk82LfMHHP7jJMkXNDns/ML+UVGommAcNyPhoZkRH62O7tSVQYw=="],
+
+    "@node-datachannel/win32-x64-msvc": ["@node-datachannel/win32-x64-msvc@0.33.6", "", { "os": "win32", "cpu": "x64" }, "sha512-N5GW6XH11Iuu+kyHLTiCMcCHdwWwpKqvtYril0LzQm6xBgmGQN3JXxFmgi4g4usw1nLy6WhBWADjbhSXJiiEMA=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.156.0", "", {}, "sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw=="],
 
@@ -957,11 +1126,11 @@
 
     "@vitest/utils": ["@vitest/utils@4.1.12", "", { "dependencies": { "@vitest/pretty-format": "4.1.12", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA=="],
 
-    "@waifucave/clover-agent-runtime": ["@waifucave/clover-agent-runtime@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.63/fb503dcdef12b8dbef5a6ac3628131808a144c2b", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@waifucave/clover-agent-sdk": "0.0.63", "@waifucave/clover-provider-catalog": "0.0.63", "@waifucave/clover-provider-runtime": "0.0.63", "@waifucave/clover-web": "0.0.63", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-y46S1zMP6NttnzndXZquhiE2C/LOILKIN9UMa0F1WhK2UJuO1XSYuzvmnxHrzeDlubp58pPWxA0AFX13jMo/tg=="],
+    "@waifucave/clover-agent-runtime": ["@waifucave/clover-agent-runtime@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.65/949b811299bddb862f95b3e692d9eff3f3d2cdce", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@waifucave/clover-agent-sdk": "0.0.65", "@waifucave/clover-provider-catalog": "0.0.65", "@waifucave/clover-provider-runtime": "0.0.65", "@waifucave/clover-web": "0.0.65", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-NLDrvOx5haWO0fWCeupELtS4BonjD8GwO61TirV4MjZmXTZ03HlTKI07hnU/Xo0wIzZuYGg+qR6y2NSPJrs5cA=="],
 
-    "@waifucave/clover-agent-sdk": ["@waifucave/clover-agent-sdk@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.63/bf1407ba9ecaeaa7372b6fa41b2c44d37c59b6f0", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.63" }, "optionalDependencies": { "@waifucave/clover-agent-sdk-darwin-arm64": "0.0.63" } }, "sha512-znAdbSfjeSpm0hzjKlMYrKK4vPCAWI3om1Jb9lAztXQNndteYA/bn4OOMQ2gf8+7UTJgiRvVuQNwVpQBv7WvTg=="],
+    "@waifucave/clover-agent-sdk": ["@waifucave/clover-agent-sdk@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.65/5562bbeee182386abfc711f232695308b0129f62", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.65" }, "optionalDependencies": { "@waifucave/clover-agent-sdk-darwin-arm64": "0.0.65" } }, "sha512-tEbdVvVQ2wHDf7Q8y5HDBPb/Dg3hEdmn9IKYoclPVSDWH7aR2lB5DkEU/zFSOHZHJFWelAYS281ZSKX8+N4Agw=="],
 
-    "@waifucave/clover-agent-sdk-darwin-arm64": ["@waifucave/clover-agent-sdk-darwin-arm64@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.63/22b2118609bddfddc9e3f1a558080b01b93cbe80", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-PcxCE71ehsgkwW2PrxoTMIupenXHa+BcK0ai8RkwIDdQctezzKgzCX5ua0DLFnPVsd5tnvWMBiTdQ0jnwyfSbQ=="],
+    "@waifucave/clover-agent-sdk-darwin-arm64": ["@waifucave/clover-agent-sdk-darwin-arm64@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.65/2174572bf28bd1593390926ebba9e78526794eff", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-BQnZSdMgt3EoGcwrsbjqwrUesAc6/7y3c/vDOFn6B7Ga6XGukUr4uRlvfYoGLM1tZrOQgPDQ0qPivPo7aBq+cw=="],
 
     "@waifucave/clover-cli": ["@waifucave/clover-cli@workspace:packages/cli"],
 
@@ -983,6 +1152,8 @@
 
     "@waifucave/clover-plugin-browser-view": ["@waifucave/clover-plugin-browser-view@workspace:plugins/clover/plugins/browser-view"],
 
+    "@waifucave/clover-plugin-companion-web": ["@waifucave/clover-plugin-companion-web@workspace:plugins/clover/plugins/companion-web"],
+
     "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/plugins/composer"],
 
     "@waifucave/clover-plugin-conversation": ["@waifucave/clover-plugin-conversation@workspace:plugins/clover/plugins/conversation"],
@@ -994,6 +1165,18 @@
     "@waifucave/clover-plugin-island": ["@waifucave/clover-plugin-island@workspace:plugins/clover/plugins/island"],
 
     "@waifucave/clover-plugin-live2d": ["@waifucave/clover-plugin-live2d@workspace:plugins/clover/plugins/live2d"],
+
+    "@waifucave/clover-plugin-model-azure-openai": ["@waifucave/clover-plugin-model-azure-openai@workspace:plugins/clover/plugins/model-azure-openai"],
+
+    "@waifucave/clover-plugin-model-bedrock": ["@waifucave/clover-plugin-model-bedrock@workspace:plugins/clover/plugins/model-bedrock"],
+
+    "@waifucave/clover-plugin-model-codex-oauth": ["@waifucave/clover-plugin-model-codex-oauth@workspace:plugins/clover/plugins/model-codex-oauth"],
+
+    "@waifucave/clover-plugin-model-google": ["@waifucave/clover-plugin-model-google@workspace:plugins/clover/plugins/model-google"],
+
+    "@waifucave/clover-plugin-model-vertex": ["@waifucave/clover-plugin-model-vertex@workspace:plugins/clover/plugins/model-vertex"],
+
+    "@waifucave/clover-plugin-model-xai-oauth": ["@waifucave/clover-plugin-model-xai-oauth@workspace:plugins/clover/plugins/model-xai-oauth"],
 
     "@waifucave/clover-plugin-notifications": ["@waifucave/clover-plugin-notifications@workspace:plugins/clover/plugins/notifications"],
 
@@ -1011,6 +1194,8 @@
 
     "@waifucave/clover-plugin-push": ["@waifucave/clover-plugin-push@workspace:plugins/clover/plugins/push"],
 
+    "@waifucave/clover-plugin-relay-cloudflare": ["@waifucave/clover-plugin-relay-cloudflare@workspace:plugins/clover/plugins/relay-cloudflare"],
+
     "@waifucave/clover-plugin-sdk": ["@waifucave/clover-plugin-sdk@workspace:packages/plugin-sdk"],
 
     "@waifucave/clover-plugin-settings": ["@waifucave/clover-plugin-settings@workspace:plugins/clover/plugins/settings"],
@@ -1025,21 +1210,29 @@
 
     "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
 
-    "@waifucave/clover-provider-catalog": ["@waifucave/clover-provider-catalog@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.63/6f6b48faa7126564a0f9ab69967a084fea425e33", {}, "sha512-TbPEiAOnIndCY2L/AGerD0xTMEzGGP9notUvZQ4I80xIsAFvWPib/jLxUjXE4ojyumgXUG+2OvH/s1lJdCN5Cg=="],
+    "@waifucave/clover-provider-catalog": ["@waifucave/clover-provider-catalog@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.65/60c33666d7d10c2ffa69ce92dd3422c20b562100", {}, "sha512-NhilSuQtpdcOQVUcdy1z6TRmpqHfPJEj0wFGGP/XUA5yDUEEcSgOBpoZ8gVUiecZXv3vDgdfuHeo1uJnOj/61Q=="],
 
-    "@waifucave/clover-provider-conformance": ["@waifucave/clover-provider-conformance@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.63/d6d98d984305deb7c602084d23552f0d37fec81c", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.63", "@waifucave/clover-provider-runtime": "0.0.63" } }, "sha512-VvxXDU/TRy/krgaOI4ByrBYw2VQSckpGRI5GK9lgdkYveCV0EflzEYM5wgBFbxQhXlK7EcyGCRJv6+/EuvECBg=="],
+    "@waifucave/clover-provider-conformance": ["@waifucave/clover-provider-conformance@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.65/66db4d8bf7eb0cf0dc6de98c214ac3351ad2b5e8", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.65", "@waifucave/clover-provider-runtime": "0.0.65" } }, "sha512-IKlB0RizI58tGrvCqe7Xr3uMHKkuyoqc1jq01TVqg8miTQzx9D77VyPZg4xrU9G817IlQyPiV9i1+KBmNADsVg=="],
 
-    "@waifucave/clover-provider-runtime": ["@waifucave/clover-provider-runtime@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.63/65f27b1186c81e85c4ad35782ad67299f59fa58c", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.63" } }, "sha512-pHQ9z9C6HH03CjKe/8vPuXZWjG/LEkuFftVLIfRap/uQr6gGXiHwh/4Rbqs36ZiG78ju+O4thS2szJaM1WEPVQ=="],
+    "@waifucave/clover-provider-runtime": ["@waifucave/clover-provider-runtime@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.65/662333fc397bf6eef4abaf816180c5e9df85a795", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.65" } }, "sha512-aiAHKc8rAsjfwiXDCw/ZwHvwsvKvUf8adiBamKxqMoPvAX9vJK95RZP9sXOxr+DI+DD5PK3WrOM4lC47IpJh8g=="],
+
+    "@waifucave/clover-service-accounts": ["@waifucave/clover-service-accounts@workspace:services/accounts"],
 
     "@waifucave/clover-service-forwarder": ["@waifucave/clover-service-forwarder@workspace:services/forwarder"],
+
+    "@waifucave/clover-service-handshake": ["@waifucave/clover-service-handshake@workspace:services/handshake"],
 
     "@waifucave/clover-service-hello": ["@waifucave/clover-service-hello@workspace:services/hello"],
 
     "@waifucave/clover-service-push": ["@waifucave/clover-service-push@workspace:services/push"],
 
+    "@waifucave/clover-service-relay": ["@waifucave/clover-service-relay@workspace:services/relay"],
+
+    "@waifucave/clover-service-web": ["@waifucave/clover-service-web@workspace:services/web"],
+
     "@waifucave/clover-test-harness": ["@waifucave/clover-test-harness@workspace:packages/test-harness"],
 
-    "@waifucave/clover-web": ["@waifucave/clover-web@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.63/938dfb7aed5f442c6445a22bc9580510914ae7de", {}, "sha512-l565tKc0yteGXUOHSkczpBC0JiMhWl3Four6/tvanNteao+K8DDEJfLqvxpZ8cy2OloMpgEfFfVlPOWy+kIzuA=="],
+    "@waifucave/clover-web": ["@waifucave/clover-web@0.0.65", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.65/7af770904249f1c0f4642fdc593b762c23096378", {}, "sha512-+aUyI/6w+GVv8OU+1/XGShDIGYANMfDr1z20/eE9BKN6V+y6p1gQx6sO/ZRbY2cEphXHfqo6sZufjbFqjmBorQ=="],
 
     "@waifucave/mochi2d": ["@waifucave/mochi2d@0.13.0", "https://npm.pkg.github.com/download/@waifucave/mochi2d/0.13.0/ea0d786b6ad5f8a5b2f268a836a92e489b6c74e5", { "peerDependencies": { "pixi.js": "^8.12.0", "playwright": ">=1.40.0" }, "bin": { "mochi2d": "dist/tools/mochi2d.js", "mochi2d-mcp": "dist/tools/mochi2d-mcp.js" } }, "sha512-xqE+nfqxkTmgVkwgi9cV+A886choH4xRvZ5V5ZiYqzMk5q5xoz4s7QVPKSH8fNopCCgr26GMzExEl76+vRPNhw=="],
 
@@ -1598,6 +1791,8 @@
     "node-abi": ["node-abi@4.40.0", "", { "dependencies": { "semver": "^7.6.3" } }, "sha512-GuvqvtrOk+AC27RidBxBsMzVNkwNl7PjHgc4NXbmdvSVLgIUjpaqcG1FjNRYnt2Yn9Ytq+Ln37XsBaglUcte/w=="],
 
     "node-api-version": ["node-api-version@0.2.1", "", { "dependencies": { "semver": "^7.3.5" } }, "sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q=="],
+
+    "node-datachannel": ["node-datachannel@0.33.6", "", { "dependencies": { "detect-libc": "^2.0.4" }, "optionalDependencies": { "@node-datachannel/android-arm64": "0.33.6", "@node-datachannel/darwin-arm64": "0.33.6", "@node-datachannel/darwin-x64": "0.33.6", "@node-datachannel/linux-arm64-gnu": "0.33.6", "@node-datachannel/linux-arm64-musl": "0.33.6", "@node-datachannel/linux-x64-gnu": "0.33.6", "@node-datachannel/linux-x64-musl": "0.33.6", "@node-datachannel/win32-arm64-msvc": "0.33.6", "@node-datachannel/win32-x64-msvc": "0.33.6" } }, "sha512-n7RzImzysrOVFx/lXfkQQ4fL0wsuPXBFc8KM69V29iyIor/UX7Ej+edzNGWJm+3mApZG9nkLi7FsGAZhQCDA4w=="],
 
     "node-gyp": ["node-gyp@12.4.0", "", { "dependencies": { "env-paths": "^2.2.0", "exponential-backoff": "^3.1.1", "graceful-fs": "^4.2.6", "nopt": "^9.0.0", "proc-log": "^6.0.0", "semver": "^7.3.5", "tar": "^7.5.4", "tinyglobby": "^0.2.12", "undici": "^6.25.0", "which": "^6.0.0" }, "bin": { "node-gyp": "bin/node-gyp.js" } }, "sha512-OMcPNvqTCFUnNaBlmdgq+lfNqY7gTiSmNRDjY3uAXRyudeKZEZxu3CLtjMQrx4zZxCX2b/mpNqTtwuCJgXhHkw=="],
 

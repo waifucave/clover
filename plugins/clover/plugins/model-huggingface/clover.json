@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "HuggingFace",
+  "description": "HuggingFace's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "huggingface",
+        "name": "HuggingFace",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your HuggingFace API key. Clover keeps it in your credential store and adds it to HuggingFace's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://router.huggingface.co/v1"
+        }
+      }
+    ]
+  }
+}

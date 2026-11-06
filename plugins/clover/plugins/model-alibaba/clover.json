@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Alibaba Cloud Model Studio (OpenAI dialect)",
+  "description": "Alibaba Cloud Model Studio (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "alibaba",
+        "name": "Alibaba Cloud Model Studio (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Alibaba Cloud Model Studio (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Alibaba Cloud Model Studio (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        }
+      }
+    ]
+  }
+}

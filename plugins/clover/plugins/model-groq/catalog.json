@@ -1,0 +1,649 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/groq/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://groq.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.groq.com/openai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "groq/llama-3.3-70b-versatile",
+      "providerId": "groq",
+      "upstreamId": "llama-3.3-70b-versatile",
+      "displayName": "Llama 3.3 70B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#llama-3.3-70b-versatile",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#llama-3.3-70b-versatile — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"llama-3.3-70b-versatile | Yes | Yes | Yes\" — Tool Use / Parallel Tool Use / JSON Mode all Yes",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"llama-3.3-70b-versatile | Yes | Yes | Yes\" — Tool Use / Parallel Tool Use / JSON Mode all Yes",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"reasoning_effort ... GPT-OSS ... Qwen 3.8 27B\" — Groq's reasoning-effort docs list only gpt-oss and qwen3.8-27b as supporting it; llama-3.3-70b-versatile is a plain instruct model, absent from that list",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.3-70b-versatile",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+      "providerId": "groq",
+      "upstreamId": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "displayName": "Llama 4 Scout",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#meta-llama/llama-4-scout-17b-16e-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#meta-llama/llama-4-scout-17b-16e-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"All models hosted on Groq support tool use\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"All models hosted on Groq support tool use\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/model/meta-llama/llama-4-scout-17b-16e-instruct (read 2026-09-27): \"Leverage the 128K token context window for applications requiring extensive memory, document analysis, and maintaining conversation history.\" — stated as \"128K\"; row is now retired (see retirements)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"\" — not among the models Groq documents as reasoning-capable",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-4-scout-17b-16e-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "groq/openai/gpt-oss-120b",
+      "providerId": "groq",
+      "upstreamId": "openai/gpt-oss-120b",
+      "displayName": "GPT-OSS 120B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#openai/gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"openai/gpt-oss-120b | Yes | No | Yes | Yes\" — Tool Use Yes, Parallel Tool Use No, JSON Mode Yes, Built-In Tools Yes",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"openai/gpt-oss-120b | Yes | No | Yes | Yes\" — Tool Use Yes, Parallel Tool Use No, JSON Mode Yes, Built-In Tools Yes",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"The reasoning_effort parameter controls the level of effort ... low, medium, high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "groq/openai/gpt-oss-20b",
+      "providerId": "groq",
+      "upstreamId": "openai/gpt-oss-20b",
+      "displayName": "GPT-OSS 20B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#openai/gpt-oss-20b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#openai/gpt-oss-20b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"openai/gpt-oss-20b | Yes | No | Yes | Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"openai/gpt-oss-20b | Yes | No | Yes | Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.075,
+          "outputPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"The reasoning_effort parameter controls the level of effort ... low, medium, high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-oss-20b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "groq/openai/gpt-oss-safeguard-20b",
+      "providerId": "groq",
+      "upstreamId": "openai/gpt-oss-safeguard-20b",
+      "displayName": "GPT-OSS Safeguard 20B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#openai/gpt-oss-safeguard-20b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#openai/gpt-oss-safeguard-20b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"openai/gpt-oss-safeguard-20b | Yes | No | Yes | No\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"openai/gpt-oss-safeguard-20b | Yes | No | Yes | No\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.075,
+          "outputPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"The reasoning_effort parameter controls ... GPT-OSS Models ... low, medium, high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-oss-safeguard-20b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "groq/qwen/qwen3-32b",
+      "providerId": "groq",
+      "upstreamId": "qwen/qwen3-32b",
+      "displayName": "Qwen3 32B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#qwen/qwen3-32b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#qwen/qwen3-32b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"All models hosted on Groq support tool use\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"All models hosted on Groq support tool use\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/model/qwen/qwen3-32b (read 2026-09-27): \"qwen3 models support `none` to disable reasoning and `default` or null to use the model default.\" — only qwen/qwen3.8-27b gets an extra low/medium/high tier; qwen3-32b is a base qwen3 model. Row is retired (see retirements).",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "default"
+        ],
+        "defaultEffort": "default",
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3-32b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "groq/qwen/qwen3.6-27b",
+      "providerId": "groq",
+      "upstreamId": "qwen/qwen3.6-27b",
+      "displayName": "Qwen3.6 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#qwen/qwen3.6-27b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#qwen/qwen3.6-27b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"All models hosted on Groq support tool use\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"All models hosted on Groq support tool use\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131000,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/model/qwen/qwen3.6-27b (read 2026-09-27): \"131K-token context window on Groq\" — stated as \"131K\"; row is retired (see retirements)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/model/qwen/qwen3-32b (read 2026-09-27): \"qwen3 models support `none` to disable reasoning and `default` or null to use the model default.\" — only qwen/qwen3.8-27b gets the extra low/medium/high tier",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "default"
+        ],
+        "defaultEffort": "default",
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3.6-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "groq/qwen/qwen3.8-27b",
+      "providerId": "groq",
+      "upstreamId": "qwen/qwen3.8-27b",
+      "displayName": "Qwen/Qwen3.8-27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models (read 2026-09-27): \"131,072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models (read 2026-09-27): \"16,384\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models (read 2026-09-27): \"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"qwen/qwen3.8-27b|Yes|Yes|Yes|No\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"qwen/qwen3.8-27b|Yes|Yes|Yes|No\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"qwen/qwen3.8-27b additionally supports low, medium, and high. Its default is none; high selects the model's native xhigh mode.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "default",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "none",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.8,
+          "outputPerMTokUsd": 4
+        },
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models (read 2026-09-27): \"$0.80 input $4.00 output\" — USD 0.8 input / 4.0 output per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-27b",
+      "modelFamily": "qwen"
+    }
+  ]
+}

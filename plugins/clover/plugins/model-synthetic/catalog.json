@@ -1,0 +1,966 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.synthetic.new/openai/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/synthetic/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://synthetic.new — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.synthetic.new/openai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "synthetic/hf:MiniMaxAI/MiniMax-M3",
+      "providerId": "synthetic",
+      "upstreamId": "hf:MiniMaxAI/MiniMax-M3",
+      "displayName": "MiniMaxAI/MiniMax-M3",
+      "aliases": [
+        "syn:minimax-m3"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:MiniMaxAI/MiniMax-M3",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimaxai/minimax-m3",
+      "modelFamily": "other"
+    },
+    {
+      "key": "synthetic/hf:Qwen/Qwen3.6-27B",
+      "providerId": "synthetic",
+      "upstreamId": "hf:Qwen/Qwen3.6-27B",
+      "displayName": "Qwen/Qwen3.6-27B",
+      "aliases": [
+        "syn:small:vision"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:Qwen/Qwen3.6-27B",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "synthetic/hf:Qwen/Qwen3.8-27B",
+      "providerId": "synthetic",
+      "upstreamId": "hf:Qwen/Qwen3.8-27B",
+      "displayName": "Qwen 3.8 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): context_length 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-27): supported_features include `reasoning`; reasoning_parameters.efforts ['low', 'medium', 'xhigh']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.45,
+          "outputPerMTokUsd": 2.2,
+          "cacheReadPerMTokUsd": 0.09
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:Qwen/Qwen3.8-27B` (read 2026-09-28): pricing prompt $0.00000045 / completion $0.0000022 / input_cache_reads $0.00000009 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path (controller ruling 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "synthetic/hf:deepseek-ai/DeepSeek-V4.1-Flash",
+      "providerId": "synthetic",
+      "upstreamId": "hf:deepseek-ai/DeepSeek-V4.1-Flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 524288,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): context_length 524288",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-27): supported_features include `reasoning`; reasoning_parameters.efforts ['none', 'low', 'high', 'xhigh', 'max']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:deepseek-ai/DeepSeek-V4.1-Flash` (read 2026-09-28): pricing prompt $0.0000006 / completion $0.0000012 / input_cache_reads $0.00000003 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path (controller ruling 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4.1-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "synthetic/hf:moonshotai/Kimi-K2.7-Code",
+      "providerId": "synthetic",
+      "upstreamId": "hf:moonshotai/Kimi-K2.7-Code",
+      "displayName": "moonshotai/Kimi-K2.7-Code",
+      "aliases": [
+        "syn:large:vision"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:moonshotai/Kimi-K2.7-Code",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "synthetic/hf:moonshotai/Kimi-K3",
+      "providerId": "synthetic",
+      "upstreamId": "hf:moonshotai/Kimi-K3",
+      "displayName": "Kimi K3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 524288,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): context_length 524288",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-27): supported_features include `reasoning`; reasoning_parameters.efforts ['low', 'high', 'max']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.45
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:moonshotai/Kimi-K3` (read 2026-09-28): pricing prompt $0.000003 / completion $0.000015 / input_cache_reads $0.00000045 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "synthetic/hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+      "providerId": "synthetic",
+      "upstreamId": "hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+      "displayName": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+      "aliases": [
+        "syn:nemotron-3-super"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` (read 2026-09-28): pricing prompt $0.0000003 / completion $0.000001 / input_cache_reads $0.00000006 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path (controller ruling 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "nvidia-nemotron-3-super-120b-a12b-nvfp4",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "synthetic/hf:openai/gpt-oss-120b",
+      "providerId": "synthetic",
+      "upstreamId": "hf:openai/gpt-oss-120b",
+      "displayName": "openai/gpt-oss-120b",
+      "aliases": [
+        "syn:gpt-oss-120b"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:openai/gpt-oss-120b",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1,
+          "outputPerMTokUsd": 0.1,
+          "cacheReadPerMTokUsd": 0.02
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:openai/gpt-oss-120b` (read 2026-09-28): pricing prompt $0.0000001 / completion $0.0000001 / input_cache_reads $0.00000002 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path (controller ruling 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "synthetic/hf:zai-org/GLM-4.7-Flash",
+      "providerId": "synthetic",
+      "upstreamId": "hf:zai-org/GLM-4.7-Flash",
+      "displayName": "zai-org/GLM-4.7-Flash",
+      "aliases": [
+        "syn:small:text"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 196608,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-4.7-Flash",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.02
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-4.7-Flash` (read 2026-09-28): pricing prompt $0.0000001 / completion $0.0000005 / input_cache_reads $0.00000002 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path (controller ruling 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "glm-4.7-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "synthetic/hf:zai-org/GLM-5.2",
+      "providerId": "synthetic",
+      "upstreamId": "hf:zai-org/GLM-5.2",
+      "displayName": "zai-org/GLM-5.2",
+      "aliases": [
+        "syn:large:text"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 524288,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/synthetic/index.ts#hf:zai-org/GLM-5.2",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "synthetic/hf:zai-org/GLM-5.3-Flash",
+      "providerId": "synthetic",
+      "upstreamId": "hf:zai-org/GLM-5.3-Flash",
+      "displayName": "GLM 5.3 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 524288,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): context_length 524288",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-27): supported_features include `reasoning`; reasoning_parameters.efforts ['low', 'high', 'max']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.04
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.synthetic.new/openai/v1/models — Synthetic's own unauthenticated model list, entry `hf:zai-org/GLM-5.3-Flash` (read 2026-09-28): pricing prompt $0.00000015 / completion $0.0000005 / input_cache_reads $0.00000004 per token; https://synthetic.new/pricing (read 2026-09-28): \"Synthetic can use either subscription or usage-based pricing\" and \"All models are pay-per-token\" on the usage-based plan, so the per-token price applies to the usage-based path (controller ruling 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    }
+  ]
+}

@@ -1,0 +1,408 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/hyperbolic/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "blocked",
+      "reasons": [
+        "dead endpoint: https://hyperbolic.ai/docs/faq/inference-models (read 2026-09-28): \"The serverless inference API and the playground have been retired. The models that used to be listed are no longer available\"; `https://api.hyperbolic.xyz/v1/models` still answers 401 `Not authenticated` (probed 2026-09-28), which proves only that a gateway is up",
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://hyperbolic.xyz — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.hyperbolic.xyz/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "hyperbolic/NousResearch/Hermes-3-Llama-3.1-70B",
+      "providerId": "hyperbolic",
+      "upstreamId": "NousResearch/Hermes-3-Llama-3.1-70B",
+      "displayName": "Hermes 3 70B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#NousResearch/Hermes-3-Llama-3.1-70B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#NousResearch/Hermes-3-Llama-3.1-70B — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#NousResearch/Hermes-3-Llama-3.1-70B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#NousResearch/Hermes-3-Llama-3.1-70B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "nousresearch/hermes-3-llama-3.1-70b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "hyperbolic/Qwen/QwQ-32B",
+      "providerId": "hyperbolic",
+      "upstreamId": "Qwen/QwQ-32B",
+      "displayName": "QwQ 32B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/QwQ-32B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/QwQ-32B — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/QwQ-32B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/QwQ-32B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwq-32b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "hyperbolic/Qwen/Qwen2.5-72B-Instruct",
+      "providerId": "hyperbolic",
+      "upstreamId": "Qwen/Qwen2.5-72B-Instruct",
+      "displayName": "Qwen 2.5 72B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-72B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-72B-Instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-72B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-72B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen2.5-72b-instruct",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "hyperbolic/Qwen/Qwen2.5-Coder-32B-Instruct",
+      "providerId": "hyperbolic",
+      "upstreamId": "Qwen/Qwen2.5-Coder-32B-Instruct",
+      "displayName": "Qwen 2.5 Coder 32B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-Coder-32B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-Coder-32B-Instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-Coder-32B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#Qwen/Qwen2.5-Coder-32B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen2.5-coder-32b-instruct",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "hyperbolic/deepseek-ai/DeepSeek-R1",
+      "providerId": "hyperbolic",
+      "upstreamId": "deepseek-ai/DeepSeek-R1",
+      "displayName": "DeepSeek R1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-R1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-R1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-R1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-R1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-r1",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "hyperbolic/deepseek-ai/DeepSeek-V3",
+      "providerId": "hyperbolic",
+      "upstreamId": "deepseek-ai/DeepSeek-V3",
+      "displayName": "DeepSeek V3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-V3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-V3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-V3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#deepseek-ai/DeepSeek-V3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v3",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "hyperbolic/meta-llama/Llama-3.2-3B-Instruct",
+      "providerId": "hyperbolic",
+      "upstreamId": "meta-llama/Llama-3.2-3B-Instruct",
+      "displayName": "Llama 3.2 3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.2-3B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.2-3B-Instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.2-3B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.2-3B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-3.2-3b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "hyperbolic/meta-llama/Llama-3.3-70B-Instruct",
+      "providerId": "hyperbolic",
+      "upstreamId": "meta-llama/Llama-3.3-70B-Instruct",
+      "displayName": "Llama 3.3 70B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.3-70B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.3-70B-Instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.3-70B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/hyperbolic/index.ts#meta-llama/Llama-3.3-70B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-3.3-70b-instruct",
+      "modelFamily": "llama"
+    }
+  ]
+}

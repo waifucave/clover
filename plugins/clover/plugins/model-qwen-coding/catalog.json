@@ -1,0 +1,895 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://help.aliyun.com/en/model-studio/coding-plan and https://help.aliyun.com/en/model-studio/coding-plan-faq — Alibaba Cloud Coding Plan documentation, retrieved 2026-09-25: the plan's `sk-sp-` key is used against `https://coding-intl.dashscope.aliyuncs.com/v1` (OpenAI) and `https://coding-intl.dashscope.aliyuncs.com/apps/anthropic` (Anthropic); billing is the plan's request quota.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "qwen-coding/MiniMax-M2.5",
+      "providerId": "qwen-coding",
+      "upstreamId": "MiniMax-M2.5",
+      "displayName": "MiniMax M2.5 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 196608,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq — MiniMax-M2.5: 196,608 Coding Plan context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "maxInputTokens": {
+        "value": 196608,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: maximum input length 196608",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: maximum output length 32768",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: Structured Outputs Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-m2-5 — MiniMax-M2.5: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/minimax-api — MiniMax-M2.5: thinking/reasoning mode supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:48:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "qwen-coding/glm-4.7",
+      "providerId": "qwen-coding",
+      "upstreamId": "glm-4.7",
+      "displayName": "GLM-4.7 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 202752,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq — glm-4.7: 202,752 Coding Plan context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: Structured Outputs Supported (non-thinking mode only)",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-4.7: thinking/reasoning mode supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:48:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm-4-7 (read 2026-09-27): \"Max Input Length 169984 | Max Output Length 16384 | Context Window 202752\" — glm-4.7's own Model Studio spec page states 'Inference Service Provider ... is Alibaba Cloud Model Studio'; the Coding Plan page (alibabacloud.com/help/en/model-studio/coding-plan) confirms glm-4.7 is one of its supported models but states quota/price only, not output length — this page's context...",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qwen-coding/glm-5",
+      "providerId": "qwen-coding",
+      "upstreamId": "glm-5",
+      "displayName": "GLM-5 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 202752,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq — glm-5: 202,752 Coding Plan context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: Structured Outputs Supported (non-thinking mode only)",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5: thinking/reasoning mode supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:48:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qwen-coding/kimi-k2.5",
+      "providerId": "qwen-coding",
+      "upstreamId": "kimi-k2.5",
+      "displayName": "Kimi K2.5 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq — kimi-k2.5: 262,144 Coding Plan context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "maxInputTokens": {
+        "value": 229376,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: maximum input length 229376",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: maximum output length 16384",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: Structured Outputs Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-k2-5 — kimi-k2.5: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/kimi-api — kimi-k2.5: thinking/reasoning mode supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:48:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.5",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "qwen-coding/qwen3-coder-next",
+      "providerId": "qwen-coding",
+      "upstreamId": "qwen3-coder-next",
+      "displayName": "Qwen3 Coder Next (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: 262,144-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: 204,800 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — the Sep 24 2026 text-generation table marks qwen3-coder-next Function Calling Supported; CONFLICT: the older model page https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next (Sep 11) says unsupported (qwen3-coder-plus: unsupported in Singapore, supported in Beijing). Newer dated page wins (review ruling 2026-09-25), hence `inferred`."
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — mirrors toolCalling (Sep 24 table vs older model page conflict)."
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — Sep 24, 2026: qwen3-coder-next Structured Output Supported; https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — Sep 11, 2026: Unsupported (conflict; newer overview preferred)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:50:14Z"
+      },
+      "promptCaching": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: Context Caching Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-coder-next: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3-coder-next",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-coding/qwen3-coder-plus",
+      "providerId": "qwen-coding",
+      "upstreamId": "qwen3-coder-plus",
+      "displayName": "Qwen3 Coder Plus (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 997952,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: 997,952 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — the Sep 24 2026 text-generation table marks qwen3-coder-plus Function Calling Supported; CONFLICT: the older model page https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus (Sep 11) says unsupported (qwen3-coder-plus: unsupported in Singapore, supported in Beijing). Newer dated page wins (review ruling 2026-09-25), hence `inferred`."
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — mirrors toolCalling (Sep 24 table vs older model page conflict)."
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — Sep 24, 2026: qwen3-coder-plus Structured Output Supported; https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — Sep 11, 2026: Unsupported (conflict; newer overview preferred)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:50:14Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-coder-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3-coder-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-coding/qwen3-max-2026-01-23",
+      "providerId": "qwen-coding",
+      "upstreamId": "qwen3-max-2026-01-23",
+      "displayName": "Qwen3 Max 2026-01-23 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq — qwen3-max-2026-01-23: 262,144 Coding Plan context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: Function Calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:48:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-max-2026-01-23: thinking/reasoning mode supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:48:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3-max-2026-01-23",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-coding/qwen3.5-plus",
+      "providerId": "qwen-coding",
+      "upstreamId": "qwen3.5-plus",
+      "displayName": "Qwen3.5 Plus (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.5-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.5-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.5-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.5-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-coding/qwen3.6-plus",
+      "providerId": "qwen-coding",
+      "upstreamId": "qwen3.6-plus",
+      "displayName": "Qwen3.6 Plus (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-coding/qwen3.7-plus",
+      "providerId": "qwen-coding",
+      "upstreamId": "qwen3.7-plus",
+      "displayName": "Qwen3.7 Plus (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.7-plus: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-plus",
+      "modelFamily": "qwen"
+    }
+  ]
+}
