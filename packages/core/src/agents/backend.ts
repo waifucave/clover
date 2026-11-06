@@ -16,6 +16,7 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -80,6 +81,9 @@ export interface AcpStartSpec extends AgentStartSpec {
   readOnly?: boolean;
   /** The program the manager admitted (and the user OK'd, with its file's hash): `start` refuses another. */
   admitted?: { path: string; version?: string; sha256?: string };
+  /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
+   *  serves in place of the stdio `bridge` (there is no process to bind a token to). */
+  inProcessBridge?: McpSdkServerConfigWithInstance;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's

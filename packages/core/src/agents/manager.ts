@@ -43,7 +43,9 @@ import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSou
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
+import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
+import { botMemoryFolders, touchesBotMemory, withMemoryDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -458,10 +460,16 @@ export class AgentManager {
         env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
         tools: e.bridgeTools,
       },
-      fence: this.#o.fence.policy(),
+      // Bots' memory is out of every agent's reach (the owner's decision): denied to its sandbox for reads and writes.
+      fence: withMemoryDenied(this.#o.fence.policy(), botMemoryFolders(this.#o.home, e.bot)),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       admitted,
+      // A backend inside the daemon (Clover's coding agent) gets the bridge in-process: its calls check the session's
+      // token is still live, as the socket's do.
+      ...((e.backend as { inProcess?: boolean }).inProcess === true
+        ? { inProcessBridge: await inProcessBridgeServer(this.bridgeHandlers(), { name: e.serverName, sessionId: e.id, live: () => this.#o.tokens.has(e.id) }) }
+        : {}),
     };
     const session = await e.backend.start(spec);
     e.session = session;
@@ -546,6 +554,12 @@ export class AgentManager {
     if (resolved.over) {
       // More paths than Clover checks: refused without a card, never let through unchecked (check 2's minor 1).
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "too-many-paths", paths: raw.paths.length });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // A bot's memory: refused without a card, at every level (the owner's decision).
+    if (resolved.paths.some((p) => touchesBotMemory(this.#o.home, p))) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "bot-memory" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }

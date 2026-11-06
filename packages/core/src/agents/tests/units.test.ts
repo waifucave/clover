@@ -26,6 +26,7 @@ import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPath
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
+import { botMemoryFolders, fileToolDenials, touchesBotMemory, withMemoryDenied } from "../memory";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -508,5 +509,29 @@ describe("the backends' rows", () => {
     }
     // `agent` is Cursor's and Grok's: neither row resolves that name.
     for (const q of Object.values(QUIRKS)) expect(q.launch.command.macos![0]).not.toBe("agent");
+  });
+});
+
+describe("bots' memory", () => {
+  test("every bot's memory folder, the delegating bot's even before it exists; a path in one, folded; the policy denies them", () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-k-mem-"));
+    try {
+      mkdirSync(join(home, "bots", "beta", "memory"), { recursive: true });
+      mkdirSync(join(home, "bots", "gamma"), { recursive: true });
+      expect(botMemoryFolders(home, "alpha")).toEqual([join(home, "bots", "alpha", "memory"), join(home, "bots", "beta", "memory"), join(home, "bots", "gamma", "memory")]);
+      expect(touchesBotMemory(home, join(home, "bots", "beta", "memory"))).toBe(true);
+      expect(touchesBotMemory(home, join(home, "bots", "zeta", "MEMORY", "a.md"))).toBe(true);
+      // A bot's own folder, its agents' transcripts and the home are the fence's and the cards' business.
+      expect(touchesBotMemory(home, join(home, "bots", "beta"))).toBe(false);
+      expect(touchesBotMemory(home, join(home, "bots", "beta", "agents", "x"))).toBe(false);
+      expect(touchesBotMemory(home, home)).toBe(false);
+      expect(touchesBotMemory(home, "/elsewhere/bots/beta/memory")).toBe(false);
+      const p = withMemoryDenied({ allowWrite: [home], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, ["/m1", "/a"]);
+      expect(p.denyWrite).toEqual(["/a", "/m1"]);
+      expect(p.denyRead).toEqual(["/m1", "/a"]);
+      expect(fileToolDenials(["/m1"], ["/w"])).toEqual(["Read(//m1)", "Read(//m1/**)", "Edit(//m1)", "Edit(//m1/**)", "Write(//m1)", "Write(//m1/**)", "Glob(//m1)", "Glob(//m1/**)", "Grep(//m1)", "Grep(//m1/**)", "NotebookEdit(//m1)", "NotebookEdit(//m1/**)", "Edit(//w)", "Edit(//w/**)", "Write(//w)", "Write(//w/**)", "NotebookEdit(//w)", "NotebookEdit(//w/**)"]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

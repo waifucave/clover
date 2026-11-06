@@ -2,7 +2,7 @@
 // the agent reaches the bot through the real bridge process, the bot keeps control, the transcript is written, and
 // the watchdog stops a stalled agent. Lane B's fakes stand in for the session host, the broker, the tree and the fence.
 import { afterEach, describe, expect, test, setDefaultTimeout } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentQuirks } from "../../contracts/agent-backend";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
@@ -127,6 +127,29 @@ describe("Agent", () => {
     await waitFor(() => notification(w), "the task notification");
     expect(w.report("answer")).toMatchObject([{ toolCallId: "call-1", kind: "allow_once" }]);
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
+  });
+
+  test("bots' memory is out of every agent's reach: denied to its sandbox, and a request into it refused without a card", async () => {
+    const w = make({ script: [[{ tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
+    // Another bot's memory, under a folded name, and the delegating bot's own (which it doesn't have yet).
+    const other = join(w.cloverHome, "bots", "beta", "Memory", "notes.md");
+    mkdirSync(join(w.cloverHome, "bots", "beta", "Memory"), { recursive: true });
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    script.script[0]![0]!.tool.paths = [other];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    let fence: { denyRead: string[]; denyWrite: string[] } | undefined;
+    const start = w.backend.start.bind(w.backend);
+    w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
+    const r = await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
+    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    expect(calls).toContain('"by":"bot-memory"');
+    for (const folder of [join(w.cloverHome, "bots", "alpha", "memory"), join(w.cloverHome, "bots", "beta", "memory")]) {
+      expect(fence!.denyRead).toContain(folder);
+      expect(fence!.denyWrite).toContain(folder);
+    }
   });
 
   test("a request touching a fenced path is a card even at automatic", async () => {
@@ -714,8 +737,10 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     await waitFor(() => w.report("blocked").length > 0, "the agent to block");
     const dir = join(w.cloverHome, "run", "agents", r.sessionId);
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
-    expect(policy.denyWrite).toEqual(w.fence.policy().denyWrite);
+    // The fenced set, and bots' memory (the owner's decision).
+    expect(policy.denyWrite).toEqual([...w.fence.policy().denyWrite, join(w.cloverHome, "bots", "alpha", "memory")]);
     expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
+    expect(policy.denyRead).toContain(join(w.cloverHome, "bots", "alpha", "memory"));
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
     expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
     expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");
