@@ -40,6 +40,9 @@ export async function hardenSession(ses: Session, log: (line: string) => void): 
 
 const ALLOWED_PROTOCOLS = new Set([`${CORE_SCHEME}:`, `${LAYER_SCHEME}:`, `${SEALED_SCHEME}:`, "data:", "blob:", "devtools:"]);
 
+/** A theme asset's CSP: an SVG opened as a document runs nothing, loads nothing and has no origin of its own. */
+const THEME_ASSET_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
 function forbidden(): Response {
   return new Response("forbidden", { status: 403, headers: commonHeaders() });
 }
@@ -121,6 +124,30 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const type = mediaType(file);
       if (type === undefined) return forbidden();
       return fileResponse(file, type, layerHeaders(type));
+    }
+    if (url.pathname.startsWith("/_t/")) {
+      // A theme's images and fonts, in every layer its sheets reach (§5.5): only a plugin with themes or style
+      // entries, only images and fonts, inside its folder. Never a document: an SVG opened as a page gets no origin.
+      const [, , encoded, ...rest] = url.pathname.split("/");
+      let id: string;
+      let path: string;
+      try {
+        id = decodeURIComponent(encoded ?? "");
+        path = rest.map((p) => decodeURIComponent(p)).join("/");
+      } catch {
+        return notFound();
+      }
+      const plugin = runtime.registry.find((p) => p.id === id && (p.themes.length > 0 || p.entries.some((e) => e.style !== undefined)));
+      if (plugin === undefined) return forbidden();
+      let file: string;
+      try {
+        file = pluginFile(plugin, path);
+      } catch {
+        return notFound();
+      }
+      const type = mediaType(file);
+      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/"))) return forbidden();
+      return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
     }
     return notFound();
   });

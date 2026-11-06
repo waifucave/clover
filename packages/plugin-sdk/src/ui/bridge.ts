@@ -41,6 +41,18 @@ export interface MountInfo {
   module?: string;
   /** The plugin's stylesheets, served from this layer's origin. */
   css: readonly string[];
+  /** The themes' sheets the core applies in this document, in the stack's order, after the plugin's own (§5.5):
+   *  cleaned, each scoped to the part it dresses. */
+  sheets?: readonly ThemeSheet[];
+  /** The document's root is a bot's tab (its bot), or is dressed by a style entry: the sheets' scopes find it so. */
+  tab?: string;
+  styled?: boolean;
+}
+
+/** One sheet the core applies in a document. */
+export interface ThemeSheet {
+  id: string;
+  css: string;
 }
 
 /** One thing a spot shows. */
@@ -55,6 +67,9 @@ export type SpotItem =
     /** Present when the part's tokens differ from its parent's (another tab, or a dressing plugin). */
     tokens?: Readonly<Record<string, TokenValue>>;
     context: MountContext;
+    /** The part is a bot's tab (its bot), or is dressed by a style entry: the document's sheets find it so. */
+    tab?: string;
+    styled?: boolean;
   }
   | {
     kind: "frame";
@@ -95,6 +110,8 @@ export type LayerMessage =
   | { type: "tokens"; tokens: Readonly<Record<string, Readonly<Record<string, TokenValue>>>> }
   /** The registry or the user's choices changed: resolve every spot again. */
   | { type: "respot" }
+  /** The themes' sheets for this document changed (a theme, a style entry, a part placed). */
+  | { type: "sheets"; sheets: readonly ThemeSheet[] }
   /** A child frame's layer stopped; the parent shows a placeholder with a reload. */
   | { type: "child-gone"; child: string; reason: string }
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it

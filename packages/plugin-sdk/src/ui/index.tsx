@@ -17,7 +17,7 @@ import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet } from "./bridge";
 
 export * from "./bridge";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
@@ -224,11 +224,21 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   const r = rt();
   const [props, setProps] = useState<unknown>(() => decodeProps(info.props, (id, args) => r.bridge.callback(id, args)));
   const [tokens, setTokens] = useState(info.tokens);
+  const [sheets, setSheets] = useState<readonly ThemeSheet[]>(info.sheets ?? []);
   const [mod, setMod] = useState<ClientModule | undefined>(() => r.modules.get(info.pluginId));
   useEffect(() => onLayerMessage((m) => {
     if (m.type === "props" && m.mount === info.mount) setProps(decodeProps(m.props, (id, args) => r.bridge.callback(id, args)));
     if (m.type === "tokens" && m.tokens[info.mount] !== undefined) setTokens(m.tokens[info.mount]!);
+    if (m.type === "sheets") setSheets(m.sheets);
   }), [info.mount, r]);
+  useLayoutEffect(() => {
+    // The document is the part: its themes' sheets are scoped to it by these marks.
+    const root = document.documentElement;
+    root.setAttribute("data-clover-part", info.mount);
+    if (info.tab !== undefined) root.setAttribute("data-clover-tab", info.tab);
+    if (info.styled === true) root.setAttribute("data-clover-styled", "");
+  }, [info.mount, info.tab, info.styled]);
+  useLayoutEffect(() => applySheets(sheets), [sheets]);
   useEffect(() => {
     if (mod !== undefined || r.load === undefined) return;
     void r.load(info.pluginId).then((m) => {
@@ -287,6 +297,25 @@ export function LayerRoot({ info }: { info: MountInfo }) {
     return mod === undefined && r.load !== undefined ? null : <div className="clover-part-missing" role="status">This part has no component {info.component}.</div>;
   }
   return <EntryView part={part} component={component} props={props} />;
+}
+
+/** Puts the themes' sheets in the head, after the part's own stylesheets and in the core's order (§5.5's stack: the
+ *  later and the nearer win). A sheet whose text is unchanged keeps its element. */
+export function applySheets(sheets: readonly ThemeSheet[], doc: Document = document): void {
+  const head = doc.head;
+  const old = new Map<string, HTMLStyleElement>();
+  for (const el of Array.from(head.querySelectorAll<HTMLStyleElement>("style[data-clover-sheet]"))) old.set(el.getAttribute("data-clover-sheet") ?? "", el);
+  for (const s of sheets) {
+    let el = old.get(s.id);
+    old.delete(s.id);
+    if (el === undefined) {
+      el = doc.createElement("style");
+      el.setAttribute("data-clover-sheet", s.id);
+    }
+    if (el.textContent !== s.css) el.textContent = s.css;
+    head.appendChild(el);
+  }
+  for (const el of old.values()) el.remove();
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -364,7 +393,7 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   if (component === undefined) return <div className="clover-part-missing" role="status" data-clover-entry={item.ref}>This part has no component {item.component}.</div>;
   const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
   return (
-    <div data-clover-entry={item.ref} style={{ display: "contents", ...own }}>
+    <div data-clover-entry={item.ref} data-clover-part={item.mount} data-clover-tab={item.tab} data-clover-styled={item.styled === true ? "" : undefined} style={{ display: "contents", ...own }}>
       <EntryView part={part} component={component} props={props} />
     </div>
   );

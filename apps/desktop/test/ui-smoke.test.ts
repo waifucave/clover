@@ -22,7 +22,7 @@ const enabled = ci || (localElectron !== undefined && localElectron !== "");
 const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
 const exe = process.platform === "win32" ? ".exe" : "";
 
-interface Frame { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; accent: string; insetTop: string; text: string; url: string; osPid: number; sandboxed: boolean | null }
+interface Frame { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; accent: string; insetTop: string; sheets: number; themed: string; text: string; url: string; osPid: number; sandboxed: boolean | null }
 interface Smoke { ok: boolean; frames: Frame[]; [key: string]: unknown }
 
 let work: string;
@@ -98,8 +98,10 @@ function expectShell(r: ReturnType<typeof smoke>): Frame {
     // The OS reports a process's sandbox on macOS and Windows only.
     if (process.platform !== "linux") expect(frame.sandboxed, frame.origin).toBe(true);
   }
-  // The frame's variables reach the layer.
+  // The frame's variables reach the layer, and the base theme's CSS dresses it (scoped by `@scope` to the part).
   expect(shell!.insetTop).toBe("45px");
+  expect(shell!.sheets, r.output).toBeGreaterThanOrEqual(1);
+  expect(shell!.themed).toBe("optimizelegibility");
   return shell!;
 }
 
@@ -165,6 +167,9 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const alpha = JSON.parse(readFileSync(join(REPO, "plugins", "alpha", "tab", "theme.json"), "utf8")) as { tokens: Record<string, string>; dark?: { tokens: Record<string, string> } };
     const accent = (r.facts!.appearance === "dark" ? alpha.dark?.tokens["color.accent"] : undefined) ?? alpha.tokens["color.accent"];
     if (typeof accent === "string" && accent !== "system") expect(part!.accent.toUpperCase()).toBe(accent.toUpperCase());
+    // The themes' CSS reaches another layer's document too.
+    expect(part!.sheets).toBeGreaterThanOrEqual(1);
+    expect(part!.themed).toBe("optimizelegibility");
     // Surface windows: one per `app.surface` entry with a window, each with its own root, never shown headless. The
     // fixture's part sized its window and got its menu's answer through the core.
     const surfaces = r.facts!.surfaces as { id: string; visible: boolean; bounds: { width: number; height: number }; frames: Frame[] }[];

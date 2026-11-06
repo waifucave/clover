@@ -10,13 +10,14 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { LayerMessage, MountContext, MountInfo, SpotItem, SpotView } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerMessage, MountContext, MountInfo, SpotItem, SpotView, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
 import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
-import { defaultFrameMetrics, partTokens, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
+import { botTheme, defaultFrameMetrics, partSelector, partTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
+import { cleanCss } from "./css";
 
 /** A frame as Electron describes it. */
 export interface FrameRef {
@@ -70,6 +71,8 @@ interface Mount {
   /** A frame's document: the layers its `Connection-Allowlist` names, as it was served (B1: each installed layer by
    *  name, never a `*` host, since Chromium matches a document's DNS lookups against the list by host only). */
   allowedLayers?: readonly string[];
+  /** A document: its themes' sheets as last sent. */
+  sheetsKey?: string;
 }
 
 export interface WindowInfo {
@@ -189,7 +192,74 @@ export class UiRuntime {
       updates.set(doc.id, u);
     }
     for (const [docId, tokens] of updates) this.post(docId, { type: "tokens", tokens });
+    for (const m of this.mounts.values()) if (m.frame !== undefined) this.restyle(m);
     if (respot) for (const m of this.mounts.values()) if (m.frame !== undefined) this.post(m.id, { type: "respot" });
+  }
+
+  // ----------------------------------------------------------------------------------------------
+  // The themes' CSS (E-M2): one sheet per place a theme dresses, in the stack's order, after the part's own CSS
+  // ----------------------------------------------------------------------------------------------
+
+  /** A part that starts a bot's tab in its document: its bot. A frame inside a tab is its own document's tab root. */
+  private tabOf(m: Mount): string | undefined {
+    if (m.ctx.bot === undefined) return undefined;
+    if (m.kind !== "inline") return m.ctx.bot;
+    const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+    return parent?.ctx.bot === m.ctx.bot ? undefined : m.ctx.bot;
+  }
+
+  private styledOf(m: Mount): boolean {
+    return m.styles.some((c) => c.entry.style !== undefined);
+  }
+
+  /** A document's sheets (§5.5's stack): the base and global themes over the whole document, each bot's theme in its
+   *  tab (stopping at another tab), each style entry in its part (stopping at a smaller part another dresses, the
+   *  would-be winner last), then the user's own CSS. The core root takes none (its CSP allows no inline style). */
+  sheetsFor(doc: Mount): ThemeSheet[] {
+    if (doc.kind !== "frame") return [];
+    const inDoc = [...this.mounts.values()].filter((m) => this.docOf(m)?.id === doc.id);
+    const out: ThemeSheet[] = [];
+    const whole = { root: partSelector(doc.id) };
+    const theme = stackThemes(this.themes, { plugins: this.plugins, choices: this.choices, styles: [], appearance: this.appearance, frame: defaultFrameMetrics("darwin") });
+    for (const t of theme) {
+      const css = this.themes.themeSheet(t.plugin, t.theme, whole);
+      if (css !== "") out.push({ id: `${t.kind}:${t.plugin.id}`, css });
+    }
+    for (const m of inDoc) {
+      const bot = this.tabOf(m);
+      if (bot === undefined) continue;
+      const b = botTheme(this.themes, this.plugins, bot);
+      if (b === undefined) continue;
+      const css = this.themes.themeSheet(b.plugin, b.theme, { root: partSelector(m.id), limit: "[data-clover-tab]:not(:scope)" });
+      if (css !== "") out.push({ id: `bot:${bot}:${m.id}`, css });
+    }
+    for (const m of inDoc) {
+      for (const c of m.styles) {
+        if (c.entry.style === undefined) continue;
+        const t = this.themes.read(c.plugin, c.entry.style);
+        if (t === null) continue;
+        const css = this.themes.themeSheet(c.plugin, t, { root: partSelector(m.id), limit: "[data-clover-styled]:not(:scope)" });
+        if (css !== "") out.push({ id: `style:${c.plugin.id}#${c.entry.id}:${m.id}`, css });
+      }
+      // The part a style entry dresses is contained, as a tab's root is (a frame's root; an inline part has no box).
+      if (m.id === doc.id && this.styledOf(m)) out.push({ id: `contain:${m.id}`, css: `${partSelector(m.id)}{contain:layout paint}` });
+    }
+    const own = this.choices.overrides?.css;
+    if (own !== undefined && own !== "") {
+      const cleaned = cleanCss(own, { pluginId: "user", scope: whole });
+      if (cleaned.css !== "") out.push({ id: "user", css: cleaned.css });
+    }
+    return out;
+  }
+
+  /** Sends a document its sheets when they changed. */
+  private restyle(doc: Mount): void {
+    if (doc.frame === undefined || doc.kind !== "frame") return;
+    const sheets = this.sheetsFor(doc);
+    const key = JSON.stringify(sheets);
+    if (key === doc.sheetsKey) return;
+    doc.sheetsKey = key;
+    this.post(doc.id, { type: "sheets", sheets });
   }
 
   private retheme(m: Mount): void {
@@ -342,7 +412,9 @@ export class UiRuntime {
     m.frame = { key: frameKey(frame), processId: frame.processId, routingId: frame.routingId, ...(frame.osPid !== undefined ? { osPid: frame.osPid } : {}) };
     this.byFrame.set(m.frame.key, m.id);
     this.byToken.delete(token);
-    return this.info(m);
+    const sheets = this.sheetsFor(m);
+    m.sheetsKey = JSON.stringify(sheets);
+    return { ...this.info(m), sheets };
   }
 
   private context(m: Mount): MountContext {
@@ -385,6 +457,8 @@ export class UiRuntime {
       context: this.context(m),
       ...(a.module !== undefined ? { module: a.module } : {}),
       css: a.css,
+      ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
+      ...(this.styledOf(m) ? { styled: true } : {}),
     };
   }
 
@@ -440,6 +514,8 @@ export class UiRuntime {
       }
     }
     if (doc.allowedLayers !== undefined && items.some((i) => i.kind === "frame" && i.layer !== doc.layer && !doc.allowedLayers!.includes(i.layer))) this.refreshDocument(doc);
+    // A part placed or restyled inline changes the document's sheets.
+    this.restyle(doc);
     return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape: cell.shape, items, hidden: cell.hidden, conflict: cell.conflict };
   }
 
@@ -492,6 +568,8 @@ export class UiRuntime {
       component: m.component ?? "",
       ...(m.tokensKey !== parent.tokensKey ? { tokens: m.tokens } : {}),
       context: this.context(m),
+      ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
+      ...(this.styledOf(m) ? { styled: true } : {}),
     };
   }
 

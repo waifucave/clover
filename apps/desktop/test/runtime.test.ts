@@ -215,6 +215,79 @@ describe("each part themed by its tab (decision 77)", () => {
   });
 });
 
+describe("the themes' CSS (§5.5's stack, E-M2)", () => {
+  function themed(id: string, files: Record<string, string>, view: Record<string, unknown>): UiPlugin {
+    const dir = mkdtempSync(join(tmpdir(), "clover-sheet-"));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"1".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...view }] as never)[0]!;
+  }
+  const lunaBot = () => themed("luna", {
+    "theme.json": JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "#123456" }, css: "tab.css", fonts: [{ family: "Luna Sans", src: "luna.woff2" }], icons: { "app.send": "send.svg" } }),
+    "tab.css": `.bubble { color: red; font-family: "Luna Sans" } @import "x.css";`,
+  }, { themes: [{ id: "luna", file: "theme.json" }], isBot: true, botTheme: "luna", name: "Luna" });
+  const sheetsSent = (s: ReturnType<typeof setup>, f: FrameRef) => s.sent.filter((x) => x.m.type === "sheets" && x.to === `${f.processId}:${f.routingId}`).map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets);
+
+  test("a bot's theme dresses its tab, up to another tab; its fonts and icons are its own, served by the core", () => {
+    const s = setup([lunaBot()]);
+    const shell = mountShell(s);
+    s.sent.length = 0;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(tab).toMatchObject({ kind: "inline", tab: "luna" });
+    const sheets = sheetsSent(s, shell.shellFrame).at(-1)!;
+    const sheet = sheets.find((x) => x.id === `bot:luna:${tab.mount}`)!;
+    expect(sheet.css).toContain(`@font-face{font-family:"clv-luna__Luna Sans";src:url("/_t/luna/luna.woff2");font-display:swap}`);
+    expect(sheet.css).toContain(`@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-tab]:not(:scope)){:scope{--clover-icon-app-send:url("/_t/luna/send.svg")}}`);
+    expect(sheet.css).toContain(`@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-tab]:not(:scope)){.bubble{color:red;font-family:"clv-luna__Luna Sans"}}`);
+    expect(sheet.css).not.toContain("@import");
+    // The tab's font token names the renamed family, as its CSS does.
+    expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!.kind).toBe("inline");
+  });
+
+  test("a frame in a bot's tab is its own tab root: the theme comes with its document, after the part's own CSS", () => {
+    const s = setup([...composerFixture(), lunaBot()]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const info = s.rt.describe(frame(item.url, shell.shellFrame), WIN, token);
+    expect(info.tab).toBe("luna");
+    // Clover's base theme over the whole document first, then the tab's.
+    expect(info.sheets?.map((x) => x.id)).toEqual(["base:clover/base-theme", `bot:luna:${item.mount}`]);
+    expect(info.sheets![0]!.css).toContain(`@scope ([data-clover-part="${item.mount}"]){:scope{color:var(--clover-color-text)`);
+    expect(info.sheets![1]!.css).toContain(`@scope ([data-clover-part="${item.mount}"]) to ([data-clover-tab]:not(:scope))`);
+  });
+
+  test("a style entry dresses its part, stopping at a part another dresses; the user's own CSS goes last and loads nothing", () => {
+    const dresser = themed("dresser", {
+      "dress.json": JSON.stringify({ theme: 1, name: "Dress", tokens: {}, css: "dress.css" }),
+      "dress.css": `.c { border: 1px solid; background: url(bg.png) }`,
+      "bg.png": "",
+    }, { ui: [{ spot: "composer", id: "dress", style: "dress.json" }] });
+    const s = setup([dresser]);
+    s.rt.setChoices({ picks: [], lists: [], overrides: { css: `.x { color: blue; background: url(https://x.example/a.png) }` } } as never);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    s.sent.length = 0;
+    const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
+    expect(composer).toMatchObject({ kind: "inline", ref: "clover/composer#composer", styled: true });
+    const sheets = sheetsSent(s, shell.shellFrame).at(-1)!;
+    const style = sheets.find((x) => x.id === `style:dresser#dress:${composer.mount}`)!;
+    expect(style.css).toBe(`@scope ([data-clover-part="${composer.mount}"]) to ([data-clover-styled]:not(:scope)){.c{border:1px solid;background:url("/_t/dresser/bg.png")}}`);
+    expect(sheets.at(-1)).toEqual({ id: "user", css: `@scope ([data-clover-part="${shell.info.mount}"]){.x{color:blue}}` });
+  });
+
+  test("the core root takes no sheets; a sheet that didn't change isn't sent again", () => {
+    const s = setup([lunaBot()]);
+    expect(s.root.sheets).toBeUndefined();
+    const shell = mountShell(s);
+    s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna");
+    s.sent.length = 0;
+    s.rt.setAppearance("dark", "#FF0000");
+    expect(sheetsSent(s, shell.shellFrame)).toEqual([]);
+  });
+});
+
 describe("safe mode and the registry", () => {
   test("in safe mode a third-party part isn't mounted; the bundled one shows", () => {
     const s = setup(composerFixture(), { safeMode: true });

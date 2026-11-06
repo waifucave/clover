@@ -698,9 +698,11 @@ async function smoke(): Promise<void> {
     rendered: !!document.getElementById("clover-root")?.firstElementChild,
     accent: getComputedStyle(document.documentElement).getPropertyValue("--clover-color-accent").trim(),
     insetTop: getComputedStyle(document.documentElement).getPropertyValue("--clover-frame-inset-top").trim(),
+    sheets: document.querySelectorAll("style[data-clover-sheet]").length,
+    themed: getComputedStyle(document.documentElement).textRendering,
     text: (document.body.innerText || "").slice(0, 200),
   }))()`;
-  type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; text: string };
+  type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; sheets: number; themed: string; text: string };
   type Probed = Probe & { url: string; osPid: number };
   const probeWindow = async (w: BrowserWindow): Promise<Probed[]> => {
     const out: Probed[] = [];

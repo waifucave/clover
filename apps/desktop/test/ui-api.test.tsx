@@ -233,6 +233,22 @@ describe("the UI API in a layer", () => {
     expect(fake.calls.filter((c) => c.op === "resolve").length).toBeGreaterThanOrEqual(before + 4);
   });
 
+  test("the themes' sheets go in the head in the core's order and follow its changes; each part carries its mark", async () => {
+    // The marks a sheet's `@scope` finds: the document's part on its root, an inline part on its wrapper.
+    expect(document.documentElement.getAttribute("data-clover-part")).toBe("m1");
+    expect(document.querySelector('[data-clover-entry="clover/sidebar#sidebar"]')?.getAttribute("data-clover-part")).toBe("m2");
+    const ids = () => Array.from(document.head.querySelectorAll("style[data-clover-sheet]")).map((e) => `${e.getAttribute("data-clover-sheet")}=${e.textContent}`);
+    await act(async () => fake.emit({ type: "sheets", sheets: [{ id: "base:clover/base-theme", css: "a{}" }, { id: "bot:luna:m2", css: "b{}" }] }));
+    expect(ids()).toEqual(["base:clover/base-theme=a{}", "bot:luna:m2=b{}"]);
+    // They come after the part's own stylesheets.
+    const link = document.createElement("link");
+    document.head.insertBefore(link, document.head.firstChild);
+    await act(async () => fake.emit({ type: "sheets", sheets: [{ id: "bot:luna:m2", css: "c{}" }, { id: "user", css: "d{}" }] }));
+    expect(ids()).toEqual(["bot:luna:m2=c{}", "user=d{}"]);
+    expect(document.head.firstElementChild).toBe(link);
+    link.remove();
+  });
+
   test("props across a frame's edge: functions become markers; markers become functions", () => {
     const fns: Function[] = [];
     const encoded = ui.encodeProps({ a: 1, nested: { f: () => 2 }, list: [() => 3, "x"], date: new Date(0) }, (fn) => {
