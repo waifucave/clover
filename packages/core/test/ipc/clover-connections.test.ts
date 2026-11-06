@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { bridgeMethodHandlers, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
+import { bridgeMethodHandlers, canonicalCallHash, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
+import { checkDaemonProof } from "../../src/platform/pair/run-files";
 import { handler, MethodError } from "../../src/bots/rpc";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
@@ -135,7 +136,8 @@ describe("Clover connections (C-M1)", () => {
       "session.list": handler(SESSIONS_METHODS.sessionList, () => { throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user can list", { why: "test" }); }),
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
     });
-    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair,
+    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken,
+      hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid) => { killed.push(pid); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
@@ -206,21 +208,68 @@ describe("Clover connections (C-M1)", () => {
     app.close(); layer.close(); other.close();
   });
 
-  test("plugin-host: the token is its process's, and the peer must be the process the daemon started", async () => {
+  test("plugin-host: the token is its process's, and the peer must be the process the daemon started (both pids)", async () => {
     const b = await boot();
     const shared = b.tokens.mint({ role: "plugin-host", hostProcess: "shared" });
     const c = await Client.connect(b.socketPath);
     expect((await c.hello("plugin-host", shared, { hostProcess: "clover" })).error.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
     const d = await Client.connect(b.socketPath);
     expect((await d.hello("plugin-host", shared, { hostProcess: "shared" })).result.caller.kind).toBe("plugin");
-    c.close(); d.close();
+    expect(b.clover.connections().find((x) => x.role === "plugin-host")?.hostProcess).toEqual({ hostProcess: "shared" });
+    b.setPeer({ ...outside, pid: null, floor: "fenced" }); // the peer's pid unknown
+    const e = await Client.connect(b.socketPath);
+    expect((await e.hello("plugin-host", shared, { hostProcess: "shared" })).error.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
+    b.setPeer(outside);
+    const own = b.tokens.mint({ role: "plugin-host", hostProcess: "own", pluginId: "luna" }); // no pid recorded for it
+    const f = await Client.connect(b.socketPath);
+    expect((await f.hello("plugin-host", own, { hostProcess: "own", pluginId: "luna" })).error.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
+    c.close(); d.close(); e.close(); f.close();
   });
 
-  test("peer: another computer is always fenced", async () => {
+  test("peer: another computer is always fenced, and comes only from the link sidecar's process", async () => {
     const b = await boot();
     const t = b.tokens.mint({ role: "peer", device: "e".repeat(32) });
     const c = await Client.connect(b.socketPath);
     expect((await c.hello("peer", t, { device: "e".repeat(32) })).result.caller).toEqual({ kind: "peer", device: "e".repeat(32) });
+    b.setPeer({ ...outside, pid: 6161 }); // not the sidecar
+    const r = b.tokens.mint({ role: "remote", device: "f".repeat(32) });
+    const d = await Client.connect(b.socketPath);
+    expect((await d.hello("remote", r, { device: "f".repeat(32) })).error.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
+    c.close(); d.close();
+  });
+
+  test("B1: a process the daemon started is never the user or the app, by its parents or the probe's verdict", async () => {
+    const b = await boot();
+    b.setPeer({ ...outside, pid: 777, ancestors: [process.pid, 1] }); // the reviewer's probe: the daemon among its parents
+    const c = await Client.connect(b.socketPath);
+    expect((await c.hello("app", b.appToken)).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    b.setPeer({ ...outside, spawnedByDaemon: true }); // a double fork the OS still ties to the daemon
+    const d = await Client.connect(b.socketPath);
+    expect((await d.hello("cli", b.legacy.harness)).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    c.close(); d.close();
+  });
+
+  test("B1 for real: a child of this process that says hello as the app is refused", async () => {
+    const b = await boot({ realPeer: true });
+    const script = `const s = await Bun.connect({ unix: ${JSON.stringify(b.socketPath)}, socket: { data(_s, d) { console.log(new TextDecoder().decode(d).trim()); process.exit(0); } } });
+      s.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "protocol.hello", params: { protocolVersion: ${CLOVER_PROTOCOL_VERSION}, role: "app", token: ${JSON.stringify(b.appToken)}, clientName: "child" } }) + "\\n");`;
+    const child = Bun.spawn([process.execPath, "-e", script], { stdout: "pipe", stderr: "pipe" });
+    const out = await new Response(child.stdout).text();
+    await child.exited;
+    expect(JSON.parse(out.trim().split("\n")[0]!).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+  });
+
+  test("S3: protocol.prove before the hello, bound to this connection's pid", async () => {
+    const b = await boot();
+    const c = await Client.connect(b.socketPath);
+    const nonce = "n".repeat(32);
+    const r = (await c.request("protocol.prove", { nonce })).result;
+    expect(r.pid).toBe(4242);
+    expect(checkDaemonProof(b.appToken, nonce, r.proof, 4242)).toBe(true);
+    expect(checkDaemonProof(b.appToken, nonce, r.proof, process.pid)).toBe(false);
+    expect((await c.request("protocol.prove", { nonce: "short" })).error.code).toBe(ERR.INVALID_PARAMS);
+    expect((await c.hello("app", b.appToken)).result.ok).toBe(true); // then the hello, on the same connection
+    expect((await c.request("protocol.prove", { nonce })).error).toBeDefined(); // only before it
     c.close();
   });
 
@@ -368,7 +417,11 @@ describe("Clover connections (C-M1)", () => {
     expect(b.unfollowed).toEqual(["s-2"]); // nothing to stream to: let go at once
     await expect(b.clover.dispatch("pair.quit", { handOver: false }, { caller: peer, role: "remote" })).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
     await expect(b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote" })).rejects.toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
-    expect(await b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote", answered: true })).toEqual({ ok: true });
+    const other = { cardId: "card-0", callHash: canonicalCallHash("session.interrupt", { id: "s-3" }) }; // an answer for another call
+    await expect(b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote", answer: other })).rejects.toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+    const answer = { cardId: "card-1", callHash: canonicalCallHash("session.interrupt", { id: "s-2" }) };
+    expect(await b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote", answer })).toEqual({ ok: true });
+    await expect(b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote", answer })).rejects.toMatchObject({ code: CLOVER_ERR.NOT_THE_USER }); // once
     expect(b.calls.at(-1)).toEqual({ method: "session.interrupt", sessionId: "s-2", params: peer }); // still the peer, not the user
     expect(b.stops).toEqual([]);
   });

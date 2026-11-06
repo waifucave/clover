@@ -7,7 +7,7 @@ import type { CloverProfile } from "../../profile";
 import type { DaemonPlatform } from "../transport";
 import { appStarter, resolveAppLauncher, type AppLauncher } from "./launch";
 import { DaemonPair, type DaemonPairOptions, type PairStopReason } from "./policy";
-import { mintAppToken, removeAppToken } from "./run-files";
+import { lockRunDir, mintAppToken, removeAppToken } from "./run-files";
 
 export interface DaemonPairSideInput {
   readonly runDir: string;
@@ -48,6 +48,7 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
   const run = input.run ?? bunRunner;
   const userSid = input.os === "win32" ? await windowsUserSid(run) : undefined;
   const files = { os: input.os, run, ...(userSid ? { userSid } : {}) };
+  await lockRunDir(input.runDir, files);
   const appToken = await mintAppToken(input.runDir, files);
   const launcher = input.launcher !== undefined
     ? input.launcher

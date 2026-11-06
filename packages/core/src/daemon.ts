@@ -35,6 +35,7 @@ import { createCloverServer, type CloverServer } from "./ipc/clover";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
+import { claimDaemonChildren } from "./platform/daemon-children";
 import { createHash as createDeviceHash } from "node:crypto";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -3104,13 +3105,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     stopDaemon: (why) => { if (!stopping) setTimeout(() => resolvePairStopped(why), 50); },
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
-  const sessionProcesses = new SessionProcesses();
+  const sessionProcesses = SessionProcesses.shared;
   cloverServer = createCloverServer({
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
     deviceId: createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32),
-    ...(pairSide ? { pair: pairSide.pair } : {}),
+    ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
+    endpoint: dirs.socketPath,
     log: (line) => console.error(line),
   });
   const server: IpcServer = startIpcServer({
@@ -3426,22 +3428,29 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 /** Starts the daemon. A start that THROWS after the embedded host registered its (process-global) storage-policy consumer would leave that
  *  consumer behind with no handle to stop it, so the failure path shuts the host down. */
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
+  // C-M1 (review B1): before anything is spawned, so every child stays the daemon's: Linux's subreaper, the
+  // daemon's own job on Windows.
+  claimDaemonChildren();
   let embedded: { shutdown(budgetMs?: number): Promise<void> } | undefined;
   try { return await startDaemonInner(host => { embedded = host; }, opts); }
   catch (error) { void embedded?.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {}); throw error; }
 }
 
 // Direct execution: `bun run src/daemon.ts` (also the compiled binary's `daemon run` path).
-if (import.meta.main) {
-  const daemon = await startDaemon();
+/** The signal stop (C-M1): SIGTERM and SIGINT stop the daemon at once, with no wait of the daemon's own (the
+ *  sender's bound is the only one); `stop()` sends the app `app.quit` first, so the pair stays down. The pair
+ *  stopping on purpose (a Quit, the app leaving for good) ends the run with exit 0 too. */
+export function stopOnSignals(daemon: RunningDaemon): void {
   // AWAITED (P8a Task 12): `stop()`'s tail drains the queued runtime-state deletions and releases
   // the lock — which unlinks the socket. Exiting without awaiting would leave a stale socket file,
   // the exact regression the CLI's own `daemon run` handler was written to prevent.
   const shutdown = async () => { await daemon.stop(); process.exit(0); };
-  // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0.
-  // A signal stops at once, with no wait of the daemon's own (the sender's bound is the only one):
-  // `stop()` sends the app `app.quit` first, so the pair stays down.
   void daemon.pairStopped.then(shutdown);
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
+}
+
+if (import.meta.main) {
+  const daemon = await startDaemon();
+  stopOnSignals(daemon);
 }

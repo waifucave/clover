@@ -22,13 +22,14 @@ describe("dialling the daemon safely (E-M1's review)", () => {
     expect(isOurDaemon(null, { userSid: s.userSid })).toBe(false);
   });
 
-  test("the daemon proves it holds the app token without the app sending it", () => {
+  test("the daemon proves it holds the app token without the app sending it, bound to the app's own connection", () => {
     const token = "t".repeat(43);
-    const proof = proveDaemon(token, "nonce-1");
-    expect(checkDaemonProof(token, "nonce-1", proof)).toBe(true);
-    expect(checkDaemonProof(token, "nonce-2", proof)).toBe(false); // bound to the app's nonce
-    expect(checkDaemonProof("u".repeat(43), "nonce-1", proof)).toBe(false); // a squatter without the token
-    expect(checkDaemonProof(token, "nonce-1", "short")).toBe(false);
+    const proof = proveDaemon(token, "nonce-1", 4242);
+    expect(checkDaemonProof(token, "nonce-1", proof, 4242)).toBe(true);
+    expect(checkDaemonProof(token, "nonce-2", proof, 4242)).toBe(false); // bound to the app's nonce
+    expect(checkDaemonProof(token, "nonce-1", proof, 5151)).toBe(false); // relayed from another process's connection
+    expect(checkDaemonProof("u".repeat(43), "nonce-1", proof, 4242)).toBe(false); // a squatter without the token
+    expect(checkDaemonProof(token, "nonce-1", "short", 4242)).toBe(false);
   });
 
   test.skipIf(process.platform !== "win32")("Windows: first instance only, an owner-only DACL, and the server's identity from the client", async () => {
