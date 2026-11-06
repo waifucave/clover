@@ -152,7 +152,7 @@ export function aclGrantInput(read: readonly string[], write: readonly string[])
 
 /** A warm-up launch: the principal's first logon creates its profile. Nothing is written. */
 export function warmUpArgs(o: { launcher: string; systemRoot: string }): readonly string[] {
-  return [o.launcher, "exec", "--quiet", "--", win32.join(o.systemRoot, "System32", "cmd.exe"), "/d", "/s", "/c", "exit 0"];
+  return [o.launcher, "exec", "--quiet", "--", win32.join(o.systemRoot, "System32", "cmd.exe"), "/d", "/c", "exit 0"];
 }
 
 /** `reg query HKLM\…\ProfileList\<sid> /v ProfileImagePath`: the principal's profile, resolved by SID. */
@@ -245,25 +245,28 @@ export function startupFolders(o: { profileRoot: string; realUserProfile: string
   return [under(o.profileRoot), under(o.realUserProfile), o.commonStartup];
 }
 
-/** `icacls <path> /deny <sid>:(OI)(CI)F`: the principal can't write the Startup folder or its children. */
+/** `icacls <path> /deny *<sid>:(OI)(CI)F`: the principal can't write the Startup folder or its children.
+ *  The `*` prefix marks the trustee as a SID: without it icacls reads the SID as an account name and
+ *  fails with "no mapping between account names and security IDs" (0x534). */
 export function icaclsDenyArgs(path: string, sid: string): readonly string[] {
-  return ["icacls", path, "/deny", `${sid}:(OI)(CI)F`];
+  return ["icacls", path, "/deny", `*${sid}:(OI)(CI)F`];
 }
 
-/** `icacls <path> /deny <sid>:(D)`: object-only DELETE deny, so the memory folder can't be deleted or moved
+/** `icacls <path> /deny *<sid>:(D)`: object-only DELETE deny, so the memory folder can't be deleted or moved
  *  (a rename needs DELETE). It leaves the folder's children alone, so the owner's write grant still works. */
 export function icaclsDeleteDenyArgs(path: string, sid: string): readonly string[] {
-  return ["icacls", path, "/deny", `${sid}:(D)`];
+  return ["icacls", path, "/deny", `*${sid}:(D)`];
 }
 
-/** `icacls <path> /remove:d <sid>`: undo a deny `sandbox remove` put there. */
+/** `icacls <path> /remove:d *<sid>`: undo a deny `sandbox remove` put there. */
 export function icaclsRemoveDenyArgs(path: string, sid: string): readonly string[] {
-  return ["icacls", path, "/remove:d", sid];
+  return ["icacls", path, "/remove:d", `*${sid}`];
 }
 
-/** `mkdir` a folder without a shell (cmd's mkdir is the one Windows always has). */
+/** `mkdir` a folder without a shell (cmd's mkdir is the one Windows always has). No `/s`: that switch strips
+ *  the outer quotes and breaks quoted paths; `if not exist` keeps the step idempotent with a real exit code. */
 export function mkdirArgs(path: string): readonly string[] {
-  return ["cmd", "/d", "/s", "/c", `mkdir "${path}" 2>nul & exit 0`];
+  return ["cmd", "/d", "/c", `if not exist "${path}" mkdir "${path}"`];
 }
 
 /** A step of setup/remove: its argv, optional stdin, and whether its failure fails the whole run. */
@@ -290,8 +293,8 @@ export function principalResetPlan(o: {
   return [
     { name: "unload-hive", argv: ["reg", "unload", `HKU\\${o.sid}`], required: false },
     { name: "remove-profile-key", argv: ["reg", "delete", profileKey, "/f"], required: true },
-    { name: "remove-profile-dir", argv: ["cmd", "/d", "/s", "/c", `rmdir /s /q "${o.profileRoot}"`], required: true },
-    { name: "remove-leftover-dirs", argv: ["cmd", "/d", "/s", "/c", `for /d %d in ("${win32.join(users, `${prefix}*`)}") do @rmdir /s /q "%d" 2>nul & exit 0`], required: false },
+    { name: "remove-profile-dir", argv: ["cmd", "/d", "/c", `rmdir /s /q "${o.profileRoot}"`], required: true },
+    { name: "remove-leftover-dirs", argv: ["cmd", "/d", "/c", `for /d %d in ("${win32.join(users, `${prefix}*`)}") do @rmdir /s /q "%d" 2>nul & exit 0`], required: false },
   ];
 }
 

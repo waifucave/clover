@@ -32,6 +32,10 @@ import {
   descriptionMatches,
   parseWhoamiSid,
   isTemporaryProfile,
+  icaclsDenyArgs,
+  icaclsDeleteDenyArgs,
+  icaclsRemoveDenyArgs,
+  mkdirArgs,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -476,5 +480,19 @@ describe("the owner-SID description check (Addendum 9)", () => {
   test("whoami csv output parses to the SID", () => {
     expect(parseWhoamiSid(`"test-vm\\testuser","${sid}"\r\n`)).toBe(sid);
     expect(parseWhoamiSid("garbage")).toBeNull();
+  });
+});
+
+describe("the icacls/cmd shapes (measured on the VM)", () => {
+  test("deny trustees carry the SID asterisk, or icacls reports 0x534", () => {
+    const sid = "S-1-5-21-1-2-3-1025";
+    expect(icaclsDenyArgs("C:\\s", sid)).toEqual(["icacls", "C:\\s", "/deny", `*${sid}:(OI)(CI)F`]);
+    expect(icaclsDeleteDenyArgs("C:\\m", sid)).toEqual(["icacls", "C:\\m", "/deny", `*${sid}:(D)`]);
+    expect(icaclsRemoveDenyArgs("C:\\s", sid)).toEqual(["icacls", "C:\\s", "/remove:d", `*${sid}`]);
+  });
+  test("mkdir avoids cmd /s quote-stripping and stays idempotent", () => {
+    const a = mkdirArgs("C:\\Users\\x\\Startup");
+    expect(a.slice(0, 3)).toEqual(["cmd", "/d", "/c"]);
+    expect(a[3]).toContain('if not exist "C:\\Users\\x\\Startup"');
   });
 });
