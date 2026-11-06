@@ -12,7 +12,7 @@ describe("ci-changes", () => {
     expect(matches("appsx/a.ts", "apps/")).toBe(false);
     expect(matches("scripts/verify-runtimes-compiled.ts", "scripts/verify-")).toBe(true);
     expect(matches("scripts/verify-x/y.ts", "scripts/verify-")).toBe(false);
-    expect(matches("plugins/clover/shell/package.json", "**/package.json")).toBe(true);
+    expect(matches("plugins/clover/plugins/shell/package.json", "**/package.json")).toBe(true);
     expect(matches("package.json", "**/package.json")).toBe(true);
     expect(matches("services/hello/tsconfig.test.json", "**/tsconfig*.json")).toBe(true);
     expect(matches("VERSION", "VERSION")).toBe(true);
@@ -24,8 +24,8 @@ describe("ci-changes", () => {
   });
 
   test("a plugin lane's change: the workspace tests, the gallery and the typecheck, and nothing on macOS but its own tests", () => {
-    expect(on(["plugins/clover/shell/src/a.tsx", "plugins/clover/shell/test/a.test.ts"])).toEqual(["workspaces", "gallery", "typecheck"]);
-    expect(on(["plugins/clover/shell/package.json"])).toEqual(["workspaces", "gallery", "typecheck", "lockfiles"]);
+    expect(on(["plugins/clover/plugins/shell/src/a.tsx", "plugins/clover/plugins/shell/test/a.test.ts"])).toEqual(["workspaces", "gallery", "typecheck"]);
+    expect(on(["plugins/clover/plugins/shell/package.json"])).toEqual(["workspaces", "gallery", "typecheck", "lockfiles"]);
   });
 
   test("a service's change: its tests and the typecheck", () => {
@@ -46,7 +46,7 @@ describe("ci-changes", () => {
     expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
     expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
-    expect(macJobs(["plugins/clover/shell/src/a.tsx"])).toEqual(["machine"]);
+    expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
 

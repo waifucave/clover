@@ -163,7 +163,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/base-theme:
+  plugins/clover/plugins/base-theme:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -172,7 +172,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/base-theme/gallery:
+  plugins/clover/plugins/base-theme/gallery:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -206,7 +206,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/composer:
+  plugins/clover/plugins/composer:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -240,7 +240,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/conversation:
+  plugins/clover/plugins/conversation:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -280,7 +280,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/fish-audio:
+  plugins/clover/plugins/fish-audio:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -289,7 +289,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/forwarder:
+  plugins/clover/plugins/forwarder:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -298,7 +298,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/island:
+  plugins/clover/plugins/island:
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -328,7 +328,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel:
+  plugins/clover/plugins/panel:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -362,7 +362,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-diff:
+  plugins/clover/plugins/panel-diff:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -396,7 +396,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-files:
+  plugins/clover/plugins/panel-files:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -430,7 +430,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-terminal:
+  plugins/clover/plugins/panel-terminal:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -464,7 +464,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/pill:
+  plugins/clover/plugins/pill:
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -494,7 +494,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/push:
+  plugins/clover/plugins/push:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -503,7 +503,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/settings:
+  plugins/clover/plugins/settings:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -537,7 +537,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/shell:
+  plugins/clover/plugins/shell:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -574,7 +574,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/sidebar:
+  plugins/clover/plugins/sidebar:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -608,7 +608,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/vrm:
+  plugins/clover/plugins/vrm:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5

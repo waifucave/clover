@@ -108,7 +108,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/base-theme": {
+    "plugins/clover/plugins/base-theme": {
       "name": "@waifucave/clover-plugin-base-theme",
       "version": "0.0.0",
       "devDependencies": {
@@ -116,7 +116,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/base-theme/gallery": {
+    "plugins/clover/plugins/base-theme/gallery": {
       "name": "@waifucave/clover-lane-g-gallery",
       "version": "0.0.0",
       "dependencies": {
@@ -134,7 +134,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/composer": {
+    "plugins/clover/plugins/composer": {
       "name": "@waifucave/clover-plugin-composer",
       "version": "0.0.0",
       "dependencies": {
@@ -152,7 +152,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/conversation": {
+    "plugins/clover/plugins/conversation": {
       "name": "@waifucave/clover-plugin-conversation",
       "version": "0.0.0",
       "dependencies": {
@@ -172,7 +172,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/fish-audio": {
+    "plugins/clover/plugins/fish-audio": {
       "name": "@waifucave/clover-plugin-fish-audio",
       "version": "0.0.0",
       "devDependencies": {
@@ -180,7 +180,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/forwarder": {
+    "plugins/clover/plugins/forwarder": {
       "name": "@waifucave/clover-plugin-forwarder",
       "version": "0.0.0",
       "devDependencies": {
@@ -188,7 +188,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/island": {
+    "plugins/clover/plugins/island": {
       "name": "@waifucave/clover-plugin-island",
       "version": "0.0.0",
       "devDependencies": {
@@ -207,7 +207,7 @@
         "react-dom": "^19.3.0",
       },
     },
-    "plugins/clover/panel": {
+    "plugins/clover/plugins/panel": {
       "name": "@waifucave/clover-plugin-panel",
       "version": "0.0.0",
       "dependencies": {
@@ -225,7 +225,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/panel-diff": {
+    "plugins/clover/plugins/panel-diff": {
       "name": "@waifucave/clover-plugin-panel-diff",
       "version": "0.0.0",
       "dependencies": {
@@ -243,7 +243,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/panel-files": {
+    "plugins/clover/plugins/panel-files": {
       "name": "@waifucave/clover-plugin-panel-files",
       "version": "0.0.0",
       "dependencies": {
@@ -261,7 +261,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/panel-terminal": {
+    "plugins/clover/plugins/panel-terminal": {
       "name": "@waifucave/clover-plugin-panel-terminal",
       "version": "0.0.0",
       "dependencies": {
@@ -279,7 +279,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/pill": {
+    "plugins/clover/plugins/pill": {
       "name": "@waifucave/clover-plugin-pill",
       "version": "0.0.0",
       "devDependencies": {
@@ -298,7 +298,7 @@
         "react-dom": "^19.3.0",
       },
     },
-    "plugins/clover/push": {
+    "plugins/clover/plugins/push": {
       "name": "@waifucave/clover-plugin-push",
       "version": "0.0.0",
       "devDependencies": {
@@ -306,7 +306,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/settings": {
+    "plugins/clover/plugins/settings": {
       "name": "@waifucave/clover-plugin-settings",
       "version": "0.0.0",
       "dependencies": {
@@ -324,7 +324,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/shell": {
+    "plugins/clover/plugins/shell": {
       "name": "@waifucave/clover-plugin-shell",
       "version": "0.0.0",
       "dependencies": {
@@ -343,7 +343,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/sidebar": {
+    "plugins/clover/plugins/sidebar": {
       "name": "@waifucave/clover-plugin-sidebar",
       "version": "0.0.0",
       "dependencies": {
@@ -361,7 +361,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/vrm": {
+    "plugins/clover/plugins/vrm": {
       "name": "@waifucave/clover-plugin-vrm",
       "version": "0.0.0",
       "dependencies": {
@@ -820,43 +820,43 @@
 
     "@waifucave/clover-desktop": ["@waifucave/clover-desktop@workspace:apps/desktop"],
 
-    "@waifucave/clover-lane-g-gallery": ["@waifucave/clover-lane-g-gallery@workspace:plugins/clover/base-theme/gallery"],
+    "@waifucave/clover-lane-g-gallery": ["@waifucave/clover-lane-g-gallery@workspace:plugins/clover/plugins/base-theme/gallery"],
 
     "@waifucave/clover-plugin-alpha-tab": ["@waifucave/clover-plugin-alpha-tab@workspace:plugins/alpha/tab"],
 
-    "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/base-theme"],
+    "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/plugins/base-theme"],
 
-    "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/composer"],
+    "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/plugins/composer"],
 
-    "@waifucave/clover-plugin-conversation": ["@waifucave/clover-plugin-conversation@workspace:plugins/clover/conversation"],
+    "@waifucave/clover-plugin-conversation": ["@waifucave/clover-plugin-conversation@workspace:plugins/clover/plugins/conversation"],
 
-    "@waifucave/clover-plugin-fish-audio": ["@waifucave/clover-plugin-fish-audio@workspace:plugins/clover/fish-audio"],
+    "@waifucave/clover-plugin-fish-audio": ["@waifucave/clover-plugin-fish-audio@workspace:plugins/clover/plugins/fish-audio"],
 
-    "@waifucave/clover-plugin-forwarder": ["@waifucave/clover-plugin-forwarder@workspace:plugins/clover/forwarder"],
+    "@waifucave/clover-plugin-forwarder": ["@waifucave/clover-plugin-forwarder@workspace:plugins/clover/plugins/forwarder"],
 
-    "@waifucave/clover-plugin-island": ["@waifucave/clover-plugin-island@workspace:plugins/clover/island"],
+    "@waifucave/clover-plugin-island": ["@waifucave/clover-plugin-island@workspace:plugins/clover/plugins/island"],
 
-    "@waifucave/clover-plugin-panel": ["@waifucave/clover-plugin-panel@workspace:plugins/clover/panel"],
+    "@waifucave/clover-plugin-panel": ["@waifucave/clover-plugin-panel@workspace:plugins/clover/plugins/panel"],
 
-    "@waifucave/clover-plugin-panel-diff": ["@waifucave/clover-plugin-panel-diff@workspace:plugins/clover/panel-diff"],
+    "@waifucave/clover-plugin-panel-diff": ["@waifucave/clover-plugin-panel-diff@workspace:plugins/clover/plugins/panel-diff"],
 
-    "@waifucave/clover-plugin-panel-files": ["@waifucave/clover-plugin-panel-files@workspace:plugins/clover/panel-files"],
+    "@waifucave/clover-plugin-panel-files": ["@waifucave/clover-plugin-panel-files@workspace:plugins/clover/plugins/panel-files"],
 
-    "@waifucave/clover-plugin-panel-terminal": ["@waifucave/clover-plugin-panel-terminal@workspace:plugins/clover/panel-terminal"],
+    "@waifucave/clover-plugin-panel-terminal": ["@waifucave/clover-plugin-panel-terminal@workspace:plugins/clover/plugins/panel-terminal"],
 
-    "@waifucave/clover-plugin-pill": ["@waifucave/clover-plugin-pill@workspace:plugins/clover/pill"],
+    "@waifucave/clover-plugin-pill": ["@waifucave/clover-plugin-pill@workspace:plugins/clover/plugins/pill"],
 
-    "@waifucave/clover-plugin-push": ["@waifucave/clover-plugin-push@workspace:plugins/clover/push"],
+    "@waifucave/clover-plugin-push": ["@waifucave/clover-plugin-push@workspace:plugins/clover/plugins/push"],
 
     "@waifucave/clover-plugin-sdk": ["@waifucave/clover-plugin-sdk@workspace:packages/plugin-sdk"],
 
-    "@waifucave/clover-plugin-settings": ["@waifucave/clover-plugin-settings@workspace:plugins/clover/settings"],
+    "@waifucave/clover-plugin-settings": ["@waifucave/clover-plugin-settings@workspace:plugins/clover/plugins/settings"],
 
-    "@waifucave/clover-plugin-shell": ["@waifucave/clover-plugin-shell@workspace:plugins/clover/shell"],
+    "@waifucave/clover-plugin-shell": ["@waifucave/clover-plugin-shell@workspace:plugins/clover/plugins/shell"],
 
-    "@waifucave/clover-plugin-sidebar": ["@waifucave/clover-plugin-sidebar@workspace:plugins/clover/sidebar"],
+    "@waifucave/clover-plugin-sidebar": ["@waifucave/clover-plugin-sidebar@workspace:plugins/clover/plugins/sidebar"],
 
-    "@waifucave/clover-plugin-vrm": ["@waifucave/clover-plugin-vrm@workspace:plugins/clover/vrm"],
+    "@waifucave/clover-plugin-vrm": ["@waifucave/clover-plugin-vrm@workspace:plugins/clover/plugins/vrm"],
 
     "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
 

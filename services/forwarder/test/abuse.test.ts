@@ -6,10 +6,10 @@ import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
-import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
-import { decodeRequestRecord, keyId, openEnvelope } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { generateX25519 } from "../../../plugins/clover/forwarder/src/wire/hpke";
-import { decodeWebhookFrame, hookKeyHash, type RoutineInfo } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { b64u, fromUtf8 } from "../../../plugins/clover/plugins/forwarder/src/wire/bytes";
+import { decodeRequestRecord, keyId, openEnvelope } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
+import { generateX25519 } from "../../../plugins/clover/plugins/forwarder/src/wire/hpke";
+import { decodeWebhookFrame, hookKeyHash, type RoutineInfo } from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 import { REVOCATION_KEEP_MS, type ForwarderDO } from "../src/forwarder-do";
 import { limitsFrom } from "../src/env";
 import {
