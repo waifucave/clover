@@ -2,9 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { bridgeMethodHandlers, createCloverServer, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
+import { bridgeMethodHandlers, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
+import { handler, MethodError } from "../../src/bots/rpc";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
 import { SessionStore } from "../../src/sessions/store";
@@ -121,12 +122,24 @@ describe("Clover connections (C-M1)", () => {
       sendMessage: async (sessionId, m) => { calls.push({ method: "bridge.sendMessage", sessionId, params: m }); },
       glossary: async (sessionId, q) => { calls.push({ method: "glossary.query", sessionId, params: q }); return { results: [], loaded: [] }; },
     });
+    // A lane's handlers in D's shape (bots/rpc.ts): session.attach streams, session.detach stops, and
+    // session.list refuses with a MethodError.
+    const unfollowed: string[] = [];
+    const laneHandlers = laneMethodHandlers({
+      "session.attach": handler(SESSIONS_METHODS.sessionAttach, (p, ctx) => {
+        calls.push({ method: "session.attach", sessionId: p.id, params: ctx.caller });
+        ctx.stream!.follows.set(p.id, () => { unfollowed.push(p.id); });
+        ctx.stream!.send({ type: "text_delta", seq: 3, sessionId: p.id, ts: 1, delta: "hi" });
+        return { lastSeq: 3 };
+      }),
+      "session.list": handler(SESSIONS_METHODS.sessionList, () => { throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user can list", { why: "test" }); }),
+    });
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair,
-      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: bridgeHandlers,
+      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid) => { killed.push(pid); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
-    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, setPeer: (p: PeerFacts) => { peer = p; } };
+    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, unfollowed, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("the app says hello with this run's token and counts as the user", async () => {
@@ -328,5 +341,21 @@ describe("Clover connections (C-M1)", () => {
     expect((await c.hello("bridge", gate.token, { agentSessionId: "s-agent" })).result.ok).toBe(true);
     expect(gate.seen).toEqual([process.pid]); // this test process is the client
     c.close();
+  });
+
+  test("lane handlers in D's shape: the caller, a session's events as `event`, MethodError's code and data, follows ended at close", async () => {
+    const b = await boot();
+    const c = await Client.connect(b.socketPath);
+    await c.hello("cli", b.legacy.harness);
+    expect((await c.request("session.attach", { id: "s-1" })).result).toEqual({ lastSeq: 3 });
+    expect(b.calls).toEqual([{ method: "session.attach", sessionId: "s-1", params: { kind: "user", client: "cli" } }]);
+    for (let i = 0; i < 100 && c.fromDaemon.length === 0; i++) await Bun.sleep(5);
+    expect(c.fromDaemon[0]).toEqual({ jsonrpc: "2.0", method: "event", params: { type: "text_delta", seq: 3, sessionId: "s-1", ts: 1, delta: "hi" } });
+    const refused = await c.request("session.list", {});
+    expect(refused.error).toEqual({ code: CLOVER_ERR.NOT_THE_USER, message: "only the user can list", data: { why: "test" } });
+    expect((await c.request("session.attach", { id: 7 })).error.code).toBe(ERR.INVALID_PARAMS);
+    c.close();
+    for (let i = 0; i < 100 && b.unfollowed.length === 0; i++) await Bun.sleep(5);
+    expect(b.unfollowed).toEqual(["s-1"]);
   });
 });

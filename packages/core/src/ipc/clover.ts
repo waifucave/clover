@@ -11,6 +11,8 @@
 // the token, the agent session it names, and the kernel's pid for the caller (`LOCAL_PEERPID`,
 // `SO_PEERCRED`, or the pipe's client pid on Windows), with one live connection per token. A revoked
 // token's connection is closed. `bridgeMethodHandlers` mounts K's handlers for the role's four methods.
+// `laneMethodHandlers` mounts handlers written in D's shape (`bots/rpc.ts`; D's sessions, H's devices,
+// the usage counter): each runs as the connection's caller, with its event stream.
 import {
   CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
@@ -37,9 +39,27 @@ export interface CloverConn {
   readonly areas: Set<string>;
   /** Send the client a request from the daemon (`app.quit`, `app.show`, `pluginHost.invoke`…); its id. */
   send(method: string, params: unknown): string;
+  /** Send the client a notification (`event` for a session's events, `core.event`). */
+  notify(method: string, params: unknown): void;
+  /** The sessions this connection follows live (`session.attach`), each with its unsubscribe; ended at close. */
+  readonly follows: Map<string, () => void>;
 }
 
 export type CloverHandler = (conn: CloverConn, params: unknown) => Promise<unknown> | unknown;
+
+/** A handler in the shape lanes D, H and the usage counter write theirs (`bots/rpc.ts`'s `MethodHandler`): the
+ *  params and who calls, with the connection's event stream for a method that follows a session. */
+export type LaneMethodHandler = (params: unknown, ctx: {
+  caller: Caller;
+  stream?: { send(event: { type: string; seq: number; sessionId: string; ts: number; [key: string]: unknown }): void; follows: Map<string, () => void> };
+}) => Promise<unknown>;
+
+/** Mounts lane handlers on Clover connections: each runs as the connection's caller, and a session's events go
+ *  to it as the inherited `event` notification. Their errors (`MethodError`: code, message, data) pass as they are. */
+export function laneMethodHandlers(handlers: Readonly<Record<string, LaneMethodHandler>>): Record<string, CloverHandler> {
+  return Object.fromEntries(Object.entries(handlers).map(([name, h]) => [name, (conn: CloverConn, params: unknown) =>
+    h(params, { caller: conn.caller, stream: { send: (event) => conn.notify("event", event), follows: conn.follows } })]));
+}
 
 /** What K's bridge tokens answer (`agents/bridge/tokens.ts`, `BridgeAcceptance`). */
 export type BridgeVerdict = { ok: true; sessionId: string; connection: number } | { ok: false; reason: string };
@@ -269,6 +289,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       const conn: CloverConn = {
         connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(),
         send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
+        notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
+        follows: new Map(),
       };
       conns.set(connId, conn);
       if (h.role === "app") { deps.pair?.appConnected(String(connId), conn.features); startBeat(conn, peer.pid); }
@@ -298,6 +320,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       if (conn === null) return;
       stopBeat(conn.connId);
       conns.delete(conn.connId);
+      for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
+      conn.follows.clear();
       const b = bridged.get(conn.connId);
       if (b) { bridged.delete(conn.connId); deps.bridge?.gate.release(b.sessionId, b.connection); }
       if (conn.role === "app") deps.pair?.appDisconnected(String(conn.connId));
