@@ -37,7 +37,7 @@
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
 import {
-  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type RoutineRunView, type SessionView, type Text, type UserMessageInput,
+  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type UserMessageInput,
 } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -81,6 +81,12 @@ export interface BotSessionContext {
   readonly computer: string;
   /** The bot's memory, agents' transcripts and scratch, which the system prompt names (§6.5). */
   readonly paths: BotPaths;
+  /** A side thread's level (its routine's, once its card was answered, §7); undefined: the computer's. */
+  readonly level?: Level;
+  /** Whether the session may write the bot's memory: only on the computer running the bot, its one writer (§6.5). A
+   *  side thread on another computer reads memory but doesn't write it; what it learned goes in its result, which the
+   *  bot's conversation reads and may keep. */
+  mayWriteMemory(): boolean;
   /** Who the session is when it calls anything, its bot named (§5.4; the controller's L-M1 answer): the runtime binds
    *  each tool call's caller from this, never from what a plugin says (R7). */
   readonly caller: Extract<Caller, { kind: "session" }>;
@@ -155,6 +161,10 @@ export interface SideThreadRun {
   text: string;
   /** The computer that holds the routine; default this one. */
   computer?: string;
+  /** The level the run gets: the routine's own, once its card was answered, else its computer's (§7). */
+  level?: Level;
+  /** Told the side thread's id as the run starts (`routine.runNow` answers with it). */
+  onSession?(id: string): void;
 }
 
 /** How long a hand-back waits for the bots' running turns to end before it gives up (they stay here). */
@@ -389,7 +399,8 @@ export class BotService {
     host.open({
       id: session, kind: "side-thread", bot: id, parent: live.mainSession, computer, title: run.name, routine: run.routine,
       model: eff.model, ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-    }, this.#o.drivers(this.#context(live, session, "side-thread", computer)));
+    }, this.#o.drivers(this.#context(live, session, "side-thread", computer, run.level)));
+    run.onSession?.(session);
     const ended = new Promise<TurnEnd>((resolve) => {
       const off = host.subscribe(session, (r) => {
         if (r.type === "turn_ended") {
@@ -652,10 +663,12 @@ export class BotService {
     };
   }
 
-  #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string): BotSessionContext {
+  #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string, level?: Level): BotSessionContext {
     const paths = botPaths(this.#o.home, live.plugin.id);
     const gate = this.#o.gate;
     return {
+      ...(level === undefined ? {} : { level }),
+      mayWriteMemory: () => gate.main.runsHere(),
       botId: live.plugin.id,
       sessionId,
       kind,
@@ -663,7 +676,7 @@ export class BotService {
       paths,
       caller: { kind: "session", sessionId, sessionKind: kind, bot: live.plugin.id },
       current: () => this.#effective(live),
-      memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
+      memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer, readOnly: !gate.main.runsHere() }),
       mayAct: () => gate.mayAct({ kind }),
       whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,

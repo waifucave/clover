@@ -65,7 +65,7 @@ function escapeTags(text: string): string {
 }
 
 /** The block itself. `computer` is the one whose scratch folder it names (the session's own computer). */
-export function memoryBlock(o: { paths: BotPaths; computer: string }): string {
+export function memoryBlock(o: { paths: BotPaths; computer: string; readOnly?: boolean }): string {
   const { paths } = o;
   const index = readMemoryIndex(paths);
   const lines = [
@@ -76,6 +76,7 @@ export function memoryBlock(o: { paths: BotPaths; computer: string }): string {
     `- Your background agents' transcripts: ${paths.agents}/ (each task notification names its file).`,
     `- Scratch, for working files: ${paths.scratch}/ on ${o.computer}. It is never synced and isn't memory.`,
   ];
+  if (o.readOnly) lines.push("This computer doesn't run your main conversation, so your memory is read-only here: don't write to it. Put anything worth remembering in your result, and your main conversation will keep it.");
   if (index === undefined || index.text.trim() === "") lines.push(`${MEMORY_INDEX} is empty so far.`);
   else {
     lines.push(`${MEMORY_INDEX} now${index.cut ? " (cut here; read the file for the rest)" : ""}:`, "<memory-index>", escapeTags(index.text.trimEnd()), "</memory-index>");
