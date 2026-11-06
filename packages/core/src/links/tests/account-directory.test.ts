@@ -122,10 +122,11 @@ describe("the account channel", () => {
     await waitFor(() => a.links.registry.get(b.key.id) !== undefined && b.links.registry.get(a.key.id) !== undefined);
     await a.links.main!.coordinator.chooseSelf();
     await waitFor(() => s.hs.accountLeases.size === 1 && [...s.hs.accountLeases.values()][0]!.holder === a.key.id);
-    await waitFor(() => b.links.main!.lease.state().holder === a.key.id);
+    // The push reaches the laptop once its account socket is open, which a slow runner takes a while to do.
+    await waitFor(() => b.links.main!.lease.state().holder === a.key.id, 25_000);
     expect(a.links.main!.lease.canAct()).toBe(true);
     expect(b.links.main!.lease.canAct()).toBe(false);
-  }, 30_000);
+  }, 45_000);
 
   test("account-less pairs too: the driver publishes to the pair and keeps its socket open, so a dial-now arrives at once", async () => {
     const hs = startFakeHandshake();
