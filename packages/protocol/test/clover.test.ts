@@ -15,7 +15,7 @@ import {
 } from "../src/common";
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
 import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION, HOST_PROCESSES } from "../src/common";
-import { METHODS, SessionEvent } from "../src/index";
+import { METHODS, STAGE_IMAGE_B64_MAX_LENGTH, SessionEvent } from "../src/index";
 import { CARD_ANSWER_SKEW_MS, SealedValue, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardContentInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
 import { isBrowserUrlAllowed, isCdpMethodAllowed } from "../src/browser";
@@ -91,7 +91,7 @@ describe("the method table", () => {
     expect(reused).toEqual([
       "plugin.install", "plugin.list", "plugin.restart", "plugin.update", "protocol.hello",
       "session.attach", "session.compact", "session.history", "session.interrupt", "session.list",
-      "session.send", "session.setModel", "sync.heads", "sync.pull", "sync.push", "usage.summary",
+      "session.send", "session.setModel", "session.stageImage", "sync.heads", "sync.pull", "sync.push", "usage.summary",
       "memory.list", "memory.read",
     ].sort());
   });
@@ -313,6 +313,19 @@ describe("the allow lists", () => {
     const read = CLOVER_METHODS.get("session.history")!;
     expect(pluginMayCall(read, ["conversation.read"])).toBe(true);
     expect(pluginMayCall(read, ["conversation.post"])).toBe(false);
+  });
+});
+
+describe("session.stageImage (lane D, for lane I's phone)", () => {
+  test("the user's, for the app, the CLI and the remote role, with the app's caps", () => {
+    const stage = CLOVER_METHODS.get("session.stageImage")!;
+    expect(stage.userOnly).toBe(true);
+    for (const role of ["app", "cli", "remote"] as const) expect([role, calls(role).has("session.stageImage")]).toEqual([role, true]);
+    expect(calls("web").has("session.stageImage")).toBe(false);
+    expect(stage.params.safeParse({ id: "s_luna", mediaType: "image/heic", dataBase64: "AAAA" }).success).toBe(true);
+    expect(stage.params.safeParse({ id: "s_luna", mediaType: "image/svg+xml", dataBase64: "AAAA" }).success).toBe(false);
+    expect(stage.params.safeParse({ id: "s_luna", mediaType: "image/png", dataBase64: "A".repeat(STAGE_IMAGE_B64_MAX_LENGTH + 4) }).success).toBe(false);
+    expect(stage.result.safeParse({ path: "/tmp/clover-session-s_luna/images/image_1.png" }).success).toBe(true);
   });
 });
 

@@ -188,7 +188,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     },
     methods: (deps) => ({
       ...sessionsMethods({
-        home: o.home, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
+        home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
       }),
       ...(routines === undefined ? {} : routineMethods({ routines })),

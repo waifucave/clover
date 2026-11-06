@@ -97,6 +97,7 @@
       "session.list",
       "session.send",
       "session.setModel",
+      "session.stageImage",
       "session.stop",
       "terminal.close",
       "terminal.open",
@@ -325,6 +326,7 @@
       "session.list",
       "session.send",
       "session.setModel",
+      "session.stageImage",
       "session.stop",
       "update.apply",
       "update.status",
@@ -427,6 +429,7 @@
       "session.list",
       "session.send",
       "session.setModel",
+      "session.stageImage",
       "session.stop",
       "usage.summary"
     ],

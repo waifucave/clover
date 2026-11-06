@@ -8,6 +8,7 @@ import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller,
 import type { z } from "zod";
 import type { Unsubscribe } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
+import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import type { WireEvent } from "../../sessions/wire";
 import { botPaths } from "../paths";
 import { MethodError, sessionsMethods, type MethodContext } from "../rpc";
@@ -200,10 +201,42 @@ describe("the sessions area's methods", () => {
     const message = { text: "look [Image #1]", clientMessageId: "i1", images: [{ n: 1, path: join(home, "user-layers", "alpha.json") }] };
     const remote = await fails(M.sessionSend, { id: "b_alpha", message }, thePhone);
     expect(remote.code).toBe(ERR.INVALID_PARAMS);
-    expect(remote.message).toContain("client on this computer");
+    expect(remote.message).toContain("isn't an image this device staged for this session");
     // Here, a file inside the Clover home is no image of the user's.
     expect((await fails(M.sessionSend, { id: "b_alpha", message })).code).toBe(ERR.INVALID_PARAMS);
     expect(b.host.history("b_alpha").some((r) => r.type === "input")).toBe(false);
+    await b.shutdown();
+  });
+
+  test("session.stageImage is the user's; a phone names exactly the images it staged in that session, never its own files", async () => {
+    const { b, call, fails } = await setup();
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const stage = { id: "b_alpha", mediaType: "image/png", dataBase64: png };
+    expect((await fails(M.sessionStageImage, stage, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionStageImage, stage, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    // The bytes must be the type they say.
+    expect((await fails(M.sessionStageImage, { ...stage, mediaType: "image/jpeg" }, thePhone)).code).toBe(ERR.INVALID_PARAMS);
+    const { path } = await call(M.sessionStageImage, stage, thePhone);
+    expect(path).toMatch(/\/images\/image_\d+\.png$/);
+    const send = (n: number, p: string, clientMessageId: string) => ({ id: "b_alpha", message: { text: `look [Image #${n}]`, clientMessageId, images: [{ n, path: p }] } });
+    // Another device, or the app on another computer, can't name the phone's image; nor can the phone name another's.
+    const otherPhone: Caller = { kind: "user", client: "ios", device: "phone11111111111111" };
+    expect((await fails(M.sessionSend, send(1, path, "p0"), otherPhone)).message).toContain("this device staged");
+    const { path: appPath } = await call(M.sessionStageImage, stage);
+    expect((await fails(M.sessionSend, send(1, appPath, "p1"), thePhone)).message).toContain("this device staged");
+    // Its own image goes.
+    await call(M.sessionSend, send(1, path, "p2"), thePhone);
+    await flush();
+    const input = b.host.history("b_alpha").find((r) => r.type === "input");
+    expect(input?.type === "input" && input.input.from === "user" && input.input.images).toEqual([{ n: 1, path }]);
+    // The app here names any staged copy for this session, as before.
+    await call(M.sessionSend, send(1, appPath, "p3"));
+    // A session this computer doesn't hold isn't staged for.
+    expect((await fails(M.sessionStageImage, { ...stage, id: "s_nosuch" }, thePhone)).code).toBe(ERR.NOT_FOUND);
+    b.host.open({ id: "s_box", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Box", backend: "codex" }, new FakeSessionDriver({ canFold: false }));
+    const here = sessionsMethods({ home: tempDir(), computer: "Studio", bots: b.bots, host: b.host, clock: new FakeClock(), localDevice: "studio0000000000000" });
+    const elsewhere = await here[M.sessionStageImage.name]!({ ...stage, id: "s_box" }, { caller: thePhone }).catch((e: unknown) => e);
+    expect(elsewhere instanceof MethodError && elsewhere.message).toContain("runs on Box");
     await b.shutdown();
   });
 

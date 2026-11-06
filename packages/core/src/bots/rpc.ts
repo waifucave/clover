@@ -18,7 +18,7 @@ import {
 } from "@waifucave/clover-protocol";
 import type { DeviceRegistry } from "../contracts/device-registry";
 import { verifyUserMessage } from "../contracts/session-host";
-import { StageImageRefusal, validateImageRefs } from "../agent/stage-image";
+import { StageImageRefusal, stageSessionImage, validateImageRefs } from "../agent/stage-image";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
 import type { DurableSessionHost } from "../sessions/durable-host";
@@ -83,10 +83,17 @@ export interface SessionsMethodsDeps {
   clock: Clock;
   /** This device's id, for a message the user sends from this computer's app or terminal (lane H's device key). */
   localDevice: string;
+  /** This computer's name: `session.stageImage` stages only for a session it holds. */
+  computer?: string;
   /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
 }
+
+/** How many staged images a client off this computer can name per session: its most recent ones. */
+export const REMOTE_STAGED_KEPT = 64;
+/** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
+const STAGED_KEEP_RECORDS = 2_000;
 
 const HISTORY_SCAN_STEP = 200;
 /** How many records `session.attach` reads at a time while it replays. */
@@ -97,12 +104,22 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
   const M = SESSIONS_METHODS;
   /** A caller other than the user's own app and devices gets cards without their sealed parts. */
   const sealed = (ctx: MethodContext) => !readsSealed(ctx.caller);
-  /** A message's images (§6.6 "attachments"): only a client on this computer names a file here, and each one is held to
-   *  the inherited rules (staged for this session, or the user's own image file, never inside the Clover home). */
-  const checkedImages = (caller: Extract<Caller, { kind: "user" }>, id: string, text: string, images: readonly UserMessageImageRef[] | undefined): UserMessageImageRef[] | undefined => {
+  type UserCaller = Extract<Caller, { kind: "user" }>;
+  const isLocal = (caller: UserCaller) => (caller.client === "app" || caller.client === "cli") && (caller.device === undefined || caller.device === deps.localDevice);
+  /** What each client off this computer staged, per session: the only images it may name. */
+  const stagedByRemote = new Map<string, string[]>();
+  const remoteKey = (id: string, caller: UserCaller) => `${id}\n${caller.client}\n${caller.device ?? ""}`;
+  /** A message's images (§6.6 "attachments"), each held to the inherited rules (staged for this session, or the user's
+   *  own image file, never inside the Clover home). A client on this computer names either; a client off it (the
+   *  phone) names only images it staged itself through `session.stageImage` in this session, never a file of its own. */
+  const checkedImages = (caller: UserCaller, id: string, text: string, images: readonly UserMessageImageRef[] | undefined): UserMessageImageRef[] | undefined => {
     if (images === undefined || images.length === 0) return undefined;
-    const local = (caller.client === "app" || caller.client === "cli") && (caller.device === undefined || caller.device === deps.localDevice);
-    if (!local) throw new MethodError(ERR.INVALID_PARAMS, "images can only be sent by a client on this computer", { code: IMAGE_REFERENCE_INVALID });
+    if (!isLocal(caller)) {
+      const mine = new Set(stagedByRemote.get(remoteKey(id, caller)) ?? []);
+      for (const ref of images) {
+        if (!mine.has(ref.path)) throw new MethodError(ERR.INVALID_PARAMS, `[Image #${ref.n}] isn't an image this device staged for this session`, { code: IMAGE_REFERENCE_INVALID, n: ref.n });
+      }
+    }
     try {
       return validateImageRefs(id, text, images, { cloverHome: deps.home });
     } catch (err) {
@@ -122,7 +139,57 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     return v;
   };
 
+  /** The staged copies a bot conversation's recent messages still name: the prune keeps them. */
+  const namedStaged = (id: string): Set<string> => {
+    const out = new Set<string>();
+    // The log's length, by doubling then halving on one-record reads, then its last records.
+    let lo = 0;
+    let hi = 1;
+    while (host.history(id, { afterSeq: hi - 1, limit: 1 }).length > 0) {
+      lo = hi;
+      hi *= 2;
+    }
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (host.history(id, { afterSeq: mid - 1, limit: 1 }).length > 0) lo = mid + 1;
+      else hi = mid;
+    }
+    const from = Math.max(0, lo - STAGED_KEEP_RECORDS);
+    for (const r of host.history(id, { afterSeq: from - 1, limit: STAGED_KEEP_RECORDS })) {
+      if (r.type === "input" && r.input.from === "user") for (const ref of r.input.images ?? []) out.add(ref.path);
+    }
+    for (const [key, paths] of stagedByRemote) if (key.startsWith(`${id}\n`)) for (const p of paths) out.add(p);
+    return out;
+  };
+
   return {
+    [M.sessionStageImage.name]: handler(M.sessionStageImage, async ({ id, mediaType, dataBase64 }, ctx) => {
+      const caller = requireUser(ctx, "attach an image");
+      const v = reachable(id);
+      // On the computer that holds the session: a bot's conversation where its bot runs, any other session here.
+      if (v.kind === "bot" && v.bot !== undefined && bots.mainSession(v.bot) === id) {
+        if (!bots.botsRunHere().includes(v.bot)) throw new ContractError("refused", `${v.bot}'s conversation runs on another computer; stage the image there`);
+      } else if (deps.computer !== undefined && v.computer !== deps.computer) {
+        throw new ContractError("refused", `${id} runs on ${v.computer}; stage the image there`);
+      }
+      // A bot's conversation lives for months, as the inherited dispatch session did: staging lets go of its stale copies first,
+      // never one a recent message (or a device's pending stage) still names.
+      const longLived = v.kind === "bot";
+      let path: string;
+      try {
+        path = stageSessionImage({ sessionId: id, mediaType, dataBase64 }, longLived ? { keep: () => namedStaged(id) } : {});
+      } catch (err) {
+        if (err instanceof StageImageRefusal) throw new MethodError(err.internal ? ERR.INTERNAL : ERR.INVALID_PARAMS, err.message, { code: err.code });
+        throw new MethodError(ERR.INTERNAL, "the image couldn't be staged", { code: "image_stage_failed" });
+      }
+      if (!isLocal(caller)) {
+        const key = remoteKey(id, caller);
+        const list = [...(stagedByRemote.get(key) ?? []), path].slice(-REMOTE_STAGED_KEPT);
+        stagedByRemote.set(key, list);
+      }
+      return { path };
+    }),
+
     [M.botList.name]: handler(M.botList, async (): Promise<{ bots: BotView[] }> => ({ bots: bots.list() })),
 
     [M.botGet.name]: handler(M.botGet, async ({ id }) => {

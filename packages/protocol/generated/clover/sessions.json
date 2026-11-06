@@ -1406,6 +1406,66 @@
         "additionalProperties": false
       }
     },
+    "session.stageImage": {
+      "doc": "Stages an image for a session's next message, on the computer that holds it, with the app's caps (§6.6 \"attachments\"): the media types the bytes must sniff as, and the size. `session.send` names it by the path given back; a client off this computer (a phone, lane I) names only images staged so, never a file of its own.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/gif",
+              "image/webp",
+              "image/heic",
+              "image/tiff",
+              "image/bmp"
+            ]
+          },
+          "dataBase64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8126464
+          }
+        },
+        "required": [
+          "id",
+          "mediaType",
+          "dataBase64"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session.compact": {
       "doc": "Compacts now, so new instructions apply at once at the cost of a cache miss (§5.6).",
       "owner": "D",
