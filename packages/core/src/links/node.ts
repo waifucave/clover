@@ -27,7 +27,7 @@ import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
 import { PairingService, type PairingRendezvous } from "./pairing";
 import { mountRenameRequests, shareDeviceUpdates } from "./relay";
-import { followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
+import { allowListsOf, followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
 import { CloverLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
 import type { DialTarget, WireEndpoint } from "./wire";
 
@@ -41,7 +41,7 @@ export interface DeviceLinksOptions {
   wire?: (key: DeviceKey) => WireEndpoint | Promise<WireEndpoint>;
   /** The sidecar's options. `n0Lookup` defaults to "no account" (item 81) and then follows the account's sign-in;
    *  set, it stays as set (tests set it false so nothing leaves the machine). */
-  sidecar?: Omit<SidecarWireOptions, "key" | "n0Lookup"> & { n0Lookup?: boolean };
+  sidecar?: Omit<SidecarWireOptions, "key" | "n0Lookup" | "allow"> & { n0Lookup?: boolean };
   /** Where peers are, in place of the handshake's directory (tests; later the LAN's discovery). */
   directory?: PeerDirectory;
   account?: AccountClient;
@@ -114,7 +114,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   if (o.wire) wire = await o.wire(key);
   else {
     if (!o.sidecar) throw new Error("startDeviceLinks needs a wire or the link sidecar");
-    sidecar = await SidecarWire.start({ ...o.sidecar, key, n0Lookup: o.sidecar.n0Lookup ?? !signedIn });
+    sidecar = await SidecarWire.start({ ...o.sidecar, key, n0Lookup: o.sidecar.n0Lookup ?? !signedIn, allow: allowListsOf(registry) });
     wire = sidecar;
   }
   const offs: Unsubscribe[] = [];

@@ -61,6 +61,9 @@ export interface SidecarWireOptions {
   n0Lookup: boolean;
   /** `ip:port` to bind instead of every interface (tests bind loopback). */
   bind?: string;
+  /** The allow and revoked lists to start with (`allowListsOf(registry)`), so a paired computer that dials in at once
+   *  isn't turned away as unpaired before `followRegistry`'s first `allow`. */
+  allow?: { keys: readonly Uint8Array[]; revoked: readonly Uint8Array[] };
   alpns?: readonly string[];
   /** The congestion controller (§8.3): `bbr`, the default (quinn's BBR, its window sized to 1.25 times each path's
    *  bandwidth-delay product), or `cubic` (noq's own), for live gate 1 to compare. */
@@ -164,6 +167,7 @@ export class SidecarWire implements WireEndpoint {
     this.#o = o;
     this.publicKey = own(Uint8Array.from(o.key.publicKey));
     this.#n0Lookup = o.n0Lookup;
+    if (o.allow) this.#allow = { keys: o.allow.keys.map(toHex), revoked: o.allow.revoked.map(toHex) };
   }
 
   static async start(o: SidecarWireOptions): Promise<SidecarWire> {
@@ -598,19 +602,24 @@ export class SidecarWire implements WireEndpoint {
 /** Keeps the sidecar's allow list to the registry's paired, unrevoked devices, so a link connection from any other
  *  key is closed before the core sees it (the transport checks again), and a revoked device's is closed as revoked, so
  *  it learns it and stops re-dialling. Returns the unsubscribe. */
-export function followRegistry(
-  wire: Pick<SidecarWire, "allow">,
-  registry: { self(): { id: string }; all(): { id: string; publicKey: string; revokedAt?: number }[]; watch(fn: () => void): Unsubscribe },
-): Unsubscribe {
+export function followRegistry(wire: Pick<SidecarWire, "allow">, registry: AllowSource & { watch(fn: () => void): Unsubscribe }): Unsubscribe {
   const sync = () => {
-    const self = registry.self().id;
-    const key = (d: { publicKey: string }) => fromBase64(d.publicKey);
-    const ok = (k: Bytes | null): k is Bytes => k !== null && k.length === 32;
-    const devices = registry.all().filter((d) => d.id !== self);
-    wire.allow(devices.filter((d) => d.revokedAt === undefined).map(key).filter(ok), devices.filter((d) => d.revokedAt !== undefined).map(key).filter(ok));
+    const l = allowListsOf(registry);
+    wire.allow(l.keys, l.revoked);
   };
   sync();
   return registry.watch(sync);
+}
+
+type AllowSource = { self(): { id: string }; all(): { id: string; publicKey: string; revokedAt?: number }[] };
+
+/** The registry's paired, unrevoked devices' keys, and its revoked ones'. */
+export function allowListsOf(registry: AllowSource): { keys: Bytes[]; revoked: Bytes[] } {
+  const self = registry.self().id;
+  const key = (d: { publicKey: string }) => fromBase64(d.publicKey);
+  const ok = (k: Bytes | null): k is Bytes => k !== null && k.length === 32;
+  const devices = registry.all().filter((d) => d.id !== self);
+  return { keys: devices.filter((d) => d.revokedAt === undefined).map(key).filter(ok), revoked: devices.filter((d) => d.revokedAt !== undefined).map(key).filter(ok) };
 }
 
 function send(proc: SidecarProcess, m: Record<string, unknown>): void {
