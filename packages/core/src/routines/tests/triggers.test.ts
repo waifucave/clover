@@ -10,6 +10,7 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { FakePluginHost } from "../../contracts/fakes/plugin-host";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
 import type { HostModule } from "../../contracts/sdk-types";
+import { triggerOwnersFrom } from "../../bots/wiring";
 import { WebhookIngress } from "../webhooks";
 
 afterEach(removeTemps);
@@ -39,6 +40,11 @@ describe("the bundled triggers", () => {
       { pluginId: "clover/trigger-webhook", entryId: "webhook", state: "active" },
     ]);
     expect(registry.points().find((p) => p.name === "webhook.ingress")).toMatchObject({ declaredBy: { pluginId: "clover/trigger-webhook" }, active: true });
+    // Who may fire which trigger type: its contributing plugin.
+    const owners = triggerOwnersFrom(registry);
+    expect(owners("schedule")).toEqual(["clover/trigger-schedule"]);
+    expect(owners("webhook")).toEqual(["clover/trigger-webhook"]);
+    expect(owners("slack")).toEqual([]);
   });
 
   test("their handlers answer through the plugin host", async () => {

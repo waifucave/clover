@@ -103,6 +103,8 @@ export interface RoutineEngineOptions {
   /** Watches the folder for changes; tests turn it off and call `rescan`. */
   watchFiles?: boolean;
   /** Registers a webhook routine with the `webhook.ingress` plugins (webhooks.ts) and gives back its URL. */
+  /** The plugins whose active `triggers` entry has this type: the ones that may fire it (`fire`). */
+  triggerOwners?(type: string): string[];
   /** Registers a webhook routine with its ingress (its trigger's named one, else the first), giving its URL. */
   registerWebhook?(id: string, key: string, ingress?: string): Promise<string>;
   warn?: (message: string) => void;
@@ -318,7 +320,12 @@ export class RoutineEngine {
   }
 
   /** A plugin trigger fired (lane B's API, for the plugin that armed it). */
-  async fire(id: string, type: string, payload?: string): Promise<void> {
+  /** A plugin's trigger fired a routine. Only a plugin that contributes that trigger type (an active `triggers`
+   *  entry, `triggerOwners`) fires it; the bundled schedule and webhook types are the core's own, never fired so. */
+  async fire(id: string, type: string, from: { pluginId: string }, payload?: string): Promise<void> {
+    if (type === "schedule" || type === "webhook") throw new ContractError("refused", `${type} triggers are the core's own; no plugin fires them`);
+    const owners = this.#o.triggerOwners?.(type) ?? [];
+    if (!owners.includes(from.pluginId)) throw new ContractError("refused", `${from.pluginId} doesn't contribute the ${type} trigger, so it can't fire it`);
     const l = this.#must(id);
     if (!l.routine.triggers.some((t) => t.type === type)) throw new ContractError("refused", `the routine ${id} has no ${type} trigger`);
     if (l.state !== "active") return;
@@ -577,6 +584,9 @@ export class RoutineEngine {
       this.#saveState();
       this.#appendRun(id, run);
       this.#changes.emit({ bot: l.bot });
+      // TODO(B-M2): send the result to the notifier plugins (kind "routine-result", `failed: run.outcome === "failed"`)
+      // once lane B's plugin host (B-M2) carries the core's notifier calls; no core path reaches notifiers on main yet.
+      // Until then lane G's `routineFailed` switch covers every routine result, successes included.
       return run;
     } catch (err) {
       return this.#record(l, { outcome: "skipped", summary: `It didn't run: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000) });

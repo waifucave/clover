@@ -25,6 +25,7 @@ import type { DurableSessionHost } from "../sessions/durable-host";
 import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../sessions/wire";
 import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
+import { StagedImages } from "./staged-images";
 import type { BotService } from "./service";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
@@ -45,8 +46,6 @@ export interface SessionsMethodsDeps {
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
 }
 
-/** How many staged images a client off this computer can name per session: its most recent ones. */
-export const REMOTE_STAGED_KEPT = 64;
 /** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
 const STAGED_KEEP_RECORDS = 2_000;
 
@@ -61,16 +60,20 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
   const sealed = (ctx: MethodContext) => !readsSealed(ctx.caller);
   type UserCaller = Extract<Caller, { kind: "user" }>;
   const isLocal = (caller: UserCaller) => (caller.client === "app" || caller.client === "cli") && (caller.device === undefined || caller.device === deps.localDevice);
-  /** What each client off this computer staged, per session: the only images it may name. */
-  const stagedByRemote = new Map<string, string[]>();
-  const remoteKey = (id: string, caller: UserCaller) => `${id}\n${caller.client}\n${caller.device ?? ""}`;
+  /** What each client off this computer staged, per session: the only images it may name (kept across restarts). */
+  const staged = new StagedImages(deps.home, () => deps.clock.now());
+  /** A client off this computer is known by its device; one that doesn't say which device it is attaches nothing. */
+  const remoteKey = (id: string, caller: UserCaller): string => {
+    if (caller.device === undefined) throw new MethodError(ERR.INVALID_PARAMS, "a client off this computer says which device it is to attach images", { code: IMAGE_REFERENCE_INVALID });
+    return StagedImages.key(id, caller.client, caller.device);
+  };
   /** A message's images (§6.6 "attachments"), each held to the inherited rules (staged for this session, or the user's
    *  own image file, never inside the Clover home). A client on this computer names either; a client off it (the
    *  phone) names only images it staged itself through `session.stageImage` in this session, never a file of its own. */
   const checkedImages = (caller: UserCaller, id: string, text: string, images: readonly UserMessageImageRef[] | undefined): UserMessageImageRef[] | undefined => {
     if (images === undefined || images.length === 0) return undefined;
     if (!isLocal(caller)) {
-      const mine = new Set(stagedByRemote.get(remoteKey(id, caller)) ?? []);
+      const mine = new Set(staged.of(remoteKey(id, caller)));
       for (const ref of images) {
         if (!mine.has(ref.path)) throw new MethodError(ERR.INVALID_PARAMS, `[Image #${ref.n}] isn't an image this device staged for this session`, { code: IMAGE_REFERENCE_INVALID, n: ref.n });
       }
@@ -101,13 +104,15 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     for (const r of host.history(id, { afterSeq: from - 1, limit: STAGED_KEEP_RECORDS })) {
       if (r.type === "input" && r.input.from === "user") for (const ref of r.input.images ?? []) out.add(ref.path);
     }
-    for (const [key, paths] of stagedByRemote) if (key.startsWith(`${id}\n`)) for (const p of paths) out.add(p);
+    for (const p of staged.forSession(id)) out.add(p);
     return out;
   };
 
   return {
     [M.sessionStageImage.name]: handler(M.sessionStageImage, async ({ id, mediaType, dataBase64 }, ctx) => {
       const caller = requireUser(ctx, "attach an image");
+      // Known before anything is written: a client off this computer must say which device it is.
+      if (!isLocal(caller)) remoteKey(id, caller);
       const v = reachable(id);
       // On the computer that holds the session: a bot's conversation where its bot runs, any other session here.
       if (v.kind === "bot" && v.bot !== undefined && bots.mainSession(v.bot) === id) {
@@ -125,11 +130,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
         if (err instanceof StageImageRefusal) throw new MethodError(err.internal ? ERR.INTERNAL : ERR.INVALID_PARAMS, err.message, { code: err.code });
         throw new MethodError(ERR.INTERNAL, "the image couldn't be staged", { code: "image_stage_failed" });
       }
-      if (!isLocal(caller)) {
-        const key = remoteKey(id, caller);
-        const list = [...(stagedByRemote.get(key) ?? []), path].slice(-REMOTE_STAGED_KEPT);
-        stagedByRemote.set(key, list);
-      }
+      if (!isLocal(caller)) staged.add(remoteKey(id, caller), path);
       return { path };
     }),
 

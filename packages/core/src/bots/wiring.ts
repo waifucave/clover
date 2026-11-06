@@ -64,6 +64,8 @@ export interface BotSideOptions {
   routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">> & {
     /** The `webhook.ingress` entries and the plugin host that runs them (lane I's forwarder): webhooks.ts. */
     ingress?: Pick<WebhookIngressOptions, "registry" | "host"> & { poll?: boolean };
+    /** The plugin registry's `triggers` entries: which plugin may fire which trigger type (`RoutineEngine.fire`). */
+    triggers?: Pick<PluginRegistry, "entries">;
   };
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
@@ -101,6 +103,13 @@ export interface BotSide {
   start(): Promise<void>;
   /** Detaches everything, leaving it dormant on disk (a shutdown). */
   close(): Promise<void>;
+}
+
+/** The plugins with an active `triggers` entry of a type (an entry is keyed by its `type`). */
+export function triggerOwnersFrom(registry: Pick<PluginRegistry, "entries">): (type: string) => string[] {
+  return (type) => registry.entries("triggers")
+    .filter((c) => c.state === "active" && (c.entryId === type || (c.value as { type?: unknown }).type === type))
+    .map((c) => c.pluginId);
 }
 
 export function createBotSide(o: BotSideOptions): BotSide {
@@ -146,6 +155,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.routines.secrets === undefined ? {} : { secrets: o.routines.secrets }),
     ...(o.routines.webhookBase === undefined ? {} : { webhookBase: o.routines.webhookBase }),
     ...(o.routines.pluginTriggers === undefined ? {} : { pluginTriggers: o.routines.pluginTriggers }),
+    ...(o.routines.triggers === undefined ? {} : { triggerOwners: triggerOwnersFrom(o.routines.triggers) }),
     ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
     ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string, name?: string): Promise<string> => ingress!.register(id, key, name) }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
