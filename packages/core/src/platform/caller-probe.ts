@@ -86,8 +86,9 @@ export function processImage(pid: number, os: DaemonPlatform = currentOs()): str
   return null;
 }
 
-/** macOS's responsible process (the one TCC attributes a process to): it stays the daemon's for whatever the daemon
- *  starts, a double fork included, while the app (started by `open`) and a terminal's CLI have their own. */
+/** macOS's responsible process (the one TCC attributes a process to). It survives a double fork, so whatever the daemon
+ *  starts keeps the daemon's: the daemon's own pid when it is its own responsible process (`supervise` starts it so,
+ *  daemon-children.ts), while the app (started by `open`) and a terminal's CLI have their own. */
 function responsibility(): Lib | null {
   return open("darwin-responsibility", "/usr/lib/libSystem.B.dylib", {
     responsibility_get_pid_responsible_for_pid: { args: ["i32"], returns: "i32" },
@@ -230,8 +231,11 @@ export function spawnedByDaemon(pid: number, ancestors: readonly number[], os: D
   if (pid === self) return false;
   if (ancestors.includes(self)) return true;
   if (os === "darwin") {
-    const r = responsibility()?.responsibility_get_pid_responsible_for_pid?.(pid) as number | undefined;
-    if (r !== undefined && r === self) return true;
+    // Only when the daemon is its own responsible process: otherwise its responsible process (a terminal) is shared
+    // with the user's own CLI there, and tells nothing.
+    const resp = responsibility()?.responsibility_get_pid_responsible_for_pid;
+    const r = resp?.(pid) as number | undefined;
+    if (r !== undefined && r === self && resp?.(self) === self) return true;
   }
   if (os === "win32" && inDaemonJob(pid)) return true;
   return false;

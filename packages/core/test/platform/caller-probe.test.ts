@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ancestry, descendsFrom, parentPid, probePeer, socketFd, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "../../src/platform/caller-probe";
-import { claimDaemonChildren } from "../../src/platform/daemon-children";
+import { claimDaemonChildren, spawnDisclaimed } from "../../src/platform/daemon-children";
 import { resolveEndpoint } from "../../src/platform/transport";
 
 
@@ -150,5 +150,41 @@ describe("the caller check's OS probe", () => {
     expect(spawnedByDaemon(process.pid, ancestry(process.pid))).toBe(false); // the daemon itself
     try { process.kill(g); } catch { /* gone */ }
     child.kill();
+  }, 30_000);
+
+  test.skipIf(process.platform !== "darwin")("review B1 on macOS: under supervise's disclaimed start, a double-forked grandchild still names the daemon", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-resp-"));
+    const out = join(dir, "result.json");
+    const probe = JSON.stringify(join(import.meta.dir, "..", "..", "src", "platform", "caller-probe.ts"));
+    // The "daemon": started as supervise starts it, it double-forks a grandchild (its child exits at once, so
+    // launchd adopts the grandchild), then asks the caller check about it.
+    const daemon = `
+      import { ancestry, spawnedByDaemon } from ${probe};
+      import { dlopen, FFIType } from "bun:ffi";
+      const resp = dlopen("/usr/lib/libSystem.B.dylib", { responsibility_get_pid_responsible_for_pid: { args: [FFIType.i32], returns: FFIType.i32 } }).symbols.responsibility_get_pid_responsible_for_pid;
+      const c = Bun.spawn([process.execPath, "-e", 'const g = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 20000)"], { stdio: ["ignore", "ignore", "ignore"] }); g.unref(); console.log(g.pid); process.exit(0);'], { stdout: "pipe" });
+      const g = Number((await new Response(c.stdout).text()).trim());
+      await c.exited; await Bun.sleep(300);
+      const a = ancestry(g);
+      await Bun.write(${JSON.stringify(out)}, JSON.stringify({ self: resp(process.pid) === process.pid, adopted: !a.includes(process.pid), spawned: spawnedByDaemon(g, a), outsider: spawnedByDaemon(process.ppid, ancestry(process.ppid)) }));
+      process.kill(g);`;
+    const d = spawnDisclaimed([process.execPath, "-e", daemon]);
+    expect(d).not.toBeNull();
+    expect(await d!.exited).toBe(0);
+    expect(JSON.parse(readFileSync(out, "utf8"))).toEqual({ self: true, adopted: true, spawned: true, outsider: false });
+  }, 30_000);
+
+  test.skipIf(process.platform !== "win32")("review B1 on Windows: an orphan whose parent isn't Bun and exits first stays in the daemon's job", async () => {
+    expect(claimDaemonChildren().job).toBe(true);
+    const dir = mkdtempSync(join(tmpdir(), "clover-orphan-"));
+    const pidFile = join(dir, "pid");
+    const sleeper = `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 20000);`;
+    // cmd's `start /b` starts the grandchild and cmd exits at once; libuv's job, which holds cmd, allows silent breakaway.
+    const cmd = Bun.spawn(["cmd.exe", "/c", "start", "", "/b", process.execPath, "-e", sleeper], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true });
+    await cmd.exited;
+    for (let i = 0; i < 100 && !existsSync(pidFile); i++) await Bun.sleep(50);
+    const g = Number(readFileSync(pidFile, "utf8"));
+    expect(spawnedByDaemon(g, ancestry(g))).toBe(true);
+    try { process.kill(g); } catch { /* gone */ }
   }, 30_000);
 });
