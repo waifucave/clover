@@ -99,7 +99,7 @@ async function bombInChromium(): Promise<void> {
 export const LIVE2D_STORIES: Live2dStory[] = [
   {
     id: "live2d/alpha-placeholder",
-    title: "Alpha as a 2D model (decision 87; the Live2D Cubism format): the code-made placeholder, drawn by Mochi2D on the base stage",
+    title: "Alpha as a 2D model (decision 87): the code-made placeholder, drawn by Mochi2D on the base stage",
     width: 400,
     height: 480,
     theme: "base-light",

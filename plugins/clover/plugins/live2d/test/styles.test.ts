@@ -35,3 +35,15 @@ describe("the Live2D renderer's stylesheet", () => {
     expect(check.kind).toBe("code");
   });
 });
+
+describe("the format's name stays out of the UI (owner's decision: the UI says \"2D model\")", () => {
+  test("the strings, the manifest's name and description, and the gallery's titles never say Live2D or Cubism", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { LIVE2D_STORIES } = await import("../src/gallery");
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { name: string; description: string };
+    const strings = readFileSync(join(import.meta.dir, "..", "src", "strings.ts"), "utf8").match(/"clover\.[^"]+":\s*"[^"]*"/g) ?? [];
+    const shown = [manifest.name, manifest.description, ...strings, ...LIVE2D_STORIES.map((s) => s.title)];
+    expect(strings.length).toBeGreaterThan(5);
+    expect(shown.filter((text) => /live\s*2d|cubism/i.test(text.replace(/"clover\.live2d\.[^"]+":/, "")))).toEqual([]);
+  });
+});
