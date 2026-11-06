@@ -1427,7 +1427,7 @@
       }
     },
     "models.list": {
-      "doc": "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not. With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
+      "doc": "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
       "owner": "A",
       "direction": "to-daemon",
       "roles": [
@@ -1488,6 +1488,27 @@
                   "minLength": 1,
                   "maxLength": 128
                 },
+                "providerName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
                 "plugin": {
                   "type": "string",
                   "maxLength": 81,
@@ -1518,6 +1539,7 @@
                 "id",
                 "name",
                 "provider",
+                "providerName",
                 "plugin",
                 "efforts",
                 "images",

@@ -587,7 +587,7 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     for (const m of ["models.list", "session.setModel"]) expect([m, remote.has(m)]).toEqual([m, true]);
     expect(remote.has("session.create")).toBe(false);
     expect(CLOVER_METHODS.get("models.list")!.userOnly).toBeFalsy();
-    const model = { id: "fireworks/kimi-k3", name: "Kimi K3", provider: "fireworks", plugin: "clover/model-fireworks", efforts: ["low", "medium", "high"], images: true, signedIn: true };
+    const model = { id: "fireworks/kimi-k3", name: "Kimi K3", provider: "fireworks", providerName: "Fireworks", plugin: "clover/model-fireworks", efforts: ["low", "medium", "high"], images: true, signedIn: true };
     expect(CLOVER_METHODS.get("models.list")!.result.safeParse({ models: [model], default: "fireworks/kimi-k3" }).success).toBe(true);
     expect(CLOVER_METHODS.get("models.list")!.params.safeParse({}).success).toBe(true);
   });
