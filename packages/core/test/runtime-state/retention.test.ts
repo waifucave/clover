@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { DeliveryRecord, GlobalAgentMessage, RuntimeDirectoryEntry, RuntimeDirectoryStore, SerializedRuntimeAddress } from "@yanlinglabs/winter-runtime-sdk";
+import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { DeliveryRecord, GlobalAgentMessage, RuntimeDirectoryEntry, RuntimeDirectoryStore, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {

@@ -317,7 +317,7 @@ describe("models.catalog", () => {
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     const result = await c.request(METHODS.modelsCatalog, {});
-    const { loadCatalog } = await import("@yanlinglabs/winter-provider-catalog");
+    const { loadCatalog } = await import("@waifucave/clover-provider-catalog");
     const rows = new Map(loadCatalog().models.map((m) => [m.key, m]));
     let yes = 0, no = 0;
     for (const m of result.result.models) {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { ToolRegistry } from "../../src/agent/tools/registry";
 import { registerListSessionsTools, LIST_SESSIONS_TOOL } from "../../src/agent/tools/list-sessions";
 import { registerSessionSpawnTool } from "../../src/agent/tools/session-spawn";

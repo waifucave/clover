@@ -6,7 +6,7 @@
 // projector suite's `FakeCheckpoints`; the store is an array. What is under test is the state
 // machine and the push/hold/resume discipline (P8b-5/24/32/38), not the fold.
 import { describe, expect, test } from "bun:test";
-import { WinterRpcError, type Options, type Query } from "@yanlinglabs/winter-agent-sdk";
+import { WinterRpcError, type Options, type Query } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import { SHUTDOWN_QUERY_GRACE_MS, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
 import { createProjector, type Projector } from "../../src/projector";

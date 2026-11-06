@@ -8,7 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildRunHome } from "@yanlinglabs/winter-runtime-sdk";
+import { buildRunHome } from "../../src/runtime-sdk/host";
 import { runHomeInputFor } from "../../src/runtime-sdk/run-home-input";
 
 const tmp = (p: string): string => realpathSync(mkdtempSync(join(tmpdir(), p)));

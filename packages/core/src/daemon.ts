@@ -78,8 +78,8 @@ import { Dreamer } from "./agent/dreamer";
 import { SessionCleaner } from "./sessions/cleaner";
 import { pickerModels } from "./ipc/picker-models";
 import { ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME, credentialPresenceFrom } from "./runtime-sdk/keychain";
-import { refreshOauthMaterial } from "@yanlinglabs/winter-provider-runtime";
-import { createMemoryMcpOAuthStore, type McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { refreshOauthMaterial } from "@waifucave/clover-provider-runtime";
+import { createMemoryMcpOAuthStore, type McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { CREDENTIAL_MATERIAL_NAMES } from "./auth/credential-material";
 import { credentialStoreOverSecretStore } from "./providers/credential-store";
 import { CODEX } from "./providers/codex-config";
@@ -153,7 +153,7 @@ export interface BrowserHostInjection {
   hostRequirement?: string;
   verifyHost?: BrowserHostVerifier;
 }
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
@@ -1689,10 +1689,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       }),
       secrets,
       directoryStore: runtime?.directory,
-      // EMPTY ON PURPOSE (P8b-36) — this list is handle-wide and construction-time, which is
-      // exactly what a per-session capability set must not be. Clover's capability servers ride each
-      // session's own `Options.mcpServers` instead (`buildSessionCapabilities` above).
-      capabilities: [],
       // Task 12's seam, filled by Task 16: the inbound class of a session this process holds no
       // live facet for — a parked (`resumable`) Clover session answers `unavailable` instead of
       // holding its mail forever, and is never cold-resumed behind the daemon's back.

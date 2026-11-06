@@ -1,5 +1,5 @@
 /**
- * 2026-09-19: WHICH `@yanlinglabs/winter-provider-runtime` adapter FAMILIES the daemon's own
+ * 2026-09-19: WHICH `@waifucave/clover-provider-runtime` adapter FAMILIES the daemon's own
  * background jobs (titles, the bash reviewer, the dreamer, the session cleaner) can be driven over.
  *
  * A LEAF module on purpose — it imports the provider runtime and the catalog and nothing of Clover's
@@ -42,16 +42,16 @@
  *  - `winter.azure-openai`, `winter.local-openai` — `requiresUserEndpoint` / local-only rows, which
  *    `credentialInventory()` already excludes by construction.
  */
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import type { WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
 import {
   createAnthropicMessagesAdapter,
   createChatCompletionsAdapter,
   createCodexOauthAdapter,
   createGoogleGenerateContentAdapter,
   createResponsesAdapter,
-} from "@yanlinglabs/winter-provider-runtime";
-import type { ProviderAdapter } from "@yanlinglabs/winter-provider-runtime";
+} from "@waifucave/clover-provider-runtime";
+import type { ProviderAdapter } from "@waifucave/clover-provider-runtime";
 
 /** A provider-SCOPED descriptor lookup — the runtime's own `findDescriptor(catalog, providerId, model)`
  *  rule (bare upstream id, catalog key, or alias), narrowed to ONE provider so a bare model id served

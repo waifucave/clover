@@ -5,8 +5,8 @@
 // P8b-15 / surface map §8. Semantics mirror the engine's: name guard first, a running child is
 // steered (`delivered: "queued"`), a finished one is resumed (`delivered: "resumed"`), a stop flips
 // the roster (the facet is asked to stop; nothing is killed locally).
-import type { SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
-import { buildChildAddress, buildSessionAddress, type GlobalAgentMessage } from "@yanlinglabs/winter-agent-sdk/messaging";
+import type { SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
+import { buildChildAddress, buildSessionAddress, type GlobalAgentMessage } from "@waifucave/clover-agent-sdk/messaging";
 import { guardAgentName, type AgentRegistry, type AgentStatus } from "../agent/bg-agent-registry";
 
 export interface ChildrenRpc {

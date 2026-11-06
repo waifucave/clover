@@ -30,7 +30,7 @@ import {
   ELICITATION_URL_MAX_LENGTH,
   ELICITATION_HOST_MAX_LENGTH,
 } from "@waifucave/clover-protocol";
-import type { Options } from "@yanlinglabs/winter-agent-sdk";
+import type { Options } from "@waifucave/clover-agent-sdk";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import type { Mode as SessionMode } from "../agent/tools/registry";
 import { consoleBridgeLogger, type BridgeLogger } from "./bridge-common";

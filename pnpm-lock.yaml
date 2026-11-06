@@ -93,32 +93,33 @@ importers:
 
   packages/core:
     dependencies:
+      '@waifucave/clover-agent-runtime':
+        specifier: 0.0.63
+        version: 0.0.63
+      '@waifucave/clover-agent-sdk':
+        specifier: 0.0.63
+        version: 0.0.63
       '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@yanlinglabs/winter-agent-runtime':
-        specifier: 0.0.55
-        version: 0.0.55
-      '@yanlinglabs/winter-agent-sdk':
-        specifier: 0.0.55
-        version: 0.0.55
-      '@yanlinglabs/winter-provider-catalog':
-        specifier: 0.0.55
-        version: 0.0.55
-      '@yanlinglabs/winter-provider-runtime':
-        specifier: 0.0.55
-        version: 0.0.55
-      '@yanlinglabs/winter-runtime-sdk':
-        specifier: ^0.0.16
-        version: 0.0.16(@yanlinglabs/winter-agent-sdk@0.0.55)(@yanlinglabs/winter-provider-catalog@0.0.55)(@yanlinglabs/winter-provider-conformance@0.0.55)(@yanlinglabs/winter-provider-runtime@0.0.55)
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.63
+        version: 0.0.63
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.63
+        version: 0.0.63
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2
       zod:
-        specifier: ^4.0.0
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
-      '@yanlinglabs/winter-provider-conformance':
+      '@waifucave/clover-provider-conformance':
+        specifier: 0.0.63
+        version: 0.0.63
+    optionalDependencies:
+      '@yanlinglabs/winter-agent-sdk-darwin-arm64':
         specifier: 0.0.55
         version: 0.0.55
 
@@ -128,14 +129,14 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       zod:
-        specifier: ^4.0.0
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/protocol:
     dependencies:
       zod:
-        specifier: ^4.0.0
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/test-harness:
     dependencies:
@@ -162,7 +163,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/base-theme:
+  plugins/clover/plugins/base-theme:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -171,7 +172,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/base-theme/gallery:
+  plugins/clover/plugins/base-theme/gallery:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -205,7 +206,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/composer:
+  plugins/clover/plugins/composer:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -239,7 +240,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/conversation:
+  plugins/clover/plugins/conversation:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -279,16 +280,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/fish-audio:
-    devDependencies:
-      '@types/bun':
-        specifier: 1.3.14
-        version: 1.3.14
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  plugins/clover/forwarder:
+  plugins/clover/plugins/fish-audio:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -297,7 +289,16 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/island:
+  plugins/clover/plugins/forwarder:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/island:
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -327,7 +328,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel:
+  plugins/clover/plugins/panel:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -361,7 +362,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-diff:
+  plugins/clover/plugins/panel-diff:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -395,7 +396,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-files:
+  plugins/clover/plugins/panel-files:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -429,7 +430,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-terminal:
+  plugins/clover/plugins/panel-terminal:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -463,7 +464,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/pill:
+  plugins/clover/plugins/pill:
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -493,7 +494,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/push:
+  plugins/clover/plugins/push:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -502,7 +503,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/settings:
+  plugins/clover/plugins/settings:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -536,7 +537,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/shell:
+  plugins/clover/plugins/shell:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -573,7 +574,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/sidebar:
+  plugins/clover/plugins/sidebar:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -607,7 +608,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/vrm:
+  plugins/clover/plugins/vrm:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -1672,50 +1673,45 @@ packages:
   '@vitest/utils@4.1.12':
     resolution: {integrity: sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==}
 
+  '@waifucave/clover-agent-runtime@0.0.63':
+    resolution: {integrity: sha512-y46S1zMP6NttnzndXZquhiE2C/LOILKIN9UMa0F1WhK2UJuO1XSYuzvmnxHrzeDlubp58pPWxA0AFX13jMo/tg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.63/fb503dcdef12b8dbef5a6ac3628131808a144c2b}
+    engines: {bun: '>=1.3'}
+
+  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.63':
+    resolution: {integrity: sha512-PcxCE71ehsgkwW2PrxoTMIupenXHa+BcK0ai8RkwIDdQctezzKgzCX5ua0DLFnPVsd5tnvWMBiTdQ0jnwyfSbQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.63/22b2118609bddfddc9e3f1a558080b01b93cbe80}
+    cpu: [arm64]
+    os: [darwin]
+    hasBin: true
+
+  '@waifucave/clover-agent-sdk@0.0.63':
+    resolution: {integrity: sha512-znAdbSfjeSpm0hzjKlMYrKK4vPCAWI3om1Jb9lAztXQNndteYA/bn4OOMQ2gf8+7UTJgiRvVuQNwVpQBv7WvTg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.63/bf1407ba9ecaeaa7372b6fa41b2c44d37c59b6f0}
+    engines: {node: '>=18'}
+
+  '@waifucave/clover-provider-catalog@0.0.63':
+    resolution: {integrity: sha512-TbPEiAOnIndCY2L/AGerD0xTMEzGGP9notUvZQ4I80xIsAFvWPib/jLxUjXE4ojyumgXUG+2OvH/s1lJdCN5Cg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.63/6f6b48faa7126564a0f9ab69967a084fea425e33}
+    engines: {node: '>=18'}
+
+  '@waifucave/clover-provider-conformance@0.0.63':
+    resolution: {integrity: sha512-VvxXDU/TRy/krgaOI4ByrBYw2VQSckpGRI5GK9lgdkYveCV0EflzEYM5wgBFbxQhXlK7EcyGCRJv6+/EuvECBg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.63/d6d98d984305deb7c602084d23552f0d37fec81c}
+    engines: {bun: '>=1.2'}
+
+  '@waifucave/clover-provider-runtime@0.0.63':
+    resolution: {integrity: sha512-pHQ9z9C6HH03CjKe/8vPuXZWjG/LEkuFftVLIfRap/uQr6gGXiHwh/4Rbqs36ZiG78ju+O4thS2szJaM1WEPVQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.63/65f27b1186c81e85c4ad35782ad67299f59fa58c}
+    engines: {node: '>=18'}
+
+  '@waifucave/clover-web@0.0.63':
+    resolution: {integrity: sha512-l565tKc0yteGXUOHSkczpBC0JiMhWl3Four6/tvanNteao+K8DDEJfLqvxpZ8cy2OloMpgEfFfVlPOWy+kIzuA==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.63/938dfb7aed5f442c6445a22bc9580510914ae7de}
+    engines: {bun: '>=1.3', node: '>=20'}
+
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
-
-  '@yanlinglabs/winter-agent-runtime@0.0.55':
-    resolution: {integrity: sha512-phmdKQPgrxeHAaOe5HWrgAk6XqerdAmuwgqX1xZ4FhLylYfCQ/Hgd9uOpz209yIcCWR5nAv1Uh2PkI0w9QoR/A==}
-    engines: {bun: '>=1.3'}
 
   '@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.55':
     resolution: {integrity: sha512-bL8IPF8FTCxFDDWxf/210RtMDh/x5z5YNPaZSEJA1Cg0aMu8f/cWMA0wxJ9jE2q17biO5wzTIburlrBNgX1f+g==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
-
-  '@yanlinglabs/winter-agent-sdk@0.0.55':
-    resolution: {integrity: sha512-hNtiSPscLKWprvYNMOtt8+r/1xZLdMkju9ND2NqnBREtatiLdol/XeSkUM1hWtNT0LUX9jAOhpxjbi9UidTJYA==}
-    engines: {node: '>=18'}
-
-  '@yanlinglabs/winter-provider-catalog@0.0.55':
-    resolution: {integrity: sha512-DQmkUVJfkY2Y7iF2WPNh7Fg7ru3XDZpboPfjTlev3EnAQl6meLb5uOHnNNxBKSd/8HNKxxQ2gAJkTI61XajA2A==}
-    engines: {node: '>=18'}
-
-  '@yanlinglabs/winter-provider-conformance@0.0.55':
-    resolution: {integrity: sha512-DuLgB7DDytxPRowobmmPylxHiDzTj3+twUwbTwk2JLkp4j4cvK4dmw3ikqDFmAkGdtXkmXXS1WNK+XHSAHLckw==}
-    engines: {bun: '>=1.2'}
-
-  '@yanlinglabs/winter-provider-runtime@0.0.55':
-    resolution: {integrity: sha512-Deb549YJprFco2mbQ7H0VVJnQVHD1OjpRJloV7WkByTgwOlXzj/VAAen5Uc2rUk3NwrkfA4bQSAzoEbtSFk4BQ==}
-    engines: {node: '>=18'}
-
-  '@yanlinglabs/winter-runtime-sdk@0.0.16':
-    resolution: {integrity: sha512-O+DaIkAtZsxkIRAoqlAjoz4V1C+jQ/7svdZdQGZ7m5DCJurSo+PyL64CGiGSVSi6sUmytLvwsg4b/ZOUhfu2yQ==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@yanlinglabs/winter-agent-sdk': '>=0.0.21 <0.1.0'
-      '@yanlinglabs/winter-conformance': '>=0.0.3 <0.1.0'
-      '@yanlinglabs/winter-provider-catalog': '>=0.0.21 <0.1.0'
-      '@yanlinglabs/winter-provider-conformance': '>=0.0.21 <0.1.0'
-      '@yanlinglabs/winter-provider-runtime': '>=0.0.21 <0.1.0'
-    peerDependenciesMeta:
-      '@yanlinglabs/winter-conformance':
-        optional: true
-      '@yanlinglabs/winter-provider-conformance':
-        optional: true
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -3591,11 +3587,11 @@ packages:
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
-
   zod@4.6.6:
     resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -4004,11 +4000,11 @@ snapshots:
       eventsource-parser: 3.1.1
       jose: 6.2.12
       pkce-challenge: 5.0.1
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@modelcontextprotocol/core@2.3.1':
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@noble/hashes@1.8.0': {}
 
@@ -4411,45 +4407,42 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@xmldom/xmldom@0.8.15': {}
-
-  '@yanlinglabs/winter-agent-runtime@0.0.55':
+  '@waifucave/clover-agent-runtime@0.0.63':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@yanlinglabs/winter-agent-sdk': 0.0.55
-      '@yanlinglabs/winter-provider-catalog': 0.0.55
-      '@yanlinglabs/winter-provider-runtime': 0.0.55
+      '@waifucave/clover-agent-sdk': 0.0.63
+      '@waifucave/clover-provider-catalog': 0.0.63
+      '@waifucave/clover-provider-runtime': 0.0.63
+      '@waifucave/clover-web': 0.0.63
       ajv: 8.20.0
       ignore: 7.0.5
 
-  '@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.55':
+  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.63':
     optional: true
 
-  '@yanlinglabs/winter-agent-sdk@0.0.55':
+  '@waifucave/clover-agent-sdk@0.0.63':
     dependencies:
-      '@yanlinglabs/winter-provider-catalog': 0.0.55
+      '@waifucave/clover-provider-catalog': 0.0.63
     optionalDependencies:
-      '@yanlinglabs/winter-agent-sdk-darwin-arm64': 0.0.55
+      '@waifucave/clover-agent-sdk-darwin-arm64': 0.0.63
 
-  '@yanlinglabs/winter-provider-catalog@0.0.55': {}
+  '@waifucave/clover-provider-catalog@0.0.63': {}
 
-  '@yanlinglabs/winter-provider-conformance@0.0.55':
+  '@waifucave/clover-provider-conformance@0.0.63':
     dependencies:
-      '@yanlinglabs/winter-provider-catalog': 0.0.55
-      '@yanlinglabs/winter-provider-runtime': 0.0.55
+      '@waifucave/clover-provider-catalog': 0.0.63
+      '@waifucave/clover-provider-runtime': 0.0.63
 
-  '@yanlinglabs/winter-provider-runtime@0.0.55':
+  '@waifucave/clover-provider-runtime@0.0.63':
     dependencies:
-      '@yanlinglabs/winter-agent-sdk': 0.0.55
-      '@yanlinglabs/winter-provider-catalog': 0.0.55
+      '@waifucave/clover-provider-catalog': 0.0.63
 
-  '@yanlinglabs/winter-runtime-sdk@0.0.16(@yanlinglabs/winter-agent-sdk@0.0.55)(@yanlinglabs/winter-provider-catalog@0.0.55)(@yanlinglabs/winter-provider-conformance@0.0.55)(@yanlinglabs/winter-provider-runtime@0.0.55)':
-    dependencies:
-      '@yanlinglabs/winter-agent-sdk': 0.0.55
-      '@yanlinglabs/winter-provider-catalog': 0.0.55
-      '@yanlinglabs/winter-provider-runtime': 0.0.55
-    optionalDependencies:
-      '@yanlinglabs/winter-provider-conformance': 0.0.55
+  '@waifucave/clover-web@0.0.63': {}
+
+  '@xmldom/xmldom@0.8.15': {}
+
+  '@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.55':
+    optional: true
 
   abbrev@4.0.0: {}
 
@@ -6676,8 +6669,8 @@ snapshots:
       cookie: 1.1.1
       youch-core: 0.3.3
 
-  zod@4.4.3: {}
-
   zod@4.6.6: {}
+
+  zod@4.6.7: {}
 
   zwitch@2.0.4: {}

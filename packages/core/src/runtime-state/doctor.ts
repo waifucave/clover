@@ -31,7 +31,7 @@ import { describeHomePristineness } from "../migration/migrate-b";
 import { MIGRATION_B_SECRET_NAMES } from "../auth/legacy-secret-names";
 import { storeProjectsDir } from "../agent/paths";
 import { quarantinedRunRoots } from "./root-recovery";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { canonicalCwd } from "../agent/paths";
 import { sessionTmpDir } from "../agent/session-tmp";
 import { transcriptEntriesOf, transcriptMoveObstruction } from "./transcript-rekey";

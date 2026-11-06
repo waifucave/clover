@@ -21,7 +21,7 @@
 // and either is bounded when nobody typed the turn). Every context that cannot prompt (chat, `dont-ask`)
 // gets one fixed typed deny. Public hosts stay free at the gate, unchanged.
 import { test, expect, describe } from "bun:test";
-import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";

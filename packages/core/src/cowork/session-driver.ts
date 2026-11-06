@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { query as agentQuery, type CanUseTool, type Options, type PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import { query as agentQuery, type CanUseTool, type Options, type PermissionResult } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { createProjector, type Projector } from "../projector";
 import type { CheckpointStore } from "../projector/types";

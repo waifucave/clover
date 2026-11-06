@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Options } from "@yanlinglabs/winter-agent-sdk";
-import { createMemoryMcpOAuthStore, encodeMcpOAuthTokenRecord, MCP_OAUTH_HOST_HELD_REFRESH_TOKEN, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import type { Options } from "@waifucave/clover-agent-sdk";
+import { createMemoryMcpOAuthStore, encodeMcpOAuthTokenRecord, MCP_OAUTH_HOST_HELD_REFRESH_TOKEN, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { FileSecretStore, type SecretStore } from "../../src/auth/secret-store";
 import { createHostCredentialBroker, HOST_RENEWAL_BACKOFF_MS, HOST_RENEWAL_MIN_INTERVAL_MS, isNeverBrokered, sessionCredentialAllowlist, type HostCredentialDeps } from "../../src/runtime-sdk/host-credentials";
 

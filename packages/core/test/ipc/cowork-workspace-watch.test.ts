@@ -227,7 +227,10 @@ test("W1b: live Unix hints arrive during2s of50ms writes instead of waiting for 
   }
   const end = performance.now(), changes = observed.filter(value => value.frame.phase === "change");
   expect(changes.length).toBeGreaterThanOrEqual(3);
-  expect(changes[0]!.at - start).toBeLessThan(650); //500ms deadline + ordinary host scheduler/RPC slack
+  // The 500 ms hint deadline plus the host's scheduler and RPC slack: 150 ms on a developer's machine, 500 on a CI
+  // runner, where a loaded macOS runner once took over 650. The check below (the first hint a second before the burst
+  // ends) is what shows hints arrive during writes rather than after them.
+  expect(changes[0]!.at - start).toBeLessThan(500 + (process.env.CI === "true" ? 500 : 150));
   expect(changes[0]!.at).toBeLessThan(end - 1000);
   console.log(JSON.stringify({ kind: "workspace-watch-live-fairness-v1", commits: 40, intervalMs: 50,
     firstHintMs: Math.round((changes[0]!.at - start) * 1000) / 1000, hintsDuringBurst: changes.length,
