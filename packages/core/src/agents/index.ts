@@ -37,7 +37,7 @@ import { BridgeEndpoint } from "./bridge/endpoint";
 import { bridgeCommand } from "./bridge/main";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeToolSource } from "./bridge/tools";
-import { AgentManager } from "./manager";
+import { AgentManager, type AgentPauseGate } from "./manager";
 import { FileAgentOks } from "./sandbox/oks";
 import { hookShimCommand } from "./claude-code/hook-shim";
 import { placeInClaudeCode } from "./claude-code/placement";
@@ -55,7 +55,7 @@ export { BRIDGE_ENV, runBridge } from "./bridge/server";
 export { BridgeTokens } from "./bridge/tokens";
 export { BRIDGE_OWN_TOOLS, GLOSSARY, SEND_MESSAGE, bridgeInstructions, type BridgeCallContext, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 export { AgentDriver, type AgentLogEvent } from "./driver";
-export { AgentManager, BRIDGE_SERVER_PREFIX, effectOf, promptOf, ruleKeyOf, type AgentCaller, type AgentRequest, type AgentSessionHooks } from "./manager";
+export { AgentManager, BRIDGE_SERVER_PREFIX, effectOf, promptOf, ruleKeyOf, type AgentCaller, type AgentPauseGate, type AgentRequest, type AgentSessionHooks } from "./manager";
 export { agentPaths } from "./paths";
 export { agentRecordPath, readAgentRecord, type DaemonAgentRecord } from "./records";
 export { buildAgentEnv, launchContained } from "./process/launch";
@@ -87,6 +87,8 @@ export interface AgentsOptions {
   pluginParts?: PluginPartsSource;
   /** A computer's level, for the read-only mode of an agent that acts without asking; read-only when unknown. */
   levelOf?: (computer: string) => Level | undefined;
+  /** The pause switch (lane D's gate): paused, delegated agents are held. */
+  pause?: AgentPauseGate;
   log?: (line: string) => void;
 }
 
@@ -106,6 +108,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoin
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
+    ...(o.pause ? { pause: o.pause } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
   const wire = (id: string) => manager.wire(id);

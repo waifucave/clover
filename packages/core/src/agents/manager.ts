@@ -72,10 +72,22 @@ export interface AgentManagerOptions {
   pluginParts?: PluginPartsSource;
   /** A computer's level (§9.1), for an agent that acts without asking; read-only when it isn't known. */
   levelOf?: (computer: string) => Level | undefined;
+  /** The pause switch (lane D's gate, `mayAct()`): while it says no, a delegated agent is held (`#hold`). */
+  pause?: AgentPauseGate;
   /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
   startUnsandboxedForTests?: boolean;
   log?: (line: string) => void;
 }
+
+/** The pause switch as lane K reads it (the owner's ruling: it pauses everything, background agents included). `watch`
+ *  says when it may have moved; without it, a held agent looks again every second. */
+export interface AgentPauseGate {
+  mayAct(): boolean;
+  watch?(fn: () => void): () => void;
+}
+
+/** How often a held agent looks at the switch when the gate can't say it moved. */
+const PAUSE_POLL_MS = 1_000;
 
 /** Lane K's side of lane D's hooks, in #176's shapes: `BotToolsDeps.agents`, `SessionsMethodsDeps.setAgentModel` and
  *  `BotServiceOptions.reattach`. */
@@ -127,6 +139,9 @@ interface Entry {
   parts?: PluginParts;
   daemon: DaemonAgentRecord;
   session?: AgentSession;
+  /** Holds waiting for the pause switch. */
+  held: number;
+  resumedAt?: number;
 }
 
 /** The bridge's server name starts with this; a random suffix follows, new for each session. */
@@ -270,7 +285,7 @@ export class AgentManager {
     transcript.redact(token);
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
-      serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
+      held: 0, serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
@@ -279,7 +294,12 @@ export class AgentManager {
       start: () => this.#startAgent(entry, reattach),
       promptOf: (input) => promptOf(input),
       redact: (v) => transcript.redacted(v),
-      beforeTurn: (session) => this.#applyLevel(entry, session),
+      // A paused agent is sent no new prompt until the switch is back.
+      beforeTurn: async (session) => {
+        // A turn withdrawn while held ends `interrupted` (the driver checks its signal next).
+        await this.#hold(entry).catch(() => {});
+        await this.#applyLevel(entry, session);
+      },
       ended: () => {
         this.#o.tokens.revoke(id);
         entry.unwatch?.();
@@ -299,6 +319,39 @@ export class AgentManager {
   /** The level the session's permission requests are judged at: a routine's raised level, or its computer's. */
   #levelOf(e: Entry): Level {
     return e.level ?? this.#o.levelOf?.(e.computer) ?? "read-only";
+  }
+
+  /** While paused (the owner's ruling), waits until the switch is back, or the turn is withdrawn. A held agent isn't
+   *  stalled. */
+  async #hold(e: Entry): Promise<void> {
+    const gate = this.#o.pause;
+    if (!gate || gate.mayAct()) return;
+    const signal = e.driver.currentSignal();
+    e.held++;
+    try {
+      await new Promise<void>((resolve) => {
+        let timer: ReturnType<Clock["setTimeout"]> | undefined;
+        const done = () => {
+          off?.();
+          if (timer !== undefined) this.#o.clock.clearTimeout(timer);
+          signal?.removeEventListener("abort", done);
+          resolve();
+        };
+        const check = () => {
+          if (gate.mayAct()) done();
+          else if (!gate.watch) timer = this.#o.clock.setTimeout(check, PAUSE_POLL_MS);
+        };
+        const off = gate.watch?.(check);
+        signal?.addEventListener("abort", done, { once: true });
+        if (signal?.aborted) return done();
+        check();
+      });
+    } finally {
+      e.held--;
+      // The stall window starts again from the resume.
+      e.resumedAt = this.#o.clock.now();
+    }
+    if (signal?.aborted) throw new ContractError("cancelled", "the turn was withdrawn while the bots were paused");
   }
 
   /** At each turn, the computer's level as it is now (check 2's minor 5): an agent that acts without asking goes into
@@ -357,12 +410,21 @@ export class AgentManager {
     e.record = { ...e.record, agentSessionId: session.agentSessionId };
     e.transcript.writeRecord(e.record);
     session.onPermission((ask) => this.#permission(e, ask));
+    // An agent that acts without asking can't be held at a call it never asks about: paused, its turn is cancelled at
+    // its next tool call instead, and the next turn waits for the switch.
+    if (e.backend.quirks.marks.includes("unasked-actions")) {
+      session.onEvent((ev) => {
+        if (ev.type !== "tool_call" || !this.#o.pause || this.#o.pause.mayAct() || !e.driver.busy()) return;
+        e.transcript.call({ ts: this.#o.clock.now(), type: "paused", toolCallId: ev.id, cancelled: true });
+        void session.cancel();
+      });
+    }
     const s = session as { openCalls?: () => { id: string; kind: string; startedAtWall: number }[]; waitingOnUser?: () => boolean };
     e.unwatch = this.#o.watchdog.watch({
       pid: pid ?? 0,
-      lastProgressAt: () => session.lastProgressAt(),
+      lastProgressAt: () => Math.max(session.lastProgressAt(), e.resumedAt ?? 0),
       busy: () => e.driver.busy(),
-      waitingOnUser: () => s.waitingOnUser?.() ?? false,
+      waitingOnUser: () => e.held > 0 || (s.waitingOnUser?.() ?? false),
       runningCommands: () => (s.openCalls?.() ?? []).filter((c) => c.kind === "execute"),
     }, () => {
       this.#o.log?.(`agents: ${e.id} made no progress for 10 minutes; stopping it`);
@@ -410,6 +472,12 @@ export class AgentManager {
   async #permission(e: Entry, raw: AgentPermissionAsk): Promise<AgentPermissionAnswer> {
     const origin = e.driver.currentOrigin() ?? "agent";
     const signal = e.driver.currentSignal();
+    // Paused: the agent waits here, its call unanswered, until the switch is back (a withdrawn turn cancels it).
+    try {
+      await this.#hold(e);
+    } catch {
+      return { outcome: "cancelled" };
+    }
     // The token never reaches a card, and the fence sees each path as it really is (reviews 8 and 9).
     const resolved = agentPaths(raw.paths, e.rootPath);
     if (resolved.over) {
@@ -532,16 +600,21 @@ export class AgentManager {
         const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
         return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
       },
-      call: (id, c) => {
+      call: async (id, c) => {
         const e = this.#entries.get(id);
-        if (!e) return Promise.resolve({ content: [{ type: "text", text: "This agent's session has ended." }], isError: true });
+        if (!e) return { content: [{ type: "text", text: "This agent's session has ended." }], isError: true };
+        await this.#hold(e).catch(() => {});
         const signal = e.driver.currentSignal();
         return source.call(id, c, {
           computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
           ...(e.bot === undefined ? {} : { bot: e.bot }), ...(e.level === undefined ? {} : { level: e.level }), ...(signal ? { signal } : {}),
         });
       },
-      sendMessage: (id, m) => this.agentMessage(id, m.text, m.to),
+      sendMessage: async (id, m) => {
+        const e = this.#entries.get(id);
+        if (e) await this.#hold(e).catch(() => {});
+        return this.agentMessage(id, m.text, m.to);
+      },
       glossary: (id, q) => (this.#o.glossary ? this.#o.glossary(id, q) : Promise.resolve({ results: [], loaded: [] })),
     };
   }

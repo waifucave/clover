@@ -21,7 +21,7 @@ import { BridgeEndpoint } from "../bridge/endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
-import { AgentManager } from "../manager";
+import { AgentManager, type AgentPauseGate } from "../manager";
 import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
@@ -66,6 +66,7 @@ export interface WorldOptions {
   readOnlyMode?: { option: string; values: readonly string[] };
   askDuringReplay?: boolean;
   selections?: UserSelections;
+  pause?: AgentPauseGate;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -140,6 +141,7 @@ export class World {
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       levelOf: () => this.level,
+      ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;
     this.endpoint = new BridgeEndpoint({ socketPath: sock, tokens: this.tokens, handlers: manager.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });

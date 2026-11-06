@@ -28,8 +28,8 @@ export interface AgentDriverOptions {
   coalesceMs?: number;
   /** Applied to every record and to each turn's text before they leave the driver. */
   redact?: <T>(value: T) => T;
-  /** Before each prompt: what changed since the last turn reaches the agent (its computer's level). A `refused` error
-   *  refuses the turn and keeps the agent. */
+  /** Before each prompt: what changed since the last turn reaches the agent (the pause switch, its computer's level).
+   *  It may wait (paused); a `refused` error refuses the turn and keeps the agent. */
   beforeTurn?(session: AgentSession): Promise<void>;
 }
 
@@ -128,6 +128,7 @@ export class AgentDriver implements SessionDriver {
           if (isContractError(err, "refused")) return { reason: "refusal", text: err instanceof Error ? err.message : String(err) };
           throw err;
         }
+        if (ctl.signal.aborted) return { reason: "interrupted" };
       }
       const prompt = await this.#opts.promptOf(input);
       const end = await session.prompt(prompt);

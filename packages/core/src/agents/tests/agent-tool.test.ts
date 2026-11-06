@@ -493,6 +493,61 @@ describe("check 2's minors", () => {
   });
 });
 
+/** Lane D's gate, as lane K reads it. */
+function pauseSwitch() {
+  const fns = new Set<() => void>();
+  let paused = false;
+  return {
+    mayAct: () => !paused,
+    watch: (fn: () => void) => (fns.add(fn), () => void fns.delete(fn)),
+    set(p: boolean) {
+      paused = p;
+      for (const f of [...fns]) f();
+    },
+  };
+}
+
+describe("the pause switch pauses background agents too (the owner's ruling)", () => {
+  test("paused, no new prompt is sent and the agent isn't stalled; on resume it goes on", async () => {
+    const gate = pauseSwitch();
+    gate.set(true);
+    const w = make({ pause: gate, script: [[{ say: "done" }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("session").length > 0, "the agent to start");
+    await advanceAndSettle(w.clock, 30 * 60_000, 60_000);
+    expect(w.report("prompt")).toEqual([]);
+    expect(w.host.get(r.sessionId)!.status).toBe("prompting");
+    gate.set(false);
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("done");
+  });
+
+  test("paused mid-turn, the agent is held at its next permission request, unanswered until resume", async () => {
+    const gate = pauseSwitch();
+    const w = make({ pause: gate, script: [[{ wait: true }, { tool: { kind: "edit", title: "Edit", paths: ["a.txt"] } }, { say: "edited" }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    await waitFor(() => w.report("blocked").some((b) => b["on"] === "permission"), "the permission request");
+    await new Promise((res) => setTimeout(res, 300));
+    expect(w.report("answer")).toEqual([]);
+    gate.set(false);
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("edited");
+    expect(w.report("answer")).toMatchObject([{ kind: "allow_once" }]);
+  });
+
+  test("an agent that acts without asking has its turn cancelled at its next tool call while paused", async () => {
+    const gate = pauseSwitch();
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ pause: gate, quirks, level: "ask", script: [[{ wait: true }, { tool: { kind: "edit", title: "Edit", paths: ["a.txt"], ask: false } }, { wait: true }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("cancelled");
+  });
+});
+
 describe("a hostile agent (review 12)", () => {
   test("client methods Clover didn't offer are refused, and the token never reaches the session's log", async () => {
     const w = make({ script: [[{ clientCall: { method: "fs/read_text_file", params: { path: "/etc/hosts" } } }, { clientCall: { method: "terminal/create", params: { command: "id" } } }, { sayBridgeToken: true }]] });
