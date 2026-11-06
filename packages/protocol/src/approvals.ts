@@ -42,6 +42,10 @@ export const CARD_KINDS = [
    *  so no plugin can swap it. `host` is the link's site and `command` the whole link; approving opens it in the
    *  user's browser (the app does, never a plugin), denying declines. */
   "elicitation",
+  /** A session asks to drive the person's own logged-in browser partition, `user` (ruling R10; lane L): a bot or a
+   *  coding session uses its own partition otherwise. One card per session, never an "always"; on a yes the browser
+   *  lets that session alone use it (`allowPersonsBrowser(session, true)`). */
+  "person-browser",
 ] as const;
 export const CardKind = z.enum(CARD_KINDS);
 export type CardKind = z.infer<typeof CardKind>;

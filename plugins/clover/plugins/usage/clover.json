@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "Usage",
+  "description": "Your plans and what your bots and your own coding apps used: a tab of the island, and a section of Settings with a chart and a table.",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["usage.read"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "ui": [
+      { "spot": "island.tab", "id": "tab", "component": "UsageTabEntry", "title": "Usage", "order": 800, "attention": "never" },
+      { "spot": "settings.section", "id": "settings", "component": "UsageSection", "title": "Usage", "order": 800 }
+    ]
+  }
+}

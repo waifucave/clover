@@ -17,8 +17,9 @@ import {
   AUTO_INK,
   AUTO_INKS,
   CATALOG_ACCENTS,
-  LABEL_FILL_TOKENS,
+  LABEL_FILLS,
   LABEL_FLOOR,
+  LABEL_INK,
   cssProperty,
   isPluginTokenName,
   isTokenName,
@@ -227,7 +228,9 @@ export function resolveAutoInk(accent: string, opts: { background: string; darkI
   // The background's own alpha is dropped, as lane B's `flattenColor` does.
   const painted = composite(parseHex(accent), { ...parseHex(opts.background), a: 1 });
   const hex = `#${[painted.r, painted.g, painted.b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-  return contrast("#FFFFFF", hex) >= opts.floor ? "#FFFFFF" : opts.darkInk;
+  if (contrast("#FFFFFF", hex) >= opts.floor) return "#FFFFFF";
+  // The theme's dark ink, and black where that misses the floor too (lane B's rule): never an ink that can't be read.
+  return isHexColor(opts.darkInk) && contrast(opts.darkInk, hex) >= opts.floor ? opts.darkInk : LABEL_INK;
 }
 
 /** `#RRGGBB` as hue (degrees), saturation and lightness (0–1). */
@@ -294,15 +297,21 @@ export function resolveTokens(appearance: Appearance, layers: readonly Tokens[],
     }
   }
   const live = opts.systemAccent !== undefined && isHexColor(opts.systemAccent) ? opts.systemAccent : undefined;
-  if (live !== undefined) for (const name of followsOs) out[name] = live;
-  // A filled button with a text label takes the accent darkened until its white label reaches 4.5:1.
-  for (const name of followsOs) {
+  // The OS accent first, then the fills that darken another token as resolved (`color.accent.fill` from `color.accent`).
+  const ordered = [...followsOs].sort((a, b) => Number(LABEL_FILLS[a]?.from !== undefined) - Number(LABEL_FILLS[b]?.from !== undefined));
+  for (const name of ordered) {
+    const fill = LABEL_FILLS[name];
+    if (fill?.from !== undefined) out[name] = out[fill.from]!;
+    else if (live !== undefined) out[name] = live;
+    // A filled control with a text label: its source darkened until the white label reaches 4.5:1.
     const value = out[name];
-    if (LABEL_FILL_TOKENS.includes(name) && typeof value === "string" && isHexColor(value)) out[name] = labelFill(value);
+    const background = fill ? out[fill.background] : undefined;
+    if (fill && typeof value === "string" && isHexColor(value)) out[name] = labelFill(value, LABEL_FLOOR, typeof background === "string" && isHexColor(background) ? background : "#FFFFFF");
   }
   for (const name of auto) {
     const ink = AUTO_INKS[name]!;
-    const [accent, background, darkInk] = [out[ink.accent], out[ink.background], out[ink.darkInk]];
+    const [accent, background] = [out[ink.accent], out[ink.background]];
+    const darkInk = ink.darkInk === undefined ? LABEL_INK : out[ink.darkInk];
     if (typeof accent !== "string" || typeof background !== "string" || typeof darkInk !== "string") continue;
     if (!isHexColor(accent) || !isHexColor(background)) continue;
     out[name] = resolveAutoInk(accent, { background, darkInk, floor: ink.floor });

@@ -1,0 +1,21 @@
+{
+  "manifest": 1,
+  "name": "2D model avatar",
+  "description": "Draws a bot's 2D model on its stage, breathing and blinking, its mouth moving with the bot's voice as the app describes it. It hears nothing itself and plays no sound.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "avatar",
+        "id": "live2d",
+        "key": "live2d",
+        "component": "Live2dAvatarEntry"
+      }
+    ]
+  }
+}
