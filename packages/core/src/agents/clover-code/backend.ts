@@ -1,4 +1,4 @@
-// Clover's own coding agent as an ACP backend (spec §9.3 "[D] Winter's own coding mode becomes an ACP agent that bots
+// Clover's own coding agent as an ACP backend (spec §9.3 "[D] the inherited coding mode becomes an ACP agent that bots
 // can delegate to like any other"; the controller's option A for K-M3): `clover-code`.
 //
 // * **ACP, in the daemon.** Each delegation gets its own ACP agent, clover-sdk's `serveAcpAgent` over the SDK's

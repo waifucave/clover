@@ -26,7 +26,7 @@ import { UserSelections } from "./acp/selections";
 import { AcpAgentSession, type WireTap } from "./acp/session";
 import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admission";
 import type { PluginParts } from "./placement";
-import type { StdioMcpServer } from "./acp/types";
+import type { StdioMcpServer } from "@waifucave/clover-agent-sdk/acp";
 import { AgentJob } from "../platform/win-job";
 import { programHash } from "./sandbox/oks";
 import { buildAgentEnv, launchContained, spawnPlan, type AgentJobLike } from "./process/launch";

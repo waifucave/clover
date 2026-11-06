@@ -47,7 +47,7 @@ import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 import { StallWatchdog } from "./watchdog";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
-export { RpcPeer, RpcError } from "./acp/jsonrpc";
+export { RpcPeer, RpcError } from "@waifucave/clover-agent-sdk/acp";
 export { AcpAgentBackend, versionSatisfies, type AcpStartSpec, type AgentWire, type BackendCommand } from "./backend";
 export { bridgeCloverParts, type BridgeCloverParts, type BridgeHandlers } from "./bridge/handlers";
 export { bridgeCommand, BRIDGE_MAIN_PATH } from "./bridge/main";
