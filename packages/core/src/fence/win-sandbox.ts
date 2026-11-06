@@ -68,7 +68,7 @@ export function installerTargetSid(execPath: string = process.execPath): string 
  *  Paths with `$`, quotes or backticks stay inert (UTF-16LE base64, the only encoding `-EncodedCommand`
  *  takes), so a hostile or odd profile path can never break out of the command. */
 export function psEncodedArgs(script: string): readonly string[] {
-  const b64 = Buffer.from(`\uFEFF${script}`, "utf16le").toString("base64");
+  const b64 = Buffer.from(script, "utf16le").toString("base64");
   return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand", b64];
 }
 
