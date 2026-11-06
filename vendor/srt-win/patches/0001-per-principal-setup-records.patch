@@ -9,6 +9,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -67,6 +68,12 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/reg.rs     |  37 +++++++++++
  src/user.rs    |  16 +++--
  4 files changed, 303 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 116 +++++++++++++++++++++++++------
+ src/install.rs | 182 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  37 ++++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 308 insertions(+), 43 deletions(-)
 
 diff --git a/src/cli.rs b/src/cli.rs
 index 8e616e2..cdbb36a 100644
@@ -304,7 +311,7 @@ index 8e616e2..cdbb36a 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..70c213e 100644
+index ba0ac37..2880674 100644
 --- a/src/install.rs
 +++ b/src/install.rs
 @@ -49,19 +49,83 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
@@ -492,7 +499,7 @@ index ba0ac37..70c213e 100644
      crate::reg::delete_subtree(crate::reg::CA_SUBKEY)?;
      if let Some(base) = crate::reg::Key::open(crate::reg::BASE, true)? {
          for v in [
-@@ -636,6 +734,51 @@ pub fn clear_setup() -> Result<()> {
+@@ -636,6 +734,56 @@ pub fn clear_setup() -> Result<()> {
              crate::reg::delete_value(&base, v)?;
          }
      }
@@ -525,6 +532,11 @@ index ba0ac37..70c213e 100644
 +    let subkey = user_subkey(name)?;
 +    crate::reg::delete_subtree(&subkey)?;
 +    crate::reg::delete_subtree(&cred_key_for(name)?)?;
++    // Drop the now-empty Users parent (and the Cred key once its Blob
++    // value is gone too) so an uninstall leaves no shell behind.
++    if !other_principals_remain(name)? {
++        let _ = crate::reg::delete_subtree(USERS_SUBKEY);
++    }
 +    Ok(())
 +}
 +
