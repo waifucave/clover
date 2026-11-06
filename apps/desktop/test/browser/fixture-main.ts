@@ -4,6 +4,7 @@
 // throws past itself, so one failure doesn't hide the rest.
 import { app, BrowserWindow, clipboard, session, webContents, type BaseWindow } from "electron";
 import { createServer } from "node:http";
+import { connect as netConnect, createServer as createNetServer } from "node:net";
 import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { BROWSER_WEBRTC_POLICY, createBrowserHost, isBrowserContents, isBrowserTab, PERSON_POLICY, type BrowserHost, type TabView } from "../../src/main/browser/index";
@@ -362,6 +363,93 @@ async function main(): Promise<void> {
     return { ok, detail: { botByNumber, botByName, codeLoopback, metadataUrl, metadataPage, refusedFast } };
   });
 
+  // R14: the proxy setting, chained behind the filter, under `--no-proxy-server`. A local HTTP proxy plays the
+  // person's proxy; "proxied.test" resolves (in the filter) to a public address, which only the proxy can reach (it
+  // joins it to the fixture's server), and "nas.test" to a LAN address. No connection leaves this machine: a direct
+  // dial to either address goes to a closed loopback port.
+  const PUBLIC = "93.184.216.34";
+  const LAN = "192.168.77.7";
+  const asked: string[] = [];
+  const proxyServer = createNetServer((client) => {
+    client.on("error", () => undefined);
+    let head = "";
+    client.on("data", function onData(chunk: Buffer) {
+      head += chunk.toString("latin1");
+      const end = head.indexOf("\r\n\r\n");
+      if (end < 0) return;
+      client.removeListener("data", onData);
+      const target = /^CONNECT (\S+) HTTP/.exec(head)?.[1] ?? "";
+      asked.push(target);
+      const ip = target.slice(0, target.lastIndexOf(":"));
+      if (ip !== PUBLIC && ip !== LAN) {
+        client.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+        return;
+      }
+      const up = netConnect(port, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection established\r\n\r\n");
+        const rest = head.slice(end + 4);
+        if (rest.length > 0) up.write(Buffer.from(rest, "latin1"));
+        up.pipe(client);
+        client.pipe(up);
+      });
+      up.on("error", () => client.destroy());
+    });
+  });
+  await new Promise<void>((r) => proxyServer.listen(0, "127.0.0.1", () => r()));
+  const proxyPort = (proxyServer.address() as AddressInfo).port;
+  const direct: string[] = [];
+  const proxied = createBrowserHost({
+    ...hostOpts, newId: () => `tab_p${++n}`, screenReader: { override: false },
+    network: {
+      lookup: async (h: string) => (h === "proxied.test" ? [PUBLIC] : h === "nas.test" ? [LAN] : h === "localhost" ? ["127.0.0.1"] : []),
+      dial: (p: number, ip: string) => {
+        if (ip === PUBLIC || ip === LAN) {
+          direct.push(`${ip}:${p}`);
+          return netConnect(1, "127.0.0.1");
+        }
+        return netConnect({ port: p, host: ip });
+      },
+    },
+  });
+  await proxied.start();
+  const loadedP = async (id: string) => (await until(() => evalIn(proxied, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
+  const go = async (id: string, url: string) => { await proxied.command(id, { kind: "navigate", url }).catch(() => undefined); return loadedP(id); };
+  let gamma: TabView | undefined;
+
+  await step("R14: with an explicit proxy, a bot's tab loads a public name through it, the proxy asked for the checked address and never the name (under --no-proxy-server); the LAN and loopback stay refused", async () => {
+    await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: [] });
+    gamma = await proxied.open({ id: "tab_p_gamma", owner: { kind: "bot", bot: "gamma" }, url: `http://proxied.test:${port}/page`, place: "headless" });
+    const viaProxy = await loadedP(gamma.id);
+    const askedPublic = asked.includes(`${PUBLIC}:${port}`);
+    const askedName = asked.some((a) => a.startsWith("proxied.test"));
+    const lan = await go(gamma.id, `http://nas.test:${port}/page`);
+    const loop = await go(gamma.id, `http://localhost:${port}/page`);
+    const ok = viaProxy && askedPublic && !askedName && !lan && !loop && !asked.some((a) => a.startsWith(LAN)) && direct.length === 0;
+    return { ok, detail: { viaProxy, asked: [...asked], lan, loop, direct: [...direct] } };
+  });
+
+  await step("the bot's LAN setting: its tabs reach the LAN (through the proxy), still never loopback or the metadata address", async () => {
+    if (gamma === undefined) return { ok: false, detail: "no tab" };
+    await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: ["gamma"] });
+    const lan = await go(gamma.id, `http://nas.test:${port}/page`);
+    const askedLan = asked.includes(`${LAN}:${port}`);
+    const loop = await go(gamma.id, `http://localhost:${port}/page`);
+    const meta = await go(gamma.id, "http://169.254.169.254/latest/meta-data/");
+    const ok = lan && askedLan && !loop && !meta && direct.length === 0;
+    return { ok, detail: { lan, askedLan, loop, meta, asked: [...asked], direct: [...direct] } };
+  });
+
+  await step("the proxy setting off: the next connection goes direct (the public address is never reached here), and the proxy is asked nothing more", async () => {
+    if (gamma === undefined) return { ok: false, detail: "no tab" };
+    await proxied.configure({ proxy: { mode: "off" }, lanBots: [] });
+    const before = asked.length;
+    const loaded = await go(gamma.id, `http://proxied.test:${port}/page?off`);
+    const ok = !loaded && asked.length === before && direct.some((d) => d.startsWith(PUBLIC));
+    return { ok, detail: { loaded, asked: [...asked], direct: [...direct] } };
+  });
+
+  proxied.shutdown();
+  proxyServer.close();
   strict.shutdown();
   reader.shutdown();
   host.shutdown();
