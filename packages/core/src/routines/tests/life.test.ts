@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { CLOVER_ERR, SESSIONS_METHODS as M, type Caller } from "@waifucave/clover-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
+import { FakePluginHost } from "../../contracts/fakes/plugin-host";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { MethodError } from "../../bots/rpc";
@@ -108,6 +109,50 @@ describe("the Routine tool and the engine on the bot side", () => {
     await b.host.stop("s_code");
     await b.host.stop("s_code");
     expect(ended).toEqual(["s_code"]);
+    await b.shutdown();
+  });
+});
+
+describe("webhooks through the webhook.ingress point (lane I's forwarder)", () => {
+  test("a routine registers by its key's hash, each delivery runs once, late ones follow the missed rule, and all are acked or dropped", async () => {
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    const calls: { method: string; args: unknown }[] = [];
+    let queue: unknown[] = [];
+    host.define("clover/forwarder", {
+      ingress: {
+        register: async (a: { routine: string; keyHash: string }) => (calls.push({ method: "register", args: a }), { url: `https://hooks.waifucave.com/tag1/${a.routine}` }),
+        next: async () => {
+          const deliveries = queue;
+          queue = [];
+          return { deliveries };
+        },
+        ack: async (a: unknown) => (calls.push({ method: "ack", args: a }), {}),
+        drop: async (a: unknown) => (calls.push({ method: "drop", args: a }), {}),
+      },
+    } as never);
+    const registry = { entries: (point: string) => (point === "webhook.ingress" ? [{ pluginId: "clover/forwarder", entryId: "waifucave", state: "active", value: { handler: "ingress" } }] : []) } as never;
+    const clock = new FakeClock();
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock,
+      routines: { secrets: new MemorySecretStore(), watchFiles: false, ingress: { registry, host, poll: false } },
+    });
+    const r = await b.side.tools("b_alpha").find((t) => t.name === "Routine")!.run({ name: "Deploys", instructions: "Check the deploy.", webhook: true });
+    const id = r.text.match(/routine (r_[a-z0-9]+)/)![1]!;
+    expect(r.text).toContain(`Its webhook URL is https://hooks.waifucave.com/tag1/${id}`);
+    const registered = calls.find((c) => c.method === "register")!.args as { keyHash: string };
+    expect(registered.keyHash).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const body = new TextEncoder().encode("{\"ref\":\"main\"}");
+    queue = [
+      { id: "d1", routine: id, receivedAt: clock.now(), method: "POST", query: "", headers: [["content-type", "application/json"]], body, untrusted: true },
+      { id: "d1", routine: id, receivedAt: clock.now(), method: "POST", query: "", headers: [], body, untrusted: true },
+      { id: "d2", routine: "r_nosuchroutine", receivedAt: clock.now(), method: "POST", query: "", headers: [], body, untrusted: true },
+    ];
+    expect(await b.side.ingress!.pollOnce(0)).toBe(1);
+    await flush();
+    expect(calls.filter((c) => c.method !== "register")).toEqual([{ method: "ack", args: { ids: ["d1", "d1"] } }, { method: "drop", args: { ids: ["d2"] } }]);
+    const thread = b.host.list({ kind: "side-thread" })[0]!;
+    const input = b.drivers.for(thread.id).turns[0]!.input;
+    expect(input.from === "routine" && input.text).toContain("Untrusted outside content from a webhook (application/json)");
     await b.shutdown();
   });
 });

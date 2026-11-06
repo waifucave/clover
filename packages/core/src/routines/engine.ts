@@ -79,6 +79,8 @@ export interface RoutineEngineOptions {
   };
   /** Watches the folder for changes; tests turn it off and call `rescan`. */
   watchFiles?: boolean;
+  /** Registers a webhook routine with the `webhook.ingress` plugins (webhooks.ts) and gives back its URL. */
+  registerWebhook?(id: string, key: string): Promise<string>;
   warn?: (message: string) => void;
 }
 
@@ -98,6 +100,8 @@ interface EngineState {
   /** By routine and trigger key: the last fire. */
   fires: Record<string, number>;
   lastRunAt: Record<string, number>;
+  /** The webhook deliveries already run, newest last, so a repeat runs nothing. */
+  deliveries?: string[];
 }
 
 interface RoutineOk {
@@ -126,7 +130,7 @@ export class RoutineEngine {
   constructor(opts: RoutineEngineOptions) {
     this.#o = opts;
     const saved = readJson(this.#stateFile()) as Partial<EngineState> | undefined;
-    this.#state = { fires: { ...(saved?.fires ?? {}) }, lastRunAt: { ...(saved?.lastRunAt ?? {}) } };
+    this.#state = { fires: { ...(saved?.fires ?? {}) }, lastRunAt: { ...(saved?.lastRunAt ?? {}) }, deliveries: [...(saved?.deliveries ?? [])] };
   }
 
   async start(): Promise<void> {
@@ -211,7 +215,32 @@ export class RoutineEngine {
       key = Buffer.from(bytes).toString("base64url");
       await this.#o.secrets.set(ref, key);
     }
-    return { url: `${(this.#o.webhookBase ?? "https://hooks.waifucave.com").replace(/\/+$/, "")}/${id}`, key };
+    const url = this.#o.registerWebhook === undefined ? `${(this.#o.webhookBase ?? "https://hooks.waifucave.com").replace(/\/+$/, "")}/${id}` : await this.#o.registerWebhook(id, key);
+    return { url, key };
+  }
+
+  /** The routines here with a webhook trigger (the ingress registers each). */
+  webhookRoutines(): string[] {
+    return [...this.#loaded.entries()].filter(([key, l]) => !key.includes("@") && l.state === "active" && l.routine.triggers.some((t) => t.type === "webhook")).map(([key]) => key);
+  }
+
+  /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the
+   *  missed-run rule for one held while this computer was away. */
+  async deliverWebhook(d: { id: string; routine: string; receivedAt: number; body: string; contentType?: string }): Promise<"accepted" | "refused" | "missed" | "duplicate"> {
+    const l = this.#loaded.get(d.routine);
+    if (!l || l.state !== "active" || !l.routine.triggers.some((t) => t.type === "webhook")) return "refused";
+    const seen = (this.#state.deliveries ??= []);
+    if (seen.includes(d.id)) return "duplicate";
+    seen.push(d.id);
+    if (seen.length > 1000) seen.splice(0, seen.length - 1000);
+    this.#saveState();
+    if (this.#o.clock.now() - d.receivedAt > WEBHOOK_LATE_MS && l.routine.missed === "skip") {
+      this.#record(l, { outcome: "missed", summary: "A webhook that arrived while this computer was away; the routine skips missed runs." });
+      return "missed";
+    }
+    const body = Buffer.byteLength(d.body) > WEBHOOK_PAYLOAD_MAX_BYTES ? `${Buffer.from(d.body).subarray(0, WEBHOOK_PAYLOAD_MAX_BYTES).toString("utf8")}\n[cut at ${WEBHOOK_PAYLOAD_MAX_BYTES} bytes]` : d.body;
+    void this.#run(l, "a webhook", untrusted("a webhook", body, d.contentType));
+    return "accepted";
   }
 
   /** A webhook arrived for a routine here (lane I's forwarder, through the `webhook.ingress` point). */

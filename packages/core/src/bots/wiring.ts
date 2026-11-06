@@ -23,6 +23,7 @@ import { botToolDefs, SendLimiter, type AgentRows, type CoreToolDef } from "./to
 import { RoutineEngine, type RoutineEngineOptions } from "../routines/engine";
 import { routineMethods } from "../routines/rpc";
 import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
+import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -58,7 +59,10 @@ export interface BotSideOptions {
   /** Each computer's approval level (lane J's computer registry), for lane K's agents and the routines. */
   levelOf?: (computer: string) => Level | undefined;
   /** This computer's routines (§7): the engine runs when given. */
-  routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">>;
+  routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">> & {
+    /** The `webhook.ingress` entries and the plugin host that runs them (lane I's forwarder): webhooks.ts. */
+    ingress?: Pick<WebhookIngressOptions, "registry" | "host"> & { poll?: boolean };
+  };
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
   userHome?: string;
@@ -80,6 +84,8 @@ export interface BotSide {
   agents?: AgentsHandle;
   /** This computer's routine engine, when routines were given. */
   routines?: RoutineEngine;
+  /** Its webhooks' way in, when an ingress was given. */
+  ingress?: WebhookIngress;
   /** `SendMessage` and `ListAgents` for one bot's session (or an agent's, through the bridge), with K's agent rows. */
   tools(sessionId: string): CoreToolDef[];
   /** Lane D's sessions methods, with K's `setAgentModel`. */
@@ -125,7 +131,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   const computerLevel = (): Level => levelOf(o.computer) ?? "ask-risky";
-  const routines = o.routines === undefined ? undefined : new RoutineEngine({
+  let ingress: WebhookIngress | undefined;
+  const routines: RoutineEngine | undefined = o.routines === undefined ? undefined : new RoutineEngine({
     home: o.home, computer: o.computer, clock: o.clock, bots, computerLevel,
     ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
     ...(o.routines.userTimeZone === undefined ? {} : { userTimeZone: o.routines.userTimeZone }),
@@ -133,7 +140,11 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.routines.webhookBase === undefined ? {} : { webhookBase: o.routines.webhookBase }),
     ...(o.routines.pluginTriggers === undefined ? {} : { pluginTriggers: o.routines.pluginTriggers }),
     ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
+    ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string): Promise<string> => ingress!.register(id, key) }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
+  });
+  ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
+    registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   const routineTool = routines === undefined || o.routines === undefined ? undefined : {
     home: o.home, computer: o.computer, routines,
@@ -155,6 +166,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     gate, host, compaction, bots,
     ...(agents === undefined ? {} : { agents }),
     ...(routines === undefined ? {} : { routines }),
+    ...(ingress === undefined ? {} : { ingress }),
     tools: (sessionId) => {
       const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
       const bot = host.callerOf(sessionId).bot;
@@ -171,8 +183,10 @@ export function createBotSide(o: BotSideOptions): BotSide {
     start: async () => {
       await bots.start();
       await routines?.start();
+      if (o.routines?.ingress?.poll !== false) ingress?.start();
     },
     close: async () => {
+      ingress?.stop();
       routines?.stop();
       offEnded?.();
       await bots.stop();
