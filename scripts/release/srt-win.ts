@@ -1,7 +1,8 @@
 // srt-win.exe, the Windows Bash fence's launcher (lane C, spec §9.1): built from sandbox-runtime's source at a
-// pinned commit (Apache-2.0), with a static CRT so no VC++ runtime ships beside it, and checked against the hash
+// pinned commit (Apache-2.0), with a static CRT so no VC++ runtime ships beside it, and checked against the digest
 // core pins for it (`SRT_WIN_PINS`, packages/core/src/fence/windows-launcher.ts), which core checks again before
-// every launch. The release build stages it in resources\daemon\, beside clover-core.exe and clover-link.exe.
+// every launch. The pin is the file's Authenticode digest (`authenticodeDigest`), not its SHA-256: signing adds a
+// signature, and a timestamp that differs every time, but leaves the digest as it was (the controller's ruling). The release build stages it in resources\daemon\, beside clover-core.exe and clover-link.exe.
 //
 //   bun scripts/release/srt-win.ts [--arch x64|arm64[,…]] [--print] [--dry-run]
 //
@@ -12,7 +13,7 @@
 //   2. builds vendor/srt-win-src (`cargo build --release --locked --target <triple>`, the test hooks off), with a
 //      static CRT, and with the linker and paths set so the same source gives the same bytes on any machine
 //      (`/Brepro`, no PDB path, source paths remapped)
-//   3. copies it to dist/srt-win/<arch>/srt-win.exe, prints its SHA-256, and fails unless it is the pinned one
+//   3. copies it to dist/srt-win/<arch>/srt-win.exe, prints its Authenticode digest, and fails unless it is the pinned one
 //      (`--print` only prints: for measuring a build before its pin is set)
 //   4. writes dist/srt-win/THIRD_PARTY_NOTICES.txt: sandbox-runtime's LICENSE and the licenses of the crates it
 //      compiles in (cargo-about, run in the source's root)
@@ -42,6 +43,43 @@ export function srtWinOutput(arch: SrtWinArch): string {
   return `dist/srt-win/${arch}/srt-win.exe`;
 }
 export const SRT_WIN_NOTICES = "dist/srt-win/THIRD_PARTY_NOTICES.txt";
+
+/**
+ * A PE file's Authenticode digest, SHA-256, in hex: the whole file but the three things a signature changes, read
+ * in file order. Left out: the optional header's CheckSum (4 bytes), the certificate table's entry in the data
+ * directory (8 bytes, index 4), and the certificate table itself (the attached signatures, which sit after the
+ * image). It is the digest `signtool sign` signs over (for a file whose sections follow its headers in order, as a
+ * linker writes them), so it is the same before and after signing, and across signings. Throws on a file that
+ * isn't a PE image.
+ */
+export function authenticodeDigest(bytes: Uint8Array): string {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const fail = (why: string): never => { throw new Error(`not a PE image: ${why}`); };
+  if (bytes.length < 0x40 || view.getUint16(0, true) !== 0x5a4d) fail("no MZ header");
+  const pe = view.getUint32(0x3c, true);
+  if (pe + 24 > bytes.length || view.getUint32(pe, true) !== 0x00004550) fail("no PE signature");
+  const optional = pe + 24;
+  const magic = view.getUint16(optional, true);
+  if (magic !== 0x10b && magic !== 0x20b) fail(`optional header magic 0x${magic.toString(16)}`);
+  const checksum = optional + 64;
+  const directories = optional + (magic === 0x20b ? 112 : 96);
+  const count = view.getUint32(directories - 4, true);
+  if (count < 5) fail("no certificate table entry");
+  const certEntry = directories + 4 * 8;
+  if (certEntry + 8 > bytes.length) fail("truncated data directories");
+  const certOffset = view.getUint32(certEntry, true);
+  const certSize = view.getUint32(certEntry + 4, true);
+  if (certSize !== 0 && (certOffset < certEntry + 8 || certOffset + certSize > bytes.length)) fail("the certificate table is outside the file");
+  const hash = createHash("sha256");
+  hash.update(bytes.subarray(0, checksum));
+  hash.update(bytes.subarray(checksum + 4, certEntry));
+  if (certSize === 0) hash.update(bytes.subarray(certEntry + 8));
+  else {
+    hash.update(bytes.subarray(certEntry + 8, certOffset));
+    hash.update(bytes.subarray(certOffset + certSize));
+  }
+  return hash.digest("hex");
+}
 
 /** Core's pin file (lane C's). */
 export const PIN_FILE = "packages/core/src/fence/windows-launcher.ts";
@@ -87,7 +125,7 @@ export function pinProblems(arch: SrtWinArch, sha256: string, pins: Partial<Reco
   if (print) return [];
   const pin = pins[arch];
   if (pin === undefined) return [`core pins no srt-win.exe for ${arch} (${PIN_FILE}'s SRT_WIN_PINS)`];
-  return pin === sha256 ? [] : [`srt-win.exe for ${arch} is ${sha256}, but core pins ${pin}`];
+  return pin === sha256 ? [] : [`srt-win.exe for ${arch} has the Authenticode digest ${sha256}, but core pins ${pin}`];
 }
 
 export interface SrtWinArgs {
@@ -153,9 +191,10 @@ export function main(argv: readonly string[], root: string): number {
       const out = join(root, ...srtWinOutput(arch).split("/"));
       mkdirSync(dirname(out), { recursive: true });
       copyFileSync(join(src, SRT_WIN_SOURCE.dir, "target", SRT_WIN_TRIPLES[arch], "release", "srt-win.exe"), out);
-      const sha = createHash("sha256").update(readFileSync(out)).digest("hex");
-      console.log(`srt-win: ${srtWinOutput(arch)} sha256 ${sha}`);
-      problems.push(...pinProblems(arch, sha, pins, a.print));
+      const bytes = new Uint8Array(readFileSync(out));
+      const digest = authenticodeDigest(bytes);
+      console.log(`srt-win: ${srtWinOutput(arch)} authenticode-sha256 ${digest} (file sha256 ${createHash("sha256").update(bytes).digest("hex")})`);
+      problems.push(...pinProblems(arch, digest, pins, a.print));
     }
     // The notices: sandbox-runtime's own license, then every crate compiled in (cargo-about's plain-text report).
     const crates = must(["cargo", "about", "generate", "--config", join(root, "packaging", "windows", "about.toml"), "--manifest-path", join(src, SRT_WIN_SOURCE.dir, "Cargo.toml"), join(root, "packaging", "windows", "about.hbs")], src);

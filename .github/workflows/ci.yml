@@ -434,13 +434,13 @@ jobs:
 
       - name: Build twice from clean clones, and compare
         run: |
-          bun scripts/release/srt-win.ts --arch x64,arm64 --print
+          bun scripts/release/srt-win.ts --arch x64,arm64 --print | tee first.log
           sha256sum dist/srt-win/*/srt-win.exe > first.txt
           rm -rf dist/srt-win
           bun scripts/release/srt-win.ts --arch x64,arm64 --print
           sha256sum dist/srt-win/*/srt-win.exe > second.txt
-          cat first.txt
           diff first.txt second.txt
+          grep authenticode-sha256 first.log
           grep -q "Apache License" dist/srt-win/THIRD_PARTY_NOTICES.txt
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody

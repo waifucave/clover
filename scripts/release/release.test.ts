@@ -394,3 +394,41 @@ describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win
     expect(builder.extraResources[0].filter).toEqual(expect.arrayContaining(["srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"]));
   });
 });
+
+describe("the launcher's pin: its Authenticode digest", () => {
+  // A minimal PE32+ image: the MZ header, the PE signature, a COFF header and an optional header with 16 data
+  // directories, then some section bytes; `signed` appends a certificate table and points the directory at it.
+  function pe(signed: Uint8Array | null, checksum = 0): Uint8Array {
+    const peAt = 0x80;
+    const optional = peAt + 24;
+    const directories = optional + 112;
+    const end = directories + 16 * 8;
+    const body = new Uint8Array(end + 64).fill(7, end);
+    const v = new DataView(body.buffer);
+    v.setUint16(0, 0x5a4d, true);
+    v.setUint32(0x3c, peAt, true);
+    v.setUint32(peAt, 0x00004550, true);
+    v.setUint16(optional, 0x20b, true);
+    v.setUint32(optional + 64, checksum, true);
+    v.setUint32(directories - 4, 16, true);
+    if (signed === null) return body;
+    const out = new Uint8Array(body.length + signed.length);
+    out.set(body);
+    out.set(signed, body.length);
+    const o = new DataView(out.buffer);
+    o.setUint32(directories + 32, body.length, true);
+    o.setUint32(directories + 36, signed.length, true);
+    return out;
+  }
+
+  test("is the same unsigned, signed, and signed again with another timestamp; it changes with the image", async () => {
+    const { authenticodeDigest } = await import("./srt-win");
+    const unsigned = authenticodeDigest(pe(null));
+    expect(authenticodeDigest(pe(new Uint8Array(40).fill(1), 0x1234))).toBe(unsigned);
+    expect(authenticodeDigest(pe(new Uint8Array(56).fill(2), 0x9999))).toBe(unsigned);
+    const changed = pe(null);
+    changed[changed.length - 1] = 8;
+    expect(authenticodeDigest(changed)).not.toBe(unsigned);
+    expect(() => authenticodeDigest(new Uint8Array(100))).toThrow(/no MZ header/);
+  });
+});

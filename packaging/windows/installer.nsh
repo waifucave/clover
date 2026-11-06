@@ -12,7 +12,9 @@
 ; prompt, to run `clover-core sandbox setup`; an update never asks, and the principal stays across updates. If the
 ; user declines, or setup fails, the install still finishes and Bash stays off until the app's "Set up Bash", which
 ; runs the same command. A real uninstall runs `clover-core sandbox remove` the same way, after login start is
-; removed. `sandbox status` comes first on install: a principal already set up (an earlier install) asks nothing.
+; removed. `sandbox status` comes first on install, unelevated: 0 means the principal and its filters are there and
+; good (an earlier install), and nothing is asked; anything else runs setup (3, the launcher missing or not the
+; pinned one, makes setup exit 3 too and change nothing, which is logged).
 ; The command takes no flags: the principal's name, its WFP sublayer and the profile rules are compiled into it.
 ; Its exit codes: 0 done, 2 not elevated, 3 the launcher missing or not the pinned one, 1 anything else; 1223 here
 ; means the user declined the prompt. The binary's path goes to PowerShell in the environment, never inside the
