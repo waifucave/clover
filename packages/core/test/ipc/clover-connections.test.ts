@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { createCloverServer } from "../../src/ipc/clover";
+import { bridgeMethodHandlers, createCloverServer, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
 import { SessionStore } from "../../src/sessions/store";
@@ -61,11 +61,36 @@ class Client {
 const outside: PeerFacts = { pid: 4242, ancestors: [1], probe: { sandboxedMac: false, inHostNamespacesLinux: true, tokenRestrictedWin: false, appContainerWin: false }, floor: "outside-floor" };
 const fenced: PeerFacts = { pid: 5151, ancestors: [5150, 1], probe: { sandboxedMac: true }, floor: "fenced" };
 
+/** K's `BridgeTokens` as the server sees them: one token for one session, accepted only from the agent's tree,
+ *  one live connection, given back on close; `revoke` tells the server to close it. */
+class FakeBridgeTokens implements BridgeGate {
+  readonly seen: Array<number | null> = [];
+  readonly released: number[] = [];
+  private live: number | undefined;
+  private seq = 0;
+  private readonly listeners = new Set<(e: { sessionId: string; connection?: number }) => void>();
+  constructor(readonly token: string, readonly session: string, readonly tree: (pid: number) => boolean, readonly waitMs = 0) {}
+  async accept(token: string, sessionId: string, pid: number | null): Promise<BridgeVerdict> {
+    this.seen.push(pid);
+    if (token !== this.token) return { ok: false, reason: "unknown-token" };
+    if (sessionId !== this.session) return { ok: false, reason: "wrong-session" };
+    if (pid === null) return { ok: false, reason: "unverified-caller" };
+    if (this.waitMs) await Bun.sleep(this.waitMs); // the agent's pid not bound yet
+    if (!this.tree(pid)) return { ok: false, reason: "not-the-agent" };
+    if (this.live !== undefined) return { ok: false, reason: "in-use" };
+    this.live = ++this.seq;
+    return { ok: true, sessionId, connection: this.live };
+  }
+  release(_sessionId: string, connection: number): void { this.released.push(connection); if (this.live === connection) this.live = undefined; }
+  onRevoke(fn: (e: { sessionId: string; connection?: number }) => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  revoke(): void { const c = this.live; this.live = undefined; for (const fn of this.listeners) fn({ sessionId: this.session, ...(c === undefined ? {} : { connection: c }) }); }
+}
+
 describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; heartbeat?: { intervalMs: number; timeoutMs: number } } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number } } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -85,11 +110,23 @@ describe("Clover connections (C-M1)", () => {
       tellAppQuit: (reason, to) => { quits.push({ reason, to }); clover.tellAppQuit(reason, to); },
     }, { desktop: true, graceMs: 60_000 });
     const killed: number[] = [];
-    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, probe: () => peer,
+    const calls: Array<{ method: string; sessionId: string; params?: unknown }> = [];
+    const bridge = opts.bridge ? {
+      gate: opts.bridge,
+      sessionInfo: (id: string) => (id === "s-agent" ? { bot: "alpha" } : undefined),
+    } : undefined;
+    const bridgeHandlers = bridgeMethodHandlers({
+      tools: async (sessionId) => { calls.push({ method: "bridge.tools", sessionId }); return { tools: [], instructions: "hi" }; },
+      call: async (sessionId, c) => { calls.push({ method: "bridge.call", sessionId, params: c }); return { content: [], isError: false }; },
+      sendMessage: async (sessionId, m) => { calls.push({ method: "bridge.sendMessage", sessionId, params: m }); },
+      glossary: async (sessionId, q) => { calls.push({ method: "glossary.query", sessionId, params: q }); return { results: [], loaded: [] }; },
+    });
+    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair,
+      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: bridgeHandlers,
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid) => { killed.push(pid); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
-    stop = () => { pair.dispose(); server.stop(); store.close(); };
-    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, setPeer: (p: PeerFacts) => { peer = p; } };
+    stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
+    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("the app says hello with this run's token and counts as the user", async () => {
@@ -223,5 +260,73 @@ describe("Clover connections (C-M1)", () => {
     hung.close(); // what the kill does
     for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
     expect(b.pair.status().safeMode).toBe(true);
+  });
+
+  test("bridge (K): K's tokens check it with the peer's pid; its four methods only, bound to its session; one live connection", async () => {
+    const gate = new FakeBridgeTokens("t".repeat(43), "s-agent", (pid) => pid === 4242);
+    const b = await boot({ bridge: gate });
+    const c = await Client.connect(b.socketPath);
+    const r = await c.hello("bridge", gate.token, { agentSessionId: "s-agent" });
+    expect(r.result.caller).toEqual({ kind: "session", sessionId: "s-agent", sessionKind: "agent", bot: "alpha" });
+    expect(gate.seen).toEqual([4242]);
+    expect((await c.request("bridge.tools", {})).result).toEqual({ tools: [], instructions: "hi" });
+    expect((await c.request("bridge.sendMessage", { text: "done" })).result).toEqual({ ok: true });
+    expect((await c.request("glossary.query", { query: "x" })).result).toEqual({ results: [], loaded: [] });
+    expect(b.calls.map((x) => [x.method, x.sessionId])).toEqual([["bridge.tools", "s-agent"], ["bridge.sendMessage", "s-agent"], ["glossary.query", "s-agent"]]);
+    expect((await c.request("pair.status", {})).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+
+    const second = await Client.connect(b.socketPath);
+    expect((await second.hello("bridge", gate.token, { agentSessionId: "s-agent" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED); // in use
+    for (let i = 0; i < 100 && !second.closed; i++) await Bun.sleep(5);
+    expect(second.closed).toBe(true); // a refused bridge is answered and closed
+
+    c.close();
+    for (let i = 0; i < 100 && gate.released.length === 0; i++) await Bun.sleep(5);
+    expect(gate.released).toEqual([1]);
+    const again = await Client.connect(b.socketPath);
+    expect((await again.hello("bridge", gate.token, { agentSessionId: "s-agent" })).result.ok).toBe(true);
+    again.close();
+  });
+
+  test("bridge (K): a wrong token, another session, a process outside the agent, and a revoked token", async () => {
+    const gate = new FakeBridgeTokens("t".repeat(43), "s-agent", (pid) => pid === 4242);
+    const b = await boot({ bridge: gate });
+    const bad = await Client.connect(b.socketPath);
+    expect((await bad.hello("bridge", "x".repeat(43), { agentSessionId: "s-agent" })).error.code).toBe(ERR.UNAUTHORIZED);
+    const other = await Client.connect(b.socketPath);
+    expect((await other.hello("bridge", gate.token, { agentSessionId: "s-other" })).error.code).toBe(ERR.UNAUTHORIZED);
+    b.setPeer(fenced);
+    const stranger = await Client.connect(b.socketPath);
+    const refused = await stranger.hello("bridge", gate.token, { agentSessionId: "s-agent" });
+    expect(refused.error.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
+    expect(JSON.stringify(refused)).not.toContain(gate.token); // the token never shows
+    b.setPeer(outside);
+    const live = await Client.connect(b.socketPath);
+    expect((await live.hello("bridge", gate.token, { agentSessionId: "s-agent" })).result.ok).toBe(true);
+    gate.revoke();
+    for (let i = 0; i < 100 && !live.closed; i++) await Bun.sleep(5);
+    expect(live.closed).toBe(true);
+    bad.close(); other.close(); stranger.close();
+  });
+
+  test("bridge (K): a bridge that goes while its check waits gives its connection back", async () => {
+    const gate = new FakeBridgeTokens("t".repeat(43), "s-agent", () => true, 150);
+    const b = await boot({ bridge: gate });
+    const c = await Client.connect(b.socketPath);
+    void c.hello("bridge", gate.token, { agentSessionId: "s-agent" });
+    await Bun.sleep(30);
+    c.close();
+    for (let i = 0; i < 100 && gate.released.length === 0; i++) await Bun.sleep(10);
+    expect(gate.released).toEqual([1]);
+    expect(b.calls).toEqual([]);
+  });
+
+  test("bridge (K): the gate gets the kernel's pid for the caller (LOCAL_PEERPID, SO_PEERCRED, the pipe's client pid)", async () => {
+    const gate = new FakeBridgeTokens("t".repeat(43), "s-agent", (pid) => pid === process.pid);
+    const b = await boot({ bridge: gate, realPeer: true });
+    const c = await Client.connect(b.socketPath);
+    expect((await c.hello("bridge", gate.token, { agentSessionId: "s-agent" })).result.ok).toBe(true);
+    expect(gate.seen).toEqual([process.pid]); // this test process is the client
+    c.close();
   });
 });

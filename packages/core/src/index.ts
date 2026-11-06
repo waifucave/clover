@@ -21,7 +21,7 @@ export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } f
 export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
 export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
 export { cloverCall } from "./ipc/clover-client";
-export { createCloverServer, CloverRpcError, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler } from "./ipc/clover";
+export { createCloverServer, CloverRpcError, bridgeMethodHandlers, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
 export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";

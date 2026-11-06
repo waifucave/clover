@@ -2192,7 +2192,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       if (opts.cloverConnections?.isCloverHello(params)) {
         const writer = socket.data.writer;
-        const { conn, result } = await opts.cloverConnections.hello(socket, socket.data.connId, params, (bytes) => { writer.enqueue(bytes); });
+        const { conn, result } = await opts.cloverConnections.hello(socket, socket.data.connId, params, (bytes) => { writer.enqueue(bytes); }, () => { (socket as unknown as { end(): void }).end(); });
         socket.data.clover = conn;
         socket.data.authedRole = `clover:${conn.role}`;
         socket.data.clientName = conn.clientName;

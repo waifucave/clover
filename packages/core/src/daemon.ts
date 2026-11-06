@@ -3334,6 +3334,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     settings: () => settings,
     stop() {
       pairSide?.dispose(); // no app start from here on; this run's app token goes
+      cloverServer?.dispose();
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
       // the `void stopAll()` graceful path below is async and process.exit(0) (direct-run path) drops

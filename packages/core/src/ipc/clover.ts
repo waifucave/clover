@@ -6,11 +6,16 @@
 // methods (`pair.status`, `pair.quit`, `pair.exiting`) and `layer.token` are lane C's and served here;
 // other lanes add theirs through `handlers`. A method on a role's list that no lane serves yet answers
 // METHOD_NOT_FOUND.
+//
+// The `bridge` role (§9.3, lane K) is checked by K's bridge tokens when the daemon gives them (`bridge`):
+// the token, the agent session it names, and the kernel's pid for the caller (`LOCAL_PEERPID`,
+// `SO_PEERCRED`, or the pipe's client pid on Windows), with one live connection per token. A revoked
+// token's connection is closed. `bridgeMethodHandlers` mounts K's handlers for the role's four methods.
 import {
   CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, ERR,
-  PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole,
+  PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
-import { isRefusal, type CloverTokens } from "../auth/clover-tokens";
+import { ERR_UNAUTHORIZED, isRefusal, type CloverTokens } from "../auth/clover-tokens";
 import { gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
 import { probePeer, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
@@ -36,6 +41,47 @@ export interface CloverConn {
 
 export type CloverHandler = (conn: CloverConn, params: unknown) => Promise<unknown> | unknown;
 
+/** What K's bridge tokens answer (`agents/bridge/tokens.ts`, `BridgeAcceptance`). */
+export type BridgeVerdict = { ok: true; sessionId: string; connection: number } | { ok: false; reason: string };
+
+/** The bridge's token check, as K's `BridgeTokens` gives it: the token, the session the hello names and the
+ *  kernel's pid for the caller (null where it can't be read, which the gate refuses); one live connection per
+ *  token, given back with `release`; `onRevoke` when a token is revoked, so its connection is closed. */
+export interface BridgeGate {
+  accept(token: string, sessionId: string, peerPid: number | null): Promise<BridgeVerdict>;
+  release(sessionId: string, connection: number): void;
+  onRevoke?(fn: (e: { sessionId: string; connection?: number }) => void): () => void;
+}
+
+/** K's handlers for the bridge's methods, by session (`agents/bridge/endpoint.ts`, `BridgeHandlers`). */
+export interface BridgeMethods {
+  tools(sessionId: string): Promise<{ tools: unknown[]; instructions: string }>;
+  call(sessionId: string, call: { callId: string; tool: string; input: unknown }): Promise<{ content: unknown[]; isError: boolean }>;
+  sendMessage(sessionId: string, m: { text: string; to?: string }): Promise<void>;
+  glossary(sessionId: string, q: { query?: string | string[]; load?: string | string[] }): Promise<{ results: unknown[]; loaded: unknown[] }>;
+}
+
+/** The bridge role's four methods as Clover handlers, each bound to the connection's own agent session. */
+export function bridgeMethodHandlers(h: BridgeMethods): Record<string, CloverHandler> {
+  const session = (conn: CloverConn): string => {
+    if (conn.caller.kind !== "session") throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "not a bridge connection");
+    return conn.caller.sessionId;
+  };
+  return {
+    "bridge.tools": async (conn) => { const r = await h.tools(session(conn)); return { tools: r.tools, instructions: r.instructions }; },
+    "bridge.call": (conn, p) => h.call(session(conn), p as { callId: string; tool: string; input: unknown }),
+    "bridge.sendMessage": async (conn, p) => {
+      const m = p as { text: string; to?: string };
+      await h.sendMessage(session(conn), { text: m.text, ...(m.to === undefined ? {} : { to: m.to }) });
+      return { ok: true };
+    },
+    "glossary.query": (conn, p) => {
+      const q = p as { query?: string | string[]; load?: string | string[] };
+      return h.glossary(session(conn), { ...(q.query === undefined ? {} : { query: q.query }), ...(q.load === undefined ? {} : { load: q.load }) });
+    },
+  };
+}
+
 export interface CloverServerDeps {
   readonly tokens: CloverTokens;
   readonly processes: SessionProcesses;
@@ -56,6 +102,9 @@ export interface CloverServerDeps {
   readonly os?: DaemonPlatform;
   /** Test seam: the peer of a socket. */
   probe?(socket: object): PeerFacts;
+  /** K's bridge tokens, and the session's bot for the hello's caller. Without it a `bridge` hello is checked
+   *  against tokens minted here (`CloverTokens`), with no pid check. */
+  readonly bridge?: { readonly gate: BridgeGate; sessionInfo?(sessionId: string): { bot?: string } | undefined };
   /** The app's heartbeat (ruling R9): `app.ping` every `intervalMs`, ended after `timeoutMs` unanswered. */
   readonly heartbeat?: { readonly intervalMs?: number; readonly timeoutMs?: number; now?(): number };
   /** End a hung app's process (default SIGKILL; TerminateProcess on Windows). */
@@ -72,7 +121,8 @@ export interface CloverServer {
   opened(socket: object): void;
   /** Whether a `protocol.hello`'s params are Clover's (protocol version 1 or later). */
   isCloverHello(params: unknown): boolean;
-  hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
+  /** `end` closes the connection (a revoked bridge token's, a refused bridge). */
+  hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
   /** A response from the client to one of the daemon's requests (the heartbeat's). */
@@ -80,6 +130,7 @@ export interface CloverServer {
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
+  dispose(): void;
 }
 
 export function createCloverServer(deps: CloverServerDeps): CloverServer {
@@ -112,6 +163,46 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     if (deps.probe) return deps.probe(socket);
     if (pipePeers) return probePeer(null, "win32", pipePeers.pidOf(socket));
     return probePeer(socket, os);
+  };
+
+  // Sockets the listener has closed: a hello still waiting on a check (the bridge's waits for its agent's
+  // pid) finds its connection gone and gives back what it took.
+  const gone = new WeakSet<object>();
+  const bridged = new Map<number, { sessionId: string; connection: number; end?: () => void }>();
+  const unrevoke = deps.bridge?.gate.onRevoke?.(({ sessionId, connection }) => {
+    for (const [connId, b] of bridged) {
+      if (b.sessionId !== sessionId || (connection !== undefined && b.connection !== connection)) continue;
+      bridged.delete(connId);
+      conns.delete(connId);
+      deps.log?.(`[clover] bridge connection ${connId}: its token was revoked`);
+      try { b.end?.(); } catch { /* already gone */ }
+    }
+  });
+
+  // The bridge's hello through K's tokens: refused hellos are answered and the connection closed.
+  const bridgeHello = async (socket: object, h: CloverHelloParams, peer: PeerFacts, end?: () => void) => {
+    const gate = deps.bridge!.gate;
+    const refuse = (code: number, why: string): never => {
+      deps.log?.(`[clover] refused a bridge hello for session ${h.agentSessionId ?? "?"}: ${why}`);
+      if (end) setTimeout(() => { try { end(); } catch { /* gone */ } }, 0);
+      throw new CloverRpcError(code, `the bridge was refused: ${why}`);
+    };
+    if (!h.agentSessionId) refuse(CLOVER_ERR.ROLE_REFUSED, "no agent session named");
+    const v = await gate.accept(h.token, h.agentSessionId!, peer.pid);
+    if (!v.ok) {
+      const code = v.reason === "unknown-token" || v.reason === "wrong-session" || v.reason === "revoked" ? ERR_UNAUTHORIZED
+        : v.reason === "unverified-caller" || v.reason === "not-the-agent" ? CLOVER_ERR.PROCESS_REFUSED : CLOVER_ERR.ROLE_REFUSED;
+      refuse(code, v.reason);
+    }
+    const ok = v as Extract<BridgeVerdict, { ok: true }>;
+    if (gone.has(socket)) {
+      gate.release(ok.sessionId, ok.connection);
+      throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
+    }
+    const bot = deps.bridge!.sessionInfo?.(ok.sessionId)?.bot;
+    const sessionKind: SessionKind = bot === undefined ? "coding" : "agent";
+    const caller: Caller = { kind: "session", sessionId: ok.sessionId, sessionKind, ...(bot === undefined ? {} : { bot }) };
+    return { caller, sessionId: ok.sessionId, connection: ok.connection };
   };
 
   const pairStatus = (): PairStatus => {
@@ -149,19 +240,32 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
         && typeof p.role === "string" && (CLOVER_ROLES as readonly string[]).includes(p.role);
     },
 
-    async hello(socket, connId, params, write) {
+    async hello(socket, connId, params, write, end) {
       const parsed = CloverHelloParams.safeParse(params);
       if (!parsed.success) throw new CloverRpcError(ERR.INVALID_PARAMS, "invalid hello");
       const h = parsed.data;
       if (!helloVersionServed(h.protocolVersion)) {
         throw new CloverRpcError(CLOVER_ERR.VERSION_REFUSED, "protocol version not served", { min: CLOVER_PROTOCOL_MIN_VERSION, max: CLOVER_PROTOCOL_VERSION });
       }
-      const binding = await deps.tokens.verify(h);
-      if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
-      const peer = peerOf(socket);
-      const hostPid = binding.role === "plugin-host" ? deps.hostPidOf?.(binding.hostProcess, binding.pluginId) : undefined;
-      const caller = resolveCloverCaller({ binding, peer, processes: deps.processes, ...(hostPid !== undefined ? { hostPid } : {}) });
-      if ("code" in caller) throw new CloverRpcError(caller.code, caller.message);
+      let caller: Caller;
+      let peer: PeerFacts;
+      let bridge: { sessionId: string; connection: number } | undefined;
+      if (h.role === "bridge" && deps.bridge) {
+        peer = peerOf(socket);
+        const b = await bridgeHello(socket, h, peer, end);
+        caller = b.caller;
+        bridge = { sessionId: b.sessionId, connection: b.connection };
+      } else {
+        const binding = await deps.tokens.verify(h);
+        if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
+        peer = peerOf(socket);
+        const hostPid = binding.role === "plugin-host" ? deps.hostPidOf?.(binding.hostProcess, binding.pluginId) : undefined;
+        const resolved = resolveCloverCaller({ binding, peer, processes: deps.processes, ...(hostPid !== undefined ? { hostPid } : {}) });
+        if ("code" in resolved) throw new CloverRpcError(resolved.code, resolved.message);
+        caller = resolved;
+        if (gone.has(socket)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
+      }
+      if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
       const conn: CloverConn = {
         connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(),
         send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
@@ -189,10 +293,13 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     closed(conn, socket) {
+      gone.add(socket);
       pipePeers?.closed(socket);
       if (conn === null) return;
       stopBeat(conn.connId);
       conns.delete(conn.connId);
+      const b = bridged.get(conn.connId);
+      if (b) { bridged.delete(conn.connId); deps.bridge?.gate.release(b.sessionId, b.connection); }
       if (conn.role === "app") deps.pair?.appDisconnected(String(conn.connId));
     },
 
@@ -207,5 +314,10 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     connections() { return [...conns.values()]; },
+
+    dispose() {
+      unrevoke?.();
+      for (const connId of [...beats.keys()]) stopBeat(connId);
+    },
   };
 }
