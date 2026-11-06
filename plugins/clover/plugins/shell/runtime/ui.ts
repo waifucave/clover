@@ -27,6 +27,7 @@ export interface ReactLike {
   useContext<T>(context: any): T;
   useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
   useState<S>(initial: S): [S, (next: S | ((prev: S) => S)) => void];
+  useRef<T>(initial: T): { current: T };
 }
 
 /** Every sealed field a card may have, in B's order (`CARD_FIELD_NAMES`; the stand-in keeps no runtime import). */
@@ -65,6 +66,15 @@ export interface UiRuntime {
   sealed?: SealedRenderers;
   /** The host's OS, for `when.os`. */
   os?: string;
+  /** The app's messages to this document (lane E's `useLayerMessage`): its commands, such as `open-settings`. */
+  messages?: { subscribe(listener: (m: LayerCommand) => void): Unsubscribe };
+}
+
+/** One of the app's commands to a window (lane E's `LayerMessage` of type `command`). */
+export interface LayerCommand {
+  type: string;
+  name?: string;
+  args?: Record<string, string | undefined>;
 }
 
 /** A runtime with only some members, the rest empty: a test that needs only sealed frames, say. */
@@ -104,6 +114,7 @@ export interface Ui {
   UiRuntimeProvider(props: { runtime: UiRuntime; children?: ReactNode }): ReactNode;
   /** Which entries a spot would show here, for a part that lays them out itself (a list spot's buttons). */
   useSpotEntries(name: string, spotKey?: string, props?: Record<string, unknown>): Resolved;
+  useLayerMessage(listener: (m: LayerCommand) => void): void;
 }
 
 const built = new WeakMap<object, Ui>();
@@ -112,7 +123,7 @@ const built = new WeakMap<object, Ui>();
 export function uiFor(react: ReactLike): Ui {
   const cached = built.get(react);
   if (cached) return cached;
-  const { createContext, createElement, useContext, useEffect, useState } = react;
+  const { createContext, createElement, useContext, useEffect, useRef, useState } = react;
 
   const RuntimeContext = createContext<UiRuntime | null>(null);
   const EntryContext = createContext<{ entry: EntryRef; ctx: SpotContext } | null>(null);
@@ -231,7 +242,15 @@ export function uiFor(react: ReactLike): Ui {
     return createElement(RuntimeContext.Provider, { value: runtime }, children);
   }
 
-  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
+  /** Hears the app's messages to this document (`messages`), as lane E's hook does in the app. */
+  function useLayerMessage(listener: (m: LayerCommand) => void): void {
+    const runtime = useRuntime();
+    const ref = useRef(listener);
+    ref.current = listener;
+    useEffect(() => runtime?.messages?.subscribe((m) => ref.current(m)), [runtime]);
+  }
+
+  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries, useLayerMessage };
   built.set(react, ui);
   return ui;
 }

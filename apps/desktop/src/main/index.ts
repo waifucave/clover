@@ -963,11 +963,15 @@ async function smoke(): Promise<void> {
     rendered: !!document.getElementById("clover-root")?.firstElementChild,
     accent: getComputedStyle(document.documentElement).getPropertyValue("--clover-color-accent").trim(),
     insetTop: getComputedStyle(document.documentElement).getPropertyValue("--clover-frame-inset-top").trim(),
+    // Lane F's bar geometry on this runtime (F-M2 review S5): the conversation's inset under the translucent bar, through
+    // whatever elements <Spot> wraps the bot tab in, and the bar's own height.
+    convInset: (() => { const c = document.querySelector(".cl-bot-tab__conversation"); return c ? getComputedStyle(c).getPropertyValue("--cl-inset-top").trim() : ""; })(),
+    barHeight: (() => { const b = document.querySelector(".cl-window__bar"); return b ? getComputedStyle(b).height : ""; })(),
     sheets: document.querySelectorAll("style[data-clover-sheet]").length,
     themed: getComputedStyle(document.documentElement).textRendering,
     text: (document.body.innerText || "").slice(0, location.protocol === "clover-core:" ? 2000 : 200),
   }))()`;
-  type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; sheets: number; themed: string; text: string };
+  type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; convInset: string; barHeight: string; sheets: number; themed: string; text: string };
   type Probed = Probe & { url: string; osPid: number };
   const probeWindow = async (w: BrowserWindow): Promise<Probed[]> => {
     const out: Probed[] = [];

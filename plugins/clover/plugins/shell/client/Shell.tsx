@@ -15,7 +15,7 @@ import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, usePluginApi, useSpotEntries } from "./sdk";
+import { Spot, useApprovals, useLayerMessage, usePluginApi, useSpotEntries } from "./sdk";
 import { S } from "./strings";
 import { plain } from "../runtime/views";
 import { Window } from "./Window";
@@ -86,6 +86,22 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     setRoute(next);
   };
   const closeDialog = () => setRoute(under);
+
+  // The app's commands to this window (lane E's `useLayerMessage`): Settings from ⌘, or the menu, or a place that opens
+  // it at a section and an item, over the tab that was showing; a bot's tab; or a session, from a notification or
+  // `app.show`. A bot's main conversation is its tab; any other session opens as an agent's tab.
+  useLayerMessage((m) => {
+    if (m.type !== "command") return;
+    const args = m.args ?? {};
+    if (m.name === "open-settings") {
+      navigate({ route: "settings", params: { ...(args.section !== undefined ? { section: args.section } : {}), ...(args.item !== undefined ? { item: args.item } : {}) } });
+    } else if (m.name === "open-bot" && args.bot !== undefined) {
+      navigate({ route: "bot", params: { bot: args.bot } });
+    } else if (m.name === "open-session" && args.session !== undefined) {
+      const main = (bots ?? []).find((b) => b.mainSession === args.session) ?? (/^([a-z0-9-]+):main$/.exec(args.session) ? { id: args.session.slice(0, -5) } : undefined);
+      navigate(main ? { route: "bot", params: { bot: main.id } } : { route: "agent", params: { session: args.session } });
+    }
+  });
   const setOpen = (next: string[]) => setPanels((p) => ({ ...p, [key]: next }));
   const openAgent = (id: string) => {
     setAgents((a) => ({ ...a, [key]: id }));

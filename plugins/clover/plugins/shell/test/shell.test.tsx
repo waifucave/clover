@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import type { UiEntry } from "../runtime/resolve";
 import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testkit";
 import type { BotView, EntryComponent, SessionView } from "../runtime/types";
-import { runtimeWith } from "../runtime/ui";
+import { runtimeWith, type LayerCommand } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
 import { AgentTab, DefaultBotTab } from "../client/Tabs";
 import { Shell, type ShellStart } from "../client/Shell";
@@ -78,6 +78,7 @@ const ENTRIES: UiEntry[] = [
 ];
 
 async function mount(start?: ShellStart, extra: UiEntry[] = []) {
+  const heard = new Set<(m: LayerCommand) => void>();
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
@@ -92,6 +93,12 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     core: () => core,
     approvals,
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
+    messages: {
+      subscribe: (l) => {
+        heard.add(l);
+        return () => heard.delete(l);
+      },
+    },
   });
   render(
     <UiRuntimeProvider runtime={runtime}>
@@ -99,7 +106,14 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     </UiRuntimeProvider>,
   );
   await act(() => settle(6));
-  return { core, approvals };
+  /** The app sends this window a command (lane E's `open-settings`, `open-bot`, `open-session`). */
+  const command = async (name: string, args: Record<string, string>) => {
+    act(() => {
+      for (const l of heard) l({ type: "command", name, args });
+    });
+    await act(() => settle());
+  };
+  return { core, approvals, command };
 }
 
 const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
@@ -170,6 +184,18 @@ describe("the shell", () => {
     await act(() => settle());
     expect(document.querySelector(".cl-window__dialog")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Answer the waiting card first, then open it again.");
+  });
+
+  test("the app's commands: Settings at a section and an item over the tab, a bot's tab, a session", async () => {
+    const { command } = await mount();
+    await command("open-settings", { section: "devices", item: "d2" });
+    expect(stubText("main:settings")).toContain('"params":{"section":"devices","item":"d2"}');
+    expect(stubText("conversation")).toContain('"session":"s_alpha"');
+    await command("open-bot", { bot: "luna" });
+    expect(document.querySelector(".cl-window__dialog")).toBeNull();
+    expect(stubText("conversation")).toContain('"session":"s_luna"');
+    await command("open-session", { session: "s_alpha" });
+    expect(stubText("conversation")).toContain('"session":"s_alpha"');
   });
 
   test("a card in a session this window doesn't show holds nothing", async () => {
