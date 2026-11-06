@@ -1715,6 +1715,10 @@ if (import.meta.main) {
     });
     break;
   }
+  case "code": {
+    const { runCodeCommand } = await import("./code-cli");
+    process.exit(await runCodeCommand(argv.slice(1), { connect: (name) => connect(name), log: (l) => console.log(l), error: (l) => console.error(l) }));
+  }
   case "status": {
     const c = await connect("cli-status");
     const s = await c.daemonStatus();
