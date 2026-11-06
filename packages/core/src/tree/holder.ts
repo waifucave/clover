@@ -207,8 +207,9 @@ export class LocalHolder implements Holder {
   }
 
   /** Judges a whole operation once, with one binding (the direct path's move or copy; review S1). */
-  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
-    await this.#judge(call, change, effect);
+  /** `boundTo`: the computer one card for an operation on several binds (`judge.ts`). */
+  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move", boundTo?: string): Promise<void> {
+    await this.#judge(call, change, effect, boundTo);
   }
 
   /** The real path a tree path names here, without touching the disk (for bookkeeping and `Tree.resolve`). */
@@ -725,10 +726,11 @@ export class LocalHolder implements Holder {
 
   /** A peer's change, at the stricter of this computer's level and the call's (`judge.ts`, R1): the reviewer passes
    *  what isn't risky at `ask-risky`; the rest needs the user's signed answer bound to exactly it (N2). */
-  async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
+  async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move", boundTo?: string): Promise<void> {
     if (call.as.kind !== "peer") return;
     if (call.level === undefined) throw new ContractError("invalid", "a peer's change says its level");
     await judgePeer({
+      ...(boundTo === undefined ? {} : { boundTo }),
       computer: this.#o.name(), ownLevel: this.#o.level?.(), callLevel: call.level, effect,
       method: change.method, params: change.params, as: call.as, now: this.#o.clock.now(), answers: this.#answers,
       ...(call.answer ? { answer: call.answer } : {}), ...(this.#o.reviewer ? { reviewer: this.#o.reviewer } : {}),

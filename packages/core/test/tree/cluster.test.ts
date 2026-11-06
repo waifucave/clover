@@ -403,7 +403,7 @@ describe("moves between computers take the direct path (review S1)", () => {
     expect(existsSync(join(studio.home, "proj"))).toBe(false);
   });
 
-  test("one signed answer per holder for the whole move, bound to its from and to", async () => {
+  test("one card for the whole move: one signed answer that both holders check against their own card", async () => {
     const phone = await makePhone();
     cluster = new Cluster();
     const studio = await cluster.add("Studio", { answers: () => answersFor(phone) });
@@ -412,16 +412,15 @@ describe("moves between computers take the direct path (review S1)", () => {
     await cluster.join();
     mkdirSync(join(studio.home, "proj"));
     writeFileSync(join(studio.home, "proj", "a.txt"), "a");
-    const wrong = await phone.approve("Laptop1", "tree.move", { from: "home/Studio/proj", to: "home/Laptop1/elsewhere" });
-    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: wrong }))).toBe("refused");
-    // The call carries the stricter of both levels, so Studio, the source, asks too: one answer for each holder,
-    // each for the same whole move.
-    const binding = { from: "home/Studio/proj", to: "home/Laptop1/proj" };
-    const atLaptop = await phone.approve("Laptop1", "tree.move", binding);
-    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: atLaptop }))).toBe("refused");
+    const whole = { operation: "move", from: "home/Studio/proj", to: "home/Laptop1/proj", source: "Studio", destination: "Laptop1" };
+    // An answer for another operation, or for one holder's own call, doesn't carry it.
+    const elsewhere = await phone.approve("Laptop1", "tree.transfer", { ...whole, to: "home/Laptop1/elsewhere" });
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: elsewhere }))).toBe("refused");
+    const perHolder = await phone.approve("Laptop1", "tree.move", { from: whole.from, to: whole.to });
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: perHolder }))).toBe("refused");
     expect(existsSync(join(laptop.home, "proj"))).toBe(false);
-    const both = [await phone.approve("Laptop1", "tree.move", binding), await phone.approve("Studio", "tree.move", binding)];
-    await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answers: both });
+    // The call carries the stricter of both levels, so both holders ask; one answer, bound to the whole move, for both.
+    await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: await phone.approve("Laptop1", "tree.transfer", whole) });
     expect(readFileSync(join(laptop.home, "proj", "a.txt"), "utf8")).toBe("a");
     expect(existsSync(join(studio.home, "proj"))).toBe(false);
   });

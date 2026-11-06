@@ -65,6 +65,10 @@ export async function judgePeer(o: {
   reviewer?: PeerReviewer;
   answers?: Answers;
   now: number;
+  /** The computer the card binds, when one card covers an operation on several (a move or copy between two: the
+   *  destination; the controller's one-card ruling). Its params name every computer, and this one must be among
+   *  them; each holder rebuilds the same card and checks the answer against it. Default: this computer. */
+  boundTo?: string;
 }): Promise<void> {
   const level = strictestLevel([o.ownLevel ?? DEFAULT_LEVEL, o.callLevel])!;
   const d = levelDecision(level, o.effect);
@@ -75,10 +79,10 @@ export async function judgePeer(o: {
       const verdict = await o.reviewer({ computer: o.computer, method: o.method, params: o.params, as: o.as, effect: o.effect });
       if (verdict === "allow") return;
     }
-    throw needsAnswer(o.computer, o.method, o.params, o.answers?.render, `${o.computer} needs the user's answer for this, signed and bound to it`);
+    throw needsAnswer(o.boundTo ?? o.computer, o.method, o.params, o.answers?.render, `${o.computer} needs the user's answer for this, signed and bound to it`);
   }
   if (!o.answers) throw new ContractError("refused", `${o.computer} takes no signed answers`);
-  const verdict = await verifySignedAnswer(o.answer, { self: o.computer, method: o.method, params: o.params, now: o.now, sha256, ...o.answers });
+  const verdict = await verifySignedAnswer(o.answer, { self: o.boundTo ?? o.computer, method: o.method, params: o.params, now: o.now, sha256, ...o.answers });
   if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this call (${verdict})`);
 }
 

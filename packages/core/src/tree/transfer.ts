@@ -6,10 +6,10 @@
 //                                        ◀── entries, in order ──
 //            ◀── ok ──────── (renamed into place) ──tree.sent──▶ (a move removes what it sent)
 //
-// * Each holder judges the whole operation once, with one binding (`tree.move` or `tree.copy` with `from` and `to`),
-//   before anything lands: the destination before it asks for the files, the source before it sends any. Each judges
-//   at the stricter of its own level and the call's (review N2), and the user's signed answer for each is the one whose
-//   card binds that computer.
+// * Each holder judges the whole operation once, before anything lands: the destination before it asks for the files,
+//   the source before it sends any. Each judges at the stricter of its own level and the call's (review N2). One card
+//   covers both (the controller's ruling): it binds `tree.transfer` with the operation, both paths and both computers,
+//   and each holder checks the one signed answer against the card it rebuilds itself.
 // * The destination takes the entries into a hidden folder beside the destination, made exclusively (`O_EXCL`), and
 //   moves it into place only once everything arrived, never over something that's there. A failure removes only that
 //   hidden copy.
@@ -19,8 +19,8 @@
 // * Links travel as links when their target stays inside what moves; anything that isn't a file, a folder or a link
 //   refuses the whole operation before anything moves.
 // * R1, the caller's side (`transferAsking`): before it sends the call, it asks each holder that will judge it as a
-//   peer whether its level needs the user's answer (`tree.judge`, which takes no answer and so spends none), shows
-//   the user each holder's own card, and sends every answer with the one call.
+//   peer whether its level needs the user's answer (`tree.judge`, which takes no answer and so spends none). If any
+//   does, the user sees one card naming both computers and the whole operation, and its answer goes with the call.
 import { randomUUID } from "node:crypto";
 import { constants as FS, promises as fsp } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
@@ -57,9 +57,18 @@ export interface TransferResult {
   kept: number;
 }
 
-/** What one holder judges for the whole operation: the same binding at both ends. */
-export function transferChange(move: boolean, from: string, to: string): TreeChange {
-  return { method: move ? "tree.move" : "tree.copy", params: { from, to } } as unknown as TreeChange;
+/** What both holders judge for the whole operation, and what one card binds (the controller's one-card ruling): the
+ *  operation, both paths and both computers, each holder naming them from its own tree. The card binds the
+ *  destination; each holder rebuilds the same card and checks the one answer against it. */
+export function transferChange(move: boolean, from: string, to: string, source: string, destination: string): TreeChange {
+  return { method: "tree.transfer", params: { operation: move ? "move" : "copy", from, to, source, destination } } as unknown as TreeChange;
+}
+
+/** One holder's part: the destination judges the whole operation, the source a move (a copy only reads there). A
+ *  holder whose own rule is stricter (read-only) refuses whatever the answer. */
+async function judgeEnd(holder: LocalHolder, call: HolderCall, role: "source" | "destination", move: boolean, from: string, to: string, source: string, destination: string): Promise<void> {
+  if (role === "source" && !move) return;
+  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit", destination);
 }
 
 interface Entry {
@@ -374,7 +383,6 @@ async function cleanUp(staging: string, made: string): Promise<void> {
 
 /** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
 export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: ReceiveParams, as: Caller): Promise<TransferResult> {
-  const change = transferChange(p.move, p.from, p.to);
   const dcall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
   const scall: HolderCall = { as, level: p.level, ...(p.sourceAnswer ? { answer: p.sourceAnswer } : {}) };
   const to = await dst.realEntry(p.to, dcall, "write");
@@ -383,8 +391,8 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
   if (!from.exists) throw new ContractError("not_found", `${p.from} doesn't exist`);
   if (inside(from.real, to.real)) throw new ContractError("invalid", `${p.to} is inside ${p.from}`);
   // The whole operation, judged once at each end before anything lands.
-  await dst.judge(dcall, change, p.move ? "move" : "edit");
-  if (p.move && src !== dst) await src.judge(scall, change, "move");
+  await judgeEnd(dst, dcall, "destination", p.move, p.from, p.to, src.name, dst.name);
+  if (src !== dst) await judgeEnd(src, scall, "source", p.move, p.from, p.to, src.name, dst.name);
   const entries = await walk(src, from.real, scall, p.move);
   const kept = await existingAbove(to.real);
   await dst.makeParents(to, p.to);
@@ -426,12 +434,6 @@ export interface TransferOptions {
 
 const JudgeParams = z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level });
 
-/** How one holder judges its part of a move or copy: the destination the whole operation, the source a move. */
-async function judgePart(holder: LocalHolder, call: HolderCall, role: "source" | "destination", move: boolean, from: string, to: string): Promise<void> {
-  if (role === "source" && !move) return;
-  await holder.judge(call, transferChange(move, from, to), role === "source" || move ? "move" : "edit");
-}
-
 /** Serves `tree.receive` (this computer is the destination), the `tree.send` stream and `tree.sent` (the source), and
  *  `tree.judge`: whether this computer's level needs the user's answer for its part, with its card if so. */
 export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceiveParams, as: Caller) => Promise<TransferResult>; close: Unsubscribe } {
@@ -445,7 +447,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     const call: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
     const dst = await o.holder.realEntry(p.to, call, "write");
     if (dst.exists) throw new ContractError("conflict", `${p.to} already exists`);
-    await o.holder.judge(call, transferChange(p.move, p.from, p.to), p.move ? "move" : "edit");
+    await judgeEnd(o.holder, call, "destination", p.move, p.from, p.to, src.computer, o.holder.name);
     const above = await existingAbove(dst.real);
     await o.holder.makeParents(dst, p.to);
     const staging = join(dirname(dst.real), `.clover-receiving-${randomUUID()}`);
@@ -498,7 +500,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
         const call: HolderCall = { as, level: m.level, ...(m.answer ? { answer: m.answer } : {}) };
         const src = await o.holder.realEntry(m.from, call, m.move ? "delete" : "read");
         if (!src.exists) throw new ContractError("not_found", `${m.from} doesn't exist`);
-        if (m.move) await o.holder.judge(call, transferChange(true, m.from, m.to), "move");
+        await judgeEnd(o.holder, call, "source", m.move, m.from, m.to, o.holder.name, o.deviceFor(m.to).computer);
         const entries = await walk(o.holder, src.real, call, m.move);
         const sendId = randomUUID();
         if (m.move) {
@@ -526,7 +528,8 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     if (!p.success) throw new ContractError("invalid", `tree.judge: ${p.error.issues[0]?.message ?? "bad params"}`);
     const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
     // No answer goes with it, so none is spent: allowed, refused, or a refusal that names this computer's card.
-    await judgePart(o.holder, { as, level: p.data.level }, p.data.role, p.data.move, p.data.from, p.data.to);
+    const d = p.data;
+    await judgeEnd(o.holder, { as, level: d.level }, d.role, d.move, d.from, d.to, o.deviceFor(d.from).computer, o.deviceFor(d.to).computer);
     return { ok: true };
   }));
 
@@ -590,26 +593,30 @@ export async function transferAsking(o: {
   ask?: AnswerAsker;
 }): Promise<TransferResult> {
   const p: ReceiveParams = { ...o.params };
-  const put = (need: NeedsAnswer, answer: SignedCardAnswer) => {
-    if (need.computer === o.destination.computer) p.answer = answer;
-    else if (need.computer === o.source.computer) p.sourceAnswer = answer;
+  // One card for the whole operation, whichever holders ask: the same signed answer goes to both.
+  const put = (answer: SignedCardAnswer) => {
+    p.answer = answer;
+    p.sourceAnswer = answer;
   };
-  if (o.ask) {
+  if (o.ask && !p.answer && !p.sourceAnswer) {
     const parts: { role: "source" | "destination"; end: End }[] = [];
     // The destination judges the call as a peer's unless it is this computer; the source judges the destination's
     // stream as a peer's whenever the two differ.
-    if (o.destination.device !== null && !p.answer) parts.push({ role: "destination", end: o.destination });
-    if (p.move && o.source.computer !== o.destination.computer && !p.sourceAnswer) parts.push({ role: "source", end: o.source });
+    if (o.destination.device !== null) parts.push({ role: "destination", end: o.destination });
+    if (o.source.computer !== o.destination.computer) parts.push({ role: "source", end: o.source });
+    let need: NeedsAnswer | null = null;
     for (const { role, end } of parts) {
-      const need = await judgeAt(o, role, end, p).then(() => null, (e: unknown) => {
-        const n = answerNeeded(e);
-        if (!n) throw e;
-        return n;
+      const n = await judgeAt(o, role, end, p).then(() => null, (e: unknown) => {
+        const got = answerNeeded(e);
+        if (!got) throw e; // a holder that refuses outright (read-only) refuses the whole operation
+        return got;
       });
-      if (!need) continue;
+      need ??= n;
+    }
+    if (need) {
       const answer = await o.ask(need);
-      if (!answer) throw new ContractError("refused", `the user didn't approve this on ${end.computer}`);
-      put(need, answer);
+      if (!answer) throw new ContractError("refused", "the user didn't approve this");
+      put(answer);
     }
   }
   for (let attempt = 0; ; attempt++) {
@@ -620,17 +627,17 @@ export async function transferAsking(o: {
       if (!need || !o.ask || attempt >= 1) throw e;
       const answer = await o.ask(need);
       if (!answer) throw e;
-      put(need, answer);
+      put(answer);
     }
   }
 }
 
 /** One holder's answer to `tree.judge`, here or over the link. */
-async function judgeAt(o: { transport: LinkTransport; holder: LocalHolder; destination: End }, role: "source" | "destination", end: End, p: ReceiveParams): Promise<void> {
+async function judgeAt(o: { transport: LinkTransport; holder: LocalHolder; source: End; destination: End }, role: "source" | "destination", end: End, p: ReceiveParams): Promise<void> {
   if (end.device === null) {
     // This computer as the source: it will judge the destination's stream as that computer's peer call.
     const as: Caller = { kind: "peer", device: o.destination.device ?? "", ...(p.session ? { sessionId: p.session } : {}) };
-    await judgePart(o.holder, { as, level: p.level }, role, p.move, p.from, p.to);
+    await judgeEnd(o.holder, { as, level: p.level }, role, p.move, p.from, p.to, o.source.computer, o.destination.computer);
     return;
   }
   let link: Link;

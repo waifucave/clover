@@ -88,15 +88,25 @@ describe("approvals follow the files (R1)", () => {
 });
 
 describe("the direct path: copies, and mv and cp in Bash (item 89)", () => {
-  test("a move asks every holder up front, then runs once with both answers", async () => {
+  test("a move asks every holder up front, and the user answers one card for the whole move", async () => {
     const { studio, laptop, phone } = await two();
     mkdirSync(join(studio.home, "proj"));
     writeFileSync(join(studio.home, "proj", "a.txt"), "a");
     await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT });
-    // Both holders judge it as a peer's move at ask-risky: two cards, each for the whole move, before anything moved.
-    expect(phone.shown.map((n) => `${n.computer} ${n.method}`).sort()).toEqual(["Laptop1 tree.move", "Studio tree.move"]);
+    // Both holders judge it as a peer's move at ask-risky; the user sees one card naming both computers.
+    expect(phone.shown.map((n) => `${n.computer} ${n.method}`)).toEqual(["Laptop1 tree.transfer"]);
     expect(readFileSync(join(laptop.home, "proj", "a.txt"), "utf8")).toBe("a");
     expect(existsSync(join(studio.home, "proj"))).toBe(false);
+  });
+
+  test("a holder whose own rule is stricter refuses the move whatever the answer, before the user is asked", async () => {
+    const { studio, laptop, phone } = await two({ levels: { Studio: "read-only" } });
+    mkdirSync(join(studio.home, "proj"));
+    writeFileSync(join(studio.home, "proj", "a.txt"), "a");
+    expect(await code(laptop.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }))).toBe("refused");
+    expect(phone.shown).toEqual([]);
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
+    expect(existsSync(join(laptop.home, "proj"))).toBe(false);
   });
 
   test("a copy between computers keeps the source; a copy on one computer too", async () => {

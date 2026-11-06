@@ -53,9 +53,10 @@ export interface CoreTreeOptions {
   }) => Promise<TransferResult>;
 }
 
-/** The answer whose card binds `computer`, as `key`. */
+/** The answer for `computer`, as `key`: one whose card binds it, or the one card for a whole move or copy
+ *  (`tree.transfer`), which both holders check. */
 function pick<K extends string>(answers: readonly SignedCardAnswer[], computer: string, key: K): Partial<Record<K, SignedCardAnswer>> {
-  const a = answers.find((x) => x.card.binds?.computer === computer);
+  const a = answers.find((x) => x.card.binds?.method === "tree.transfer") ?? answers.find((x) => x.card.binds?.computer === computer);
   return (a ? { [key]: a } : {}) as Partial<Record<K, SignedCardAnswer>>;
 }
 
