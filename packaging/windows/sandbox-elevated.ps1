@@ -105,6 +105,8 @@ function New-Protected([bool]$Folder) {
 # owners (someone else's folder is never taken over), and its descriptor is replaced.
 function Set-Protected([string]$Path) {
   if (Test-Path -LiteralPath $Path) {
+    # A reparse point is refused before anything reads or writes through it.
+    if ((Get-Item -LiteralPath $Path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { exit 6 }
     if (-not (Test-Owner $Path)) { exit 6 }
     (Get-Item -LiteralPath $Path -Force).SetAccessControl((New-Protected $true))
   } else {
@@ -137,5 +139,6 @@ if ($Action -eq 'setup') {
 }
 $p = Start-Process -FilePath $exe -ArgumentList 'sandbox', $Action -WindowStyle Hidden -Wait -PassThru
 $code = $p.ExitCode
-if ($Action -eq 'remove' -and $code -eq 0) { Remove-Item -LiteralPath $dir -Recurse -Force }
+# The copy, then its folder by name, which must then be empty: nothing else in it is deleted.
+if ($Action -eq 'remove' -and $code -eq 0) { Remove-Item -LiteralPath $exe -Force; [IO.Directory]::Delete($dir, $false) }
 exit $code

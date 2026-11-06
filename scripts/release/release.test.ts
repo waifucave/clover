@@ -509,6 +509,13 @@ describe("the Windows installer's elevated step", () => {
     expect(code).toContain("-bor 0x40000000 -bor 0x10000000");
     expect(code).toContain("$acl.SetAccessRuleProtection($true, $false)");
     expect(code).toContain("[IO.FileAttributes]::ReparsePoint");
+    // Set-Protected refuses a reparse point before reading its owner or writing its list.
+    const setProtected = code.slice(at("function Set-Protected"));
+    expect(setProtected.indexOf("ReparsePoint")).toBeLessThan(setProtected.indexOf("Test-Owner $Path"));
+    expect(setProtected.indexOf("Test-Owner $Path")).toBeLessThan(setProtected.indexOf("SetAccessControl"));
+    // remove deletes the copy, then the empty folder by name: never a recursive delete.
+    expect(code).not.toContain("-Recurse");
+    expect(code).toContain("Remove-Item -LiteralPath $exe -Force; [IO.Directory]::Delete($dir, $false)");
     expect(code).toContain("Start-Process -FilePath $exe -ArgumentList 'sandbox', $Action");
     expect(code).not.toContain("-FilePath $Source");
     // The certificate table's rules, as authenticodeDigest has them.
