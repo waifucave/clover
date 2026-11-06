@@ -1750,11 +1750,13 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       const startups = realUserProfile && realUserProfile !== profileRoot
         ? allStartups
         : [allStartups[0]!, allStartups[2]!];
-      const mkdir = await run([...mkdirArgs(startups[0]!)]);
-      if (mkdir.code !== 0) {
-        console.error(`sandbox setup: creating the principal's Startup folder failed (exit ${mkdir.code})`);
-        process.exitCode = 1;
-        return;
+      for (const path of startups) {
+        const mkdir = await run([...mkdirArgs(path)]);
+        if (mkdir.code !== 0) {
+          console.error(`sandbox setup: creating ${path} failed (exit ${mkdir.code})${mkdir.out.trim() ? `\n${mkdir.out.trim().slice(0, 2000)}` : ""}`);
+          process.exitCode = 1;
+          return;
+        }
       }
       for (const path of startups) {
         const deny = await run([...icaclsDenyArgs(path, principalSid)]);
