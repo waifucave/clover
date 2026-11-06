@@ -2,7 +2,7 @@
 // mid-write is left alone, bundled plugins and development folders need none, and the watcher reads a folder once it
 // settles.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
@@ -104,11 +104,12 @@ describe("PluginFolders", () => {
     await w.folders.scan();
     await w.core.approve("tarot", w.core.get("tarot")!.treeHash!);
     await w.folders.addDevFolder(dev, "cli");
-    expect(w.core.get("tarot")).toMatchObject({ state: "running", dev: true, folder: dev });
-    expect(w.folders.devFolderPaths()).toEqual([dev]);
+    const real = realpathSync(dev); // the real path is what reloads and what the fence keeps bots out of
+    expect(w.core.get("tarot")).toMatchObject({ state: "running", dev: true, folder: real });
+    expect(w.folders.devFolderPaths()).toEqual([real]);
     expect(w.store.load().plugins.tarot?.okHash).toBeDefined(); // the installed one's OK is kept; the dev folder never syncs
     w.write(dev, { "client/index.tsx": "export const B = 2;" });
-    await w.folders.refresh(dev);
+    await w.folders.refresh(real);
     expect(w.core.get("tarot")?.state).toBe("running");
     now += DEV_FOLDER_MS + 1;
     await w.folders.expireDevFolders();
@@ -152,9 +153,76 @@ describe("openPluginRegistry", () => {
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame, input: "click", at: Date.now() } }, { role: "app" });
       await Bun.sleep(5);
       expect(opened.registry.get("tarot")?.state).toBe("running");
-      expect(JSON.parse(readFileSync(join(home, "plugins-state", "oks", "tarot.json"), "utf8")).okHash).toBe(opened.registry.get("tarot")!.treeHash);
+      const kept = JSON.parse(readFileSync(join(home, "plugins-state", "oks", "tarot.json"), "utf8"));
+      expect(JSON.parse(kept.body).okHash).toBe(opened.registry.get("tarot")!.treeHash);
     } finally {
       opened.close();
     }
+  });
+});
+
+describe("#197's review", () => {
+  test("a development folder is kept by its real path; a symlink to it adds the same folder", async () => {
+    const w = world();
+    const dev = join(w.home, "dev", "tarot");
+    w.write(dev, { "clover.json": manifest("tarot") });
+    const link = join(w.home, "tarot-link");
+    symlinkSync(dev, link);
+    await w.folders.scan();
+    await w.folders.addDevFolder(link, "cli");
+    expect(w.folders.devFolderPaths()).toEqual([realpathSync(dev)]);
+    await w.folders.removeDevFolder(dev);
+    expect(w.folders.devFolderPaths()).toEqual([]);
+  });
+
+  test("an installed plugin with a hard-linked file is invalid; a development folder may hold one", async () => {
+    const w = world();
+    const outside = join(w.home, "outside.js");
+    writeFileSync(outside, "export const a = 1;");
+    const tool = join(w.pluginsDir, "tool");
+    w.write(tool, { "clover.json": manifest("tool", { host: { entry: "host/index.js" } }) });
+    mkdirSync(join(tool, "host"), { recursive: true });
+    linkSync(outside, join(tool, "host", "index.js"));
+    await w.folders.scan();
+    expect(w.core.get("tool")).toMatchObject({ state: "invalid" });
+    expect(w.core.get("tool")?.reason).toContain("hard link");
+    const dev = join(w.home, "dev", "tool");
+    w.write(dev, { "clover.json": manifest("tool", { host: { entry: "host/index.js" } }) });
+    mkdirSync(join(dev, "host"), { recursive: true });
+    linkSync(outside, join(dev, "host", "index.js"));
+    await w.folders.addDevFolder(dev, "cli");
+    expect(w.core.get("tool")?.state).not.toBe("invalid");
+  });
+
+  test("records edited outside the registry fail closed: with a key, a changed or unsigned file reads as absent", async () => {
+    const { fileRegistryStore } = await import("../state");
+    const dir = mkdtempSync(join(tmpdir(), "clover-b-mac-"));
+    const tampered: string[] = [];
+    const key = new Uint8Array(32).fill(7);
+    const store = fileRegistryStore(dir, { macKey: key, onTampered: (f) => tampered.push(f) });
+    store.save({ v: 1, order: ["tarot"], plugins: { tarot: { okHash: `sha256:${"a".repeat(64)}`, enabled: true } }, dev: [] });
+    store.confirmAdult(1);
+    expect(store.load().plugins.tarot?.okHash).toBe(`sha256:${"a".repeat(64)}`);
+    expect(store.adultConfirmed()).toBe(true);
+    const file = join(dir, "installed.json");
+    const env = JSON.parse(readFileSync(file, "utf8"));
+    writeFileSync(file, JSON.stringify({ ...env, body: env.body.replace("a".repeat(64), "b".repeat(64)) }));
+    expect(store.load()).toEqual({ v: 1, order: [], plugins: {}, dev: [] });
+    writeFileSync(join(dir, "adult.json"), JSON.stringify({ body: JSON.stringify({ confirmedAt: 1 }) }));
+    expect(store.adultConfirmed()).toBe(false);
+    expect(tampered.map((f) => f.slice(dir.length + 1))).toEqual(["installed.json", "adult.json"]);
+    // Without a key, a file that fails its schema reads as absent too.
+    const plain = fileRegistryStore(dir);
+    writeFileSync(file, JSON.stringify({ body: JSON.stringify({ v: 1, order: "x", plugins: {}, dev: [] }) }));
+    expect(plain.load().order).toEqual([]);
+  });
+
+  test("the MAC key is made once, in the secret store", async () => {
+    const { registryMacKey } = await import("../open");
+    const { MemorySecretStore } = await import("../../contracts/fakes/secret-store");
+    const secrets = new MemorySecretStore();
+    const a = await registryMacKey(secrets);
+    expect(a.length).toBe(32);
+    expect([...(await registryMacKey(secrets))]).toEqual([...a]);
   });
 });

@@ -27,6 +27,10 @@ export interface PluginFingerprint {
   runs: string;
   /** The settings' defaults, as canonical JSON. */
   defaults: string;
+  /** Where its keys and calls go, as canonical JSON: model endpoints, http servers' `url` and `headers`, web UI URLs. */
+  reaches: string;
+  /** Some host comes from its settings. */
+  dynamicHosts: boolean;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -37,10 +41,29 @@ export interface OkSnapshot {
   plugins: Record<string, PluginFingerprint>;
   /** The files that style approval cards, and whether the tree places sealed frames. */
   cards: string;
+  /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
+   *  whatever their extension (#197's review). A folder counts with everything under it. */
+  codePaths: string[];
 }
 
-/** The fields of a plugin point whose format is `program` or `code` (from its declaration), for the change rule. */
-export type CodeFieldsOf = (point: string) => readonly string[];
+/** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
+ *  well-known name, else its declarer's); undefined for a point with no declaration, whose entries count as code
+ *  whole (#197's review). */
+export type CodeFieldsOf = (point: string) => readonly string[] | undefined;
+
+/** The code fields of a point's declaration: each top-level field whose schema holds a `program` or `code` format,
+ *  at any depth. Undefined for no declaration (its entries count as code whole). */
+export function codeFieldsFrom(decl: { fields?: unknown } | undefined): readonly string[] | undefined {
+  if (decl === undefined) return undefined;
+  const props = (decl.fields as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
+  const holdsCode = (v: unknown): boolean => {
+    if (Array.isArray(v)) return v.some(holdsCode);
+    if (v === null || typeof v !== "object") return false;
+    const o = v as Record<string, unknown>;
+    return o.format === "program" || o.format === "code" || Object.values(o).some(holdsCode);
+  };
+  return Object.entries(props).filter(([, v]) => holdsCode(v)).map(([k]) => k);
+}
 
 /** Extensions of files that are data wherever they are (§5.6 "other data edits"); anything else is code. */
 const DATA_EXTENSIONS = new Set([
@@ -78,9 +101,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   for (const [point, raw] of Object.entries(c as Record<string, unknown>)) {
     if (!point.includes(".")) continue;
     const fields = codeFieldsOf(point);
-    if (fields.length === 0) continue;
     const list = Array.isArray(raw) ? raw : [raw];
-    dotted[point] = list.map((e) => Object.fromEntries(fields.map((f) => [f, (e as Record<string, unknown> | null)?.[f]])));
+    if (fields === undefined) dotted[point] = list; // no declaration: the whole entry counts as code
+    else if (fields.length > 0) dotted[point] = list.map((e) => Object.fromEntries(fields.map((f) => [f, (e as Record<string, unknown> | null)?.[f]])));
   }
   return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted });
 }
@@ -88,6 +111,58 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
 function defaultsOf(m: Manifest | undefined): string {
   const settings = (m as { settings?: Record<string, { default?: unknown }> } | undefined)?.settings ?? {};
   return canonicalJson(Object.fromEntries(Object.entries(settings).map(([k, s]) => [k, s?.default])));
+}
+
+/** Where a manifest's keys and calls go (§5.3): model endpoints, http servers' `url` and `headers`, web UI URLs. */
+function reachesOf(m: Manifest | undefined): string {
+  if (!m) return "";
+  const c = m.contributes ?? {};
+  return canonicalJson({
+    models: (c.models ?? []).map((x) => ({ provider: x.provider, endpoint: x.endpoint })),
+    http: Object.entries(c.mcpServers ?? {}).filter(([, x]) => x.type === "http").map(([name, x]) => ({ name, url: x.url, headers: x.headers })),
+    web: (c.ui ?? []).map((u) => u.web?.url ?? null),
+  });
+}
+
+/** Every string a field of what runs holds, for the paths it names. */
+function runStrings(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string[] {
+  if (!m) return [];
+  const out: string[] = [];
+  const deep = (v: unknown) => {
+    if (typeof v === "string") out.push(v);
+    else if (Array.isArray(v)) v.forEach(deep);
+    else if (v !== null && typeof v === "object") Object.values(v).forEach(deep);
+  };
+  deep(m.host);
+  deep(m.client);
+  deep(m.helper);
+  const c = m.contributes ?? {};
+  for (const x of Object.values(c.mcpServers ?? {})) if (x.type === "stdio") deep([x.command, x.args, x.env]);
+  for (const h of c.hooks ?? []) deep([h.command, h.args]);
+  for (const b of c.agentBackends ?? []) deep([b.command, (b as { args?: unknown }).args]);
+  for (const [point, raw] of Object.entries(c as Record<string, unknown>)) {
+    if (!point.includes(".")) continue;
+    const fields = codeFieldsOf(point);
+    const list = Array.isArray(raw) ? raw : [raw];
+    if (fields === undefined) deep(list);
+    else for (const e of list) for (const f of fields) deep((e as Record<string, unknown> | null)?.[f]);
+  }
+  return out;
+}
+
+/** The tree paths a string names: each word, `${plugin}/` and `./` taken off, kept when it names a file or folder of
+ *  the tree. `base` is a child's folder in the tree (`plugins/<folder>/`). */
+function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet<string>, folders: ReadonlySet<string>): string[] {
+  const out = new Set<string>();
+  for (const s of strings) {
+    for (const word of s.split(/[\s=,;:"']+/)) {
+      let p = word.replace(/^\$\{plugin\}[/\\]?/, "").replace(/^\.\//, "").replace(/\\/g, "/").replace(/\/+$/, "");
+      if (p === "" || p.startsWith("/") || p.includes("${")) continue;
+      p = `${base}${p}`;
+      if (files.has(p) || folders.has(p)) out.add(p);
+    }
+  }
+  return [...out];
 }
 
 export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf): PluginFingerprint {
@@ -103,6 +178,8 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     adult: report.adult,
     runs: runsOf(m, codeFieldsOf),
     defaults: defaultsOf(m),
+    reaches: reachesOf(m),
+    dynamicHosts: report.dynamicHosts,
   };
 }
 
@@ -124,7 +201,11 @@ function cardsOf(tree: TreeReport, files: readonly TreeEntry[]): string {
 export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf): OkSnapshot {
   const plugins: Record<string, PluginFingerprint> = { "": fingerprintOf(tree.top, codeFieldsOf) };
   for (const c of tree.children) plugins[c.folder] = fingerprintOf(c.report, codeFieldsOf);
-  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files) };
+  const fileSet = new Set(files.map((f) => f.path));
+  const folders = new Set(files.flatMap((f) => f.path.split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
+  const codePaths = new Set(pathsNamed(runStrings(tree.top.manifest, codeFieldsOf), "", fileSet, folders));
+  for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
+  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
 }
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
@@ -134,7 +215,7 @@ const adds = (before: readonly string[], after: readonly string[]) => after.some
  *  when it is code; a data child applies, like any data file. */
 function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFingerprint): boolean {
   if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0
-    || after.networkHosts.length > 0 || after.helperPermissions.length > 0 || after.hookEvents.length > 0;
+    || after.networkHosts.length > 0 || after.helperPermissions.length > 0 || after.hookEvents.length > 0 || after.dynamicHosts;
   return CLASS_RANK[after.class] > CLASS_RANK[before.class]
     || adds(before.capabilities, after.capabilities)
     || adds(before.networkHosts, after.networkHosts)
@@ -144,7 +225,9 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || (after.addons && !before.addons)
     || (after.adult && !before.adult)
     || after.runs !== before.runs
-    || after.defaults !== before.defaults;
+    || after.defaults !== before.defaults
+    || after.reaches !== before.reaches
+    || (after.dynamicHosts && !before.dynamicHosts);
 }
 
 /** What the change from the OK'd tree to `now` does. */
@@ -158,8 +241,11 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
     if (!prior || prior.sha256 !== f.sha256 || prior.executable !== f.executable) touched.push(f);
   }
   for (const [path, f] of was) if (!is.has(path)) touched.push(f);
-  // A file that isn't data, changed, added or removed, is a code change wherever it is (§5.6).
-  if (touched.some((f) => !isDataFile(f))) return "asks-again";
+  // A file that isn't data, changed, added or removed, is a code change wherever it is (§5.6); so is one a field of
+  // what runs names, whatever its extension (#197's review).
+  const code = [...(ok.codePaths ?? []), ...now.codePaths];
+  const named = (path: string) => code.some((c) => path === c || path.startsWith(`${c}/`));
+  if (touched.some((f) => !isDataFile(f) || named(f.path))) return "asks-again";
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";

@@ -4,9 +4,15 @@
 // * `oks/<id>.json`: what each OK'd tree held (`OkSnapshot`), so a later change can be told apart (§5.6);
 // * `adult.json`: the user's confirmation that they are 18 or older (§5.7).
 // A child's id names a file with `--` for its `/` (§5.1). Writes go through a temporary file and a rename.
+//
+// The fence keeps sessions out of `plugins-state/`; past it (#197's review), each file is schema-checked and, with a key
+// from the secret store, carries an HMAC-SHA256 over its body, so an edit made outside the registry fails closed: the
+// records read as empty (every plugin asks for its OK again) and the adult confirmation as not given.
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { PluginProvenance, PluginSource } from "@waifucave/clover-protocol";
+import { z } from "zod";
+import { PluginProvenance as PluginProvenanceSchema, PluginSource as PluginSourceSchema, type PluginProvenance, type PluginSource } from "@waifucave/clover-protocol";
 import type { OkSnapshot } from "./changes";
 
 export interface PluginState {
@@ -66,31 +72,90 @@ function readJson<T>(path: string): T | undefined {
   }
 }
 
-/** The records on disk, under `<cloverHome>/plugins-state/`. */
-export function fileRegistryStore(stateDir: string): RegistryStore {
+const StoredPlugin = z.object({
+  enabled: z.boolean().optional(),
+  source: PluginSourceSchema.optional(),
+  provenance: PluginProvenanceSchema.optional(),
+  okHash: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
+  refusedHash: z.string().optional(),
+  cardHeld: z.boolean().optional(),
+});
+const StateSchema = z.object({
+  v: z.literal(1),
+  order: z.array(z.string()),
+  plugins: z.record(z.string(), StoredPlugin),
+  dev: z.array(z.object({ path: z.string().min(1), by: z.enum(["cli", "app"]), addedAt: z.number(), expiresAt: z.number() })),
+});
+const Fingerprint = z.object({
+  class: z.enum(["data", "web", "code"]), capabilities: z.array(z.string()), networkHosts: z.array(z.string()), helperPermissions: z.array(z.string()),
+  hookEvents: z.array(z.string()), fetchesCode: z.array(z.string()), addons: z.boolean(), adult: z.boolean(), runs: z.string(), defaults: z.string(),
+  reaches: z.string(), dynamicHosts: z.boolean(),
+});
+const OkSchema = z.object({
+  okHash: z.string(),
+  files: z.array(z.object({ path: z.string(), executable: z.boolean(), sha256: z.string().regex(/^[0-9a-f]{64}$/) })),
+  plugins: z.record(z.string(), Fingerprint),
+  cards: z.string(),
+  codePaths: z.array(z.string()),
+});
+const AdultSchema = z.object({ confirmedAt: z.number() });
+
+/** The file envelope: its body as written, and the body's HMAC when the store has a key. */
+interface Envelope {
+  body: string;
+  mac?: string;
+}
+
+/** The records on disk, under `<cloverHome>/plugins-state/`. With `macKey` (32 bytes from the secret store) every file
+ *  is signed, and one whose MAC doesn't verify, or that fails its schema, reads as absent (`onTampered` says which). */
+export function fileRegistryStore(stateDir: string, opts: { macKey?: Uint8Array; onTampered?: (file: string) => void } = {}): RegistryStore {
   const installed = join(stateDir, "installed.json");
   const ok = (id: string) => join(stateDir, "oks", `${fileId(id)}.json`);
   const adult = join(stateDir, "adult.json");
+  const mac = (body: string) => createHmac("sha256", opts.macKey!).update(body).digest("hex");
+  const write = (file: string, value: unknown) => {
+    const body = JSON.stringify(value);
+    const env: Envelope = opts.macKey ? { body, mac: mac(body) } : { body };
+    writeAtomic(file, `${JSON.stringify(env)}\n`);
+  };
+  const read = <T>(file: string, schema: z.ZodType<T>): T | undefined => {
+    const env = readJson<Envelope>(file);
+    if (env === undefined) return undefined;
+    const bad = () => (opts.onTampered?.(file), undefined);
+    if (typeof env !== "object" || env === null || typeof env.body !== "string") return bad();
+    if (opts.macKey) {
+      const want = Buffer.from(mac(env.body), "hex");
+      const got = Buffer.from(typeof env.mac === "string" ? env.mac : "", "hex");
+      if (got.length !== want.length || !timingSafeEqual(got, want)) return bad();
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(env.body);
+    } catch {
+      return bad();
+    }
+    const r = schema.safeParse(parsed);
+    return r.success ? r.data : bad();
+  };
   return {
     load() {
-      const s = readJson<RegistryStateFile>(installed);
-      return s?.v === 1 ? { v: 1, order: s.order ?? [], plugins: s.plugins ?? {}, dev: s.dev ?? [] } : emptyState();
+      return (read(installed, StateSchema) as RegistryStateFile | undefined) ?? emptyState();
     },
     save(state) {
-      writeAtomic(installed, `${JSON.stringify(state, null, 2)}\n`);
+      write(installed, state);
     },
     loadOk(id) {
-      return readJson<OkSnapshot>(ok(id));
+      return read(ok(id), OkSchema) as OkSnapshot | undefined;
     },
     saveOk(id, snapshot) {
       if (snapshot === undefined) rmSync(ok(id), { force: true });
-      else writeAtomic(ok(id), JSON.stringify(snapshot));
+      else write(ok(id), snapshot);
     },
     adultConfirmed() {
-      return readJson<{ confirmedAt?: number }>(adult)?.confirmedAt !== undefined;
+      return read(adult, AdultSchema) !== undefined;
     },
     confirmAdult(at) {
-      writeAtomic(adult, `${JSON.stringify({ confirmedAt: at })}\n`);
+      write(adult, { confirmedAt: at });
     },
   };
 }

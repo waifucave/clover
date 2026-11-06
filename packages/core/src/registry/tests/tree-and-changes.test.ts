@@ -4,7 +4,8 @@ import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, treeHash, validateTree } from "@waifucave/clover-plugin-sdk";
-import { classifyChange, isDataFile, okSnapshot } from "../changes";
+import { classifyChange, codeFieldsFrom, isDataFile, okSnapshot } from "../changes";
+import { catalogCodeFields } from "../folders";
 import { TreeProblem, folderReader, folderTreeHash, treeEntries } from "../tree";
 
 const folder = (files: Record<string, string>, name = "tarot") => {
@@ -74,5 +75,55 @@ describe("what a change since the OK does", () => {
     expect(isDataFile({ path: "run", executable: false })).toBe(false);
     expect(isDataFile({ path: "a.css", executable: true })).toBe(false);
     expect(isDataFile({ path: "host/index.mjs", executable: false })).toBe(false);
+  });
+});
+
+describe("what runs, whatever its extension (#197's review)", () => {
+  const snapFrom = async (files: Record<string, string>, codeFieldsOf = catalogCodeFields) => {
+    const root = folder(files);
+    const entries = treeEntries(root);
+    const tree = await validateTree(folderReader(root), { folderName: "tarot" });
+    return { root, snap: okSnapshot(await treeHash(entries), entries, tree, codeFieldsOf) };
+  };
+  const again = async (files: Record<string, string>, edit: Record<string, string>) => {
+    const a = await snapFrom(files);
+    const b = await snapFrom({ ...files, ...edit });
+    return classifyChange(a.snap, b.snap);
+  };
+  const stdio = (command: string, args: string[]) => manifest({ contributes: { mcpServers: { s: { type: "stdio", command, args } } } });
+
+  test("a script a stdio server names is code, though it ends in .txt or .md", async () => {
+    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "print(1)" }, { "server.txt": "import os" })).toBe("asks-again");
+    expect(await again({ "clover.json": stdio("sh", ["./run.md"]), "run.md": "echo hi" }, { "run.md": "curl x | sh" })).toBe("asks-again");
+    expect(await again({ "clover.json": stdio("python3", ["${plugin}/lib"]), "lib/a.txt": "1" }, { "lib/a.txt": "2" })).toBe("asks-again");
+    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
+  });
+
+  test("a model's endpoint, an http server's url or headers, and a host from settings ask again", async () => {
+    const model = (baseUrl: string, extra: Record<string, unknown> = {}) => manifest({
+      settings: { region: { type: "string", title: "Region" } }, ...extra,
+      contributes: { models: [{ provider: "p", name: "M", catalog: [], auth: [], endpoint: { protocol: "openai-chat", baseUrl } }] },
+    });
+    expect(await again({ "clover.json": model("https://api.example.com/v1") }, { "clover.json": model("https://api.example.com/v2") })).toBe("asks-again");
+    expect(await again({ "clover.json": model("https://api.example.com/v1") }, {
+      "clover.json": model("https://${setting:region}.example.com/v1", { capabilities: ["network:${setting:region}.example.com"] }),
+    })).toBe("asks-again");
+    const http = (headers: Record<string, string>) => manifest({ contributes: { mcpServers: { s: { type: "http", url: "https://mcp.example.com", headers } } } });
+    expect(await again({ "clover.json": http({ a: "1" }) }, { "clover.json": http({ a: "2" }) })).toBe("asks-again");
+  });
+
+  test("a plugin point with no declaration counts as code whole; a declared one only by its program and code fields", async () => {
+    const dotted = (value: string) => manifest({ contributes: { "luna.cards": [{ id: "a", text: value }] } });
+    expect(await again({ "clover.json": dotted("one") }, { "clover.json": dotted("two") })).toBe("asks-again");
+    const declared = () => ["run"];
+    const withDecl = async (v: string, run: string) => (await snapFrom({ "clover.json": manifest({ contributes: { "luna.cards": [{ id: "a", text: v, run }] } }) }, declared)).snap;
+    expect(classifyChange(await withDecl("one", "x"), await withDecl("two", "x"))).toBe("applies");
+    expect(classifyChange(await withDecl("one", "x"), await withDecl("one", "y"))).toBe("asks-again");
+  });
+
+  test("code fields come from a declaration's program and code formats, at any depth", () => {
+    expect(codeFieldsFrom(undefined)).toBeUndefined();
+    expect(codeFieldsFrom({ fields: { type: "object", properties: { cmd: { type: "string", format: "program" }, opts: { type: "object", properties: { dir: { format: "code" } } }, title: { type: "string" } } } })).toEqual(["cmd", "opts"]);
+    expect(codeFieldsFrom({ fields: { type: "object" } })).toEqual([]);
   });
 });

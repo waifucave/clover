@@ -5,14 +5,17 @@
 //
 // Each top-level folder is read without running anything: its tree hash, `validateTree`'s report for it and its
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
-import { existsSync, mkdirSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
-import { basename, join, resolve } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, describeOk, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
-import { classifyChange, okSnapshot, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import { classifyChange, codeFieldsFrom, okSnapshot, type CodeFieldsOf, type OkSnapshot } from "./changes";
+
+/** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
+export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalogPointDecl(point));
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import type { DevFolderState, RegistryStore } from "./state";
@@ -81,7 +84,7 @@ export async function readPluginFolder(
   }
   let entries;
   try {
-    entries = treeEntries(folder);
+    entries = treeEntries(folder, { allowHardLinks: opts.dev === true });
   } catch (e) {
     const reason = e instanceof TreeProblem ? e.message : `the folder can't be read: ${(e as Error).message}`;
     return { id: name, parses, inputs: [{ ...base, id: name, manifest: placeholder(), invalid: reason, treeHash: `sha256:invalid:${name}` }] };
@@ -106,7 +109,7 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = tree.ok ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? (() => [])) : undefined;
+  const snapshot = tree.ok ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields) : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
@@ -227,9 +230,11 @@ export class PluginFolders {
 
   /** Adds a development folder. From the app, the RPC layer's sealed card has already been answered (§5.6). */
   async addDevFolder(path: string, by: "cli" | "app"): Promise<DevFolderState> {
-    const abs = resolve(path);
+    // The real path, symlinks resolved, is what reloads and what the fence keeps bots out of (#197's review).
+    const abs = realPath(path);
     if (!existsSync(join(abs, MANIFEST_FILE)) || !statSync(abs).isDirectory()) throw new ContractError("invalid", `${abs} has no ${MANIFEST_FILE}`);
-    if (abs === resolve(this.#o.pluginsDir) || abs.startsWith(resolve(this.#o.pluginsDir) + "/")) {
+    const plugins = realPath(this.#o.pluginsDir);
+    if (abs === plugins || abs.startsWith(plugins + sep) || plugins.startsWith(abs + sep)) {
       throw new ContractError("invalid", "a development folder is kept outside the plugins folder");
     }
     const at = this.#now();
@@ -242,7 +247,7 @@ export class PluginFolders {
   }
 
   async removeDevFolder(path: string): Promise<void> {
-    const abs = resolve(path);
+    const abs = realPath(path);
     if (!this.#o.core.devFolders.some((d) => d.path === abs)) throw new ContractError("not_found", `${abs} isn't a development folder`);
     this.#o.core.devFolders = this.#o.core.devFolders.filter((d) => d.path !== abs);
     this.#watchers.get(abs)?.close();
@@ -252,7 +257,7 @@ export class PluginFolders {
   }
 
   async renewDevFolder(path: string): Promise<number> {
-    const abs = resolve(path);
+    const abs = realPath(path);
     const d = this.#o.core.devFolders.find((x) => x.path === abs);
     if (!d) throw new ContractError("not_found", `${abs} isn't a development folder`);
     const expiresAt = this.#now() + DEV_FOLDER_MS;
@@ -378,6 +383,15 @@ export class PluginFolders {
     const delay = Math.max(0, Math.min(next - this.#now(), 2 ** 31 - 1));
     this.#expiry = setTimeout(() => void this.expireDevFolders(), delay);
     this.#expiry.unref?.();
+  }
+}
+
+/** A path with its symlinks resolved, or as given when it doesn't exist (yet, or any more). */
+function realPath(path: string): string {
+  try {
+    return realpathSync(resolve(path));
+  } catch {
+    return resolve(path);
   }
 }
 
