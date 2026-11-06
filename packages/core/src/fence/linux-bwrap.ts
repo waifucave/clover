@@ -1,9 +1,10 @@
 // Linux: the fence as a bubblewrap sandbox, for a command run under it (spec §9.1). Built from the fence's
 // `SandboxPolicy` at each run. A mount can't deny a path that isn't there yet, so the shape differs from macOS's:
 //   * the whole tree read-only, then the writable roots (the home, temp) writable;
-//   * the Clover home, and every folder that holds a fenced item, bound read-only again, and only their children that
-//     are neither fenced nor such a folder bound back writable: a fenced file that doesn't exist yet can't be made,
-//     and nothing new appears where Clover names things;
+//   * the Clover home, every folder that holds a fenced item inside it, and the nearest present folder of a fenced
+//     item that isn't there yet (a `.zshrc` never made: the home itself, then), bound read-only again, and only their
+//     children that are neither fenced nor such a folder bound back writable: a fenced file that doesn't exist yet
+//     can't be made, and nothing new appears where Clover names things;
 //   * every folder between a writable root and a fenced item outside those is bound onto itself, so it's a mount
 //     point: renaming or removing it fails (EBUSY), and the item can't be moved out;
 //   * a hard link across mounts fails (EXDEV), so none can be made from a fenced file;
@@ -53,6 +54,15 @@ export function bwrapArgs(input: BwrapInput): string[] {
   for (const d of fenced) {
     if (!inside(d, cloverHome) || d === cloverHome) continue;
     for (let p = dirname(d); inside(p, cloverHome); p = dirname(p)) { naming.add(p); if (p === cloverHome) break; }
+  }
+  // A fenced item that isn't there yet (a `.zshrc` a bash user never made, `~/.config/autostart`) can't be kept from
+  // being made by a mount on itself, so the nearest folder that is there takes the naming folders' shape: read-only,
+  // its present children writable, nothing new in it (fails closed: no new top-level names there for the command).
+  for (const d of fenced) {
+    if (fs.kind(d) !== null) continue;
+    let p = dirname(d);
+    while (fs.kind(p) === null && p !== dirname(p)) p = dirname(p);
+    if (writable.some((w) => inside(p, w))) naming.add(p);
   }
   // Folders between a writable root and a fenced item (or the Clover home), outside the naming set: mount points.
   const holders = new Set<string>();

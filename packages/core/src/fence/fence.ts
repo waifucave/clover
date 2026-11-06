@@ -18,7 +18,10 @@ import {
 import { canonicalPath } from "./canonical";
 import { callerVerdict, type FenceCaller } from "./per-caller";
 import { foldPath, nonAsciiAlias } from "./fold";
-import { fenceLayout, type LaidOutKind } from "./layout";
+import { fenceLayout, pendingFenced, type LaidOutKind } from "./layout";
+
+/** Pending kinds this fence enforces before B's contract has them. */
+export const ENFORCED_AHEAD = ["plugins", "login-start", "hook-shell"] as const;
 
 export interface CloverFenceOptions {
   os?: Os;
@@ -36,6 +39,9 @@ export interface CloverFenceOptions {
   loopbackPorts?: () => readonly number[];
   /** How a path is resolved on this disk; the conformance suite's paths are fictional, so it passes its own. */
   canonical?: (path: string) => string;
+  /** Enforce `ENFORCED_AHEAD` (default true). Off only for B's contract suite until its next version names those kinds
+   *  (B's #197), since today's suite still says the plugins folder isn't fenced. */
+  enforceAhead?: boolean;
 }
 
 /** How many entries of the fenced set a hard-link check walks before it refuses instead. */
@@ -63,7 +69,10 @@ export class CloverFence implements Fence {
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
+    this.#enforceAhead = opts.enforceAhead ?? true;
   }
+
+  readonly #enforceAhead: boolean;
 
   fencedSet(): readonly FencedPath[] {
     const out: FencedPath[] = [];
@@ -73,6 +82,13 @@ export class CloverFence implements Fence {
       for (const p of this.#layout[kind] ?? paths) add(kind, p);
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
+    // Enforced ahead of B's contract naming them (#205's S5: before bots' Bash runs under the fence and before hooks
+    // run): the plugins folder, the places that start programs at login (shell start files included), and the
+    // per-user Git whose bash runs Windows hooks. Write-denied.
+    const pending = pendingFenced({ home: this.#home, cloverHome: this.#cloverHome, os: this.os });
+    for (const kind of this.#enforceAhead ? ENFORCED_AHEAD : []) {
+      for (const p of (this.#layout as Record<string, string[] | undefined>)[kind] ?? pending[kind] ?? []) add(kind as FencedKind, p);
+    }
     return out;
   }
 

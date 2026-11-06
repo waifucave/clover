@@ -15,7 +15,9 @@ import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fol
 // C-M2: the real fence. B's conformance suite runs against it with the suite's own fictional paths (no disk), then
 // the folding and the disk's links are checked on real folders.
 
-runFenceConformance((opts) => new CloverFence({ ...opts, canonical: (p) => posix.normalize(p) }));
+// Today's suite still says the plugins folder isn't fenced; the kinds enforced ahead of it are off for it until B's
+// next version (#197) names them, and tested below.
+runFenceConformance((opts) => new CloverFence({ ...opts, canonical: (p) => posix.normalize(p), enforceAhead: false }));
 
 describe("the fence's fold (B-M1's review, J-M1's B1)", () => {
   test("long s, sharp s and the Kelvin sign fold as the disks take them; NFC and NFD are one name", () => {
@@ -73,7 +75,8 @@ describe("the real fence on a real disk", () => {
     const { clover, home, fence } = make();
     expect(fence.check({ op: "write", path: join(clover, "ſettings.json") })).toEqual({ allowed: false, reason: "settings", path: join(clover, "settings.json") }); // folds onto it
     expect(fence.check({ op: "write", path: join(clover, "plugins-state", "öks") })).toMatchObject({ allowed: false, reason: "clover-home" });
-    expect(fence.check({ op: "write", path: join(clover, "plugins", "lüna", "clover.json") })).toEqual({ allowed: true }); // no fenced item there
+    expect(fence.check({ op: "write", path: join(clover, "plugins", "lüna", "clover.json") })).toMatchObject({ allowed: false, reason: "plugins" }); // the plugins folder is fenced now
+    expect(fence.check({ op: "write", path: join(clover, "scratch", "lüna", "notes.md") })).toEqual({ allowed: true }); // no fenced item there
     expect(fence.check({ op: "write", path: join(home, "project", "lüna.txt") })).toEqual({ allowed: true });
   });
 
@@ -232,6 +235,22 @@ describe("the real fence on a real disk", () => {
     expect(fence.checkAgentRoot(join(home, "link-to-clover"))).toMatchObject({ allowed: false, reason: "clover-home" });
     expect(fence.checkAgentRoot(join(home, "link-to-clover", "plugins", "x"))).toMatchObject({ allowed: false, reason: "clover-home" });
     expect(fence.checkAgentRoot(join(home, "..", "link-to-home"))).toMatchObject({ allowed: false, reason: "clover-home" });
+  });
+
+  test("enforced ahead of the contract (#205's S5): the plugins folder, the login-start places, the per-user Git on Windows", () => {
+    const { home, clover, fence } = make("macos");
+    expect(fence.check({ op: "write", path: join(clover, "plugins", "tarot", "clover.json") })).toMatchObject({ allowed: false, reason: "plugins" });
+    expect(fence.check({ op: "read", path: join(clover, "plugins", "tarot", "clover.json") })).toEqual({ allowed: true });
+    for (const f of [".zshrc", ".bashrc", ".profile", join("Library", "LaunchAgents", "x.plist")]) {
+      expect(fence.check({ op: "write", path: join(home, f) })).toMatchObject({ allowed: false, reason: "login-start" });
+    }
+    expect(fence.policy().denyWrite).toEqual(expect.arrayContaining([join(clover, "plugins"), join(home, ".bashrc")]));
+    const linux = make("linux").fence;
+    expect(linux.check({ op: "write", path: join(root, "home", ".config", "autostart", "x.desktop") })).toMatchObject({ allowed: false, reason: "login-start" });
+    const win = new CloverFence({ os: "windows", home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", canonical: (p) => p });
+    expect(win.check({ op: "write", path: "C:\\Users\\me\\AppData\\Local\\Programs\\Git\\bin\\bash.exe" })).toMatchObject({ allowed: false, reason: "hook-shell" });
+    expect(win.check({ op: "write", path: "C:\\Users\\me\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\x.lnk" })).toMatchObject({ allowed: false, reason: "login-start" });
+    expect(new CloverFence({ home, cloverHome: clover, enforceAhead: false }).check({ op: "write", path: join(clover, "plugins", "x") })).toEqual({ allowed: true });
   });
 
   test("the fenced spawn door (a hook's command, A-M3) is closed until the fenced process lands: refused, never run outside", async () => {
