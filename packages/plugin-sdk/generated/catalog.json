@@ -76,6 +76,13 @@
       "bundledOnly": true
     },
     {
+      "name": "plugins.install",
+      "lets": "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK",
+      "ok": "installs plugins for you to OK",
+      "warns": false,
+      "bundledOnly": true
+    },
+    {
       "name": "usage.read",
       "lets": "Read usage rows and plan readings",
       "ok": "sees your usage and plan readings",
@@ -850,6 +857,9 @@
             "type": "string"
           },
           "session": {
+            "type": "string"
+          },
+          "bot": {
             "type": "string"
           }
         },
@@ -2023,7 +2033,7 @@
       "context": [
         "surface"
       ],
-      "doc": "A tab of the island, such as Needs you, Devices or Usage.",
+      "doc": "A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `clover` tree's tabs raise the strip's attention.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2112,7 +2122,7 @@
       "context": [
         "surface"
       ],
-      "doc": "Something the Dispatch pill can message besides the bots.",
+      "doc": "Something the Dispatch pill can message besides the bots: `handler` (a `PillTargetHandler`) gets the user's words. The pill names it with its plugin's name, and leaves out one titled as a bot.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2144,10 +2154,19 @@
             "maxLength": 1024,
             "format": "path",
             "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+            "format": "handler",
+            "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
           }
         },
         "required": [
-          "title"
+          "title",
+          "handler"
         ]
       },
       "props": {
@@ -3340,6 +3359,10 @@
       "capability": "files",
       "where": "both"
     },
+    "files.watch": {
+      "capability": "files",
+      "where": "both"
+    },
     "browser.tabs": {
       "capability": "browser",
       "where": "both"
@@ -3398,6 +3421,10 @@
     },
     "terminal.close": {
       "capability": "terminal",
+      "where": "ui"
+    },
+    "plugins.install": {
+      "capability": "plugins.install",
       "where": "ui"
     },
     "usage.rows": {

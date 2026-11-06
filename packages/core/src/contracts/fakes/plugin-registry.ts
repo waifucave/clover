@@ -4,11 +4,12 @@
 // plugin host reports after crashes. The catalog's declarations come in as `catalog` (the plugin SDK's
 // `catalogPointDecl`), since the contracts don't import the SDK at run time.
 import { createHash } from "node:crypto";
-import type { PluginClass, PluginProvenance, PluginSource, PluginState, ValidationIssue } from "@waifucave/clover-protocol";
-import { Listeners, type Unsubscribe } from "../common";
+import { BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
   CORE_SPOTS, UNIQUE_ENTRY_FIELD,
-  type ApproveResult, type Contribution, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
+  type ApproveResult, type Contribution, type InstallFrom, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
+  type SwitchOptions, type SwitchResult,
 } from "../plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "../sdk-types";
 
@@ -76,6 +77,9 @@ export class FakePluginRegistry implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
   readonly #catalog: (name: string) => PointDecl | undefined;
+  /** The OK cards raised, by top-level plugin: the card and the tree it shows. */
+  readonly #okCards = new Map<string, { card: string; treeHash: string }>();
+  #okSeq = 0;
   #adultConfirmed: boolean;
   #snap: Snapshot = { records: new Map(), entries: new Map(), points: [] };
 
@@ -105,9 +109,41 @@ export class FakePluginRegistry implements PluginRegistry {
     return this.#snap.points.map((p) => structuredClone(p));
   }
 
-  async setEnabled(id: string, enabled: boolean): Promise<void> {
-    this.#mustGet(id).enabled = enabled;
+  async setEnabled(id: string, enabled: boolean, opts: SwitchOptions = {}): Promise<SwitchResult> {
+    const held = this.#mustGet(id);
+    const state = this.#snap.records.get(id)?.state;
+    if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled") throw new ContractError("refused", "Clover's own plugin is always on");
+    if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+    if (enabled && state === "found") {
+      const top = parentOf(id) ?? id;
+      if (opts.from !== "cli" || opts.okHash === undefined) return { applied: false, card: this.#raiseOk(top) };
+      if ((await this.approve(top, opts.okHash)) === "changed") throw new ContractError("conflict", `${top} changed since its OK text was shown`);
+    }
+    held.enabled = enabled;
     this.#update();
+    return { applied: true };
+  }
+
+  async installed(id: string, from: InstallFrom): Promise<{ state: PluginState; card?: string }> {
+    this.#mustGet(id);
+    const state = this.#snap.records.get(id)!.state;
+    if (from === "cli" || state !== "found") return { state };
+    return { state, card: this.#raiseOk(id) };
+  }
+
+  /** The OK cards waiting, by plugin. */
+  okCards(): { id: string; card: string; treeHash: string }[] {
+    return [...this.#okCards].map(([id, c]) => ({ id, ...c }));
+  }
+
+  /** One OK card per plugin and tree: a second ask while it waits gets the same card. */
+  #raiseOk(id: string): string {
+    const treeHash = this.#mustGet(id).hash;
+    const waiting = this.#okCards.get(id);
+    if (waiting?.treeHash === treeHash) return waiting.card;
+    const card = `card_ok${String(++this.#okSeq).padStart(6, "0")}`;
+    this.#okCards.set(id, { card, treeHash });
+    return card;
   }
 
   async approve(id: string, treeHash: string, selection: Readonly<Record<string, boolean>> = {}): Promise<ApproveResult> {
@@ -117,6 +153,7 @@ export class FakePluginRegistry implements PluginRegistry {
     held.refused = false;
     held.okHash = treeHash;
     held.cardHeld = false;
+    this.#okCards.delete(id);
     for (const [child, on] of Object.entries(selection)) {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
@@ -127,6 +164,7 @@ export class FakePluginRegistry implements PluginRegistry {
 
   async refuse(id: string): Promise<void> {
     this.#mustGet(id).refused = true;
+    this.#okCards.delete(id);
     this.#update();
   }
 
