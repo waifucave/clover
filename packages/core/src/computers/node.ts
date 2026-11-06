@@ -16,7 +16,7 @@ import { hostOs } from "../tree/names";
 import { RemoteHolder } from "../tree/remote";
 import { ensureTreeRoot } from "../tree/root";
 import { serveTransfer, transferAsking } from "../tree/transfer";
-import { TreeService, type ToolExecutor } from "../tree/service";
+import { BulkSlots, TreeService, type ToolExecutor } from "../tree/service";
 import { TreeTools } from "../tree/tools";
 import type { AnswerAsker, PeerReviewer } from "../tree/judge";
 import { LocalTerminals, serveTerminals, TerminalRouter, type ShellLauncher } from "../tree/terminals";
@@ -80,6 +80,8 @@ export interface ComputerNode {
   tree: CoreTree;
   tools: TreeTools;
   terminals: TerminalRouter;
+  /** The per-computer bulk slots for other computers' file calls and transfers here (check 2's N3). */
+  bulk: BulkSlots;
   /** Holds on any computer's screen, kept by that computer (review minor 4). */
   holds: HoldRouter;
   /** How many terminals run on this computer, its own and the others'. */
@@ -145,7 +147,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     const d = o.devices.get(device);
     return d !== undefined && d.revokedAt === undefined && d.runsCore;
   };
+  // One set of per-computer bulk slots for the tree service and the direct path (check 2's N3).
+  const bulk = new BulkSlots();
   const service = new TreeService({
+    bulk,
     transport: o.transport, holder, clock: o.clock, level: () => registry.self().level, mayCall,
     ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
     ...(o.reviewer ? { reviewer: o.reviewer } : {}),
@@ -182,7 +187,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return { computer: c.name, device: c.name === registry.self().name ? null : c.device };
   };
   // The direct path (edit J8, review S1): this computer as the destination or the source of a move or copy.
-  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, deviceFor: (path) => where(tree.resolve(path).computer) });
+  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.resolve(path).computer) });
   const tree: CoreTree = new CoreTree({
     directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
     transfer: ({ from, to, move, source, destination, call, answers }) => {
@@ -242,7 +247,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     });
   }
   return {
-    registry, peers, holder, service, tree, tools, terminals, holds, mcp: mcpRouter,
+    registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter,
     terminalCount: () => localTerminals.count,
     mirror: (server, config, computers, session) => mirror({
       transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,

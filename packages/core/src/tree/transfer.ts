@@ -18,9 +18,9 @@
 //   came meanwhile stays, and the move says so (two copies, never none).
 // * Links travel as links when their target stays inside what moves; anything that isn't a file, a folder or a link
 //   refuses the whole operation before anything moves.
-// * No cap per file (item 89), and frames stay at 256 KiB, so memory is bounded; but transfers aren't counted in the
-//   service's per-computer bulk slots (`BULK_PER_DEVICE`), so several large ones at once share the disk with no
-//   back-pressure (check 2's N3). A per-computer transfer budget is lane M's call.
+// * No cap per file (item 89), and frames stay at 256 KiB, so memory is bounded. Another computer's transfers here
+//   (its `tree.receive`, and its `tree.send` stream) count in the same per-computer bulk slots as its writes
+//   (`BULK_PER_DEVICE`, check 2's N3), so one computer can't run unbounded transfers at once at a holder.
 // * R1, the caller's side (`transferAsking`): before it sends the call, it asks each holder that will judge it as a
 //   peer whether its level needs the user's answer (`tree.judge`, which takes no answer and so spends none). If any
 //   does, the user sees one card naming both computers and the whole operation, and its answer goes with the call.
@@ -36,6 +36,7 @@ import type { TreeChange } from "../contracts/tree";
 import type { HolderCall, LocalHolder } from "./holder";
 import { atOps } from "./at";
 import { answerNeeded, type AnswerAsker, type NeedsAnswer } from "./judge";
+import type { BulkSlots } from "./service";
 import { offlineAs } from "./remote";
 
 /** Bytes per frame of file data. */
@@ -443,9 +444,23 @@ export interface TransferOptions {
   deviceFor: (path: string) => { computer: string; device: string | null };
   /** Whether `device` may call at all: a paired computer, not revoked. */
   mayCall: (device: string) => boolean;
+  /** The per-computer bulk slots this computer's tree service uses: another computer's transfers here count in them,
+   *  as its writes do (the controller's call on check 2's N3). */
+  bulk: BulkSlots;
 }
 
 const JudgeParams = z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level });
+
+/** Ends a `tree.send` stream with the error, so the destination answers with its code. */
+async function refuseStream(stream: LinkStream, e: unknown): Promise<void> {
+  const err = e instanceof ContractError ? e : new ContractError("failed", (e as Error)?.message ?? "failed");
+  try {
+    await stream.write(frame(T_ERROR, json(err.toJSON())));
+    stream.end();
+  } catch {
+    stream.abort(err.message);
+  }
+}
 
 /** Serves `tree.receive` (this computer is the destination), the `tree.send` stream and `tree.sent` (the source), and
  *  `tree.judge`: whether this computer's level needs the user's answer for its part, with its card if so. */
@@ -498,11 +513,11 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     if (!p.success) throw new ContractError("invalid", `tree.receive: ${p.error.issues[0]?.message ?? "bad params"}`);
     // The receiver stamps who the call is for (review N2): a peer, for the session it names.
     const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
-    return receiveHere(p.data, as);
+    return o.bulk.run(from, () => receiveHere(p.data, as));
   }));
 
   offs.push(t.onStream("tree.send", (stream, meta, from) => {
-    void (async () => {
+    void o.bulk.run(from, async () => {
       try {
         if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
         const parsed = SendMeta.safeParse(meta);
@@ -524,15 +539,9 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
         await send(stream, src.real, entries, sendId);
         stream.end();
       } catch (e) {
-        const err = e instanceof ContractError ? e : new ContractError("failed", (e as Error)?.message ?? "failed");
-        try {
-          await stream.write(frame(T_ERROR, json(err.toJSON())));
-          stream.end();
-        } catch {
-          stream.abort(err.message);
-        }
+        await refuseStream(stream, e);
       }
-    })();
+    }).catch((e: unknown) => refuseStream(stream, e));
   }));
 
   offs.push(t.handle("tree.judge", async (raw, from) => {

@@ -9,9 +9,9 @@
 //   tool.run, tool.cancel (+ `session`*)
 // Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output, + `session`*).
 //
-// Bulk calls (reads, writes, glob, grep) run at most `BULK_PER_DEVICE` at once per calling computer, with a short
-// queue behind them, so one computer's burst can't fill this one's memory (review minor 5); one write carries at most
-// `TREE_IO_MAX`. A running call is known by its device, session and call id (minor 7).
+// Bulk calls (reads, writes, glob, grep, and the direct path's transfers) run at most `BULK_PER_DEVICE` at once per
+// calling computer, with a short queue behind them, so one computer's burst can't fill this one's memory or disk
+// (review minor 5, check 2's N3); one write carries at most `TREE_IO_MAX`. A running call is known by its device, session and call id (minor 7).
 import { z } from "zod";
 import {
   COMPUTERS_METHODS, Level, SessionId, SignedCardAnswer, TreePath,
@@ -93,6 +93,8 @@ export interface TreeServiceOptions {
   level?: () => Level;
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   tools?: ToolExecutor;
+  /** The per-computer bulk slots, shared with the direct path's transfers (`transfer.ts`). */
+  bulk?: BulkSlots;
   /** Another computer's MCP call on this computer's host (`tool.run` with an `mcp__` tool; `McpRouter.serveHere`). */
   mcp?: (call: { tool: string; input: unknown; as: Caller; session: string; callId: string; signal: AbortSignal }) => Promise<{ output: unknown; isError: boolean }>;
   /** This computer's reviewer for a peer's command at `ask-risky` (R1). */
@@ -140,13 +142,14 @@ export class TreeService {
   readonly #o: TreeServiceOptions;
   readonly #off: Unsubscribe[] = [];
   readonly #running = new Map<string, Running>();
-  readonly #bulk = new BulkSlots();
+  readonly #bulk: BulkSlots;
   /** Watches served, by id, with the device that holds each. */
   readonly #watches = new Map<string, { device: string; stop: Unsubscribe }>();
   #watchSeq = 0;
 
   constructor(opts: TreeServiceOptions) {
     this.#o = opts;
+    this.#bulk = opts.bulk ?? new BulkSlots();
     const t = opts.transport;
     const serve = <K extends keyof typeof TREE_PEER_PARAMS>(method: K, fn: (p: z.infer<(typeof TREE_PEER_PARAMS)[K]>, call: HolderCall, from: string) => unknown) => {
       this.#off.push(t.handle(method, async (raw, from) => {

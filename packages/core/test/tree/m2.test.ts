@@ -139,6 +139,32 @@ describe("the direct path: copies, and mv and cp in Bash (item 89)", () => {
   });
 });
 
+describe("transfers count in the bulk slots (check 2's N3)", () => {
+  test("another computer's transfers here wait behind its 4 slots, and a full queue refuses", async () => {
+    const { studio, laptop } = await two({ levels: { Laptop1: "automatic", Studio: "automatic" } });
+    writeFileSync(join(studio.home, "a.txt"), "a");
+    const gates: (() => void)[] = [];
+    const held = Array.from({ length: 4 }, () => laptop.node.bulk.run(studio.device, () => new Promise<void>((r) => gates.push(r))));
+    await until(() => gates.length === 4, 1000, "Studio's four slots on Laptop1 to fill");
+    let done = false;
+    const move = studio.node.tree.move("home/Studio/a.txt", "home/Laptop1/a.txt", { as: BOT }).then(() => { done = true; });
+    await Bun.sleep(50);
+    expect(done).toBe(false);
+    gates.shift()!();
+    await move;
+    expect(readFileSync(join(laptop.home, "a.txt"), "utf8")).toBe("a");
+    // With every slot taken and the queue behind them full, a transfer is refused at once.
+    // Three of the four still run; one more takes the free slot, and 32 wait behind them.
+    const queued = Array.from({ length: 33 }, () => laptop.node.bulk.run(studio.device, () => new Promise<void>((r) => gates.push(r))));
+    writeFileSync(join(studio.home, "b.txt"), "b");
+    await until(() => gates.length === 4, 1000, "the slots to fill again");
+    expect(await code(studio.node.tree.move("home/Studio/b.txt", "home/Laptop1/b.txt", { as: BOT }))).toBe("refused");
+    expect(existsSync(join(studio.home, "b.txt"))).toBe(true);
+    while (gates.length) gates.shift()!(), await Bun.sleep(1);
+    await Promise.all([...held, ...queued]);
+  });
+});
+
 describe("levels per computer", () => {
   test("another computer's level is changed there: a lowering at once, a raise with the user's answer for its card", async () => {
     const { studio, laptop, phone } = await two();
