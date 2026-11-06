@@ -1970,12 +1970,12 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       }
       const ready = members.length === pool.length && members.every((m) => m.ready);
       const reason = ready ? null : (members.find((m) => !m.ready)?.reason ?? "a pool member isn't set up");
+      process.exitCode = ready ? SANDBOX_EXIT.OK : SANDBOX_EXIT.FAILED;
       if (rest.includes("--json")) {
         console.log(JSON.stringify({ ready, reason, user: firstUser, members }));
         return;
       }
       console.log(ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${reason ?? "unknown"}`);
-      process.exitCode = ready ? SANDBOX_EXIT.OK : SANDBOX_EXIT.FAILED;
       return;
     }
     default:
