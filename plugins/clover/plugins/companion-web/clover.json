@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": { "en": "Web companion" },
+  "description": {
+    "en": "Chat with your bots from a browser at clover.waifucave.com. The browser pairs once with this computer and then connects to it directly over WebRTC; waifucave only introduces the two, and never sees what they say."
+  },
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun", "start": "main" },
+  "capabilities": ["network:handshake.waifucave.com", "network:stun.cloudflare.com", "network:stun.l.google.com"],
+  "settings": {
+    "handshakeOrigin": {
+      "type": "string",
+      "title": { "en": "Handshake address" },
+      "description": { "en": "For development profiles only: a local handshake emulator." },
+      "scope": "device"
+    },
+    "webOrigin": {
+      "type": "string",
+      "title": { "en": "Web companion address" },
+      "description": { "en": "For development profiles only: a local copy of the web companion." },
+      "scope": "device"
+    }
+  },
+  "contributes": {
+    "companions": [{ "id": "web", "name": { "en": "Web companion (clover.waifucave.com)" }, "handler": "companion" }]
+  }
+}

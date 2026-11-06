@@ -1,0 +1,32 @@
+S7's stall, isolated (lane C, C-M1). Bun 1.3.14. Failures = descriptor checks that failed (EBADF,
+EPIPE, a missing reply or an early EOF), summed over the iterations; 0 is clean.
+
+macOS 26 arm64 (the lane's Mac), 10 iterations unless noted
+  echo,cp3-run          0        echo,cp5-crash      76
+  echo,cp3-crash        0        echo,cp5-clean      64
+  echo,cp3-clean        0        echo,bunfd-crash     0
+  file,cp3-clean        0        echo,bun5-crash      0
+  cat,cp3-clean         0        echo,bun5-clean      0
+  file,cp4-clean (20)  26        file,cp5-clean       9 (one child's close never came)
+  file,cp4i-clean (20) 106       cat,cp5-clean       26 (the cat child lost its pipes)
+  echo,cp5-run          8
+  echo,cp5-clean, 50 ms after each step   28
+  echo,cp5-clean, 500 ms after each step   0
+
+Linux, Ubuntu 24.04 x86_64 (clover-c-linux), 20 iterations
+  file,cp3-clean        0        file,cp4-clean      33
+  file,cp3-crash        0        file,cp4i-clean     86
+  file,bun5-clean       0        file,cp5-clean      22
+  file,bunfd-crash      0        file,cp5-crash      22
+  cat,cp3-clean         0        cat,cp5-clean       hung (killed at 60 s)
+  file,cp5-clean, 50 ms after each step    2
+  file,cp5-clean, 500 ms after each step   4
+  (Two or more echo children hung the harness itself on Linux, so the Linux rows use files.)
+
+Windows NT 10.0.26100 x64 (clover-c-win), 20 iterations, cmd.exe children
+  file,cp3-clean        0        file,cp4i-clean     13
+  file,cp3-crash        0        file,cp4-clean       0
+  file,bun5-clean       0        file,cp5-clean       0
+
+First failure, each OS: "EBADF: bad file descriptor, fstat" (statx on Linux) on a regular file
+opened with openSync, a few iterations after the first spawn with a fourth stdio entry.
