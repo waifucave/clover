@@ -6,17 +6,24 @@
 //   output against the quirks' pattern, and on macOS checks the code signature's team where the quirks name one.
 // * `start` launches one contained process per delegation in the root folder (process/launch.ts), hands it the
 //   bridge as its one stdio MCP server, and opens the ACP session (acp/session.ts).
-// * Its own sandbox, and the user's OK for an agent with none, come in K-M2 (plan §4 K): `detect` reports
-//   `sandboxed: false` until then, and Settings marks it.
+// * Its own sandbox (sandbox/admission.ts): `detect` reports `sandboxed: true` only where the backend's sandbox is
+//   admitted for this OS and version, and `start` then writes the fenced set in the backend's own format into the
+//   session's setup folder. Every other agent starts only after the user's OK (sandbox/oks.ts, asked by the manager).
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { AcpAgentSession, type WireTap } from "./acp/session";
+import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admission";
 import type { StdioMcpServer } from "./acp/types";
 import { buildAgentEnv, launchContained } from "./process/launch";
+import { versionSatisfies } from "./version";
+
+export { versionSatisfies } from "./version";
 import type { ProcessTableReader } from "./process/table";
 
 /** How a backend's program is run: `program` resolved on PATH, `prefixArgs` before both the version arguments and
@@ -43,6 +50,10 @@ export interface AcpBackendOptions {
   table?: ProcessTableReader;
   versionTimeoutMs?: number;
   startTimeoutMs?: number;
+  /** Which sandboxes hold the fence (S8); the built-in table by default. */
+  admissions?: Parameters<typeof admissionFor>[0];
+  /** Where a session's sandbox files go: a folder inside the fenced run folder (`<home>/run/agents/<session>`). */
+  setupDir?: (sessionId: string) => string;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -53,6 +64,8 @@ export interface AgentWire {
   launched?: (pid: number) => void;
   /** The agent's process exited, for whatever reason. */
   exited?: () => void;
+  /** Where its sandbox files go: inside the fenced run folder, so no bot or agent can rewrite them. */
+  setupDir?: string;
 }
 
 export function currentOs(): Os {
@@ -105,11 +118,17 @@ export class AcpAgentBackend implements AgentBackend {
       }
     }
     const versionOk = version !== undefined && versionSatisfies(version, this.quirks.launch.versions);
+    const sandbox = this.admission(version);
     return {
       installed: true, path, ...(version === undefined ? {} : { version }), identityOk, versionOk,
-      sandboxed: false,
-      reason: reason ?? (versionOk ? "its own sandbox is checked from K-M2" : `version ${version ?? "unknown"} is outside the tested range ${this.quirks.launch.versions}`),
+      sandboxed: sandbox.status === "protected",
+      reason: reason ?? (!versionOk ? `version ${version ?? "unknown"} is outside the tested range ${this.quirks.launch.versions}` : sandbox.status === "protected" ? sandbox.evidence : `no sandbox: ${sandbox.reason}`),
     };
+  }
+
+  /** This backend's sandbox on this OS at this version (S8). */
+  admission(version: string | undefined): SandboxAdmission {
+    return admissionFor(this.#opts.admissions ?? ADMISSIONS, this.id, this.#opts.os ?? currentOs(), version);
   }
 
   async start(spec: AgentStartSpec): Promise<AcpAgentSession> {
@@ -119,11 +138,21 @@ export class AcpAgentBackend implements AgentBackend {
     if (!this.quirks.mcp.transports.includes("stdio")) throw new ContractError("refused", `${this.id} takes no stdio MCP server, so the bridge can't reach it`);
     const cmd = this.command()!;
     const wire = this.#opts.wire?.(spec.sessionId) ?? {};
+    // The fenced set, in the backend's own format, where its sandbox is admitted.
+    const sandbox = this.admission(d.version);
+    let setup: ReturnType<Extract<SandboxAdmission, { status: "protected" }>["writer"]> = {};
+    if (sandbox.status === "protected") {
+      const dir = wire.setupDir ?? this.#opts.setupDir?.(spec.sessionId);
+      if (!dir) throw new ContractError("refused", `${this.id}'s sandbox needs a setup folder`);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      setup = sandbox.writer(spec.fence, { root: spec.root, dir });
+      for (const f of setup.files ?? []) writeFileSync(join(dir, f.name), f.content, { mode: 0o600 });
+    }
     const proc = launchContained({
       command: d.path,
-      args: [...(cmd.prefixArgs ?? []), ...cmd.acpArgs],
+      args: [...(cmd.prefixArgs ?? []), ...cmd.acpArgs, ...(setup.args ?? [])],
       cwd: spec.root,
-      env: this.#env(),
+      env: { ...this.#env(), ...(setup.env ?? {}) },
       ...(wire.stderr ? { onStderr: wire.stderr } : {}),
     }, this.#opts.table ? { table: this.#opts.table } : {});
     if (proc.pid) wire.launched?.(proc.pid);
@@ -135,6 +164,7 @@ export class AcpAgentBackend implements AgentBackend {
       cwd: spec.root,
       mcpServers: [stdioServerOf(spec.bridge)],
       ...(spec.instructions === undefined ? {} : { instructions: spec.instructions }),
+      ...(setup.meta ? { meta: setup.meta } : {}),
       ...(spec.reattach === undefined ? {} : { reattach: spec.reattach }),
       ...(spec.model === undefined ? {} : { model: spec.model }),
       ...(spec.effort === undefined ? {} : { effort: spec.effort }),
@@ -195,31 +225,4 @@ async function signingTeam(path: string): Promise<string | undefined> {
     c.on("error", () => resolve(""));
   });
   return /^TeamIdentifier=(\S+)$/m.exec(out)?.[1];
-}
-
-/** Dotted numeric versions: `2026.10.22-27dcf5f` reads as 2026.10.22. */
-function parts(v: string): number[] {
-  return (/^\d+(?:\.\d+)*/.exec(v.trim())?.[0] ?? "").split(".").filter((x) => x !== "").map(Number);
-}
-
-function cmp(a: number[], b: number[]): number {
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const d = (a[i] ?? 0) - (b[i] ?? 0);
-    if (d !== 0) return d < 0 ? -1 : 1;
-  }
-  return 0;
-}
-
-/** A range of space-separated comparisons (`>=1.4.12 <1.5.0`). */
-export function versionSatisfies(version: string, range: string): boolean {
-  const v = parts(version);
-  if (v.length === 0) return false;
-  for (const term of range.trim().split(/\s+/).filter(Boolean)) {
-    const m = /^(>=|<=|>|<|=)?(.+)$/.exec(term);
-    if (!m) return false;
-    const c = cmp(v, parts(m[2]!));
-    const ok = { ">=": c >= 0, "<=": c <= 0, ">": c > 0, "<": c < 0, "=": c === 0 }[m[1] ?? "="];
-    if (!ok) return false;
-  }
-  return true;
 }

@@ -12,6 +12,7 @@
 // | `manager.ts`        | `Agent`, `TaskStop`, `ListAgents`, the bridge's methods, reattaching after a restart   |
 // | `transcript.ts`     | `bots/<bot>/agents/<session>/`: the wire minus replays, Clover's own record, stderr    |
 // | `watchdog.ts`       | the 10-minute stall watchdog                                                            |
+// | `sandbox/`          | which agents' own sandboxes hold the fence (S8), their writers, the OK for the rest     |
 // | `tools.ts`, `rpc.ts`| the bot's tools and the `agent.*` methods, for lane A's runtime and lane C's server     |
 // | `testing/`          | the scripted ACP agent and the conformance harness                                       |
 //
@@ -31,6 +32,7 @@ import { bridgeCommand } from "./bridge/main";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeToolSource } from "./bridge/tools";
 import { AgentManager } from "./manager";
+import { FileAgentOks } from "./sandbox/oks";
 import { QUIRKS } from "./quirks";
 import { StallWatchdog } from "./watchdog";
 
@@ -51,6 +53,8 @@ export { agentMethods, BACKEND_NAMES } from "./rpc";
 export { agentToolDefs, describeSession, type CoreToolDef } from "./tools";
 export { AgentTranscript, botSegment, transcriptPaths } from "./transcript";
 export { AGENT_COMMAND_MAX_MS, StallWatchdog } from "./watchdog";
+export { ADMISSIONS, admissionFor, type SandboxAdmission, type SandboxSetup, type SandboxWriter } from "./sandbox/admission";
+export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOkKey } from "./sandbox/oks";
 
 export interface AgentsOptions {
   home: string;
@@ -79,6 +83,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoin
     backends: () => backends,
     bridge: { ...bridgeCommand(), socketPath },
     watchdog: new StallWatchdog({ clock: o.clock }),
+    oks: new FileAgentOks(o.home),
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.log ? { log: o.log } : {}),
   });

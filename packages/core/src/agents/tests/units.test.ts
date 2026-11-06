@@ -15,6 +15,8 @@ import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
+import { ADMISSIONS, admissionFor } from "../sandbox/admission";
+import { FileAgentOks, agentOksPath } from "../sandbox/oks";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -242,6 +244,34 @@ describe("the quirks table", () => {
       expect(mine.mcp.storesPlainText).toBe(theirs.mcp.storesPlainText);
       expect(mine.mcp.passesEnvironment).toBe(theirs.mcp.passesEnvironment);
       expect(mine.mcp.systemPromptChannel).toBe(theirs.mcp.systemPromptChannel);
+    }
+  });
+});
+
+describe("sandbox admissions and OKs", () => {
+  test("only an admitted sandbox, inside its versions, counts; Cursor and Antigravity need the OK today", () => {
+    expect(admissionFor(ADMISSIONS, "cursor", "macos", "2026.10.22").status).toBe("unsupported");
+    expect(admissionFor(ADMISSIONS, "antigravity", "linux", "1.4.12").status).toBe("unverified");
+    expect(admissionFor(ADMISSIONS, "unknown", "macos", "1.0.0").status).toBe("unsupported");
+    const table = { x: { macos: { status: "protected" as const, versions: ">=1.2.0 <2.0.0", evidence: "gates", writer: () => ({}) } } };
+    expect(admissionFor(table, "x", "macos", "1.3.0").status).toBe("protected");
+    expect(admissionFor(table, "x", "macos", "2.0.1")).toMatchObject({ status: "unverified" });
+    expect(admissionFor(table, "x", "macos", undefined)).toMatchObject({ status: "unverified" });
+  });
+
+  test("an OK is kept per backend, version and computer, in the fenced trust folder", () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-k-oks-"));
+    try {
+      const oks = new FileAgentOks(home);
+      const key = { backend: "cursor", version: "2026.10.22", computer: "Studio" };
+      expect(oks.has(key)).toBe(false);
+      oks.grant(key, { cardId: "card_abcdef", at: 1 });
+      expect(new FileAgentOks(home).has(key)).toBe(true);
+      expect(oks.has({ ...key, version: "2026.11.1" })).toBe(false);
+      expect(oks.has({ ...key, computer: "Desk" })).toBe(false);
+      expect(agentOksPath(home)).toBe(join(home, "trust", "agent-oks.json"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });

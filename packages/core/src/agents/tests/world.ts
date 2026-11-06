@@ -24,6 +24,25 @@ import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
 import { StallWatchdog } from "../watchdog";
+import type { SandboxAdmission } from "../sandbox/admission";
+import type { AgentOks } from "../sandbox/oks";
+
+/** The scripted agent's "own sandbox", admitted for the tests: the fenced set written as a file its env names. */
+export const FAKE_PROTECTED: SandboxAdmission = {
+  status: "protected", versions: ">=1.0.0", evidence: "the scripted agent's sandbox (tests)",
+  writer: (policy, ctx) => ({
+    files: [{ name: "policy.json", content: JSON.stringify(policy) }],
+    env: { FAKE_SANDBOX_POLICY: join(ctx.dir, "policy.json") },
+    args: ["--sandboxed"],
+    meta: { fakeSandbox: { policy: join(ctx.dir, "policy.json") } },
+  }),
+};
+
+/** The scripted agent's admission on every OS. */
+export function fakeAdmissions(sandbox: "protected" | "none") {
+  const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : FAKE_PROTECTED;
+  return { fake: { macos: row, linux: row, windows: row } };
+}
 
 export interface WorldOptions {
   quirks?: AgentQuirks;
@@ -34,6 +53,9 @@ export interface WorldOptions {
   /** The watchdog's wall clock, to age a running command past its limit. */
   wallNow?: () => number;
   table?: ProcessTableReader;
+  /** The scripted agent's sandbox: admitted by default, or one Clover can't count on (so it needs the OK). */
+  sandbox?: "protected" | "none";
+  oks?: AgentOks;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -94,11 +116,13 @@ export class World {
       id: "fake", pluginId: "clover/agent-fake", quirks, clock: this.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
+      admissions: fakeAdmissions(o.sandbox ?? "protected"),
     });
     manager = new AgentManager({
       home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
+      ...(o.oks ? { oks: o.oks } : {}),
     });
     this.manager = manager;
     this.endpoint = new BridgeEndpoint({ socketPath: sock, tokens: this.tokens, handlers: manager.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });

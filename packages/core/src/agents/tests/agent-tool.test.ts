@@ -17,7 +17,7 @@ import { FAKE_AGENT_PATH, fakeLaunch } from "../testing/harness";
 import { agentToolDefs } from "../tools";
 import { REDACTED_TOKEN } from "../transcript";
 import { StallWatchdog } from "../watchdog";
-import { waitFor, World, type WorldOptions } from "./world";
+import { fakeAdmissions, waitFor, World, type WorldOptions } from "./world";
 
 // Real processes: generous on a loaded CI runner.
 setDefaultTimeout(60_000);
@@ -250,6 +250,7 @@ describe("models and sessions", () => {
     const backend2 = new AcpAgentBackend({
       id: "fake", pluginId: "clover/agent-fake", quirks: fakeLaunch(S5_CURSOR_QUIRKS), clock: w.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, w.agent.config], acpArgs: ["acp"] }, wire: (id) => m2.wire(id),
+      admissions: fakeAdmissions("protected"),
     });
     m2 = new AgentManager({
       home: w.cloverHome, computer: "Studio", host: host2, approvals: w.approvals, tree: w.tree, fence: w.fence, backends: () => [backend2],
@@ -268,6 +269,55 @@ describe("models and sessions", () => {
   });
 });
 
+describe("the agent's own sandbox, and the OK for one without", () => {
+  test("a backend whose sandbox is admitted starts with the fenced set in its own format, written in the fenced run folder", async () => {
+    const w = make({ script: [[{ wait: true }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    const dir = join(w.cloverHome, "run", "agents", r.sessionId);
+    const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
+    expect(policy.denyWrite).toEqual(w.fence.policy().denyWrite);
+    expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
+    // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
+    expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
+    expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");
+    expect(w.report("session")[0]!["meta"]).toMatchObject({ fakeSandbox: { policy: join(dir, "policy.json") } });
+    expect(w.approvals.cards()).toEqual([]);
+    await w.manager.stop(r.sessionId, { bot: "alpha" });
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  test("an agent with no sandbox Clover counts on starts only after the user's OK, asked once per version and computer", async () => {
+    const w = make({ sandbox: "none", script: [[{ say: "one" }]] });
+    const r = await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
+    expect(card).toMatchObject({ kind: "change", change: "agent-unsandboxed", session: r.sessionId });
+    expect(card.options.some((o) => o.remember === "always")).toBe(false);
+    expect(w.report("started")).toEqual([]);
+    const approve = card.options.find((o) => o.kind === "approve")!;
+    const frame = w.approvals.frameChannel(card.id)!;
+    expect(await w.approvals.answer(card.id, { optionId: approve.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("one");
+    // The OK is kept: the next delegation to the same agent starts at once.
+    await w.delegate("Again.");
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.approvals.cards()).toEqual([]);
+  });
+
+  test("a refused OK ends the delegation before the agent starts, and the bot is told", async () => {
+    const w = make({ sandbox: "none", script: [[{ say: "never" }]] });
+    await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
+    const deny = card.options.find((o) => o.kind === "deny")!;
+    const frame = w.approvals.frameChannel(card.id)!;
+    await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" });
+    const n = await waitFor(() => notification(w), "the notification");
+    expect(n.stopReason).toBe("error");
+    expect(n.text).toContain("wasn't started");
+    expect(w.report("started")).toEqual([]);
+  });
+});
+
 describe("the agent methods", () => {
   test("agent.start opens a coding session the user drives; agent.backends says what this computer has", async () => {
     const w = make({ script: [[{ say: "Hello from the agent." }]] });
@@ -282,7 +332,7 @@ describe("the agent methods", () => {
     const bot = await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "session", sessionId: "s_alpha", sessionKind: "bot" } }).catch((e: unknown) => e);
     expect(isContractError(bot, "refused")).toBe(true);
     const { backends } = (await methods["agent.backends"]!({}, user)) as { backends: { id: string; computers: { installed: boolean; version?: string; marks: string[] }[] }[] };
-    expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", marks: ["unsandboxed"] }] }]);
+    expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", sandboxed: true, marks: [] }] }]);
     expect(await methods["agent.definitions"]!({}, user)).toEqual({ definitions: [] });
     void WELL_BEHAVED_QUIRKS;
   });

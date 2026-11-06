@@ -70,6 +70,8 @@ export interface OpenOptions {
   /** The bridge's essentials (S5 edit 3): the system prompt where the backend lets a client add to it, else the first
    *  prompt. */
   instructions?: string;
+  /** More `_meta` for `session/new`, `load` and `resume`: a sandbox writer's (the Claude adapter's options). */
+  meta?: Obj;
   reattach?: { agentSessionId: string };
   model?: string;
   effort?: string;
@@ -213,8 +215,9 @@ export class AcpAgentSession implements AgentSession {
     if (caps.protocolVersion !== undefined && caps.protocolVersion !== ACP_PROTOCOL_VERSION) {
       throw new ContractError("refused", `the agent speaks ACP version ${caps.protocolVersion}; Clover speaks ${ACP_PROTOCOL_VERSION}`);
     }
-    const meta = this.#systemPromptMeta(opts.instructions);
-    if (opts.instructions && !meta) this.#preamble = opts.instructions;
+    const promptMeta = this.#systemPromptMeta(opts.instructions);
+    if (opts.instructions && !promptMeta) this.#preamble = opts.instructions;
+    const meta = promptMeta || opts.meta ? mergeMeta(promptMeta ?? {}, opts.meta ?? {}) : undefined;
     const base = { cwd: opts.cwd, mcpServers: opts.mcpServers, ...(meta ? { _meta: meta } : {}) };
     let result: unknown;
     if (opts.reattach) {
@@ -499,6 +502,13 @@ export class AcpAgentSession implements AgentSession {
   #emit(event: AgentEvent): void {
     this.#events.emit(event);
   }
+}
+
+/** A deep merge of two `_meta` objects; the second wins on a clash of plain values. */
+function mergeMeta(a: Obj, b: Obj): Obj {
+  const out: Obj = { ...a };
+  for (const [k, v] of Object.entries(b)) out[k] = obj(v) && obj(out[k]) ? mergeMeta(out[k] as Obj, v as Obj) : v;
+  return out;
 }
 
 function isEmptyObject(v: unknown): boolean {

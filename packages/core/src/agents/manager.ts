@@ -16,8 +16,8 @@
 // The bridge's methods land here too: `SendMessage` from an agent folds into its bot's conversation (§9.3), and only
 // into a session of the same bot.
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { extname, join } from "node:path";
 import type { Level, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
 import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
@@ -32,6 +32,7 @@ import type { BridgeHandlers } from "./bridge/endpoint";
 import { BRIDGE_ENV } from "./bridge/server";
 import { BRIDGE_OWN_TOOLS, NO_PLUGIN_TOOLS, bridgeInstructions, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
+import { MemoryAgentOks, type AgentOks } from "./sandbox/oks";
 import { AgentTranscript, type AgentRecordFile, transcriptPaths } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
 
@@ -53,6 +54,8 @@ export interface AgentManagerOptions {
   clock: Clock;
   pluginTools?: BridgeToolSource;
   glossary?: BridgeHandlers["glossary"];
+  /** The user's OKs for agents with no admitted sandbox (sandbox/oks.ts): `FileAgentOks` in the daemon. */
+  oks?: AgentOks;
   log?: (line: string) => void;
 }
 
@@ -102,10 +105,17 @@ export class AgentManager {
   readonly #o: AgentManagerOptions;
   readonly #entries = new Map<string, Entry>();
   readonly #serverName: string;
+  readonly #oks: AgentOks;
 
   constructor(opts: AgentManagerOptions) {
     this.#o = opts;
     this.#serverName = opts.bridge.serverName ?? BRIDGE_SERVER_NAME;
+    this.#oks = opts.oks ?? new MemoryAgentOks();
+  }
+
+  /** A session's sandbox setup folder, inside the fenced run folder. */
+  setupDir(sessionId: string): string {
+    return join(this.#o.home, "run", "agents", sessionId);
   }
 
   /** The hooks an ACP backend takes for a session: its transcript, and the token's binding to the agent's pid. */
@@ -118,6 +128,7 @@ export class AgentManager {
       launched: (pid) => this.#o.tokens.bind(sessionId, pid),
       // A leaked copy of the token is useless once the agent is gone (S5 edit 4).
       exited: () => this.#o.tokens.revoke(sessionId),
+      setupDir: this.setupDir(sessionId),
     };
   }
 
@@ -201,6 +212,7 @@ export class AgentManager {
       ended: () => {
         this.#o.tokens.revoke(id);
         entry.unwatch?.();
+        rmSync(this.setupDir(id), { recursive: true, force: true });
         if (this.#entries.get(id) === entry) this.#entries.delete(id);
       },
     });
@@ -209,6 +221,9 @@ export class AgentManager {
   }
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
+    // An agent whose own sandbox Clover can't count on starts only after the user's OK (§9.3).
+    const d = await e.backend.detect();
+    if (d.installed && d.identityOk && !d.sandboxed) await this.#requireOk(e, d.version ?? "unknown", d.reason);
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
     e.bridgeTools = [...BRIDGE_OWN_TOOLS.map((t) => t.name), ...tools.map((t) => t.name)];
     const session = await e.backend.start({
@@ -243,6 +258,38 @@ export class AgentManager {
       void e.driver.stall();
     });
     return session;
+  }
+
+  /** The OK for an agent with no admitted sandbox: asked once per backend, version and computer, as a change card. */
+  async #requireOk(e: Entry, version: string, reason: string | undefined): Promise<void> {
+    const key = { backend: e.backend.id, version, computer: e.computer };
+    if (this.#oks.has(key)) return;
+    const signal = e.driver.currentSignal();
+    const decision = await this.#o.approvals.request({
+      kind: "change",
+      change: "agent-unsandboxed",
+      session: e.id,
+      ...(e.bot === undefined ? {} : { bot: e.bot }),
+      origin: e.driver.currentOrigin() ?? "agent",
+      computers: [e.computer],
+      effect: "other",
+      fields: {
+        title: { type: "text", text: "Start an agent without a sandbox?" },
+        what: { type: "text", text: "This agent has no sandbox Clover can count on here. While it runs, it could read Clover's logins and approve its own cards." },
+        computer: { type: "text", text: e.computer },
+        source: { type: "rows", rows: [
+          { label: "Agent", value: sealedText(e.backend.id, 4000) },
+          { label: "Version", value: sealedText(version, 4000) },
+          { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
+          { label: "Folder", value: sealedText(e.root, 4000) },
+        ] },
+        ...(reason ? { detail: { type: "rows" as const, rows: [{ label: "Why", value: sealedText(reason, 4000) }] } } : {}),
+      },
+    }, signal ? { signal } : {});
+    if (!decision.allowed) {
+      throw new ContractError("refused", `${e.backend.id} wasn't started: it has no sandbox here, and the OK to run it without one was ${decision.by === "expired" ? "not given in time" : decision.by === "card" ? "refused" : "withdrawn"}`);
+    }
+    this.#oks.grant(key, { ...(decision.cardId === undefined ? {} : { cardId: decision.cardId }), at: this.#o.clock.now() });
   }
 
   async #permission(e: Entry, ask: AgentPermissionAsk): Promise<AgentPermissionAnswer> {
