@@ -347,11 +347,14 @@ export class LeaseCoordinator {
     this.#takeNow = false;
     if (this.#yieldedAt !== undefined) {
       // Handed over: the bots went to another computer. Only if none took them in two leases' time does this one.
-      if (this.#o.clock.monotonic() - this.#yieldedAt < 2 * lease.ttlMs) return;
+      if (this.#o.clock.monotonic() - this.#yieldedAt < 2 * lease.ttlMs) {
+        if (takeNow) this.#log("asked to take the lease, but this computer just handed it over");
+        return;
+      }
       this.#yieldedAt = undefined;
     }
     if (this.choice.isSelf() || takeNow) {
-      await lease.acquire().catch(() => undefined);
+      await lease.acquire().catch((e: unknown) => this.#log(`taking the lease (${takeNow ? "asked" : "the main"}) failed: ${e instanceof Error ? e.message : String(e)}`));
       return;
     }
     const main = this.choice.current();

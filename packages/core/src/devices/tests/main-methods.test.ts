@@ -18,6 +18,8 @@ import { type DeviceLinks, startDeviceLinks } from "../../links/node";
 import { brokerCardOpener, devicesEvents, devicesMethods, mountMainChoiceRequests } from "../rpc";
 
 const clock = new SystemClock();
+/** The coordinators' notes, printed when the hand-over doesn't happen in time (a CI-only failure to explain). */
+const notes: string[] = [];
 let stops: (() => unknown)[] = [];
 afterEach(async () => {
   for (const s of stops.reverse()) await s();
@@ -39,7 +41,8 @@ async function daemon(net: MemoryNetwork, hs: { url: string }, name: string) {
   const store = new MemorySecretStore();
   const links = await startDeviceLinks({
     home: mkdtempSync(join(tmpdir(), "clover-h-main-")), store, clock, self: { name }, wire: (k) => net.endpoint(k.publicKey),
-    handshake: new HandshakeClient({ baseUrl: hs.url, clock }), mainComputer: { watchSleep: false, monotonic: () => performance.now() },
+    handshake: new HandshakeClient({ baseUrl: hs.url, clock }),
+    mainComputer: { watchSleep: false, monotonic: () => performance.now(), log: (l: string) => void notes.push(`${Date.now() % 100_000} ${name} ${l}`) },
   });
   stops.push(() => links.close());
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -96,6 +99,10 @@ describe("the main computer's methods", () => {
     // Hand over and quit, from the laptop: the studio takes the bots at once.
     expect(await b.call("main.handOver", {}, app)).toEqual({ to: a.links.key.id });
     // The studio may be mid-step (waiting on a nudge or a takeover delay) when the "take" arrives; it acts on it next.
-    await waitFor(() => a.links.main!.lease.canAct(), 20_000);
+    if (process.env.LANE_H_DEBUG) console.error(notes.join("\n"));
+    await waitFor(() => a.links.main!.lease.canAct(), 20_000).catch((e: unknown) => {
+      console.error(["hand-over not taken:", JSON.stringify({ a: a.links.main!.lease.state(), b: b.links.main!.lease.state(), lease: [...hs.groups.values()].map((g) => g.lease) }), ...notes].join("\n"));
+      throw e;
+    });
   }, 45_000);
 });
