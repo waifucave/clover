@@ -261,6 +261,7 @@ describe("htmlToText: linear-time scanning (Critical fix, fix-round-2 — the SA
   // series gives 2.0). An absolute ceiling stays, set far above any linear run and far below the pre-fix times, so a
   // change that made every size uniformly slow is still caught.
   const LINEAR_SLOPE_MAX = 1.5;
+  const PAIR_SLOPE_MAX = 1.75; // the 3MB test's two sizes: a noisier slope, still short of quadratic's 2
   const SERIES_CEILING_MS = 1_000; // per size; pre-fix the 1MB step alone took 8,360 ms
 
   /** The least of `reps` timings of `run` on each input, after one warm-up run on the first; it stops at the first
@@ -320,14 +321,16 @@ describe("htmlToText: linear-time scanning (Critical fix, fix-round-2 — the SA
 
   test("the 3MB pathological case (no closing tags at all) completes in linear time (was ~77,000ms pre-fix, measured directly)", () => {
     // Timed against 1MB of the same shape in this process: 3x the input is ~3x the time when linear and ~9x when
-    // quadratic, so the bound is the slope's 3^1.5 (~5.2x). The absolute ceiling is far below the pre-fix 77 s.
-    const times = leastTimes([1, 3].map((mb) => unclosed('<script type="text/x"> ', mb * 1024 * 1024)), htmlToText, 5_000, 3);
+    // quadratic. Two sizes give a noisier slope than the series above, and at a few milliseconds a runner's noise is
+    // most of it (a macOS runner measured 5.4 then 29.4 ms, 5.4x), so the bound is 3^1.75 (~6.8x): headroom for that,
+    // still short of 9x. Each time is the least of five runs. The absolute ceiling is far below the pre-fix 77 s.
+    const times = leastTimes([1, 3].map((mb) => unclosed('<script type="text/x"> ', mb * 1024 * 1024)), htmlToText, 5_000, 5);
     const shown = `1MB then 3MB: ${times.map((t) => t.toFixed(1)).join("/")} ms`;
     // Each time under the ceiling first, so a run that stopped at 1MB fails here, on its number.
     for (const t of times) expect(t, shown).toBeLessThan(5_000);
     expect(times, shown).toHaveLength(2);
     const [oneMb, threeMb] = times as [number, number];
-    expect(threeMb / oneMb, shown).toBeLessThan(3 ** LINEAR_SLOPE_MAX);
+    expect(threeMb / oneMb, shown).toBeLessThan(3 ** PAIR_SLOPE_MAX);
   }, 60_000);
 
   // Task 6b Part B: the fix above linearized the five PAIRED-tag scans but left the FINAL
