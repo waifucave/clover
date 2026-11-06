@@ -134,6 +134,7 @@ async function ready(): Promise<void> {
 
   runtime = new UiRuntime({
     os, platform: process.platform, safeMode, log,
+    sealed,
     onGone: (mount) => {
       views.drop(mount);
       webViews.drop(mount);
@@ -158,38 +159,28 @@ async function ready(): Promise<void> {
     menu: (id, items, point) => popupMenu(id, items, point),
     api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
-  // The sealed path (E-M3): the frame's own channel; the app signs with the answer key over the card's id and hash,
-  // takes the core's answer, and the frame's visibility check runs in its own window's truth (the frame inside the
-  // part's page sees its covers; the app's other windows are the main's to count).
-  sealedAnswer: async (token, option, children) => {
-    const key = answerKeyValue;
-    if (key === undefined) return { accepted: false, reason: "the answer key isn't there" };
-    const called = option;
-    const option_ = called ?? sealed.optionOf(token);
-    if (option_ === undefined) return { accepted: false, reason: "no option named" };
-    const out = sealed.buildAnswer(token, option_, children, key, signedDevice ?? "");
-    if ("error" in out) return { accepted: false, reason: out.error };
-    disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
-    const client = pair.client;
-    if (client === undefined) return { accepted: false, reason: "Clover isn't running" };
-    const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
-    return { accepted: r.accepted === true, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) };
-  },
-    sealedVisible: async (token) => {
-      // The frame's own window counts the covers it sees. The store's look still standing is the channel's say-so.
-      const seen = sealed.look(token);
-      if (seen === undefined) return false;
-      // The core says a computer-use action is running: no click counts while it does (R12, §5.5). Asked per look,
-      // because the store's own time is the frame's, not the core's.
+    // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
+    // the hour it stood visible), and here the app signs with the answer key over the card's id and hash and takes the
+    // core's answer. The computer-use gate runs here in the main process, on both this button path and the fallback
+    // (B3): fail closed — anything the core can't answer about it, the answer is refused.
+    sealedAnswer: async (token, option, senderKey, children) => {
+      const key = answerKeyValue;
+      if (key === undefined) return { accepted: false, reason: "the answer key isn't there" };
       const client = pair.client;
-      if (client === undefined) return false;
-      try {
-        const busy = await client.request<{ running?: boolean }>("computer.acting", { computer: seen.card.computer }, 3_000);
-        if (busy?.running === true) return false;
-      } catch {
-        // An older daemon: the check rides the frame's own IOv2 answer alone.
-      }
-      return true;
+      if (client === undefined) return { accepted: false, reason: "Clover isn't running" };
+      // The gate first, before anything else moves: any computer use driving this desktop's computer, no.
+      const acting = await client.request<{ running?: boolean }>("computer.acting", {}, 3_000).catch(() => undefined);
+      if (acting === undefined) return { accepted: false, reason: "the computer-use check couldn't run" };
+      if (acting.running === true) return { accepted: false, reason: "computer use is acting right now" };
+      const option_ = option ?? sealed.optionOf(token);
+      if (option_ === undefined) return { accepted: false, reason: "no option named" };
+      const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
+      if ("error" in out) return { accepted: false, reason: out.error };
+      disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
+      const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
+      if (r.accepted !== true) { sealed.confirmedAnswer(out.card.id, false); return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) }; }
+      sealed.confirmedAnswer(out.card.id, true);
+      return { accepted: true };
     },
     userSend: async (windowId, to, message) => {
       // One key press or click the main process saw come to the window covers one send (§5.5).
@@ -390,23 +381,8 @@ function makePair(): Pair {
         disarmFallback(parsed.data.id);
       }
     }
-    // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback.
-    if (type === "card_requested") {
-      const parsed = CardRequestedEvent.safeParse(params);
-      if (parsed.success) {
-        sealed.fromCore(parsed.data.card);
-        armFallback(parsed.data.card.id);
-      } else log("pair: ignored a card_requested event that isn't one");
-    }
-    if (type === "card_resolved") {
-      const parsed = CardResolvedEvent.safeParse(params);
-      if (parsed.success) {
-        sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
-        disarmFallback(parsed.data.id);
-      }
-    }
-    // The layer-role events also ride this connection for the UI test's own page? A card_pending goes only to layers;
-    // the app's role hears card_requested. Nothing else here.
+    // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending
+    // goes only to layers; the app hears card_requested. Nothing else here.
   });
   return p;
 }

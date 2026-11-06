@@ -108,6 +108,12 @@ export const COMPUTERS_METHODS = {
     params: Empty, result: z.object({ computers: z.array(ComputerView) }),
     doc: "Every computer: its folders' owner, OS, display, agents, level and state (§9.1).",
   }),
+  /** Whether any computer-use session is driving this computer right now (§5.5's answer gate: a sealed button's
+   *  click counts only while no computer-use action runs). User and app only: no plugin asks. */
+  computerActing: defineMethod({
+    name: "computer.acting", owner: "J", roles: ["app"], userOnly: true,
+    params: Empty, result: z.object({ running: z.boolean(), session: SessionId.optional() }),
+    doc: "Whether any computer-use session is acting on this computer now, with that session when one is.",  }),
   computerGet: defineMethod({
     name: "computer.get", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read",
     params: z.object({ name: ComputerName }), result: z.object({ computer: ComputerView }),

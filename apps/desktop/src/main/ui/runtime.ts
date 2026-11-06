@@ -102,6 +102,8 @@ export interface RuntimeOptions {
   onGone?: (mount: string) => void;
   /** The system's language, until the user picks one in Settings. */
   systemLanguage?: string;
+  /** The sealed frames' store (E-M3): the cards' own book, its mint and its serves. */
+  sealed?: SealedFrames;
   /** The core's own string tables, by language (`core-strings.ts` by default). */
   builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
   /** Whether a plugin's tree hash matches the official index's, for the strings of sealed cards (lane B's registry). */
@@ -931,7 +933,10 @@ export class UiRuntime {
     // The card tokens go in alone (§5.5): the part's resolved ones, clipped to `card.*` names.
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
-    const made = this.sealed.mint(cardId, element, this.docOf(part)?.windowId, tokens);
+    // The binding: the frame whose sender's sealed page may answer is this document's own (B4's parent rule).
+    const doc = this.docOf(part);
+    const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
+    const made = this.sealed.mint(cardId, element, bind, doc?.windowId, tokens);
     if (made === undefined) return undefined;
     return `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
   }

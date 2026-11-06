@@ -85,6 +85,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // copy of the card's sealed content. What runs in it is the page's own check (IOv2 in E-M3's next piece); its
   // answers go over the preload's own channel (`clover:sealed-answer`).
   ses.protocol.handle(SEALED_SCHEME, (request) => {
+    // Only a real iframe load takes the token: a stray top-level or resource fetch never serves a frame's page (S7).
+    if (request.headers.get("sec-fetch-dest") !== "iframe") return forbidden();
     const url = new URL(request.url);
     if (url.pathname !== "/" && !url.pathname.startsWith("/card/")) return notFound();
     const token = url.searchParams.get("token");
@@ -258,10 +260,10 @@ export interface IpcHooks {
   webFrame(windowId: number, mount: string, web: { plugin: UiPlugin; web: Readonly<Record<string, unknown>> }, bounds: Rect | undefined): void;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
   menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
-  /** A sealed button's answer: the app signs it with the answer key over the frame's own channel (§5.5; E-M3). */
-  sealedAnswer(token: string, option: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string }>;
-  /** Whether the sealed frame's button may answer in its own window now: visible and unplanned elsewhere (E-M3). */
-  sealedVisible(token: string): Promise<boolean>;
+  /** A sealed button's answer: the app signs it with the answer key over the frame's own channel (§5.5; E-M3), the
+   *  computer-use gate first, in the main process (B3). `senderKey` is the sender frame's own key, checked against the
+   *  mint's binding (B4). */
+  sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string }>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -500,23 +502,26 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     return runtime.sealedFrameOf(s.frame, mount, cardId, element);
   });
 
-  // The sealed frames' answer: the sender is the sealed page itself (its own scheme), whose token names the channel;
-  // the app signs it out of doors and takes the core's answer. Nothing between.
-  handle("clover:sealed-answer", async (event, a) => {
+  // The sealed frames' answer: the sender is the sealed page itself (its own scheme), and the sender's key is what the
+  // mint bound (a part's channel, its document's own frame; the fallback's `own`, its window's main frame). The app
+  // signs it out of doors and takes the core's answer, with the gate first (B3, B4).
+  handle("clover:sealed-answer", (event, a) => {
     const f = event.senderFrame;
     if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
     const token = str(a.token, 128);
-    const option = typeof a.option === "string" && a.option.length <= 64 ? a.option : undefined;
-    const ch = token !== undefined && Array.isArray(a.children) ? a.children : undefined;
-    if (token === undefined || option === undefined || (ch !== undefined && !ch.every((c: unknown) => typeof c === "string"))) throw new LayerError("bad sealed answer");
-    return hooks.sealedAnswer(token, option, ch !== undefined ? (ch as readonly string[]) : undefined);
-  });
-  handle("clover:sealed-visible", async (event, a) => {
-    const f = event.senderFrame;
-    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
-    const token = str(a.token, 128);
-    if (token === undefined) throw new LayerError("bad sealed look");
-    return hooks.sealedVisible(token);
+    const option = str(a.option, 64);
+    const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
+    if (token === undefined) throw new LayerError("bad sealed answer");
+    // The token in the message must be the one in the sender's own URL (B4): a frame holding another frame's token
+    // can't answer with it, and a plugin can't guess a fallback's `own` token and answer from its own page.
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed answer");
+    // The sender's own key, the binding the mint held: the page's own parent (a part's channel) or its own main frame
+    // (the fallback's `own`).
+    const key = f.parent !== null && !f.parent.detached
+      ? `p:${f.parent.processId}:${f.parent.routingId}`
+      : `m:${f.processId}:${f.routingId}`;
+    return hooks.sealedAnswer(token, option, key, ch);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
@@ -542,7 +547,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }

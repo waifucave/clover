@@ -36,11 +36,14 @@ describe("a sealed field's page", () => {
 
   test("a control character and a bidirectional mark show as their escapes, and a token's value stays a value", () => {
     expect(sealedEscape("a\u202Eb")).toBe("aU+202Eb");
+    expect(sealedEscape("a\u061Cb")).toBe("aU+061Cb");
+    expect(fieldPage({ cardId: "card_escape", token: TOKEN, field: "title", value: { type: "text", text: "a\u202E" }, tokens: { "card.radius": "12px" } })).toContain("aU+202E");
     expect(sealedEscape("a\u0007b")).toBe("aU+0007b");
     expect(sealedEscape("a\nb")).toBe("a\nb");
-    const tricky = fieldPage({ cardId: "card_x", token: TOKEN, field: "title", value: { type: "text", text: "x" }, tokens: { "card.font.family": "a); b { color: red }" } });
-    // The value is one custom property's, escaped; nothing in it opens a rule.
-    expect(tricky).toContain("--clover-card-font-family: a); b \\7b  color: red \\7d ;");
+    const tricky = fieldPage({ cardId: "card_x", token: TOKEN, field: "title", value: { type: "text", text: "x" }, tokens: { "card.font.family": "a); b { color: red }", "card.radius": "12px" } });
+    // The token's value goes in only when it parses as its grammar's own run: a `;`'s own injection is dropped (S1).
+    expect(tricky).not.toContain("card-font-family");
+    expect(tricky).toContain("--clover-card-radius: 12px;");
     expect(tricky).not.toContain("{ color: red }");
   });
 });
@@ -51,9 +54,8 @@ describe("a sealed button's page", () => {
     expect(p).toContain('data-option="allow_once"');
     expect(p).toContain('data-kind="approve"');
     expect(p).toContain(">Allow</span>");
-    expect(p).toContain("b.answer()");
-    expect(p).toContain("b.visible()");
-    expect(p).toContain('data-token="${TOKEN}"'.replace("${TOKEN}", TOKEN));
+    expect(p).toContain("b.answer(option)");
+        expect(p).toContain('data-token="${TOKEN}"'.replace("${TOKEN}", TOKEN));
   });
 
   test("a deny button takes the deny's own colours, not the approve's", () => {
@@ -98,6 +100,6 @@ describe("the app's own fallback card page", () => {
     expect(p).toContain('data-option="always"');
     expect(p).toContain(">Always allow</span>");
     expect(p).toContain('data-token="' + TOKEN + '"');
-    expect(p).toContain("b.answer(button.dataset.option)");
+    expect(p).toContain("b.answer(b2.dataset.option)");
   });
 });

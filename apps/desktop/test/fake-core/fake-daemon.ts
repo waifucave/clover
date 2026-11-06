@@ -10,6 +10,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
+import { CardAnswerProof, Card } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../../src/main/protocol/client";
 
 export interface FakeOptions {
@@ -29,6 +30,13 @@ export interface FakeOptions {
   /** `protocol.prove`: the pid it says it sees at the other end (default: its own, for an app in this process), or
    *  a refusal: `refuse` (an old daemon with no method at all), `peak` (lane C's ambiguous-pid code) or `wrong`. */
   prove?: number | "refuse" | "peak" | "wrong";
+  /** The cards the app sees: whole ones through `card.list` (the app's role), `card_requested` events at makePair's
+   *  notification path, and `card_pending` (ids only) for layers. */
+  cards?: readonly { card: Record<string, unknown> }[];
+  /** `card.answer`'s verdict, one per call: a default accept, or a shape the test sets (a false, a reason...). */
+  answerVerdict?: readonly Record<string, unknown>[];
+  /** `computer.acting`'s answer: is a computer-use session acting on this computer now (default no)? */
+  acting?: boolean;
 }
 
 export interface FakeModel {
@@ -76,7 +84,15 @@ export function readCalls(home: string): { event: string; [k: string]: unknown }
 
 const DEFAULT_STATUS = { bots: [], routines: 0, agents: 0, canHandOver: false, safeMode: false };
 
+/** `card.answer`'s有自己的 verdicts (consume in order) and the answers the fake saw, per fake's options root. Each
+ *  `startFakeDaemon` lays its own queue in. */
+const cardVerdict: Record<string, unknown>[] = [];
+const answerRecord: { id?: unknown; option?: unknown; at?: unknown; device?: unknown }[] = [];
+
 export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
+  answerRecord.length = 0;
+  cardVerdict.length = 0;
+  if (opts.answerVerdict !== undefined) cardVerdict.push(...opts.answerVerdict);
   const endpoint = daemonEndpoint(opts.home);
   mkdirSync(join(opts.home, "run"), { recursive: true });
   if (process.platform !== "win32") rmSync(endpoint, { force: true });
@@ -164,6 +180,24 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     switch (method) {
       case "events.subscribe":
         return reply({ ok: true });
+      case "computer.acting":
+        // Whether a computer-use session drives this computer right now (a test's own control).
+        return reply({ ...(opts.acting === true ? { running: true, session: "s_cu" } : { running: false }) });
+      case "card.list":
+        return reply({ cards: (opts.cards ?? []).map((c) => c.card) });
+      case "card.frame":
+        // A channel minted for one card's sealed frame; a fake's own count of the only shape it holds.
+        return reply({ channel: `fake-card-${String(params.id).slice(-8)}-${randomBytes(8).toString("hex")}` });
+      case "card.answer": {
+        // The protocol's own contracts first (the review's own ask), then the fake's own verdict.
+        const proof = CardAnswerProof.safeParse(params.proof);
+        if (!proof.success) return fail(-32602, `card.answer's proof isn't one: ${proof.error.issues[0]?.message ?? "no proof"}`);
+        const w = proof.data.via === "device" ? { via: proof.data.via, device: proof.data.device, at: proof.data.at } : { via: proof.data.via, frame: proof.data.frame, at: proof.data.at };
+        record(opts.home, "request", { method: "card.answer", params: { id: params.id, option: params.option, ...w } });
+        answerRecord.push({ id: params.id, option: params.option, ...w });
+        const verdict = cardVerdict.length > 0 ? cardVerdict.shift()! : { accepted: true };
+        return reply(verdict);
+      }
       case "pair.status":
         return reply({ ...DEFAULT_STATUS, ...opts.status });
       case "pair.exiting":
