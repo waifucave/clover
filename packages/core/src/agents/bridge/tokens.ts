@@ -8,11 +8,14 @@
 //   job-object membership (lane C); until then a caller the kernel can't name is refused.
 // * One live connection per token. The agent may restart its MCP server; a new connection is accepted once the old
 //   one has closed, from the same tree.
+// * A copy that leaked (Antigravity keeps the bridge's entry, token included, in plain text) is useless once the agent
+//   is gone: the token is revoked when the agent's process exits, not only at `TaskStop`, and it expires after
+//   `TOKEN_TTL_MS` whatever happens, so a session that outlives that reattaches under a new one.
 import { createHash, randomBytes } from "node:crypto";
 import { Listeners, type Unsubscribe } from "../../contracts/common";
 import { isDescendant, readProcessTable, type ProcessTableReader } from "../process/table";
 
-export type BridgeRefusal = "unknown-token" | "wrong-session" | "revoked" | "in-use" | "unverified-caller" | "not-the-agent" | "agent-not-started";
+export type BridgeRefusal = "unknown-token" | "wrong-session" | "revoked" | "expired" | "in-use" | "unverified-caller" | "not-the-agent" | "agent-not-started";
 
 export type BridgeAcceptance =
   | { ok: true; sessionId: string; connection: number }
@@ -21,7 +24,10 @@ export type BridgeAcceptance =
 interface Grant {
   sessionId: string;
   hash: string;
+  mintedAt: number;
   agentPid?: number;
+  /** Windows: the agent's job object, the caller check there (a Windows process tree proves nothing). */
+  contains?: (pid: number) => boolean;
   pidKnown: Promise<number>;
   setPid: (pid: number) => void;
   live?: number;
@@ -30,6 +36,8 @@ interface Grant {
 
 /** How long a bridge that connects before the daemon has bound its agent's pid waits for it. */
 export const BIND_WAIT_MS = 30_000;
+/** A token's longest life: no new connection is accepted on it after this, live or not. */
+export const TOKEN_TTL_MS = 12 * 60 * 60_000;
 
 function hashOf(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -41,11 +49,15 @@ export class BridgeTokens {
   readonly #revoked = new Listeners<{ sessionId: string; connection?: number }>();
   readonly #table: ProcessTableReader;
   readonly #bindWaitMs: number;
+  readonly #ttlMs: number;
+  readonly #now: () => number;
   #connSeq = 0;
 
-  constructor(opts: { table?: ProcessTableReader; bindWaitMs?: number } = {}) {
+  constructor(opts: { table?: ProcessTableReader; bindWaitMs?: number; ttlMs?: number; now?: () => number } = {}) {
     this.#table = opts.table ?? readProcessTable;
     this.#bindWaitMs = opts.bindWaitMs ?? BIND_WAIT_MS;
+    this.#ttlMs = opts.ttlMs ?? TOKEN_TTL_MS;
+    this.#now = opts.now ?? Date.now;
   }
 
   /** A new token for the session, revoking any earlier one. Bind the agent's pid once it is known. */
@@ -54,18 +66,30 @@ export class BridgeTokens {
     const token = randomBytes(32).toString("base64url");
     let setPid!: (pid: number) => void;
     const pidKnown = new Promise<number>((r) => (setPid = r));
-    const g: Grant = { sessionId, hash: hashOf(token), pidKnown, setPid, revoked: false };
+    const g: Grant = { sessionId, hash: hashOf(token), mintedAt: this.#now(), pidKnown, setPid, revoked: false };
     this.#byHash.set(g.hash, g);
     this.#bySession.set(sessionId, g);
     return token;
   }
 
   /** The agent process the session's token is bound to. */
-  bind(sessionId: string, agentPid: number): void {
+  bind(sessionId: string, agentPid: number, contains?: (pid: number) => boolean): void {
     const g = this.#bySession.get(sessionId);
     if (!g || g.revoked || g.agentPid !== undefined || agentPid <= 0) return;
     g.agentPid = agentPid;
+    if (contains) g.contains = contains;
     g.setPid(agentPid);
+  }
+
+  /** How long ago the session's token was minted; undefined without one. */
+  ageOf(sessionId: string): number | undefined {
+    const g = this.#bySession.get(sessionId);
+    return g && !g.revoked ? this.#now() - g.mintedAt : undefined;
+  }
+
+  /** The tokens' life. */
+  get ttlMs(): number {
+    return this.#ttlMs;
   }
 
   has(sessionId: string): boolean {
@@ -79,12 +103,17 @@ export class BridgeTokens {
     if (!g) return { ok: false, reason: "unknown-token" };
     if (g.revoked) return { ok: false, reason: "revoked" };
     if (g.sessionId !== sessionId) return { ok: false, reason: "wrong-session" };
+    if (this.#now() - g.mintedAt > this.#ttlMs) return { ok: false, reason: "expired" };
     if (peerPid === null) return { ok: false, reason: "unverified-caller" };
     const agentPid = g.agentPid ?? (await Promise.race([g.pidKnown, new Promise<undefined>((r) => setTimeout(() => r(undefined), this.#bindWaitMs))]));
     if (agentPid === undefined) return { ok: false, reason: "agent-not-started" };
     if (g.revoked) return { ok: false, reason: "revoked" };
-    const rows = await this.#table().catch(() => []);
-    if (!isDescendant(rows, peerPid, agentPid)) return { ok: false, reason: "not-the-agent" };
+    if (g.contains) {
+      if (!g.contains(peerPid)) return { ok: false, reason: "not-the-agent" };
+    } else {
+      const rows = await this.#table().catch(() => []);
+      if (!isDescendant(rows, peerPid, agentPid)) return { ok: false, reason: "not-the-agent" };
+    }
     // Checked again after the last await: a revoke (or the expiry) while the table was read wins (review 5).
     if (g.revoked || this.#bySession.get(sessionId) !== g) return { ok: false, reason: "revoked" };
     if (g.live !== undefined) return { ok: false, reason: "in-use" };
@@ -102,6 +131,12 @@ export class BridgeTokens {
   release(sessionId: string, connection: number): void {
     const g = this.#bySession.get(sessionId);
     if (g && g.live === connection) delete g.live;
+  }
+
+  /** Revokes the session's token if it is bound to this agent process (or not bound yet). */
+  revokeBoundTo(sessionId: string, agentPid: number): void {
+    const g = this.#bySession.get(sessionId);
+    if (g && (g.agentPid === undefined || g.agentPid === agentPid)) this.revoke(sessionId);
   }
 
   revoke(sessionId: string): void {
