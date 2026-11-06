@@ -55,7 +55,7 @@ export function startMainComputer(o: MainComputerOptions): MainComputerHandle {
   const monotonic = o.monotonic ?? (() => machineClocks().boot());
   const lease = new MainLease({
     self: o.self, scope: o.scope, clock: o.clock, monotonic, main: () => choice.current(),
-    mayOutlast: () => coordinator?.mayOutlast() ?? false,
+    mayOutlast: (deadline) => coordinator?.mayOutlast(deadline) ?? false,
     ...(o.timings?.ttlMs === undefined ? {} : { ttlMs: o.timings.ttlMs }),
     ...(o.timings?.marginMs === undefined ? {} : { marginMs: o.timings.marginMs }),
     ...(o.timings?.ttlSec === undefined ? {} : { ttlSec: o.timings.ttlSec }),

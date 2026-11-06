@@ -142,6 +142,41 @@ describe("handshake client", () => {
   });
 });
 
+describe("who may hold a group's lease (lane I's lane/i-lease-voter, H-M2's check 3)", () => {
+  test("every new tenure needs a member that votes now: a non-voter's acquire of a free lease is refused not_voter; holding on needs no vote", async () => {
+    const { admitStatement, joinStatement } = await import("../handshake");
+    const hs = service();
+    const client = new HandshakeClient({ baseUrl: hs.url, clock });
+    const [a, b, c] = [generateEd25519(), generateEd25519(), generateEd25519()];
+    const k = (x: typeof a) => toBase64Url(x.publicKey);
+    const group = toBase64Url(randomBytes(16));
+    let t = client.now();
+    expect(await client.createGroup({ group, key: k(a), t, sig: toBase64Url(a.sign(groupStatement(group, k(a), t))) })).toBe(true);
+    // b comes in on the founder's admit, the only voter then: it votes at once. c comes in on one admit of two
+    // voters: it votes in 7 days.
+    for (const x of [b, c]) {
+      t = client.now();
+      expect(await client.joinGroup(group, { key: k(x), t, sig: toBase64Url(x.sign(joinStatement(group, k(x), t))), by: k(a), bysig: toBase64Url(a.sign(admitStatement(group, k(x), t))) })).toBe(true);
+    }
+    const status = (e: unknown) => (e instanceof HandshakeError ? [e.status, e.code] : [(e as { code?: string }).code]);
+    // The lease never held: the non-voter can't take it; the founder can.
+    expect(status(await client.lease(group, c, { op: "acquire", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+    const held = await client.lease(group, a, { op: "acquire", epoch: 0 });
+    expect(held.holder).toBe(k(a));
+    // Holding on needs no vote check; a held lease is refused as held (the client's conflict), not as a vote.
+    expect((await client.lease(group, a, { op: "acquire", epoch: held.epoch })).epoch).toBe(held.epoch);
+    expect(status(await client.lease(group, c, { op: "acquire", epoch: 0 }).catch((e: unknown) => e))).toEqual(["conflict"]);
+    // Released: the non-voter still can't, a voter can, and the last holder takes its own back.
+    await client.lease(group, a, { op: "release", epoch: held.epoch });
+    expect(status(await client.lease(group, c, { op: "acquire", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+    const again = await client.lease(group, a, { op: "acquire", epoch: held.epoch });
+    expect(again.holder).toBe(k(a));
+    await client.lease(group, a, { op: "release", epoch: again.epoch });
+    expect((await client.lease(group, b, { op: "acquire", epoch: again.epoch })).holder).toBe(k(b));
+    expect(status(await client.lease(group, c, { op: "takeover", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+  });
+});
+
 describe("a join that moves a key (lane I's #195)", () => {
   test("the statement names the group it moves from as a fifth line, byte for byte with the service's; a move signed without it is refused", async () => {
     const { joinStatement, admitStatement } = await import("../handshake");

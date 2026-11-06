@@ -215,10 +215,11 @@ export class SessionRecordSync {
     if (!view || view.id !== id) return { ok: false, reason: "refused" };
     // Only the computer running the session gives its records places. For a session this computer knows, which one
     // that is comes from its own view, never from what the sender says (H-M2's check 2): the runner changes only
-    // through the lease or a hand-back, which lane D's host records itself.
+    // through the lease or a hand-back. Only a bot's main conversation follows the lease (spec §6.4 "The computer
+    // running a session"); a side thread stays on its routine's computer and an agent on its own (check 3).
     const writer = this.#o.registry.get(from)?.computer;
     const named = known ? known.computer : view.computer;
-    const moved = known !== undefined && writer !== undefined && named !== writer && this.#o.holder?.() === from;
+    const moved = known !== undefined && known.kind === "bot" && writer !== undefined && named !== writer && this.#o.holder?.() === from;
     if (writer === undefined || (named !== writer && !moved)) return { ok: false, reason: "not_writer" };
     const records: SessionRecord[] = [];
     let next = head;

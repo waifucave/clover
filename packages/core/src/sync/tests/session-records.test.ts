@@ -99,7 +99,7 @@ async function waitFor(cond: () => boolean, ms = 5_000): Promise<void> {
   }
 }
 
-async function world(names: string[], opts: { stale?: (name: string, epoch: number) => boolean } = {}) {
+async function world(names: string[], opts: { stale?: (name: string, epoch: number) => boolean; holder?: () => string | null } = {}) {
   const c = await makeLinkCluster(names, { clock });
   stops.push(() => c.close());
   const hosts = new Map<string, MemoryHost>();
@@ -110,6 +110,7 @@ async function world(names: string[], opts: { stale?: (name: string, epoch: numb
     const sync = new SessionRecordSync({
       self: d.id, computer: () => n, transport: d.transport, registry: d.registry, host,
       ...(opts.stale ? { isStale: (e: number) => opts.stale!(n, e) } : {}),
+      ...(opts.holder ? { holder: opts.holder } : {}),
     });
     stops.push(() => sync.close());
   }
@@ -173,6 +174,37 @@ describe("sessions' records across computers", () => {
     expect(r).toEqual({ ok: false, reason: "not_writer" });
     expect(w.h("Laptop").head("b_alpha")).toBe(1);
     expect(w.h("Laptop").get("b_alpha")?.computer).toBe("Studio");
+  });
+
+  test("a bot's conversation moves to the lease holder, and only to it; a side thread never follows the lease (check 3)", async () => {
+    let holder: string | null = null;
+    const w = await world(["Studio", "Laptop", "Server", "Mini"], { holder: () => holder });
+    const id = (n: string) => w.c.devices.get(n)!.id;
+    holder = id("Server");
+    await w.c.devices.get("Studio")!.transport.connect(id("Laptop"));
+    const studio = w.h("Studio");
+    studio.open(view("Studio"));
+    studio.record("b_alpha", { type: "turn_started", origin: "user" });
+    const side = { ...view("Studio"), id: "s_routine", kind: "side-thread", parent: "b_alpha" } as unknown as SessionView;
+    studio.open(side);
+    studio.record("s_routine", { type: "turn_started", origin: "routine" });
+    await waitFor(() => w.h("Laptop").head("b_alpha") === 1 && w.h("Laptop").head("s_routine") === 1);
+    const push = async (from: string, session: string, v: SessionView) => {
+      const link = await w.c.devices.get(from)!.transport.connect(id("Laptop"));
+      return link.request<{ ok: boolean; reason?: string; head?: number }>("sync.push", {
+        stream: `transcript:${session}`, base: 0,
+        entries: [{ seq: 1, epoch: 2, ts: Date.now(), device: id(from), payload: { record: { type: "turn_started", origin: "user", seq: 1, sessionId: session, ts: Date.now() }, view: v } }],
+      });
+    };
+    // A computer that doesn't hold the lease is refused, whatever its view says.
+    expect(await push("Mini", "b_alpha", view("Mini"))).toEqual({ ok: false, reason: "not_writer" });
+    expect(w.h("Laptop").get("b_alpha")?.computer).toBe("Studio");
+    // A side thread stays on its routine's computer, even for the lease holder.
+    expect(await push("Server", "s_routine", { ...side, computer: "Server" } as SessionView)).toEqual({ ok: false, reason: "not_writer" });
+    expect(w.h("Laptop").get("s_routine")?.computer).toBe("Studio");
+    // The holder takes the bot over: accepted, and the bot now runs there.
+    expect(await push("Server", "b_alpha", view("Server"))).toEqual({ ok: true, head: 1 });
+    expect(w.h("Laptop").get("b_alpha")?.computer).toBe("Server");
   });
 
   test("records from an earlier lease arrive marked late", async () => {

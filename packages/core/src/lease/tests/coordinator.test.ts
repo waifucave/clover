@@ -8,6 +8,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SystemClock } from "../../clock/system-clock";
+import { ContractError } from "../../contracts/common";
 import { makeLinkCluster, type ClusterDevice } from "../../links/testing";
 import { startMainComputer, type MainComputerHandle } from "../main";
 import { MemoryLeaseService } from "../testing";
@@ -189,6 +190,72 @@ describe("the main computer", () => {
       expect(heldAgain).toBe(false);
     }, 20_000);
   }
+
+  test("L3: the old main's links come back after a takeover while the service stays out of its reach: it doesn't act on (check 3)", async () => {
+    const w = await computers(["Studio", "Laptop", "Server"]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    w.off("Studio");
+    await waitFor(() => w.holder() !== "Studio" && w.holder() !== null);
+    const taker = w.holder()!;
+    await waitFor(() => w.n(taker).mc.lease.canAct());
+    // Only the links heal; the handshake stays out of the studio's reach. Links that came back after its deadline
+    // don't let it act on: one of those computers took over meanwhile.
+    w.c.net.heal(w.c.devices.get("Studio")!.key.publicKey);
+    for (const n of ["Laptop", "Server"]) await w.c.devices.get("Studio")!.transport.connect(w.id(n)).catch(() => undefined);
+    await waitFor(() => w.c.devices.get("Studio")!.transport.links().filter((l) => l.up).length === 2);
+    let both = 0;
+    for (let i = 0; i < 20; i++) {
+      await Bun.sleep(100);
+      if (w.n("Studio").mc.lease.canAct() && w.n(taker).mc.lease.canAct()) both++;
+    }
+    expect(both).toBe(0);
+    expect(w.n("Studio").mc.lease.canAct()).toBe(false);
+  }, 30_000);
+
+  test("only a computer that votes starts a new tenure: a non-voter never takes over a lapse, nor is handed the lease, and a not_voter refusal stops its tries (check 3)", async () => {
+    let refused = 0;
+    const w = await computers(["Studio", "Laptop", "Server"], (name, scope) => {
+      // The laptop joined lately: its group record says it doesn't vote yet. The server's record is stale (it reads
+      // as voting) but the service refuses it `not_voter`.
+      if (name === "Laptop") return { ...scope, votes: () => false };
+      if (name === "Server") {
+        return {
+          ...scope,
+          op: async (op, epoch, ttl) => {
+            if (op === "acquire") {
+              refused++;
+              throw new ContractError("refused", "not a voter yet", { notVoter: true });
+            }
+            return scope.op(op, epoch, ttl);
+          },
+        };
+      }
+      return scope;
+    });
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    const since = w.service.log.length;
+    const refusedBefore = refused;
+    w.off("Studio");
+    await Bun.sleep(4 * TIMINGS.ttlMs);
+    // Nobody may take it: the laptop doesn't try, and the server tried once and then held off.
+    expect(w.service.log.slice(since).filter((l) => l.endsWith(" acquire") || l.endsWith(" takeover"))).toEqual([]);
+    expect(refused - refusedBefore).toBeLessThanOrEqual(1);
+    expect(w.n("Laptop").mc.lease.canAct()).toBe(false);
+    expect(w.n("Server").mc.lease.canAct()).toBe(false);
+    // The studio comes back and takes its own lapsed lease again (the last holder needs no vote).
+    w.off("Studio", false);
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+  }, 30_000);
+
+  test("a hand-over goes only to a computer that votes", async () => {
+    const w = await computers(["Studio", "Laptop", "Server"], (name, scope) => (name === "Studio" ? { ...scope, votes: (_now, device) => device !== w.id("Laptop") } : scope));
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio");
+    expect(await w.n("Studio").mc.coordinator.handOver()).toEqual({ to: w.id("Server") });
+    await waitFor(() => w.holder() === "Server");
+  }, 20_000);
 
   test("with no other computer on, a hand-over keeps the bots here", async () => {
     const w = await computers(["Studio", "Laptop"]);

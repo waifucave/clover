@@ -30,7 +30,11 @@ interface Msg { id: string; from: string; to: string; kind: HandshakeKind; at: n
 interface Pair { keys: [string, string]; records: Rec[]; messages: Msg[]; last: Map<string, number> }
 interface Member { joinedAt: number; votesFrom: number | null; admittedBy: string[] }
 interface Change { kind: "admit" | "remove"; target: string; signers: string[]; at: number; member?: Member }
-interface Group { members: Map<string, Member>; removed: Map<string, number>; last: Map<string, number>; lease: LeaseRecord; changes: Change[] }
+interface Group {
+  members: Map<string, Member>; removed: Map<string, number>; last: Map<string, number>; lease: LeaseRecord; changes: Change[];
+  /** The lease's last holder, who alone may take it back without a vote (lane I's rule, lane/i-lease-voter). */
+  lastHolder?: string;
+}
 interface Sock { send(text: string): void; close(code: number, reason: string): void }
 
 export interface FakeHandshake {
@@ -507,10 +511,17 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           return new Response(null, { status: 204 });
         }
         if (parts[3] === "lease" && req.method === "POST") {
-          if ((body() as { op?: unknown } | undefined)?.op === "takeover" && !votes(g.members.get(who))) return err(403, "not_voter");
+          // Every new tenure needs a member that votes now: a takeover, and an acquire of a free lease (never held,
+          // released, lapsed, or freed by a removal). Only the last holder takes its own back without a vote; holding
+          // on (an acquire of a live lease it holds, a renew) and a release need none.
+          const op = (body() as { op?: unknown } | undefined)?.op;
+          const free = g.lease.holder === null || (g.lease.expiresAt ?? 0) <= now();
+          const tenure = op === "takeover" || (op === "acquire" && free && who !== g.lastHolder);
+          if (tenure && !votes(g.members.get(who))) return err(403, "not_voter");
           const r = leaseOp(g.lease, who, body());
           if (r instanceof Response) return r;
           g.lease = r;
+          if (r.holder !== null) g.lastHolder = r.holder;
           for (const k of g.members.keys()) push(scope, k, { t: "lease", lease: g.lease });
           return Response.json({ lease: g.lease });
         }

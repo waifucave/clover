@@ -55,6 +55,50 @@ describe("MainLease beyond the contract", () => {
     expect(lease.canAct()).toBe(false);
   });
 
+  test("a peer naming a newer epoch stops the holder acting until its own renew succeeds (check 3, L3)", async () => {
+    const clock = new FakeClock();
+    const service = new MemoryLeaseService(clock);
+    const studio = memoryLease(service, { self: "studio", clock });
+    await studio.acquire();
+    expect(studio.canAct()).toBe(true);
+    // Not newer: nothing changes.
+    expect(studio.peerEpoch(1)).toBe(false);
+    expect(studio.canAct()).toBe(true);
+    // Newer: another computer may hold a later lease; nothing is acted on until the service says otherwise.
+    expect(studio.peerEpoch(2)).toBe(true);
+    expect(studio.canAct()).toBe(false);
+    await studio.renew();
+    expect(studio.canAct()).toBe(true);
+  });
+
+  test("an acquire answered after a release gives the lease back instead of holding it unasked (check 3)", async () => {
+    const clock = new FakeClock();
+    const service = new MemoryLeaseService(clock);
+    const inner = service.scope("studio");
+    let gate: Promise<void> | undefined;
+    const studio = new MainLease({
+      self: "studio", clock,
+      scope: () => ({
+        ...inner,
+        op: async (op, epoch, ttl) => {
+          if (op === "acquire" && gate) await gate;
+          return inner.op(op, epoch, ttl);
+        },
+      }),
+    });
+    await studio.acquire();
+    let open!: () => void;
+    gate = new Promise<void>((r) => (open = r));
+    // An acquire in flight (the main taking its own back) while a hand-over releases.
+    const inFlight = studio.acquire();
+    await studio.release();
+    expect(service.record.holder).toBe(null);
+    open();
+    await inFlight;
+    expect(studio.holds()).toBe(false);
+    expect(service.record.holder).toBe(null);
+  });
+
   test("the epoch is a fencing token: a takeover raises it, and acts stamped with an older one are stale", async () => {
     const clock = new FakeClock();
     const service = new MemoryLeaseService(clock);

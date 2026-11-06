@@ -20,7 +20,12 @@
 // * **Hand over** (`handOver`: Hand over and quit, a laptop's sleep): the lease goes at once to a computer that is on,
 //   the main first, which is told to take it; with none, the bots stay here until this one is back.
 // * **A wake** (`wake`): nothing is acted on until a renew succeeds, and every link re-dials.
-// * **The fencing token:** a peer's hello that names a newer epoch makes this device read the record again.
+// * **The fencing token:** a peer's hello that names a newer epoch makes this device read the record again, and stops
+//   it acting until its own renew or acquire succeeds (lease.ts).
+// * **Who may hold it** (lane I's rule for a group's lease): every new tenure needs a member that votes now, so a
+//   computer that doesn't vote yet never takes a lapse over, isn't handed the lease, and says it isn't ready to take it
+//   back; only the last holder takes its own lapsed lease back without a vote. A `not_voter` refusal means "don't
+//   act", and no new tenure is tried for a minute.
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError, isContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { DeviceRecord } from "../contracts/device-registry";
@@ -41,6 +46,9 @@ export const LEASE_LINK = {
   /** notify `{at}`: the sender is the main the user chose, since `at`. */
   main: "link.lease.main",
 } as const;
+
+/** After the service refused a new tenure `not_voter`, how long before trying again. */
+const NOT_VOTER_BACKOFF_MS = 60_000;
 
 export interface LeaseCoordinatorOptions {
   self: string;
@@ -83,6 +91,10 @@ export class LeaseCoordinator {
   /** A nudge to take it now (from a peer or a hand-over): skip the waits. */
   #takeNow = false;
   #handingBack: Promise<void> | undefined;
+  /** Per peer, since when (monotonic) its link has been up without a break. */
+  readonly #upSince = new Map<string, number>();
+  /** Until when (monotonic) not to try a new tenure again, after the service said this computer doesn't vote yet. */
+  #notVoterUntil = Number.NEGATIVE_INFINITY;
   #handBackHook: (() => Promise<void>) | undefined;
   #handBackTriedAt = Number.NEGATIVE_INFINITY;
   /** After a hand-over (a quit or a sleep): don't take the lease back until a wake, or until no one took it. */
@@ -96,6 +108,7 @@ export class LeaseCoordinator {
     this.choice = o.choice;
     this.#handBackHook = o.handBack;
     const t = o.transport;
+    for (const l of t.links()) if (l.up) this.#upSince.set(l.peer, o.clock.monotonic());
     this.#offs.push(this.lease.watch((s) => {
       this.#events.emit(s);
       this.#kick();
@@ -105,6 +118,9 @@ export class LeaseCoordinator {
       this.#kick();
     }));
     this.#offs.push(t.watch((v) => {
+      // Since when each link has been up without a break: only those up since before the deadline count (mayOutlast).
+      if (!v.up) this.#upSince.delete(v.peer);
+      else if (!this.#upSince.has(v.peer)) this.#upSince.set(v.peer, o.clock.monotonic());
       this.lease.recheck();
       if (v.up) this.#announceTo(v.peer);
       this.#kick();
@@ -113,7 +129,8 @@ export class LeaseCoordinator {
       if (!this.#isComputer(from)) throw new ContractError("refused", "only a paired computer asks");
       await this.lease.refresh().catch(() => undefined);
       // A computer that just handed its bots over (it's quitting or about to sleep) doesn't take them back.
-      return { ready: this.lease.reachable && this.#yieldedAt === undefined };
+      // Nor does one that doesn't vote in the group yet: the service would refuse it the lease (lane I's rule).
+      return { ready: this.lease.reachable && this.#yieldedAt === undefined && this.#mayStartTenure() };
     }));
     this.#offs.push(t.onNotify(LEASE_LINK.take, (_p, from) => {
       if (!this.#isComputer(from)) return;
@@ -154,10 +171,15 @@ export class LeaseCoordinator {
   }
 
   /** `mayOutlast` for the lease: past its deadline the holder acts on only while no other computer could take over,
-   *  or while it has a live link to each one that could (§6.4). A computer that can't be reached might be on. */
-  mayOutlast(): boolean {
+   *  or while it has had a live link to each one that could since before `deadline` passed (§6.4; H-M2's check 3,
+   *  L3). A computer that can't be reached might be on, and one whose link came back after the deadline may have
+   *  taken over meanwhile. */
+  mayOutlast(deadline: number = Number.POSITIVE_INFINITY): boolean {
     const up = new Set(this.#o.transport.links().filter((l) => l.up).map((l) => l.peer));
-    return this.#otherComputers().every((d) => up.has(d.id));
+    return this.#otherComputers().every((d) => {
+      const since = this.#upSince.get(d.id);
+      return up.has(d.id) && since !== undefined && since < deadline;
+    });
   }
 
   /** The OS reported a wake (or the core noticed one): act on nothing until a renew, and re-dial everything. */
@@ -172,7 +194,8 @@ export class LeaseCoordinator {
 
   /** A peer's hello named this epoch: if it's newer than any seen, read the record again. */
   peerEpoch(epoch: number): void {
-    if (epoch > this.lease.highestEpoch()) {
+    // Another computer holds a later lease: this one stops acting until its own renew or acquire succeeds.
+    if (this.lease.peerEpoch(epoch)) {
       this.#lastRead = Number.NEGATIVE_INFINITY;
       this.#kick();
     }
@@ -216,7 +239,9 @@ export class LeaseCoordinator {
   async handOver(): Promise<{ to: string | null }> {
     if (!this.lease.holds()) return { to: null };
     const up = new Set(this.#o.transport.links().filter((l) => l.up).map((l) => l.peer));
-    const others = this.#otherComputers().filter((d) => up.has(d.id)).map((d) => d.id).sort();
+    // Only to a computer that may take it: in a group, one that votes (a non-voter would be refused the lease).
+    const now = this.#o.clock.now();
+    const others = this.#otherComputers().filter((d) => up.has(d.id) && this.lease.votes(now, d.id)).map((d) => d.id).sort();
     if (others.length === 0) return { to: null };
     const main = this.choice.current();
     const to = main !== null && others.includes(main) ? main : others[0]!;
@@ -358,7 +383,7 @@ export class LeaseCoordinator {
       this.#yieldedAt = undefined;
     }
     if (this.choice.isSelf() || takeNow) {
-      await lease.acquire().catch((e: unknown) => this.#log(`taking the lease (${takeNow ? "asked" : "the main"}) failed: ${e instanceof Error ? e.message : String(e)}`));
+      if (this.#mayStartTenure()) await this.#acquire(takeNow ? "asked" : "the main");
       return;
     }
     const main = this.choice.current();
@@ -370,14 +395,36 @@ export class LeaseCoordinator {
       this.#log(`the lease lapsed but ${lastHolder} answers over its link: not taking over`);
       return;
     }
+    // A computer that doesn't vote in the group yet never takes it over: the service refuses it `not_voter`.
+    if (!this.#mayStartTenure()) return;
     if (!(this.#o.userActive?.() ?? false)) {
       if (await this.#waitTaken(this.#o.takeoverDelayMs ?? 3_000)) return;
     }
+    if (await this.#acquire("a takeover")) this.#log(`took the lease over (epoch ${lease.state().epoch})`);
+  }
+
+  /** Whether this computer may start a new tenure of the lease: its own lapsed record it takes back; any other only a
+   *  computer that votes in the group (lane I's rule), and not again soon after the service said it doesn't. */
+  #mayStartTenure(): boolean {
+    if (this.#o.clock.monotonic() < this.#notVoterUntil) return false;
+    if (this.lease.known().holder === this.#o.self) return true;
+    return this.lease.votes(this.#o.clock.now());
+  }
+
+  /** Acquires; false when refused. A `not_voter` refusal means "don't act": no new tenure is tried for a minute. */
+  async #acquire(why: string): Promise<boolean> {
     try {
-      await lease.acquire();
-      this.#log(`took the lease over (epoch ${lease.state().epoch})`);
-    } catch {
-      // Another computer took it first, or the handshake didn't answer.
+      await this.lease.acquire();
+      return true;
+    } catch (e) {
+      if (isContractError(e, "refused") && e.detail?.notVoter === true) {
+        this.#notVoterUntil = this.#o.clock.monotonic() + NOT_VOTER_BACKOFF_MS;
+        this.#log(`taking the lease (${why}): this computer doesn't vote in the group yet, so it doesn't act`);
+      } else {
+        // Another computer took it first, or the handshake didn't answer.
+        this.#log(`taking the lease (${why}) failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return false;
     }
   }
 

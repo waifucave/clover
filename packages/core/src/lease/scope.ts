@@ -33,6 +33,9 @@ export interface LeaseScope {
   readonly id: string;
   op(op: LeaseOp, epoch: number, ttlSec: number): Promise<ScopeLease>;
   read(): Promise<ScopeLease>;
+  /** Whether this device (or `device`) votes now, so a new tenure of the lease is its to take (a group's rule: lane I's
+   *  service refuses any other `not_voter`). Absent: every device may (the account's lease). */
+  votes?(now: number, device?: string): boolean;
 }
 
 /** Runs a request against the service, as the lease sees its outcome. */
@@ -43,7 +46,7 @@ async function call<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof ContractError) throw err;
     if (err instanceof HandshakeError && err.code === "not_voter") {
       // Group recovery (proposal 4): a member takes the lease over only once it votes.
-      throw new ContractError("refused", "this computer can be made the main computer once it votes in your devices' group (7 days after it joined, or at once if a quorum of your devices let it in), or from the main computer now");
+      throw new ContractError("refused", "this computer can be made the main computer once it votes in your devices' group (7 days after it joined, or at once if a quorum of your devices let it in), or from the main computer now", { notVoter: true });
     }
     if (err instanceof HandshakeError && err.status >= 400 && err.status < 500 && err.status !== 429) {
       throw new ContractError(err.status === 410 ? "not_found" : "refused", `the handshake refused the lease request (${err.status} ${err.code})`);
@@ -124,6 +127,17 @@ export class GroupLeaseScope implements LeaseScope {
 
   get group(): string {
     return this.#group;
+  }
+
+  /** By the group record's last read: unread (or a service that shows no voters) counts as voting, and the service
+   *  decides; `null` is a member not yet known to vote. */
+  votes(now: number, device?: string): boolean {
+    const g = this.#registry.group();
+    if (!g || g.id !== this.#group) return false;
+    const self = device === undefined || device === this.#registry.self().id;
+    if (!self && !(device in g.members)) return false;
+    const from = self ? g.votesFrom : g.members[device]!.votesFrom;
+    return from === undefined || (from !== null && from <= now);
   }
 
   /** The device a member key belongs to: this one's own, or a member the group record names. */

@@ -7,8 +7,11 @@
 //   its last acquire or renew that the service granted, plus the TTL, minus the margin for clock error. Never from
 //   shared or wall time. After a wake, nothing until a renew succeeds.
 // * **The spec's exceptions to fencing** (`mayOutlast`): past its deadline, a holder that can't renew keeps acting
-//   only while no other computer could take over, or while it has a live link to each one that could. The
+//   only while no other computer could take over, or while it has had a live link to each one that could since
+//   before the deadline passed (a link that came back later may be to a computer that took over meanwhile). The
 //   coordinator answers that from the links (coordinator.ts).
+// * **A newer epoch from a peer** (its hello): another computer holds a later lease, so this one stops acting until
+//   a renew or an acquire succeeds, as after a wake (H-M2's check 3, L3).
 // * **The fencing token is (scope, epoch)** (H-M2's review): epochs count within one lease record (the account's, a
 //   group's, or this computer's own), so a sign-in or a merge starts a new count. `fence()` is what an act is stamped
 //   with; `isStale(epoch, scope)` tells a receiver to refuse an act from an earlier lease: an older epoch in the
@@ -45,9 +48,9 @@ export interface MainLeaseOptions {
   ttlSec?: number;
   /** The computer the user chose as main, or the one chosen for them (main-choice.ts). */
   main?: () => string | null;
-  /** Past the deadline, whether this holder may still act: no other computer could take over, or it has a live link
-   *  to each one that could. */
-  mayOutlast?: () => boolean;
+  /** Past the deadline (on the monotonic clock), whether this holder may still act: no other computer could take
+   *  over, or it has had a live link to each one that could since before `deadline`. */
+  mayOutlast?: (deadline: number) => boolean;
 }
 
 export class MainLease implements Lease {
@@ -66,6 +69,8 @@ export class MainLease implements Lease {
   /** On the monotonic clock: when this device stops acting on its lease, unless an exception holds. */
   #deadline: number | null = null;
   #woke = false;
+  /** A peer named a newer epoch than any this device has seen: nothing is acted on until a renew or acquire. */
+  #behind = false;
   #handingOver = false;
   /** Releases so far, so a renew in flight across one is not taken as holding. */
   #releases = 0;
@@ -108,9 +113,9 @@ export class MainLease implements Lease {
 
   canAct(): boolean {
     if (this.#local) return true;
-    if (this.#woke || this.#deadline === null || this.#known.holder !== this.self) return false;
+    if (this.#woke || this.#behind || this.#deadline === null || this.#known.holder !== this.self) return false;
     if (this.#mono() < this.#deadline) return true;
-    return this.#o.mayOutlast?.() ?? false;
+    return this.#o.mayOutlast?.(this.#deadline) ?? false;
   }
 
   async acquire(opts: { byUser?: boolean } = {}): Promise<LeaseState> {
@@ -168,6 +173,20 @@ export class MainLease implements Lease {
   wake(): void {
     this.#woke = true;
     this.#changed();
+  }
+
+  /** A peer's hello named `epoch`: newer than any seen here, another computer holds a later lease, so this one stops
+   *  acting until its own renew or acquire succeeds. Returns whether it was newer. */
+  peerEpoch(epoch: number): boolean {
+    if (this.#local || epoch <= this.highestEpoch()) return false;
+    this.#behind = true;
+    this.#changed();
+    return true;
+  }
+
+  /** Whether this device (or `device`) may start a new tenure of the lease: in a group, only a member that votes. */
+  votes(now: number, device?: string): boolean {
+    return this.#o.scope()?.votes?.(now, device) ?? true;
   }
 
   watch(fn: (state: LeaseState) => void): Unsubscribe {
@@ -311,14 +330,24 @@ export class MainLease implements Lease {
       throw err;
     }
     this.#reachable = true;
-    // A renew answered after this device released (a hand-over racing the renew loop): the service took the release
-    // after the renew, or refused the renew, so the record is free; the renew's answer must not make this device the
-    // holder again.
-    if (op === "renew" && this.#releases !== releases) return this.state();
+    if (this.#releases !== releases) {
+      // A renew answered after this device released (a hand-over racing the renew loop): the service took the
+      // release after the renew, or refused the renew, so the record is free; the renew's answer must not make this
+      // device the holder again.
+      if (op === "renew") return this.state();
+      // An acquire (or takeover) answered after a release: the service gave this device the lease after it let go,
+      // so it gives it back rather than hold it unasked.
+      if (record.holder === this.self) {
+        this.#observe(record);
+        await this.release();
+        return this.state();
+      }
+    }
     this.#observe(record);
     if (record.holder === this.self) {
       this.#deadline = sent + this.ttlMs - this.marginMs;
       this.#woke = false;
+      this.#behind = false;
       this.#armDeadline();
     }
     this.#changed();
