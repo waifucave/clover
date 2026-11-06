@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, BASH_WRITE_KINDS, fenceContextFor, isInsideFolded, judge, otherBotFolder, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, callerReaches, fenceContextFor, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -22,7 +22,8 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   "adult-confirmation": "plugins-state/adult.json",
   plugins: "plugins",
   "sessions-runtime": "sessions-runtime",
-  "bot-memory": "bots",
+  /** One item per bot, `bots/<bot>/memory/` (`bots`). */
+  "bot-memory": null,
   "plugin-data": "plugin-data",
   "run-folder": "run",
   transcripts: "sessions",
@@ -47,6 +48,8 @@ export interface FakeFenceOptions {
   devFolders?: string[];
   /** The install folders of the coding agents the user has OK'd. */
   agentInstalls?: string[];
+  /** The bots there are, by id (`pack/luna` for a child's), for their memory items. */
+  bots?: string[];
   /** The app's userData folder (Electron's), which holds the browser's partitions; the OS's usual one by default. */
   userData?: string;
   /** Replaces the fake's layout for some items. */
@@ -75,6 +78,7 @@ export class FakeFence implements Fence {
   readonly #userData: string;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #agentInstalls: string[];
+  readonly #bots: string[];
   #devFolders: string[];
   readonly #listeners = new Listeners<void>();
 
@@ -86,13 +90,14 @@ export class FakeFence implements Fence {
     this.#userData = normalizePosix(opts.userData ?? defaultUserData(this.os, this.#home));
     this.#devFolders = (opts.devFolders ?? []).map(normalizePosix);
     this.#agentInstalls = (opts.agentInstalls ?? []).map(normalizePosix);
+    this.#bots = [...(opts.bots ?? [])];
     this.#layout = opts.layout ?? {};
   }
 
   fencedSet(): readonly FencedPath[] {
     const out: FencedPath[] = [];
     const add = (kind: FencedKind, path: string) =>
-      out.push({ kind, path: normalizePosix(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : BASH_WRITE_KINDS.includes(kind) ? "bash-write" : "write" });
+      out.push({ kind, path: normalizePosix(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : CALLER_KINDS.includes(kind) ? "caller" : "write" });
     for (const [kind, rel] of Object.entries(FAKE_FENCE_LAYOUT) as [Exclude<FencedKind, "dev-folders">, string | null][]) {
       if ((kind === "secrets-file" || kind === "key-file") && this.os === "macos") continue; // the Keychain holds them there
       const override = this.#layout[kind];
@@ -101,20 +106,14 @@ export class FakeFence implements Fence {
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
       else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
       else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
+      else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     return out;
   }
 
   check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
-    const v = judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome });
-    if (!v.allowed) return v;
-    // A bot's session reads only its own bot's folder (`bot-memory`).
-    for (const path of op.op === "move" ? [op.path, op.to] : [op.path]) {
-      const other = otherBotFolder(path, ctx, { os: this.os, cloverHome: this.#cloverHome });
-      if (other !== undefined) return { allowed: false, reason: "bot-memory", path: other };
-    }
-    return v;
+    return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
   }
 
   touches(paths: readonly string[]): FencedPath | null {
@@ -141,13 +140,13 @@ export class FakeFence implements Fence {
     return { allowed: true };
   }
 
-  policy(ctx?: FenceContext & { bots?: readonly string[] }): SandboxPolicy {
+  policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet();
-    const others = ctx?.bot === undefined && !ctx?.noBots ? [] : (ctx.bots ?? []).filter((b) => b !== ctx.bot).map((b) => `${this.#cloverHome}/bots/${b}`);
+    const reaches = (i: FencedPath) => i.deny === "caller" && callerReaches(i, ctx, this.os);
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: set.map((i) => i.path),
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...others],
+      denyWrite: set.filter((i) => !reaches(i)).map((i) => i.path),
+      denyRead: set.filter((i) => i.deny === "read-write" || (i.deny === "caller" && !reaches(i))).map((i) => i.path),
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
@@ -163,7 +162,7 @@ export class FakeFence implements Fence {
       touches: (paths) => this.touches(paths),
       checkAgentRoot: (root) => this.checkAgentRoot(root),
       check: (op) => this.check(op, context),
-      policy: (opts = {}) => this.policy({ ...context, ...(opts.bots ? { bots: opts.bots } : {}) }),
+      policy: () => this.policy(context),
     };
   }
 

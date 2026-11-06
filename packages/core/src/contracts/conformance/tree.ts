@@ -17,7 +17,7 @@ import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
+import { RESERVED_COMPUTER_NAMES, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -97,6 +97,18 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
   }
 
   describe("Tree", () => {
+    test("home/memory/ names the caller's bot's memory, and no computer may be called memory", () => {
+      expect(memoryTreeRest("home/memory/MEMORY.md")).toBe("MEMORY.md");
+      expect(memoryTreeRest("home/memory")).toBe("");
+      expect(memoryTreeRest("home/Studio/memory/x")).toBeUndefined();
+      expect(memoryTreeRest("home/memory/../settings")).toBeUndefined();
+      expect(RESERVED_COMPUTER_NAMES).toContain("memory");
+    });
+
+    // Lane J builds home/memory/ (synced, H): it resolves for the caller's bot, and only that bot's main conversation and
+    // side threads read or write it; until then the case runs as todo.
+    test.todo("home/memory/ resolves to the caller's bot's memory, synced, and only its own sessions reach it");
+
     test("home/<Computer>/ is that computer's home; bots/<bot>/ is on the computer running the bot", () => {
       const { tree, moveAlpha } = setup();
       expect(tree.resolve("home/Laptop1/project/run.py")).toEqual({ computer: "Laptop1", path: "/home/me/project/run.py", area: "home" });

@@ -6,6 +6,12 @@
 // computer that holds the files, over the link: files are reached live, never synced. A path on a computer that is off
 // answers `computer_offline` at once and never hangs.
 //
+// Beside the homes, each bot's tree has `home/memory/` (the owner's decision, #197): that bot's own memory folder,
+// `<home>/bots/<bot>/memory/`, synced across the user's computers (lane H syncs it) rather than reached live, so it
+// answers wherever the bot runs. It resolves for the caller's own bot (`TreeLocation.area` `memory`), and the fence's
+// `bot-memory` item lets only that bot's main conversation and side threads read or write it; anything else is
+// `fenced`. `memory` is therefore no computer's name (`RESERVED_COMPUTER_NAMES`). Lane J builds it.
+//
 // What the contract promises:
 // * `resolve` says where a tree path lives; `toTreePath` goes the other way for paths inside a home folder. A path
 //   never climbs out of its area: an empty, `.` or `..` segment, a backslash or a NUL makes it `invalid`, so
@@ -48,8 +54,9 @@ export interface TreeLocation {
   computer: string;
   /** The real, absolute path on that computer. */
   path: string;
-  /** `home` for `home/<Computer>/…`, `bot` for `bots/<bot>/…`. */
-  area: "home" | "bot";
+  /** `home` for `home/<Computer>/…`, `bot` for `bots/<bot>/…`, `memory` for `home/memory/…` (the caller's bot's
+   *  memory, synced). */
+  area: "home" | "bot" | "memory";
   bot?: string;
 }
 
@@ -142,6 +149,17 @@ export interface Tree {
   watch(path: string, opts: TreeCallOptions, fn: (event: TreeWatchEvent) => void): Promise<Unsubscribe>;
   /** The computers an action on these tree paths touches, for the strictest-level rule (§9.1). */
   computersFor(paths: readonly string[]): string[];
+}
+
+/** The folder in each bot's tree that is its memory (`home/memory/`), and the computer names that would clash. */
+export const MEMORY_TREE_FOLDER = "memory";
+export const RESERVED_COMPUTER_NAMES: readonly string[] = [MEMORY_TREE_FOLDER];
+
+/** The path inside the caller's bot's memory for a `home/memory/…` tree path, `""` for the folder itself, or undefined
+ *  for any other path (or one that could climb out). */
+export function memoryTreeRest(path: string): string | undefined {
+  const split = splitTreePath(path);
+  return split?.area === "home" && split.name === MEMORY_TREE_FOLDER ? split.rest : undefined;
 }
 
 /** Splits a tree path: `home/Studio/a/b` → `{ area: "home", name: "Studio", rest: "a/b" }`; null for anything that
