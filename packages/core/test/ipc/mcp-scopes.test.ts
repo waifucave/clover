@@ -16,7 +16,7 @@ import { McpManager } from "../../src/agent/mcp/manager";
 import { TrustStore } from "../../src/agent/trust";
 import { configuredMcpServersFor } from "../../src/runtime-sdk/external-mcp";
 import { localScopeKeyFor, runHomeInputFor } from "../../src/runtime-sdk/run-home-input";
-import { buildRunHome } from "@yanlinglabs/winter-runtime-sdk";
+import { buildRunHome } from "../../src/runtime-sdk/host";
 
 const tmp = (p: string): string => realpathSync(mkdtempSync(join(tmpdir(), p)));
 

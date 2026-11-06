@@ -53,7 +53,7 @@ import {
   SYSTEM_SESSION_ID,
   SessionEvent, ConnWriter, type WritableSocket,
 } from "@waifucave/clover-protocol";
-import { SDK_VERSION } from "@yanlinglabs/winter-agent-sdk";
+import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 import type { TokenAuthority } from "../auth/tokens";
 import type { SecretStore } from "../auth/secret-store";
 import { readCredentialMaterial, writeOpenAiApiKey } from "../auth/credential-material";
@@ -146,7 +146,7 @@ import { reconnectLiveSessionsFor } from "../agent/mcp/reconnect";
 import { parseProjectMcpServers, readRawProjectMcpConfig } from "../agent/mcp/project-file";
 import { daemonMcpOAuthStore } from "../runtime-sdk/mcp-oauth-store";
 import { keychainService, resolveCloverProfile } from "../profile";
-import type { McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import type { McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { liveSdkSettings, readSdkGlobalConfig, SdkFileUnreadable, updateSdkSettings } from "../sdk-files";
 import { CONNECTOR_ALL_TOOLS, connectorFactsFor, connectorToolName, sdkRulesFor, type ConnectorPermission, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { bypassAllowedAtSpawn, disallowedToolsFor } from "../runtime-sdk/mode-options";

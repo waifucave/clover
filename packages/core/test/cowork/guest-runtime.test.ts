@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query } from "@yanlinglabs/winter-agent-sdk";
+import { query } from "@waifucave/clover-agent-sdk";
 import { openRuntimeStateDb, type RuntimeStateDb } from "../../src/runtime-state/db";
 import { CoworkRepository } from "../../src/cowork/repository";
 import type { CapabilityCeiling, SourceSelection } from "../../src/cowork/types";

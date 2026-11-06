@@ -19,7 +19,7 @@
 // coordinator with a `<child_update>`. On the engine this was a BRIDGE in `engine.ts` that ran before
 // the registry; the capability server's `callTool` is the door on the Clover leg. A server built
 // without `spawn` (a test) answers the def's fixed "only available in the dispatch session" line.
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { listSessionsToolDefs, type ListSessionsDeps } from "../agent/tools/list-sessions";
 import { sessionSpawnToolDefs, type SessionSpawner } from "../agent/tools/session-spawn";
 import { capabilityServer, type CapabilitySession } from "./server";

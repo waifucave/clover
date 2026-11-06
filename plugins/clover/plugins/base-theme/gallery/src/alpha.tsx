@@ -3,9 +3,9 @@
 // builds (header, conversation, composer). The stage holds the real VRM avatar.
 
 import type { CSSProperties, ReactElement, ReactNode } from "react";
-import alphaTheme from "../../../../alpha/tab/theme.json" with { type: "json" };
-import alphaCss from "../../../../alpha/tab/theme.css" with { type: "text" };
-import alphaLayout from "../../../../alpha/tab/layout.json" with { type: "json" };
+import alphaTheme from "../../../../../alpha/tab/theme.json" with { type: "json" };
+import alphaCss from "../../../../../alpha/tab/theme.css" with { type: "text" };
+import alphaLayout from "../../../../../alpha/tab/layout.json" with { type: "json" };
 import { VrmAvatar } from "../../../vrm/src/ui/VrmAvatar";
 import { ALPHA_PORTRAIT, ALPHA_VRM, avatarsSettled } from "../../../vrm/src/gallery";
 import { cssVar } from "../../src/catalog";

@@ -11,7 +11,7 @@ import { AvatarScene, clampStep, SPRING_MAX_STEP, type AvatarRenderer } from "..
 import { idlePose } from "../src/motion/idle";
 import { SHUT } from "../src/lipsync/visemes";
 
-const COMMITTED = join(import.meta.dir, "..", "..", "..", "alpha", "assets", "alpha.vrm");
+const COMMITTED = join(import.meta.dir, "..", "..", "..", "..", "alpha", "assets", "alpha.vrm");
 const bytes = () => new Uint8Array(readFileSync(COMMITTED));
 const buffer = (b: Uint8Array) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 

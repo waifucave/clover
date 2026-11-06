@@ -23,7 +23,7 @@
 // this today — `daemon.ts` passes the value by copy and re-registers the tool on a settings change
 // — so this is the same behaviour reached by the mechanism that actually works for a
 // construction-time capability set.
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { computerToolDefs } from "../agent/tools/computer";
 import type { ComputerUseService } from "../agent/computer-use";
 import { capabilityServer, type CapabilitySession } from "./server";

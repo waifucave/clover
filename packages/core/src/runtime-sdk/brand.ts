@@ -38,7 +38,8 @@
 //    that name (`mode-options.ts`); it changes with the SDK.
 //  - `processLabel: "winter"` — the label of the `winter` binary the router spawns (Winter's coding
 //    agent); lane K names that binary.
-import { WINTER_BRAND, type BrandProfile } from "@yanlinglabs/winter-agent-sdk";
+import { WINTER_BRAND, type BrandProfile } from "@waifucave/clover-agent-sdk";
+import { CORE_VERSION } from "../version";
 import { keychainService } from "../profile";
 import type { CloverProfile } from "../profile";
 
@@ -73,6 +74,9 @@ export function buildCoreBrand(profile?: CloverProfile, home?: string): BrandPro
     pluginManifestDir: ".clover-plugin",
     // `resolveBrand` parses this with `new URL` and requires `https:` (and no control bytes).
     contactUrl: "https://github.com/waifucave/clover",
+    // A-M1 (SDK 0.0.63): Clover's own release, so its identity reads `clover-core/<release>`, never the
+    // SDK's version after Clover's name.
+    productVersion: CORE_VERSION,
   };
 }
 

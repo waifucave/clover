@@ -1,11 +1,11 @@
 import { canonicalHostJson as canonical } from "./host-code-json";
-import * as runtime from "@yanlinglabs/winter-agent-runtime";
+import * as runtime from "@waifucave/clover-agent-runtime";
 import type {
   Options,
   BrandProfile,
   PermissionResult,
   RuntimeAgentDefinition,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import { createHash } from "node:crypto";
 import type {
   HostCodeAuthority,

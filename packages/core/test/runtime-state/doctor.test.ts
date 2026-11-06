@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION, type RuntimeStateDb } from "../../src/runtime-state/db";
 import { RuntimeSessionRecords, type NewRuntimeSessionRecord } from "../../src/runtime-state/records";
 import { RuntimeChildren, type PersistedCloverChild } from "../../src/runtime-state/children";

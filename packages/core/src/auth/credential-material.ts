@@ -28,7 +28,7 @@ export type OauthMaterial = {
 };
 /** A bearer credential (Console OAuth, or an approved gateway). `expiresAt` (Winter Phase 10a,
  *  P10a-4) is optional/additive: the console-profile broker's `refreshAnthropicBearer` (SDK-side,
- *  `@yanlinglabs/winter-provider-runtime`) writes it so the daemon's own refresh timer
+ *  `@waifucave/clover-provider-runtime`) writes it so the daemon's own refresh timer
  *  (`auth/console-profile-broker.ts`) can re-arm itself 60s before expiry without a second read of
  *  the profile file — but the seam (`runtime-sdk/keychain.ts`) only ever hands the CHILD the bare
  *  `token` string, per the router's `fetchAuthCredentials` contract (`winter-runtime-sdk`

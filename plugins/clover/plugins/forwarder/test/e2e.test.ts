@@ -12,7 +12,7 @@ import { ForwarderClient, type Delivery } from "../src/client";
 import { memoryKeys, type ForwarderKeys } from "../src/keys";
 import { b64u, fromUtf8, utf8 } from "../src/wire/bytes";
 
-const serviceDir = join(import.meta.dir, "../../../../services/forwarder");
+const serviceDir = join(import.meta.dir, "../../../../../services/forwarder");
 const ready = existsSync(join(serviceDir, "node_modules/wrangler/package.json"));
 const stateDir = join(serviceDir, ".wrangler");
 const stateDirExisted = existsSync(stateDir);

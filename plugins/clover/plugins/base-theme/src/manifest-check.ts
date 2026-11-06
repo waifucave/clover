@@ -55,6 +55,12 @@ function inside(folder: string, path: string): boolean {
  * Checks `folder/clover.json`. `child` says the folder is a child plugin (spec §5.1): no `id`, no
  * `namespace`, and a `version` only its parent sets.
  */
+/** A child's parent plugin's folder: a child sits in its parent's plugins/ folder, as installed (spec §5.1). */
+function parentPluginFolder(folder: string): string {
+  const up = dirname(folder);
+  return basename(up) === "plugins" ? dirname(up) : up;
+}
+
 export function checkManifest(folder: string, options: { child: boolean; folderName?: string }): ManifestCheck {
   const problems: string[] = [];
   const raw = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as Record<string, unknown>;
@@ -92,7 +98,7 @@ export function checkManifest(folder: string, options: { child: boolean; folderN
           continue;
         }
         // Its own tokens are `plugin.<top-level id>.…`: a child's top-level plugin is the folder it sits in.
-        const plugin = options.child ? basename(dirname(resolve(folder))) : typeof raw.id === "string" ? raw.id : undefined;
+        const plugin = options.child ? basename(parentPluginFolder(resolve(folder))) : typeof raw.id === "string" ? raw.id : undefined;
         const themeProblems = checkTheme(JSON.parse(readFileSync(join(folder, theme.file), "utf8")), { strict: true, plugin });
         for (const p of themeProblems) problems.push(`theme ${String(theme.id)}: ${p}`);
       }

@@ -1,0 +1,687 @@
+// WS-21 §3.4.4: the effective settings — three tiers merged by claude's rules (F17), each tier
+// filtered first, every relative path re-anchored, then stripped per mode and cut to claude's schema.
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+
+import { buildRunHome, escapeRulePath, fsRootAnchored } from "../../../../src/runtime-sdk/host/index";
+import { CLAUDE_SETTINGS_KEYS, mergeSettings, PROJECT_TIER_REFUSED_KEYS } from "../../../../src/runtime-sdk/host/run-home/settings";
+import { cleanupRunHomeBeds, inputFor, put, runHomeBed, type RunHomeBed } from "./support";
+
+afterAll(cleanupRunHomeBeds);
+
+// Git runs with no system or global config, so nothing outside the bed shapes its answers.
+const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+
+function git(root: string, ...args: string[]): void {
+  const result = spawnSync("git", ["-C", root, ...args], { env: GIT_ENV, encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+}
+
+/** A trusted project that is a real (empty) git repository, as the host's `gitRoot` says it is. */
+function repo(bed: RunHomeBed): { root: string } {
+  const root = join(bed.root, "repo");
+  mkdirSync(root, { recursive: true });
+  git(root, "init", "-q");
+  return { root };
+}
+
+const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+async function effective(bed: RunHomeBed, root: string | null, overrides: Parameters<typeof inputFor>[1] = {}): Promise<Record<string, unknown>> {
+  const runHome = await buildRunHome(inputFor(bed, { cwd: root ?? bed.cwd, trustedProjectRoot: root, gitRoot: root, ...overrides }));
+  const onDisk = JSON.parse(readFileSync(join(runHome.dir, "settings.json"), "utf8")) as Record<string, unknown>;
+  expect(onDisk).toEqual(runHome.effectiveSettings);
+  expect(statSync(join(runHome.dir, "settings.json")).mode & 0o777).toBe(0o600);
+  return runHome.effectiveSettings;
+}
+
+describe("the tiers and claude's merge (F17)", () => {
+  test("user < project < local; arrays concatenated and deduplicated; objects deep-merged", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ language: "user-lang", outputStyle: "user-style", permissions: { allow: ["Bash(ls:*)", "Bash(pwd)"] }, env: { A: "user", B: "user" } }));
+    put(join(root, ".winter", "settings.json"), json({ language: "project-lang", permissions: { allow: ["Bash(pwd)", "Bash(git status)"] }, env: { B: "project" } }));
+    put(join(root, ".winter", "settings.local.json"), json({ permissions: { allow: ["Bash(make)"] }, env: { C: "local" } }));
+    const settings = await effective(bed, root);
+    expect(settings["language"]).toBe("project-lang");
+    expect(settings["outputStyle"]).toBe("user-style");
+    expect((settings["permissions"] as { allow: string[] }).allow).toEqual(["Bash(ls:*)", "Bash(pwd)", "Bash(git status)", "Bash(make)"]);
+    expect(settings["env"]).toEqual({ A: "user", B: "project", C: "local" });
+  });
+
+  test("claude's merge replaces `fallbackModel` and `modelPicker`, never concatenates them (the merge rule itself; neither key reaches it from a tier any more)", () => {
+    expect(mergeSettings({ fallbackModel: ["a", "b"], modelPicker: ["x"] }, { fallbackModel: ["c"], modelPicker: ["y"] })).toEqual({ fallbackModel: ["c"], modelPicker: ["y"] });
+    expect(mergeSettings({ allow: ["a"] }, { allow: ["b", "a"] })).toEqual({ allow: ["a", "b"] });
+  });
+
+  test("M3 (R.3): `fallbackModel` is dropped from EVERY tier, the user's included, and reported — claude honours it on overload, a silent switch to another model", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ fallbackModel: "user-fallback", outputStyle: "u" }));
+    put(join(root, ".winter", "settings.json"), json({ fallbackModel: "project-fallback" }));
+    put(join(root, ".winter", "settings.local.json"), json({ fallbackModel: "local-fallback" }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    expect(runHome.effectiveSettings).toEqual({ outputStyle: "u" });
+    const reason = expect.stringContaining("silent");
+    expect(runHome.report.droppedRules).toEqual([
+      { rule: "fallbackModel", tier: "user", reason },
+      { rule: "fallbackModel", tier: "project", reason },
+      { rule: "fallbackModel", tier: "local", reason },
+    ]);
+  });
+
+  test("Touch 4 add-on: `modelOverrides` is dropped from EVERY tier, the user's included, and reported — a user-tier remap made claude report one model at init and send another on the wire", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ modelOverrides: { "claude-haiku-4-5": "claude-opus-5" }, outputStyle: "u" }));
+    put(join(root, ".winter", "settings.json"), json({ modelOverrides: { x: "y" } }));
+    put(join(root, ".winter", "settings.local.json"), json({ modelOverrides: { x: "z" } }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    expect(runHome.effectiveSettings).toEqual({ outputStyle: "u" });
+    const reason = expect.stringContaining("wire");
+    expect(runHome.report.droppedRules).toEqual([
+      { rule: "modelOverrides", tier: "user", reason },
+      { rule: "modelOverrides", tier: "project", reason },
+      { rule: "modelOverrides", tier: "local", reason },
+    ]);
+  });
+
+  test("M3 (R.3): `model`, `modelOverrides`, `availableModels`, `advisorModel` and `enforceAvailableModels` never come from a repository tier (reported); the user's own are kept (but `modelOverrides`, which no tier keeps)", async () => {
+    // `enforceAvailableModels` (R.3 touch): the runtime's schema text — "if the default model for the user tier
+    // is not in availableModels, Default resolves to the first allowed availableModels entry instead" — so
+    // a repository setting it would switch the model.
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    const user = { model: "user-model", availableModels: ["user-a"], advisorModel: "user-advisor", enforceAvailableModels: true };
+    put(join(bed.sdk, "settings.json"), json(user));
+    put(join(root, ".winter", "settings.json"), json({ model: "p", modelOverrides: { a: "p" }, availableModels: ["p"], advisorModel: "p", enforceAvailableModels: false, language: "p" }));
+    put(join(root, ".winter", "settings.local.json"), json({ model: "l", advisorModel: "l", enforceAvailableModels: true }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    expect(runHome.effectiveSettings).toEqual({ ...user, language: "p" });
+    const reason = expect.stringContaining("repository never chooses");
+    expect(runHome.report.droppedRules).toEqual([
+      { rule: "modelOverrides", tier: "project", reason: expect.stringContaining("wire") },
+      { rule: "model", tier: "project", reason },
+      { rule: "availableModels", tier: "project", reason },
+      { rule: "advisorModel", tier: "project", reason },
+      { rule: "enforceAvailableModels", tier: "project", reason },
+      { rule: "model", tier: "local", reason },
+      { rule: "advisorModel", tier: "local", reason },
+      { rule: "enforceAvailableModels", tier: "local", reason },
+    ]);
+  });
+
+  test("WS-24: the effort keys (`effortLevel`, `modelSettings`, `ultracode`, `alwaysThinkingEnabled`) never come from a repository tier (reported); the user's own are kept", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    const user = { effortLevel: "low", modelSettings: { "m-1": { effortLevel: "low" } }, ultracode: false, alwaysThinkingEnabled: false };
+    put(join(bed.sdk, "settings.json"), json(user));
+    put(join(root, ".winter", "settings.json"), json({ effortLevel: "max", modelSettings: { "m-1": { effortLevel: "max" } }, ultracode: true, alwaysThinkingEnabled: true, language: "p" }));
+    put(join(root, ".winter", "settings.local.json"), json({ effortLevel: "high", modelSettings: { "m-2": { effortLevel: "high" } } }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    expect(runHome.effectiveSettings).toEqual({ ...user, language: "p" });
+    const reason = expect.stringContaining("repository never sets the session's effort");
+    expect(runHome.report.droppedRules).toEqual([
+      { rule: "effortLevel", tier: "project", reason },
+      { rule: "modelSettings", tier: "project", reason },
+      { rule: "ultracode", tier: "project", reason },
+      { rule: "alwaysThinkingEnabled", tier: "project", reason },
+      { rule: "effortLevel", tier: "local", reason },
+      { rule: "modelSettings", tier: "local", reason },
+    ]);
+  });
+
+  test("an untrusted project contributes nothing (neither project nor local)", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ model: "user-model" }));
+    put(join(root, ".winter", "settings.json"), json({ model: "project-model", permissions: { allow: ["Bash(rm:*)"] } }));
+    put(join(root, ".winter", "settings.local.json"), json({ env: { X: "local" } }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: null, gitRoot: root }));
+    expect(runHome.effectiveSettings).toEqual({ model: "user-model" });
+  });
+
+  test("a malformed tier is skipped, not fatal", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ model: "user-model" }));
+    put(join(root, ".winter", "settings.json"), "{ not json");
+    expect((await effective(bed, root))["model"]).toBe("user-model");
+  });
+});
+
+describe("the walk's `$HOME` stop (fix round 1, M2): a root at `$HOME` or above is not a project", () => {
+  // A daemon home laid out as it is for real: `$HOME/<home dir>`, its sdk home inside it. A project tier
+  // rooted at `$HOME` would read `$HOME/<home dir>/settings.json` — the DAEMON's own settings, which still
+  // hold Winter-grammar keys kept for downgrade — and `$HOME/<home dir>/settings.local.json`.
+  function homeBed(): { bed: RunHomeBed; userHome: string } {
+    const bed = runHomeBed("hs");
+    const userHome = join(bed.root, "u");
+    const daemonHome = join(userHome, ".winter");
+    mkdirSync(join(userHome, "p"), { recursive: true });
+    const moved: RunHomeBed = { ...bed, home: daemonHome, sdk: join(daemonHome, "sdk"), cwd: join(userHome, "p") };
+    put(join(moved.sdk, "settings.json"), json({ model: "user-model" }));
+    put(join(daemonHome, "settings.json"), json({ model: "daemon-model", provider: { model: "codex-oauth/x" }, permissions: { allow: ["Bash(rm:*)"] } }));
+    put(join(daemonHome, "settings.local.json"), json({ env: { FROM_DAEMON_HOME: "1" }, permissions: { allow: ["Bash(curl:*)"] } }));
+    return { bed: moved, userHome };
+  }
+
+  test("root = `$HOME`: the project and local tiers contribute nothing", async () => {
+    const { bed, userHome } = homeBed();
+    const runHome = await buildRunHome(inputFor(bed, { trustedProjectRoot: userHome, gitRoot: userHome }), { userHome });
+    expect(runHome.effectiveSettings).toEqual({ model: "user-model" });
+  });
+
+  test("root ABOVE `$HOME` (and a local anchor at `$HOME`): still nothing", async () => {
+    const { bed, userHome } = homeBed();
+    put(join(bed.root, ".winter", "settings.json"), json({ model: "above-model" }));
+    const runHome = await buildRunHome(inputFor(bed, { trustedProjectRoot: bed.root, gitRoot: userHome }), { userHome });
+    expect(runHome.effectiveSettings).toEqual({ model: "user-model" });
+  });
+
+  test("root = `$HOME` spelled through a link: still nothing (the stop compares real paths too)", async () => {
+    const { bed, userHome } = homeBed();
+    const link = join(bed.root, "home-link");
+    symlinkSync(userHome, link);
+    const runHome = await buildRunHome(inputFor(bed, { trustedProjectRoot: link, gitRoot: link }), { userHome });
+    expect(runHome.effectiveSettings).toEqual({ model: "user-model" });
+  });
+
+  test("a project BELOW `$HOME` still contributes both tiers; a local anchor at `$HOME` alone contributes nothing", async () => {
+    const { bed, userHome } = homeBed();
+    const root = join(userHome, "p");
+    put(join(root, ".winter", "settings.json"), json({ language: "project-lang" }));
+    put(join(root, ".winter", "settings.local.json"), json({ env: { LOCAL: "1" } }));
+    const below = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }), { userHome });
+    expect(below.effectiveSettings).toEqual({ model: "user-model", language: "project-lang", env: { LOCAL: "1" } });
+    const homeGit = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: userHome }), { userHome });
+    expect(homeGit.effectiveSettings).toEqual({ model: "user-model", language: "project-lang" });
+  });
+});
+
+describe("per-tier refusals (F17) — a repository cannot promote a key claude only trusts from the user", () => {
+  test("a project `skipDangerousModePermissionPrompt` is dropped; a user one is kept; a local one is kept (claude reads local)", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(root, ".winter", "settings.json"), json({ skipDangerousModePermissionPrompt: true }));
+    expect((await effective(bed, root))["skipDangerousModePermissionPrompt"]).toBeUndefined();
+    const bed2 = runHomeBed();
+    put(join(bed2.sdk, "settings.json"), json({ skipDangerousModePermissionPrompt: true }));
+    expect((await effective(bed2, null))["skipDangerousModePermissionPrompt"]).toBe(true);
+    const bed3 = runHomeBed();
+    const r3 = repo(bed3);
+    put(join(r3.root, ".winter", "settings.local.json"), json({ skipDangerousModePermissionPrompt: true }));
+    expect((await effective(bed3, r3.root))["skipDangerousModePermissionPrompt"]).toBe(true);
+  });
+
+  test("processWrapper, credential helpers, footer links, spellcheck and `autoMode` never come from a repository tier", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    const hostile = { processWrapper: "/tmp/wrap", apiKeyHelper: "/tmp/key", awsAuthRefresh: "x", proxyAuthHelper: "x", otelHeadersHelper: "x", footerLinksRegexes: ["x"], spellcheck: true, autoMode: { allow: ["x"] } };
+    put(join(root, ".winter", "settings.json"), json(hostile));
+    put(join(root, ".winter", "settings.local.json"), json(hostile));
+    const settings = await effective(bed, root);
+    for (const key of Object.keys(hostile)) expect([key, settings[key]]).toEqual([key, undefined]);
+    for (const key of Object.keys(hostile)) expect(PROJECT_TIER_REFUSED_KEYS.project).toContain(key);
+  });
+
+  test("I1 (R.3): an ESCALATING `permissions.defaultMode` (`bypassPermissions`, `auto`, `acceptEdits`) is dropped from the PROJECT tier and reported; the local tier drops only `auto`; the user tier keeps every mode", async () => {
+    // claude's own filter (`filterEscalatingDefaultMode`: bypassPermissions, auto and acceptEdits, from
+    // the project tier only) never fires once the router has merged the value into the user
+    // tier, and the router sets no `Options.permissionMode`, so the child would take a repository's mode.
+    const reason = expect.stringContaining("permission mode");
+    for (const mode of ["bypassPermissions", "auto", "acceptEdits"]) {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(join(root, ".winter", "settings.json"), json({ permissions: { defaultMode: mode, allow: ["Bash(ls)"] } }));
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+      expect([mode, runHome.effectiveSettings["permissions"]]).toEqual([mode, { allow: ["Bash(ls)"] }]);
+      expect([mode, runHome.report.droppedRules]).toEqual([mode, [{ rule: `permissions.defaultMode: ${mode}`, tier: "project", reason }]]);
+    }
+    for (const mode of ["default", "plan", "dontAsk"]) {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(join(root, ".winter", "settings.json"), json({ permissions: { defaultMode: mode } }));
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+      expect([mode, runHome.effectiveSettings["permissions"], runHome.report.droppedRules]).toEqual([mode, { defaultMode: mode }, []]);
+    }
+    // The LOCAL tier (claude parity: that filter names the project tier only) drops `auto` alone — while git does not track it (WS-24).
+    for (const [mode, kept] of [["auto", false], ["acceptEdits", true], ["bypassPermissions", true]] as const) {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(join(root, ".winter", "settings.local.json"), json({ permissions: { defaultMode: mode } }));
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+      expect([mode, runHome.effectiveSettings["permissions"]]).toEqual([mode, kept ? { defaultMode: mode } : undefined]);
+      expect([mode, runHome.report.droppedRules]).toEqual([mode, kept ? [] : [{ rule: `permissions.defaultMode: ${mode}`, tier: "local", reason }]]);
+    }
+    // The user's own file is the user's choice.
+    const bed = runHomeBed();
+    put(join(bed.sdk, "settings.json"), json({ permissions: { defaultMode: "acceptEdits" } }));
+    const runHome = await buildRunHome(inputFor(bed));
+    expect([runHome.effectiveSettings["permissions"], runHome.report.droppedRules]).toEqual([{ defaultMode: "acceptEdits" }, []]);
+  });
+
+  describe("WS-24: a local settings file git TRACKS is the repository's, and is filtered as the project tier", () => {
+    const trackedReason = expect.stringContaining("shipped by the repository");
+    const localFile = (root: string): string => join(root, ".winter", "settings.local.json");
+    const shipped = { permissions: { defaultMode: "bypassPermissions", allow: ["Bash(ls)"] }, skipDangerousModePermissionPrompt: true, env: { KEPT: "1" } };
+
+    test("committed: the escalating mode is not applied (reported, tier `local`), nor any key the project tier refuses; the rest merges as before", async () => {
+      for (const mode of ["bypassPermissions", "acceptEdits", "auto"]) {
+        const bed = runHomeBed();
+        const { root } = repo(bed);
+        put(localFile(root), json({ ...shipped, permissions: { ...shipped.permissions, defaultMode: mode } }));
+        git(root, "add", "--force", ".winter/settings.local.json"); // past any excludes file: a repository can commit it regardless
+        git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x");
+        const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+        expect([mode, runHome.effectiveSettings]).toEqual([mode, { permissions: { allow: ["Bash(ls)"] }, env: { KEPT: "1" } }]);
+        expect([mode, runHome.report.droppedRules]).toEqual([mode, [{ rule: `permissions.defaultMode: ${mode}`, tier: "local", reason: trackedReason }]]);
+      }
+    });
+
+    test("staged but not yet committed counts as tracked (it is in the index)", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(localFile(root), json(shipped));
+      git(root, "add", "--force", ".winter/settings.local.json"); // past any excludes file: a repository can commit it regardless
+      const settings = await effective(bed, root);
+      expect([settings["permissions"], settings["skipDangerousModePermissionPrompt"]]).toEqual([{ allow: ["Bash(ls)"] }, undefined]);
+    });
+
+    test("an UNtracked local file (the user's own) keeps the local tier's filter: its mode is honoured", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(localFile(root), json(shipped));
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+      expect(runHome.effectiveSettings).toEqual(shipped);
+      expect(runHome.report.droppedRules).toEqual([]);
+    });
+
+    test("git cannot answer — no git executable, or the named git root is not a repository — counts as tracked: the mode is refused", async () => {
+      const noGit = runHomeBed();
+      const a = repo(noGit);
+      put(localFile(a.root), json(shipped));
+      const runHome = await buildRunHome(inputFor(noGit, { cwd: a.root, trustedProjectRoot: a.root, gitRoot: a.root }), { git: join(noGit.root, "no-such-git") });
+      expect(runHome.effectiveSettings["permissions"]).toEqual({ allow: ["Bash(ls)"] });
+      expect(runHome.report.droppedRules).toEqual([{ rule: "permissions.defaultMode: bypassPermissions", tier: "local", reason: trackedReason }]);
+
+      const notRepo = runHomeBed();
+      const root = join(notRepo.root, "plain");
+      put(localFile(root), json(shipped));
+      const settings = await effective(notRepo, root);
+      expect([settings["permissions"], settings["skipDangerousModePermissionPrompt"]]).toEqual([{ allow: ["Bash(ls)"] }, undefined]);
+    });
+
+    const commit = (root: string): void => git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x");
+    const refused = async (bed: RunHomeBed, root: string, gitRoot: string | null = root): Promise<void> => {
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot }));
+      expect(runHome.effectiveSettings["permissions"]).toEqual({ allow: ["Bash(ls)"] });
+      expect(runHome.effectiveSettings["skipDangerousModePermissionPrompt"]).toBeUndefined();
+      expect(runHome.report.droppedRules).toEqual([{ rule: "permissions.defaultMode: bypassPermissions", tier: "local", reason: trackedReason }]);
+    };
+    /** Whether the bed's volume folds case (APFS's default): the spellings below only reach the file there. */
+    const foldsCase = (bed: RunHomeBed): boolean => {
+      const probe = join(bed.root, "CaseProbe");
+      put(probe, "x");
+      return existsSync(join(bed.root, "caseprobe"));
+    };
+
+    test("I-1 A: the repository tracks another CASE of the file name (`Settings.local.json`) — refused", async () => {
+      const bed = runHomeBed();
+      if (!foldsCase(bed)) return;
+      const { root } = repo(bed);
+      put(join(root, ".winter", "Settings.local.json"), json(shipped));
+      git(root, "add", "--force", ".winter/Settings.local.json");
+      commit(root);
+      await refused(bed, root);
+    });
+
+    test("I-1 B: the repository tracks another CASE of the dot-dir (`.Winter/`) — refused", async () => {
+      const bed = runHomeBed();
+      if (!foldsCase(bed)) return;
+      const { root } = repo(bed);
+      put(join(root, ".Winter", "settings.local.json"), json(shipped));
+      git(root, "add", "--force", ".Winter/settings.local.json");
+      commit(root);
+      await refused(bed, root);
+    });
+
+    test("I-1 C: the dot-dir is a tracked link to a tracked directory — refused", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(join(root, "cfg", "settings.local.json"), json(shipped));
+      symlinkSync("cfg", join(root, ".winter"));
+      git(root, "add", "--force", "cfg", ".winter");
+      commit(root);
+      await refused(bed, root);
+    });
+
+    test("I-1 C': the file itself is a link (even an untracked one to an in-repository file) — refused", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(join(root, "cfg.json"), json(shipped));
+      mkdirSync(join(root, ".winter"), { recursive: true });
+      symlinkSync("../cfg.json", localFile(root));
+      await refused(bed, root);
+    });
+
+    test("I-1 D: the dot-dir is a submodule (a gitlink) holding the file — refused", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      const inner = join(root, ".winter");
+      put(join(inner, "settings.local.json"), json(shipped));
+      git(inner, "init", "-q");
+      git(inner, "add", "--force", "settings.local.json");
+      commit(inner);
+      git(root, "add", ".winter");
+      commit(root);
+      await refused(bed, root);
+    });
+
+    test("M-1: the probe drops every `GIT_*` variable — an index override in the daemon's environment cannot make a tracked file look untracked", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(localFile(root), json(shipped));
+      git(root, "add", "--force", ".winter/settings.local.json");
+      const saved = process.env["GIT_INDEX_FILE"];
+      process.env["GIT_INDEX_FILE"] = join(bed.root, "empty-index");
+      try {
+        await refused(bed, root);
+      } finally {
+        if (saved === undefined) delete process.env["GIT_INDEX_FILE"];
+        else process.env["GIT_INDEX_FILE"] = saved;
+      }
+    });
+
+    test("I-2: no git root from the host, but a `.git` entry at the root — git is asked from the cwd: tracked is refused, and git unavailable is refused", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(localFile(root), json(shipped));
+      git(root, "add", "--force", ".winter/settings.local.json");
+      await refused(bed, root, null);
+
+      const noGit = runHomeBed();
+      const b = repo(noGit);
+      put(localFile(b.root), json(shipped));
+      const runHome = await buildRunHome(inputFor(noGit, { cwd: b.root, trustedProjectRoot: b.root, gitRoot: null }), { git: join(noGit.root, "no-such-git") });
+      expect(runHome.report.droppedRules).toEqual([{ rule: "permissions.defaultMode: bypassPermissions", tier: "local", reason: trackedReason }]);
+
+      // …and the same repository with the file untracked, git working: honoured.
+      const untracked = runHomeBed();
+      const c = repo(untracked);
+      put(localFile(c.root), json(shipped));
+      const honoured = await buildRunHome(inputFor(untracked, { cwd: c.root, trustedProjectRoot: c.root, gitRoot: null }));
+      expect(honoured.effectiveSettings).toEqual(shipped);
+    });
+
+    test("I-2 (m-1): a trusted root that is a SUBDIRECTORY of a repository — the `.git` above it is found, git is asked: tracked is refused, git unavailable is refused", async () => {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      const sub = join(root, "sub");
+      put(localFile(sub), json(shipped));
+      git(root, "add", "--force", "sub/.winter/settings.local.json");
+      await refused(bed, sub, null);
+
+      const noGit = runHomeBed();
+      const b = repo(noGit);
+      const bSub = join(b.root, "sub");
+      put(localFile(bSub), json(shipped));
+      const runHome = await buildRunHome(inputFor(noGit, { cwd: bSub, trustedProjectRoot: bSub, gitRoot: null }), { git: join(noGit.root, "no-such-git") });
+      expect(runHome.report.droppedRules).toEqual([{ rule: "permissions.defaultMode: bypassPermissions", tier: "local", reason: trackedReason }]);
+    });
+
+    test("no git root and no `.git` entry at the root, the cwd or between them — nothing can have shipped the cwd's local file, and it keeps the local tier's filter", async () => {
+      const bed = runHomeBed();
+      const root = join(bed.root, "plain");
+      put(localFile(root), json(shipped));
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: null }), { git: join(bed.root, "no-such-git") });
+      expect(runHome.effectiveSettings).toEqual(shipped);
+    });
+  });
+
+  test("I1 (R.3): a project's escalating mode never overrides the user's own mode — the user's value survives (claude would drop the effective value outright)", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ permissions: { defaultMode: "plan" } }));
+    put(join(root, ".winter", "settings.json"), json({ permissions: { defaultMode: "bypassPermissions" } }));
+    expect((await effective(bed, root))["permissions"]).toEqual({ defaultMode: "plan" });
+  });
+});
+
+describe("env (claude's per-tier filters, plus every variable the router sets)", () => {
+  test("a project `env.HOME` is dropped (claude's project/local filter); a user one is not claude's to drop", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(root, ".winter", "settings.json"), json({ env: { HOME: "/evil", XDG_CONFIG_HOME: "/evil", OK_VAR: "1" } }));
+    expect((await effective(bed, root))["env"]).toEqual({ OK_VAR: "1" });
+  });
+
+  test("`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_DISABLE_CRON` and every router-set variable are dropped even from the user tier (case-insensitively)", async () => {
+    const bed = runHomeBed();
+    put(
+      join(bed.sdk, "settings.json"),
+      json({
+        env: {
+          CLAUDE_CONFIG_DIR: "/x",
+          claude_code_disable_cron: "0",
+          CLAUDE_CODE_PLUGIN_CACHE_DIR: "/x",
+          CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "0",
+          CLAUDE_CODE_PROJECT_DIR_NAME: "x",
+          WINTER_HOME: "/x",
+          WINTER_STORE_HOME: "/x",
+          WINTER_PLUGIN_CACHE_DIR: "/x",
+          WINTER_PROVIDER_MANAGED_BY_HOST: "0",
+          WINTER_DISABLE_CRON: "0",
+          ANTHROPIC_API_KEY: "sk-planted",
+          BASH_ENV: "/x",
+          NODE_OPTIONS: "--require /x",
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "0",
+          KEEP_ME: "yes",
+        },
+      }),
+    );
+    expect((await effective(bed, null))["env"]).toEqual({ KEEP_ME: "yes" });
+  });
+});
+
+describe("path anchoring (F17: `/x` is relative to the tier's own root; `//x` absolute; `~/x` $HOME)", () => {
+  test("user → the sdk home, project → the project root, local → the git root; other rule forms untouched", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ permissions: { deny: ["Read(/user-secrets)", "Read(//abs/x)", "Read(~/x)", "Read(./rel)", "Bash(/usr/bin/touch:*)"] } }));
+    put(join(root, ".winter", "settings.json"), json({ permissions: { deny: ["Read(/secrets)", "Edit(/src/**)"] } }));
+    put(join(root, ".winter", "settings.local.json"), json({ permissions: { ask: ["Write(/local-only)"] } }));
+    const settings = (await effective(bed, root))["permissions"] as { deny: string[]; ask: string[] };
+    expect(settings.deny).toEqual([
+      `Read(${fsRootAnchored(join(bed.sdk, "user-secrets"))})`,
+      "Read(//abs/x)",
+      "Read(~/x)",
+      "Read(./rel)",
+      "Bash(/usr/bin/touch:*)",
+      `Read(${fsRootAnchored(join(root, "secrets"))})`,
+      `Edit(${fsRootAnchored(join(root, "src/**"))})`,
+    ]);
+    expect(settings.ask).toEqual([`Write(${fsRootAnchored(join(root, "local-only"))})`]);
+  });
+
+  test("the anchor a rule is re-anchored to is escaped for the rule grammar, on BOTH legs (minors round, item 2's twin; round 4)", async () => {
+    // Both runtimes read claude's gitignore-style grammar (the Winter runtime since ws21/sdk@57e7fef,
+    // SV-6): `[w]` is a character class unless escaped, on either leg.
+    const bed = runHomeBed();
+    // Since the escape-table round the anchor is claude's rule-content spelling over the gitignore
+    // escape (which doubles each backslash and escapes the parens), identical on both legs.
+    const root = join(bed.root, "[w] a*b (o)");
+    mkdirSync(root, { recursive: true });
+    put(join(root, ".winter", "settings.json"), json({ permissions: { deny: ["Read(/secrets)", "Edit(/src/**)"] } }));
+    const spelled = String.raw`\\[w\\] a\\*b \\\(o\\\)`;
+    const escaped = [`Read(/${join(escapeRulePath(bed.root), spelled, "secrets")})`, `Edit(/${join(escapeRulePath(bed.root), spelled, "src/**")})`];
+    for (const leg of ["winter"] as const) {
+      const permissions = (await effective(bed, root, { leg }))["permissions"] as { deny: string[] };
+      expect([leg, permissions.deny]).toEqual([leg, escaped]);
+    }
+  });
+
+  test("review minor: an anchor containing `?` (a one-character wildcard, which stays raw) never re-anchors an ALLOW rule — dropped with a reported reason; ask and deny are re-anchored as before", async () => {
+    const bed = runHomeBed();
+    const root = join(bed.root, "a?b");
+    mkdirSync(root, { recursive: true });
+    put(join(root, ".winter", "settings.json"), json({ permissions: { allow: ["Edit(/src/**)", "Bash(ls:*)", "Read(//abs/x)"], ask: ["Edit(/q/**)"], deny: ["Read(/secrets)"] } }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    const permissions = runHome.effectiveSettings["permissions"] as { allow: string[]; ask: string[]; deny: string[] };
+    // Only the re-anchored allow is dropped: a non-path rule and an already-absolute one are untouched.
+    expect(permissions.allow).toEqual(["Bash(ls:*)", "Read(//abs/x)"]);
+    expect(permissions.ask).toEqual([`Edit(/${join(bed.root, "a?b", "q/**")})`]);
+    expect(permissions.deny).toEqual([`Read(/${join(bed.root, "a?b", "secrets")})`]);
+    expect(runHome.report.droppedRules).toEqual([{ rule: "Edit(/src/**)", tier: "project", reason: expect.stringContaining("?") }]);
+  });
+
+  test("the project tier anchors at the project root even when the cwd is below it (a deny keeps its author's meaning)", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    const cwd = join(root, "pkg");
+    mkdirSync(cwd, { recursive: true });
+    put(join(root, ".winter", "settings.json"), json({ permissions: { deny: ["Read(/secrets)"] } }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd, trustedProjectRoot: root, gitRoot: root }));
+    expect((runHome.effectiveSettings["permissions"] as { deny: string[] }).deny).toEqual([`Read(${fsRootAnchored(join(root, "secrets"))})`]);
+  });
+
+  test("C-1 (R.3): a sandbox path's anchor is spelled for claude's sandbox glob grammar (`[` → `[[]`) on BOTH legs — the Winter runtime routes every deny entry through claude's glob-shape check (ws21/sdk round 11) — the user's own specifier, absolute paths and additionalDirectories untouched", async () => {
+    // MEASURED (claude 2.1.250): a `sandbox.filesystem` entry holding `* ? [ ]` is a glob, rendered as a
+    // seatbelt regex; a backslash is taken literally there, so the one escape it honours is a class. The
+    // Winter runtime reads the same grammar since ws21/sdk round 11 (`splitDenyPathsByGlobShape`), so a
+    // LITERAL `[wip] app` anchor is a class there too — a deny that misses the real root.
+    const bed = runHomeBed();
+    const root = join(bed.root, "[wip] app");
+    mkdirSync(root, { recursive: true });
+    put(join(root, ".winter", "settings.json"), json({ permissions: { additionalDirectories: ["sub"] }, sandbox: { filesystem: { denyWrite: ["guarded", "/abs/[x]", "out/**", ".winter/skills"], denyRead: ["../shared", "secrets/[ab]"], allowWrite: ["out/**", "~/cache"] } } }));
+    const escapedRoot = join(bed.root, "[[]wip] app");
+    const expected = {
+      denyWrite: [join(escapedRoot, "guarded"), "/abs/[x]", join(escapedRoot, "out/**"), join(escapedRoot, ".winter/skills")],
+      denyRead: [join(bed.root, "shared"), join(escapedRoot, "secrets/[ab]")],
+      allowWrite: [join(escapedRoot, "out/**"), "~/cache"],
+    };
+    for (const leg of ["winter"] as const) {
+      const settings = await effective(bed, root, { leg });
+      expect([leg, (settings["sandbox"] as { filesystem: unknown }).filesystem]).toEqual([leg, expected]);
+      expect([leg, (settings["permissions"] as { additionalDirectories: string[] }).additionalDirectories]).toEqual([leg, [join(root, "sub")]]);
+    }
+  });
+
+  test("C-1 (R.3): on EITHER leg an anchor holding `*` or `?` (unescapable in the sandbox glob grammar) never re-anchors a sandbox ALLOW entry — dropped and reported; a deny keeps the wider, stricter form", async () => {
+    const bed = runHomeBed();
+    const root = join(bed.root, "a?b*c");
+    mkdirSync(root, { recursive: true });
+    put(join(root, ".winter", "settings.json"), json({ sandbox: { filesystem: { allowWrite: ["out", "/abs"], allowRead: ["docs"], denyWrite: ["guarded"] } } }));
+    for (const leg of ["winter"] as const) {
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root, leg }));
+      expect([leg, (runHome.effectiveSettings["sandbox"] as { filesystem: unknown }).filesystem]).toEqual([leg, { allowWrite: ["/abs"], allowRead: [], denyWrite: [join(root, "guarded")] }]);
+      expect([leg, runHome.report.droppedRules]).toEqual([
+        leg,
+        [
+          { rule: "sandbox.filesystem.allowWrite: out", tier: "project", reason: expect.stringContaining("sandbox") },
+          { rule: "sandbox.filesystem.allowRead: docs", tier: "project", reason: expect.stringContaining("sandbox") },
+        ],
+      ]);
+    }
+  });
+
+  test("relative sandbox and additional-directory paths are made absolute against the tier's root", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(root, ".winter", "settings.json"), json({ permissions: { additionalDirectories: ["../shared", "/abs"] }, sandbox: { filesystem: { allowWrite: ["build", "~/cache", "/tmp/x"] } } }));
+    const settings = await effective(bed, root);
+    expect((settings["permissions"] as { additionalDirectories: string[] }).additionalDirectories).toEqual([join(bed.root, "shared"), "/abs"]);
+    expect((settings["sandbox"] as { filesystem: { allowWrite: string[] } }).filesystem.allowWrite).toEqual([join(root, "build"), "~/cache", "/tmp/x"]);
+  });
+});
+
+describe("per-mode stripping (spec §3.2) and the schema cut", () => {
+  const everything = { permissions: { allow: ["Bash(ls)"], ask: ["Bash(rm:*)"], deny: ["Read(./x)"] }, hooks: { Stop: [] }, env: { A: "1" }, enabledPlugins: { "p@m": true }, outputStyle: "terse", model: "m" };
+
+  test("chat and dispatch lose allow/ask/hooks/env/enabledPlugins/outputStyle and get autoMemoryEnabled: false", async () => {
+    for (const mode of ["chat", "dispatch"] as const) {
+      const bed = runHomeBed();
+      put(join(bed.sdk, "settings.json"), json({ ...everything, autoMemoryEnabled: true }));
+      const settings = await effective(bed, null, { mode });
+      expect(settings).toEqual({ permissions: { deny: ["Read(./x)"] }, model: "m", autoMemoryEnabled: false });
+    }
+  });
+
+  test("code keeps everything; a dispatch child loses only outputStyle", async () => {
+    const bed = runHomeBed();
+    put(join(bed.sdk, "settings.json"), json(everything));
+    expect(await effective(bed, null)).toEqual(everything);
+    const child = await effective(bed, null, { dispatchChild: true });
+    const { outputStyle: _dropped, ...rest } = everything;
+    expect(child).toEqual(rest);
+  });
+
+  test("only claude-schema keys are written: `lsp`, `mcpServers` and Winter-only keys never appear", async () => {
+    const bed = runHomeBed();
+    put(join(bed.sdk, "settings.json"), json({ lsp: { x: 1 }, mcpServers: { a: {} }, modelSlots: [], providers: {}, advisor: { model: "x" }, model: "m" }));
+    expect(await effective(bed, null)).toEqual({ model: "m" });
+  });
+});
+
+describe("the claude schema list (WS-23: frozen at the last official pin)", () => {
+  // THIS WAS A DRIFT GATE against the installed `@anthropic-ai/claude-agent-sdk`'s own `Settings`
+  // declaration. WS-23 removed that dependency, so the list is now a SNAPSHOT of the 0.3.250 schema —
+  // still the format the Winter runtime reads from a run home — and the test pins its shape: no
+  // duplicates, the keys a run home actually writes, and none of the Winter-only keys it must drop.
+  test("CLAUDE_SETTINGS_KEYS is a duplicate-free snapshot carrying the keys a run home writes", () => {
+    expect(new Set(CLAUDE_SETTINGS_KEYS).size).toBe(CLAUDE_SETTINGS_KEYS.length);
+    expect(CLAUDE_SETTINGS_KEYS.length).toBeGreaterThan(20);
+    for (const key of ["permissions", "env", "model", "hooks", "sandbox", "outputStyle", "autoMemoryEnabled", "enabledPlugins"]) {
+      expect({ key, present: CLAUDE_SETTINGS_KEYS.includes(key) }).toEqual({ key, present: true });
+    }
+    for (const key of ["lsp", "mcpServers", "modelSlots", "providers", "advisor"]) {
+      expect({ key, present: CLAUDE_SETTINGS_KEYS.includes(key) }).toEqual({ key, present: false });
+    }
+  });
+});
+
+describe("WS-24: the output style, `plansDirectory` and the project file's own path", () => {
+  test("I-3: `outputStyle` never comes from a repository tier — project or local, tracked or not (reported); the user's is kept", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    put(join(bed.sdk, "settings.json"), json({ outputStyle: "user-style" }));
+    put(join(root, ".winter", "settings.json"), json({ outputStyle: "project-style" }));
+    put(join(root, ".winter", "settings.local.json"), json({ outputStyle: "local-style" }));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    expect(runHome.effectiveSettings).toEqual({ outputStyle: "user-style" });
+    const reason = expect.stringContaining("never picks the session's output style");
+    expect(runHome.report.droppedRules).toEqual([
+      { rule: "outputStyle", tier: "project", reason },
+      { rule: "outputStyle", tier: "local", reason },
+    ]);
+  });
+
+  test("M-4: a repository's `plansDirectory` must be a short relative path with no `..` and no control characters (reported); the user's may be anything", async () => {
+    for (const [value, kept] of [["docs/plans", true], ["../outside", false], ["/abs/plans", false], ["~/plans", false], ["a\nb", false], ["x".repeat(201), false]] as const) {
+      const bed = runHomeBed();
+      const { root } = repo(bed);
+      put(join(root, ".winter", "settings.json"), json({ plansDirectory: value }));
+      const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+      expect([value, runHome.effectiveSettings["plansDirectory"]]).toEqual([value, kept ? value : undefined]);
+      expect([value, runHome.report.droppedRules.map((d) => [d.rule, d.tier])]).toEqual([value, kept ? [] : [["plansDirectory", "project"]]]);
+    }
+    const bed = runHomeBed();
+    put(join(bed.sdk, "settings.json"), json({ plansDirectory: "/Users/me/plans" }));
+    expect((await effective(bed, null))["plansDirectory"]).toBe("/Users/me/plans");
+  });
+
+  test("the project tier's file is read only inside the root: one that is a link out of it is skipped (reported `outside-root`)", async () => {
+    const bed = runHomeBed();
+    const { root } = repo(bed);
+    const outside = join(bed.root, "elsewhere.json");
+    put(outside, json({ language: "outside" }));
+    mkdirSync(join(root, ".winter"), { recursive: true });
+    symlinkSync(outside, join(root, ".winter", "settings.json"));
+    const runHome = await buildRunHome(inputFor(bed, { cwd: root, trustedProjectRoot: root, gitRoot: root }));
+    expect(runHome.effectiveSettings["language"]).toBeUndefined();
+    expect(runHome.report.skippedLinks).toContainEqual({ path: join(root, ".winter", "settings.json"), reason: "outside-root" });
+  });
+});

@@ -12,7 +12,7 @@ describe("ci-changes", () => {
     expect(matches("appsx/a.ts", "apps/")).toBe(false);
     expect(matches("scripts/verify-runtimes-compiled.ts", "scripts/verify-")).toBe(true);
     expect(matches("scripts/verify-x/y.ts", "scripts/verify-")).toBe(false);
-    expect(matches("plugins/clover/shell/package.json", "**/package.json")).toBe(true);
+    expect(matches("plugins/clover/plugins/shell/package.json", "**/package.json")).toBe(true);
     expect(matches("package.json", "**/package.json")).toBe(true);
     expect(matches("services/hello/tsconfig.test.json", "**/tsconfig*.json")).toBe(true);
     expect(matches("VERSION", "VERSION")).toBe(true);
@@ -24,8 +24,8 @@ describe("ci-changes", () => {
   });
 
   test("a plugin lane's change: the workspace tests, the gallery and the typecheck, and nothing on macOS but its own tests", () => {
-    expect(on(["plugins/clover/shell/src/a.tsx", "plugins/clover/shell/test/a.test.ts"])).toEqual(["workspaces", "gallery", "typecheck"]);
-    expect(on(["plugins/clover/shell/package.json"])).toEqual(["workspaces", "gallery", "typecheck", "lockfiles"]);
+    expect(on(["plugins/clover/plugins/shell/src/a.tsx", "plugins/clover/plugins/shell/test/a.test.ts"])).toEqual(["workspaces", "gallery", "typecheck"]);
+    expect(on(["plugins/clover/plugins/shell/package.json"])).toEqual(["workspaces", "gallery", "typecheck", "lockfiles"]);
   });
 
   test("a service's change: its tests and the typecheck", () => {
@@ -46,7 +46,7 @@ describe("ci-changes", () => {
     expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
     expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
-    expect(macJobs(["plugins/clover/shell/src/a.tsx"])).toEqual(["machine"]);
+    expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
 
@@ -77,5 +77,26 @@ describe("ci-changes", () => {
     const gateNeeds = jobs.gate?.needs;
     const all = Object.keys(jobs).filter((id) => id !== "gate" && jobs[id]!.if !== "github.event_name == 'workflow_dispatch'");
     expect([...(Array.isArray(gateNeeds) ? gateNeeds : [])].sort()).toEqual(all.sort());
+  });
+});
+
+// The merge queue (main's protection): a queued PR is tested on top of the latest main before it lands, which needs CI,
+// and so `gate`, to run on its merge group, with the areas taken from the group's own base.
+describe("CI on a merge-queue group", () => {
+  const ci = Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as {
+    on: Record<string, unknown>;
+    jobs: Record<string, { if?: string; steps?: { id?: string; run?: string; env?: Record<string, string> }[] }>;
+  };
+
+  test("ci.yml runs on merge_group, and gate runs whatever happened", () => {
+    expect(Object.keys(ci.on)).toContain("merge_group");
+    expect(ci.jobs.gate?.if).toBe("always()");
+  });
+
+  test("the changes job compares a group with the base it was built on", () => {
+    const step = ci.jobs.changes?.steps?.find((s) => s.id === "areas");
+    expect(step?.env?.GROUP_BASE).toBe("${{ github.event.merge_group.base_sha }}");
+    expect(step?.run).toContain('merge_group)');
+    expect(step?.run).toContain('--base "$GROUP_BASE"');
   });
 });

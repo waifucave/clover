@@ -10,7 +10,7 @@ import { PushedSpeech, speechFrames } from "../src/lipsync/sources";
 import { vowel } from "../src/lipsync/synth";
 import type { Mesh } from "three";
 
-const file = readFileSync(join(import.meta.dir, "..", "..", "..", "alpha", "assets", "alpha.vrm"));
+const file = readFileSync(join(import.meta.dir, "..", "..", "..", "..", "alpha", "assets", "alpha.vrm"));
 const bytes = () => file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
 
 /**

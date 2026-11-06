@@ -18,7 +18,7 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FakeProvider } from "../../src/agent/fake-provider";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -70,7 +70,7 @@ class TestClient {
   close(): void { this.socket.end(); }
 }
 
-describeWithWinterBinary("daemon.ts's hooksFor wiring — the BashReviewer reaches a real winter child", (bin) => {
+describeWithEmbeddedRuntime("daemon.ts's hooksFor wiring — the BashReviewer reaches a real winter child", () => {
   test("a PreToolUse deny from daemon.ts's OWN BashReviewer blocks a real Bash call end to end", async () => {
     const home = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-hooks-wiring-"))), ".clover");
     mkdirSync(home, { recursive: true });
@@ -78,7 +78,7 @@ describeWithWinterBinary("daemon.ts's hooksFor wiring — the BashReviewer reach
       schemaVersion: 3,
       provider: { model: "winter-test/p5checkpoint" },
       providers: { openai: { baseUrl: "http://127.0.0.1:9/v1" } },
-      runtimes: { winterExecutable: bin, winterLeg: { code: true }, winterIdleTimeoutSec: 10 },
+      runtimes: { winterLeg: { code: true }, winterIdleTimeoutSec: 10 },
     }, null, 2));
     // Empty model list ⇒ `resolveModelSelection`'s "a BYO endpoint that cannot enumerate" skip —
     // `session.create` accepts the `winter-test/p5checkpoint` model verbatim, unrelated to this

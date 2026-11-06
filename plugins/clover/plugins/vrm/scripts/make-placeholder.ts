@@ -6,7 +6,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makePlaceholderVrm } from "../src/placeholder/model";
 
-const out = join(import.meta.dir, "..", "..", "..", "alpha", "assets", "alpha.vrm");
+const out = join(import.meta.dir, "..", "..", "..", "..", "alpha", "assets", "alpha.vrm");
 const bytes = makePlaceholderVrm();
 writeFileSync(out, bytes);
 console.log(`wrote ${out} (${bytes.byteLength} bytes)`);

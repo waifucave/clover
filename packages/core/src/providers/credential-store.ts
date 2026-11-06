@@ -1,11 +1,11 @@
-import { CredentialResolutionError } from "@yanlinglabs/winter-provider-runtime";
-import type { CredentialMaterial as RuntimeCredentialMaterial, CredentialRef, CredentialStore } from "@yanlinglabs/winter-provider-runtime";
+import { CredentialResolutionError } from "@waifucave/clover-provider-runtime";
+import type { CredentialMaterial as RuntimeCredentialMaterial, CredentialRef, CredentialStore } from "@waifucave/clover-provider-runtime";
 import type { SecretStore } from "../auth/secret-store";
 import { clearCredentialMaterial, readCredentialMaterial, writeCredentialMaterial, type CredentialMaterial as CloverCredentialMaterial } from "../auth/credential-material";
 
 const STORE_NAME = "clover keychain credential store";
 
-/** `@yanlinglabs/winter-provider-runtime`'s `CredentialMaterial` union is a SUPERSET of Clover's own
+/** `@waifucave/clover-provider-runtime`'s `CredentialMaterial` union is a SUPERSET of Clover's own
  *  (it adds `aws`/`gcp-service-account`/`gcp-access-token`, kinds Clover never writes for these two
  *  providers) — narrow to the arms `auth/credential-material.ts`'s `writeCredentialMaterial`
  *  actually accepts, or refuse typed rather than silently dropping a field the write would need. */
@@ -15,7 +15,7 @@ function toCloverMaterial(material: RuntimeCredentialMaterial): CloverCredential
       return { kind: "api-key", key: material.key };
     case "bearer": {
       // Winter Phase 10a (P10a-4): `expiresAt` is optional/additive on Clover's OWN `BearerMaterial`
-      // (auth/credential-material.ts) already, but the pinned `@yanlinglabs/winter-provider-runtime`
+      // (auth/credential-material.ts) already, but the pinned `@waifucave/clover-provider-runtime`
       // (0.0.5) has not published its matching bearer field yet (the controller's own carry, tied
       // to the SDK's v0.0.6) — read it defensively off the runtime value rather than the (currently
       // narrower) declared type, so this line needs no further edit the day the package catches up.
@@ -40,7 +40,7 @@ function toCloverMaterial(material: RuntimeCredentialMaterial): CloverCredential
 }
 
 /**
- * A `@yanlinglabs/winter-provider-runtime` `CredentialStore` over Clover's OWN Keychain-backed
+ * A `@waifucave/clover-provider-runtime` `CredentialStore` over Clover's OWN Keychain-backed
  * `SecretStore`, delegating every read/write to `auth/credential-material.ts` — the SAME
  * parser/writer the post-8b hotfix defined for the spawned Clover child (lane-5 brief, P8c-10's
  * seam). A `{kind:"keychain",account}` ref's `account` IS the material record name

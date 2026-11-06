@@ -1,7 +1,7 @@
 // Live gate 5's run of spike S4, against Fish Audio itself, with the owner's own key. Nothing else runs this: the
 // tests run the same measurements against the recorded fake (test/s4.test.ts).
 //
-//   bun plugins/clover/fish-audio/scripts/s4-live.ts --live [--voice <id>] [--runs <n>] [--paid] [--save <dir>]
+//   bun plugins/clover/plugins/fish-audio/scripts/s4-live.ts --live [--voice <id>] [--runs <n>] [--paid] [--save <dir>]
 //
 // It asks for the key with input that isn't shown, or reads it as the first line piped in (a password manager's
 // command), so the key never sits in the shell's history or the environment. It is added only to requests for
