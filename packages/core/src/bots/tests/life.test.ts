@@ -142,6 +142,26 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     expect(laptop.host.history("b_alpha").at(-1)!.epoch).toBe(2);
   });
 
+  test("lane J's hooks: where each bot runs, and a session's scratch folder as a tree path", async () => {
+    const user = tempDir();
+    const home = join(user, ".clover");
+    mkdirSync(home);
+    const b = await boot({ home, plugins: await alpha(), computer: "Studio", userHome: user });
+    expect(b.bots.computerFor("alpha")).toBe("Studio");
+    expect(b.bots.computerFor("nobody")).toBeUndefined();
+    b.host.open({ id: "s_side", kind: "side-thread", bot: "alpha", parent: "b_alpha", computer: "Studio" }, new FakeSessionDriver());
+    b.host.open({ id: "s_code", kind: "coding", computer: "Studio", backend: "codex" }, new FakeSessionDriver({ canFold: false }));
+    expect(b.bots.scratchFor("b_alpha")).toBe("home/Studio/.clover/scratch/alpha");
+    expect(b.bots.scratchFor("s_side")).toBe("home/Studio/.clover/scratch/alpha");
+    expect(b.bots.scratchFor("s_code")).toBe("home/Studio/.clover/scratch/_/s_code");
+    expect(existsSync(join(home, "scratch", "_", "s_code"))).toBe(true);
+    await b.shutdown();
+    // A Clover home outside the user's home has no tree path.
+    const lone = await boot({ home: tempDir(), plugins: await alpha(), userHome: user });
+    expect(isContractError(await thrown(Promise.resolve().then(() => lone.bots.scratchFor("b_alpha"))))).toBe(true);
+    await lone.shutdown();
+  });
+
   test("handing back: no new turn starts, the running one ends where it is, then the lease goes", async () => {
     const { clock, leases, laptop } = await twoComputers({ holder: "Laptop", main: "Studio" });
     await laptop.host.sendUser("b_alpha", { text: "long job", device: "devlaptop000000000", sentAt: clock.now(), clientMessageId: "l" });

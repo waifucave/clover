@@ -21,6 +21,7 @@ export interface BotSideOptions {
   main?: MainComputer;
   relay?: BotRelay;
   reattach?: BotServiceOptions["reattach"];
+  userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"];
   /** The compaction numbers for a session (the model's cache life and the settings); the spec's defaults otherwise. */
   compaction?: (view: SessionView) => CompactionPolicy | undefined;
@@ -56,6 +57,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),
     ...(o.relay === undefined ? {} : { relay: o.relay }),
     ...(o.reattach === undefined ? {} : { reattach: o.reattach }),
+    ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
     ...(o.hasKeyFor === undefined ? {} : { hasKeyFor: o.hasKeyFor }),
     ...(o.assetUrl === undefined ? {} : { assetUrl: o.assetUrl }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),

@@ -30,7 +30,8 @@
 // * **The pause switch** (§9.2, `bots.pause`): the user's alone. On, it interrupts every bot's running turn and side
 //   thread and starts nothing new for them (messages wait); routines don't start (`runSideThread` refuses). Off, what
 //   waited runs. Background agents finish where they started, and their reports wait for their bot.
-// * **J's placement** (`botsRunHere`, `placement`): which bots this computer runs, for the folder tree.
+// * **J's placement** (`botsRunHere`, `placement`, `computerFor`): which bots this computer runs and where each runs,
+//   for the folder tree; and a session's scratch folder as a tree path (`scratchFor`), for J's MCP router.
 //
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
@@ -47,8 +48,9 @@ import { memoryBlock } from "./prompt";
 import { mainSessionIdFor, mintSessionId } from "../sessions/ids";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { seedMemory } from "./memory";
-import { botPaths, botStateFile, type BotPaths } from "./paths";
+import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
 
@@ -124,6 +126,8 @@ export interface BotServiceOptions {
   relay?: BotRelay;
   /** Whether a session's cached prompt has expired (compaction.ts); without it, always. */
   cacheCold?(sessionId: string): boolean;
+  /** The user's home folder, which the folder tree names `home/<this computer>/` (§9.1); the OS's by default. */
+  userHome?: string;
   /** Background agents and coding sessions a restart left dormant, handed over at start to be reattached (lane K's
    *  `AgentManager.reattach`, which gives each its driver again). */
   reattach?(sessions: SessionView[]): Promise<void> | void;
@@ -270,6 +274,24 @@ export class BotService {
   placement(): { bot: string; computer: string }[] {
     const computer = this.#runner();
     return [...this.#bots.keys()].map((bot) => ({ bot, computer }));
+  }
+
+  /** The computer running a bot's conversation, or undefined for a bot that isn't installed (lane J's `botPlacement`). */
+  computerFor(bot: string): string | undefined {
+    return this.#bots.has(bot) ? this.#runner() : undefined;
+  }
+
+  /** A session's scratch folder here, made if missing, as a folder-tree path (§6.5; lane J's MCP router saves a
+   *  call's files there when it names no `saveTo`). Refused for a Clover home outside the user's home. */
+  scratchFor(sessionId: string): string {
+    const view = this.#o.host.get(sessionId);
+    if (!view) throw new ContractError("not_found", `no session ${sessionId}`);
+    const bot = this.#o.host.callerOf(sessionId).bot;
+    const dir = sessionScratchDir(this.#o.home, { id: sessionId, ...(bot === undefined ? {} : { bot }) });
+    const tree = homeTreePath({ userHome: this.#o.userHome ?? homedir(), computer: this.#o.computer, dir });
+    if (tree === undefined) throw new ContractError("invalid", `the scratch folder ${dir} isn't inside the user's home, so the folder tree can't name it`);
+    mkdirSync(dir, { recursive: true });
+    return tree;
   }
 
   get paused(): boolean {
