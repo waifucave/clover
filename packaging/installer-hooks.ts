@@ -24,6 +24,18 @@ export function autostartArgs(action: AutostartAction): string[] {
   return [AUTOSTART_SUBCOMMAND, action];
 }
 
+/** Bash's sandbox principal on Windows, lane C's: `clover-core sandbox setup|remove|status`, no flags (its name, its
+ *  WFP sublayer and its profile rules are compiled in). `setup` is idempotent; `remove` exits 0 when nothing is left.
+ *  The Windows installer runs `setup` elevated once on a first install and `remove` elevated on a real uninstall
+ *  (packaging/windows/installer.nsh); updates never do. */
+export const SANDBOX_SUBCOMMAND = "sandbox";
+export type SandboxAction = "setup" | "remove" | "status";
+export function sandboxArgs(action: SandboxAction): string[] {
+  return [SANDBOX_SUBCOMMAND, action];
+}
+/** `sandbox`'s exit codes (lane C), and Windows' own for a declined elevation prompt. */
+export const SANDBOX_EXIT = { ok: 0, failed: 1, notElevated: 2, launcherMismatch: 3, declined: 1223 } as const;
+
 export type Installer = "homebrew" | "dmg" | "nsis" | "winget" | "deb" | "rpm" | "appimage";
 
 /** Where each installer leaves the daemon binary, as its own script spells it. */

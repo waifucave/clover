@@ -63,7 +63,7 @@ describe("the feed and the channels", () => {
     const ent = read("packaging/macos/entitlements.mac.plist");
     expect(ent).toContain("com.apple.security.cs.allow-jit");
     expect(ent).not.toContain("disable-library-validation");
-    expect(RESOURCE_BINARIES.map((b) => b.file)).toEqual(builder.extraResources[0].filter.filter((f: string) => !f.endsWith(".exe")));
+    expect(RESOURCE_BINARIES.map((b) => b.file)).toEqual(builder.extraResources[0].filter.filter((f: string) => !f.endsWith(".exe") && !f.endsWith(".txt")));
     expect(read("scripts/clover-core.entitlements")).toContain("com.apple.security.cs.allow-jit");
   });
 });
@@ -359,5 +359,38 @@ describe("the signed builds' checks", () => {
     expect(authenticodeProblems("clover-link.exe", "Valid|CN=Someone Else", "Example Ltd")).toEqual(["clover-link.exe is signed by Someone Else, not Example Ltd"]);
     expect(authenticodeProblems("x.exe", "", "Example Ltd")).toEqual(["x.exe's Authenticode signature is missing, not Valid"]);
     expect(authenticodeCommand("C:\\a'b\\Clover.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\Clover.exe'");
+  });
+});
+
+describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win.ts)", () => {
+  test("from sandbox-runtime's pinned commit, statically linked, reproducibly, for both Windows architectures", async () => {
+    const { SRT_WIN_SOURCE, buildEnv, cargoArgs, parseSrtWinArgs } = await import("./srt-win");
+    expect(SRT_WIN_SOURCE).toMatchObject({ tag: "v0.0.81", commit: "c40cf14a65d025e3cd27f071f13a73c12b3b1f92", dir: "vendor/srt-win-src" });
+    const env = buildEnv({ PATH: "x" }, "C:\\src", "C:\\cargo");
+    expect(env.RUSTFLAGS).toContain("-C target-feature=+crt-static");
+    expect(env.RUSTFLAGS).toContain("/Brepro");
+    expect(env.RUSTFLAGS).toContain("--remap-path-prefix=C:\\src=/srt");
+    expect(cargoArgs("arm64", "S")).toEqual(["cargo", "build", "--release", "--locked", "--manifest-path", join("S", "vendor/srt-win-src", "Cargo.toml"), "--target", "aarch64-pc-windows-msvc"]);
+    expect(cargoArgs("x64", "S").join(" ")).not.toContain("--features");
+    expect(parseSrtWinArgs(["--arch", "x64,arm64", "--print"])).toEqual({ arches: ["x64", "arm64"], print: true, dryRun: false });
+    expect(() => parseSrtWinArgs(["--arch", "ia32"])).toThrow(/x64 and\/or arm64/);
+  });
+
+  test("checked against core's pin: a mismatch or no pin fails, --print only measures", async () => {
+    const { parsePins, pinProblems } = await import("./srt-win");
+    const x = "a".repeat(64);
+    const pins = parsePins(`export const SRT_WIN_PINS = Object.freeze({\n  x64: "${x}",\n  arm64: "${"b".repeat(64)}",\n});`);
+    expect(pins).toEqual({ x64: x, arm64: "b".repeat(64) });
+    expect(parsePins(undefined)).toEqual({});
+    expect(pinProblems("x64", x, pins, false)).toEqual([]);
+    expect(pinProblems("x64", "c".repeat(64), pins, false)[0]).toContain("but core pins");
+    expect(pinProblems("arm64", x, {}, false)[0]).toContain("pins no srt-win.exe for arm64");
+    expect(pinProblems("arm64", x, {}, true)).toEqual([]);
+  });
+
+  test("the notices' license list is a reviewed decision, and electron-builder never signs the pinned launcher", () => {
+    expect(read("packaging/windows/about.toml")).toMatch(/^accepted = \[/m);
+    expect(builder.win.signExts).toEqual(["!srt-win.exe"]);
+    expect(builder.extraResources[0].filter).toEqual(expect.arrayContaining(["srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"]));
   });
 });

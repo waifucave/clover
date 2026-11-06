@@ -1,0 +1,6 @@
+# cargo-about's settings for srt-win.exe's notices (scripts/release/srt-win.ts). A crate under a license not listed
+# here fails the build: adding one is a licensing decision, made here in review.
+accepted = ["Apache-2.0", "MIT", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "BSL-1.0"]
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true

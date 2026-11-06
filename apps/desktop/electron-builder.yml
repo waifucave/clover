@@ -26,6 +26,9 @@ extraResources:
       - clover-core.exe
       - clover-link
       - clover-link.exe
+      # Windows only: Bash's fence launcher (lane C), and the notices for what it is built from.
+      - srt-win.exe
+      - srt-win.THIRD_PARTY_NOTICES.txt
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false
@@ -68,6 +71,11 @@ win:
   target:
     - target: nsis
       arch: x64
+  # Signing never touches srt-win.exe: core pins its exact bytes and checks them before every launch, and a
+  # signature would change them. How it is signed and pinned together is lane C's and M's to settle before Windows
+  # signing exists (spec §13: unsigned at first).
+  signExts:
+    - "!srt-win.exe"
 linux:
   target:
     - target: dir

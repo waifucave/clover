@@ -93,6 +93,12 @@ describe("ci-changes", () => {
     for (const s of steps) expect(s.env?.CLOVER_LINK_REQUIRE_BINARY).toBe("1");
   });
 
+  test("the fence launcher's build runs for its script and its notices' settings alone", () => {
+    expect(on(["scripts/release/srt-win.ts"])).toContain("srtwin");
+    expect(on(["packaging/windows/about.toml"])).toContain("srtwin");
+    expect(on(["packaging/windows/installer.nsh"])).not.toContain("srtwin");
+  });
+
   test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {
     expect(on(["services/shared/account-token.ts"])).toContain("core");
     expect(on(["packages/test-harness/src/signin-stub.ts"])).toContain("core");

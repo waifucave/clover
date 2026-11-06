@@ -38,6 +38,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
+import { parsePins, PIN_FILE, pinProblems, SRT_WIN_NOTICES, srtWinOutput } from "./srt-win";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
@@ -214,6 +215,7 @@ export function main(argv: readonly string[], root: string): number {
     console.log(`release/build: the app: (in apps/desktop) bun run build`);
     console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
+    if (a.os === "win") console.log(`release/build: the fence launcher: ${srtWinOutput("x64")} (scripts/release/srt-win.ts), checked against core's pin`);
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
@@ -233,6 +235,17 @@ export function main(argv: readonly string[], root: string): number {
     mkdirSync(staged, { recursive: true });
     copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));
     copyFileSync(join(root, ...`${LINK_OUTPUT}${exe}`.split("/")), join(staged, `clover-link${exe}`));
+    if (a.os === "win") {
+      // Bash's fence launcher, built by scripts/release/srt-win.ts and checked against core's pin again here.
+      const srt = join(root, ...srtWinOutput("x64").split("/"));
+      if (!existsSync(srt)) throw new Error(`there is no ${srtWinOutput("x64")}: run bun scripts/release/srt-win.ts first`);
+      const sha = createHash("sha256").update(readFileSync(srt)).digest("hex");
+      const pin = parsePins(existsSync(join(root, PIN_FILE)) ? readFileSync(join(root, PIN_FILE), "utf8") : undefined);
+      const problems = pinProblems("x64", sha, pin, false);
+      if (problems.length > 0) throw new Error(problems.join("; "));
+      copyFileSync(srt, join(staged, "srt-win.exe"));
+      copyFileSync(join(root, ...SRT_WIN_NOTICES.split("/")), join(staged, "srt-win.THIRD_PARTY_NOTICES.txt"));
+    }
     for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
     if (a.sign && a.os === "mac") {
       for (const b of RESOURCE_BINARIES) {
