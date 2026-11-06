@@ -291,7 +291,7 @@ export function minimalChildEnv(env: NodeJS.ProcessEnv = process.env): Record<st
   const out: Record<string, string> = {
     PATH: "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
   };
-  for (const k of ["SystemRoot", "windir", "SystemDrive", "TEMP", "TMP", "PATHEXT", "USERPROFILE", "ProgramData"]) {
+  for (const k of ["SystemRoot", "windir", "SystemDrive", "TEMP", "TMP", "PATHEXT", "USERPROFILE", "ProgramData", "LOCALAPPDATA"]) {
     const v = env[k];
     if (typeof v === "string" && v !== "") out[k] = v;
   }
