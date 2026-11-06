@@ -285,6 +285,9 @@ export class LeaseCoordinator {
   async chooseSelf(): Promise<LeaseState> {
     const rec = this.choice.chooseSelf(this.#o.clock.now());
     for (const l of this.#o.transport.links()) if (l.up) this.#announceTo(l.peer, rec.at);
+    // A hand-back to the main this computer had before (one chosen automatically, or by another computer) may be on its
+    // way: it stops at once if it hasn't released yet (#handBackTo), and if it has, the lease is taken back below.
+    if (this.#handingBack) await this.#handingBack.catch(() => undefined);
     await this.lease.refresh().catch(() => undefined);
     const k = this.lease.known();
     const live = k.holderRaw !== null && k.expiresAt !== null && this.#o.clock.now() < k.expiresAt;
@@ -545,6 +548,12 @@ export class LeaseCoordinator {
         const link = await this.#o.transport.connect(main);
         const r = await link.request<{ ready?: boolean }>(LEASE_LINK.ready, {}, { timeoutMs: 10_000 });
         if (!r?.ready) return;
+        // While it asked, the user may have made this computer the main (chooseSelf), or another computer: the bots
+        // stay here unless `main` is still the main, so a choice made meanwhile never sends them away.
+        if (this.choice.current() !== main || !this.lease.holds()) {
+          this.#log(`not handing the bots back to ${main}: ${this.choice.current() === this.#o.self ? "this computer is the main now" : "the main changed"}`);
+          return;
+        }
         this.lease.setHandingOver(true);
         if (this.#handBackHook) await this.#handBackHook();
         else await this.lease.release();

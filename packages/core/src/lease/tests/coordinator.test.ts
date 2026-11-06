@@ -437,6 +437,44 @@ describe("the main computer", () => {
     expect(w.service.record.epoch).toBe(2);
   }, 20_000);
 
+  test("a hand-back on its way to the automatic main stops when the user makes the holder the main meanwhile", async () => {
+    const w = await computers(["Studio", "Laptop"]);
+    // With no choice made, the automatic main is the computer with the lower id; the other comes to hold the lease by a
+    // takeover, and starts handing the bots back once the main is back.
+    const [main, other] = w.id("Studio") < w.id("Laptop") ? ["Studio", "Laptop"] : ["Laptop", "Studio"];
+    await waitFor(() => w.holder() === main);
+    w.n(other).mc.setHandBack(async () => {
+      w.n(other).handBacks++;
+      await w.n(other).mc.lease.release();
+    });
+    w.off(main);
+    await waitFor(() => w.holder() === other && w.n(other).mc.lease.canAct());
+    const epoch = w.service.record.epoch;
+    // The main's answer to "ready?" waits until the user has chosen.
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((r) => (answer = r));
+    let asked = false;
+    w.n(main).device.transport.handle("link.lease.ready", async () => {
+      asked = true;
+      await answered;
+      return { ready: true };
+    });
+    w.off(main, false);
+    await waitFor(() => asked);
+    // The user makes the holder the main while it is asking: the bots stay with it.
+    const chosen = w.n(other).mc.coordinator.chooseSelf();
+    answer();
+    await chosen;
+    // chooseSelf waited for the hand-back to stop; a moment more shows it never released.
+    await Bun.sleep(300);
+    expect(w.n(other).handBacks).toBe(0);
+    expect(w.holder()).toBe(other);
+    expect(w.service.record.epoch).toBe(epoch);
+    expect(w.n(other).mc.lease.canAct()).toBe(true);
+    expect(w.n(other).mc.lease.state().state).toBe("held");
+    await waitFor(() => w.n(main).mc.choice.current() === w.id(other));
+  }, 20_000);
+
   test("the user's choice when the holder can't be reached: a takeover with a new epoch", async () => {
     const w = await computers(["Studio", "Laptop"]);
     await w.n("Studio").mc.coordinator.chooseSelf();
