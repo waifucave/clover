@@ -850,17 +850,24 @@ export class UiRuntime {
 
   /** Checks that a part is in the document `frame` (throws otherwise) and gives its plugin's id. A part whose
    *  document isn't its own plugin's layer — a layout part drawn inline in another plugin's document — acts in no
-   *  plugin's name: rat calls, open and the terminal hand-over all refused for it (the review's S1). */
+   *  plugin's name: api, open and the terminal hand-over all refused for it (the review's S1). */
   partOf(frame: FrameRef, mountId: string): string {
+    return this.actInThisLayer(frame, mountId).plugin?.id ?? "core";
+  }
+
+  /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). A layout part in
+   *  another plugin's document doesn't act for its plugin, so its capabilities count for nothing (the review's S1). */
+  capabilitiesOf(frame: FrameRef, mountId: string): ReadonlySet<string> {
+    return this.actInThisLayer(frame, mountId).plugin?.capabilities ?? new Set();
+  }
+
+  /** A part whose document isn't its own plugin's layer acts in no plugin's name (the review's S1): every door that
+   *  would run as the plugin refuses it. Data-only reads stay on `partIn`. */
+  private actInThisLayer(frame: FrameRef, mountId: string): Mount {
     const part = this.partIn(frame, mountId);
     const doc = this.docOf(part);
     if (part.kind === "inline" && part.plugin !== undefined && doc !== undefined && part.plugin.layer !== doc.layer) throw new LayerError("a layout part acts only in its own layer's document");
-    return part.plugin?.id ?? "core";
-  }
-
-  /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). */
-  capabilitiesOf(frame: FrameRef, mountId: string): ReadonlySet<string> {
-    return this.partIn(frame, mountId).plugin?.capabilities ?? new Set();
+    return part;
   }
 
   /** A web page part placed by the document `frame` (throws otherwise): its plugin, its page and its window. */
@@ -883,7 +890,7 @@ export class UiRuntime {
 
   /** A part offers data for a drag: a single-use token for the drag's data, or the reason it can't. */
   dragOffer(frame: FrameRef, mountId: string, raw: unknown): { token: string } | { error: string } {
-    const part = this.partIn(frame, mountId);
+    const part = this.actInThisLayer(frame, mountId);
     const offer = checkDragOffer(raw, part.plugin?.capabilities ?? new Set());
     if ("error" in offer) return offer;
     for (const [t, g] of this.grants) if (this.now() - g.at > DRAG_GRANT_TTL_MS) this.grants.delete(t);
@@ -894,7 +901,7 @@ export class UiRuntime {
 
   /** The part a drag was dropped on claims its data: once, within a minute, in the same window, if its plugin may. */
   dragClaim(frame: FrameRef, mountId: string, token: string): DragOffer | { error: string } {
-    const part = this.partIn(frame, mountId);
+    const part = this.actInThisLayer(frame, mountId);
     const grant = this.grants.get(token);
     this.grants.delete(token);
     if (grant === undefined || this.now() - grant.at > DRAG_GRANT_TTL_MS || grant.windowId !== part.windowId) return { error: "no such drag" };

@@ -674,9 +674,13 @@ const layerLinks = new LayerLinks({
 });
 
 /** The terminals' trusted input: each window's key presses as the main process saw them, and each terminal's paste
- *  mode from its output (terminal-input.ts). */
+ *  mode from its output (terminal-input.ts). The record is per focused frame (the review's S2), and a frame's record
+ *  goes with the frame: each WebContents recent frame ids are kept, so a navigation (the same frame, a new document)
+ *  and a gone renderer both forget them, beside each entry's own second. */
 const keys = new KeyLog();
 const pasteModes = new PasteModes();
+/** The frame ids a WebContents's own pages saw keys in, keyed by the window's id, for forgetting them whole. */
+const keyFrames = new Map<number, Set<string>>();
 
 async function terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void> {
   if (input.kind === "key") {
@@ -837,7 +841,11 @@ function watchWindow(win: BrowserWindow): void {
       // idents itself from that same frame. No focused frame records nothing.
       const f = win.webContents.focusedFrame;
       if (f === null || f.detached) return;
-      keys.saw(`${f.processId}:${f.routingId}`, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
+      const frameId = `${f.processId}:${f.routingId}`;
+      let seen = keyFrames.get(id);
+      if (seen === undefined) keyFrames.set(id, (seen = new Set()));
+      seen.add(frameId);
+      keys.saw(frameId, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
@@ -845,6 +853,18 @@ function watchWindow(win: BrowserWindow): void {
     menus.input(id);
     sends.input(id);
     pointers.down(id, mouse.x, mouse.y);
+  });
+  win.webContents.on("did-frame-navigate", (_event, _url, _code, _text, _main, frameProcessId, frameRoutingId) => {
+    // A frame that navigated is a document of its own from now on (the review's S2): its old record must not serve it.
+    keys.forget(`${frameProcessId}:${frameRoutingId}`);
+  });
+  win.webContents.on("render-process-gone", () => {
+    // A renderer gone takes its frames' records with it; its new render starts empty.
+    const gone = keyFrames.get(id);
+    if (gone !== undefined) {
+      for (const frameId of gone) keys.forget(frameId);
+      keyFrames.delete(id);
+    }
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
@@ -856,6 +876,7 @@ function watchWindow(win: BrowserWindow): void {
     views.dropWindow(id);
     webViews.dropWindow(id);
     activeSessions.delete(id);
+    keyFrames.delete(id);
     // The keys' and pastes' record is per frame and expires within a second anyway; the window's gone frames are
     // left to that.
   });
