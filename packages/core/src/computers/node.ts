@@ -71,6 +71,9 @@ export interface ComputerNodeOptions {
     scratch: (session: string) => string;
     install?: McpInstaller;
   };
+  /** Lane H's sync for the bots' memories (`home/memory/`, kept on every computer that runs the core): told of each
+   *  change here once it is on disk, so it reaches the other computers now, or when they are back. */
+  memoryChanged?: (bot: string, rel: string) => void;
   /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
   terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
   /** Cloud computers (§9.2): the plugin registry's `computer` folders and `computerProviders` handlers, run on the
@@ -157,6 +160,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     level: () => registry.self().level,
     watches: new FolderWatches(),
     ...(o.reviewer ? { reviewer: o.reviewer } : {}),
+    ...(o.memoryChanged ? { memoryChanged: o.memoryChanged } : {}),
     ...(o.fence ? { fence: o.fence } : {}),
     ...(o.answers ? { answers: o.answers } : {}),
   });
@@ -204,7 +208,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return { computer: c.name, device: c.name === registry.self().name ? null : c.device };
   };
   // The direct path (edit J8, review S1): this computer as the destination or the source of a move or copy.
-  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.resolve(path).computer) });
+  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.computersFor([path])[0]!) });
   const tree: CoreTree = new CoreTree({
     directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
     transfer: ({ from, to, move, source, destination, call }) => {

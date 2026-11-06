@@ -70,9 +70,11 @@ describe("one tree across computers", () => {
     laptop.bots.push("alpha");
     await laptop.node.registry.setLevel("Laptop1", "automatic", { via: "terminal" });
     await cluster.join();
-    expect(studio.node.tree.resolve("bots/alpha/memory/MEMORY.md")).toMatchObject({ computer: "Laptop1", area: "bot", bot: "alpha" });
-    await studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT });
-    expect(readFileSync(join(laptop.cloverHome, "bots/alpha/memory/MEMORY.md"), "utf8")).toBe("# Memory\n");
+    expect(studio.node.tree.resolve("bots/alpha/notes/plan.md")).toMatchObject({ computer: "Laptop1", area: "bot", bot: "alpha" });
+    await studio.node.tree.write("bots/alpha/notes/plan.md", { encoding: "utf8", text: "# Plan\n" }, { as: BOT });
+    expect(readFileSync(join(laptop.cloverHome, "bots/alpha/notes/plan.md"), "utf8")).toBe("# Plan\n");
+    // Its memory is no other computer's to reach, even for the bot itself (`home/memory` is held on each computer).
+    expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "x" }, { as: BOT }))).toBe("not_found");
     expect(await code(studio.node.tree.read("bots/luna/x", { as: BOT }))).toBe("not_found");
   });
 });

@@ -428,7 +428,10 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
     await cleanUp(staging, kept);
     throw e;
   }
-  return { files, bytes, kept: p.move ? await removeSent(from.real, entries) : 0 };
+  dst.changedAt(to.real);
+  const changed = p.move ? await removeSent(from.real, entries) : 0;
+  if (p.move) src.changedAt(from.real);
+  return { files, bytes, kept: changed };
 }
 
 // ---- serving both ends --------------------------------------------------------------------------------------------
@@ -490,6 +493,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     try {
       got = await receive(stream, staging);
       await placeInto(staging, dst.real, p.to, dst.root);
+      o.holder.changedAt(dst.real);
     } catch (e) {
       await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
@@ -558,7 +562,9 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     if (!s || s.device !== from) return { kept: 0 };
     pending.delete(id);
     clearTimeout(s.timer);
-    return { kept: await removeSent(s.real, s.entries) };
+    const kept = await removeSent(s.real, s.entries);
+    o.holder.changedAt(s.real);
+    return { kept };
   }));
 
   return {
