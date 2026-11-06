@@ -44,7 +44,6 @@ describe("the Routine tool and the engine on the bot side", () => {
     expect(thread).toMatchObject({ bot: "alpha", routine: view!.id, title: "Morning brief" });
     const ctx = b.drivers.made.find((m) => m.ctx.sessionId === thread.id)!.ctx;
     expect(ctx.level).toBe("ask-risky");
-    expect(ctx.mayWriteMemory()).toBe(true);
     b.drivers.for(thread.id).end({ text: "Two new issues, nothing urgent." });
     await flush();
     const posted = b.host.history("b_alpha").filter((r) => r.type === "input" && r.input.from === "routine");

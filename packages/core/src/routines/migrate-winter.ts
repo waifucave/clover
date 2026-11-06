@@ -7,8 +7,9 @@
 // * **Routines** become files in `<home>/routines/alpha/`, one per Winter routine, each `paused: true` with a note
 //   saying where it came from, so none runs before the user has looked at it. Its schedule, prompt and policy carry
 //   over (the policy as a level; a raised one still needs its card). A routine Winter had switched off stays paused too.
-// * **Memories:** the `_assistant` bucket's files are copied into Alpha's memory folder with the seed's own rules (no
-//   links followed, nothing overwritten), on the computer running Alpha, its memory's one writer.
+// * **Memories:** the `_assistant` bucket's files are copied into Alpha's memory, `home/memory/` in its tree (stored in
+//   `<home>/bots/alpha/memory/`, which syncs to the user's other computers), with the seed's own rules (no links
+//   followed, nothing overwritten).
 // * **Once:** what was carried over is remembered (`<home>/transcripts/routines/migrated-winter.json`), so running it
 //   again adds only what is new.
 import { Database } from "bun:sqlite";

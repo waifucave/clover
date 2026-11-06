@@ -212,7 +212,10 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     expect(laptop.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx.mayAct()).toBe(false);
     const block = ctx.memoryBlock();
     const paths = botPaths(studio.home, "alpha");
-    expect(block).toContain(`${paths.memory}/`);
+    // Memory is named by its tree path, home/memory/ (stored in paths.memory, which the tree maps there); no memory tool.
+    expect(block).toContain("- Your memory folder: home/memory/");
+    expect(block).not.toContain(`${paths.memory}/`);
+    expect(block).toContain("write and edit them with Write and Edit");
     expect(block).toContain(`${paths.agents}/`);
     expect(block).toContain(`${paths.scratch}/ on Studio`);
     expect(block).toContain("<memory-index>");

@@ -83,10 +83,6 @@ export interface BotSessionContext {
   readonly paths: BotPaths;
   /** A side thread's level (its routine's, once its card was answered, §7); undefined: the computer's. */
   readonly level?: Level;
-  /** Whether the session may write the bot's memory: only on the computer running the bot, its one writer (§6.5). A
-   *  side thread on another computer reads memory but doesn't write it; what it learned goes in its result, which the
-   *  bot's conversation reads and may keep. */
-  mayWriteMemory(): boolean;
   /** Who the session is when it calls anything, its bot named (§5.4; the controller's L-M1 answer): the runtime binds
    *  each tool call's caller from this, never from what a plugin says (R7). */
   readonly caller: Extract<Caller, { kind: "session" }>;
@@ -668,7 +664,6 @@ export class BotService {
     const gate = this.#o.gate;
     return {
       ...(level === undefined ? {} : { level }),
-      mayWriteMemory: () => gate.main.runsHere(),
       botId: live.plugin.id,
       sessionId,
       kind,
@@ -676,7 +671,7 @@ export class BotService {
       paths,
       caller: { kind: "session", sessionId, sessionKind: kind, bot: live.plugin.id },
       current: () => this.#effective(live),
-      memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer, readOnly: !gate.main.runsHere() }),
+      memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
       mayAct: () => gate.mayAct({ kind }),
       whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
