@@ -1,5 +1,5 @@
 // Which CI jobs a change needs (ci.yml's `changes` job). Each area lists the paths its jobs read; a change to CI itself,
-// the toolchain, the root manifest or a lockfile runs every area. The names-and-layout checks and the gate run always.
+// the toolchain, the root manifest or a lockfile runs every area but the Swift kits, which a change to CI itself runs. The names-and-layout checks and the gate run always.
 //
 //   bun scripts/ci-changes.ts --base <rev>   the files changed between <rev> and HEAD decide (a pull request's base,
 //                                            or the main a merge-queue group was built on)
@@ -45,10 +45,12 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
   scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
   codegen: ["packages/protocol/", "apple/WinterProtocol/"],
-  // the Swift kits: their own tree, the protocol's generated fixtures, and the core, whose daemon WinterKit's tests start
-  // through bun (apple/WinterKit/Tests/WinterKitTests/support/RealDaemon.swift); a Bun or lockfile change comes in
-  // through CI_GLOBAL
-  swift: ["apple/", "Package.swift", "packages/protocol/generated/", "packages/core/"],
+  // the predecessor's Swift kits, on a macOS runner: their own tree and the protocol's generated fixtures their round
+  // trips read, and nothing else (SWIFT_GLOBAL). WinterKit's tests also start the core's daemon through bun
+  // (apple/WinterKit/Tests/WinterKitTests/support/RealDaemon.swift), but a core, Bun or lockfile change no longer runs
+  // them in a pull request or a merge group: macOS runners are the queue's bottleneck, and a push to main still runs
+  // every area, so such a break shows on main's own run.
+  swift: ["apple/", "Package.swift", "packages/protocol/generated/"],
   verify: [...CORE, "packages/cli/", "scripts/verify-", "scripts/stage-runtimes.ts", "scripts/fetch-ant.ts", "scripts/build-winter.ts", "VERSIONS.json"],
   // the tree and the computers on Linux and Windows (macOS runs them in the core suite): their code, their tests and
   // lane B's conformance suites for them
@@ -58,6 +60,9 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // devices and identity the link's handshake and pairing use
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/"],
 };
+
+/** The CI_GLOBAL changes that still run the Swift kits: CI's own definition, not the toolchain or the lockfiles. */
+export const SWIFT_GLOBAL: readonly Pattern[] = [".github/workflows/ci.yml", "scripts/ci-changes.ts"];
 
 export const CI_AREA_NAMES = Object.keys(CI_AREAS) as CiArea[];
 
@@ -84,8 +89,10 @@ export function matches(path: string, pattern: Pattern): boolean {
 
 /** The areas `changed` needs. `undefined` (no diff to go on) runs every area. */
 export function areasFor(changed: readonly string[] | undefined): Record<CiArea, boolean> {
-  const all = changed === undefined || changed.some((p) => CI_GLOBAL.some((g) => matches(p, g)));
-  return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, all || changed!.some((p) => CI_AREAS[a].some((g) => matches(p, g)))])) as Record<CiArea, boolean>;
+  if (changed === undefined) return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, true])) as Record<CiArea, boolean>;
+  const touches = (patterns: readonly Pattern[]): boolean => changed.some((p) => patterns.some((g) => matches(p, g)));
+  const all = touches(CI_GLOBAL);
+  return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, a === "swift" ? touches(SWIFT_GLOBAL) || touches(CI_AREAS.swift) : all || touches(CI_AREAS[a])])) as Record<CiArea, boolean>;
 }
 
 function changedSince(base: string): string[] | undefined {
