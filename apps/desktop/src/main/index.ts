@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { housingFor, loadScreens } from "./housing";
@@ -30,6 +30,7 @@ import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
+import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
@@ -157,19 +158,23 @@ async function ready(): Promise<void> {
     menu: (id, items, point) => popupMenu(id, items, point),
     api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
-    // The sealed path (E-M3): the frame's own channel; the app signs with the answer key over the card's id and hash,
-    // takes the core's answer, and the frame's visibility check runs in its own window's truth (the frame inside the
-    // part's page sees its covers; the app's other windows are the main's to count).
-    sealedAnswer: async (token, option, children) => {
-      const key = answerKeyValue;
-      if (key === undefined) return { accepted: false, reason: "the answer key isn't there" };
-      const out = sealed.buildAnswer(token, option, children, key, signedDevice ?? "");
-      if ("error" in out) return { accepted: false, reason: out.error };
-      const client = pair.client;
-      if (client === undefined) return { accepted: false, reason: "Clover isn't running" };
-      const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
-      return { accepted: r.accepted === true, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) };
-    },
+  // The sealed path (E-M3): the frame's own channel; the app signs with the answer key over the card's id and hash,
+  // takes the core's answer, and the frame's visibility check runs in its own window's truth (the frame inside the
+  // part's page sees its covers; the app's other windows are the main's to count).
+  sealedAnswer: async (token, option, children) => {
+    const key = answerKeyValue;
+    if (key === undefined) return { accepted: false, reason: "the answer key isn't there" };
+    const called = option;
+    const option_ = called ?? sealed.optionOf(token);
+    if (option_ === undefined) return { accepted: false, reason: "no option named" };
+    const out = sealed.buildAnswer(token, option_, children, key, signedDevice ?? "");
+    if ("error" in out) return { accepted: false, reason: out.error };
+    disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
+    const client = pair.client;
+    if (client === undefined) return { accepted: false, reason: "Clover isn't running" };
+    const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
+    return { accepted: r.accepted === true, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) };
+  },
     sealedVisible: async (token) => {
       // The frame's own window counts the covers it sees. The store's look still standing is the channel's say-so.
       const seen = sealed.look(token);
@@ -232,6 +237,60 @@ async function ready(): Promise<void> {
 // The pair
 // ------------------------------------------------------------------------------------------------
 
+// The sealed frames' store (spec §5.5; E-M3): cards in through the app's role events, frame channels and answers out,
+// signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
+const sealed = new SealedFrames();
+let signedDevice: string | undefined;
+// The app's own fallback card (§5.5): whose 2-second timers run, which window stands before the user, and the card's
+// own page answers on its own channel.
+const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string }>();
+const FALLBACK_DELAY_MS = 2_000;
+
+/** A card's own 2-second timer: once it runs, the app's own card page stands before the user (shown, never brought in
+ *  front). A part's own button disarms its card's: its own `sealedAnswer` burns the store's channel and calls here. */
+async function armFallback(cardId: string): Promise<void> {
+  disarmFallback(cardId);
+  const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
+  timer.unref?.();
+  fallbacks.set(cardId, { timer });
+}
+
+function disarmFallback(cardId: string): void {
+  const own = fallbacks.get(cardId);
+  if (own === undefined) return;
+  clearTimeout(own.timer);
+  if (own.win !== undefined && !own.win.isDestroyed()) own.win.close();
+  fallbacks.delete(cardId);
+}
+
+/** The app's own card page: the whole card, its fields and buttons, from the app's own scheme (its own single-use
+ *  channel), shown without taking the focus (the user's own app in front stays). */
+async function showFallbackCard(cardId: string): Promise<void> {
+  const card = sealed.get(cardId);
+  if (card === undefined) return;
+  const mint = sealed.mint(cardId, "own");
+  if (mint === undefined) return;
+  const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
+  const plan = mainWindowPlan({
+    platform: process.platform,
+    acrylic: false,
+    title: "Clover",
+    dark: nativeTheme.shouldUseDarkColors,
+    solid: nativeTheme.shouldUseDarkColors ? "#202020" : "#FFFFFF",
+    symbol: nativeTheme.shouldUseDarkColors ? "#F2F2F2" : "#1F1F1F",
+    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
+  });
+  const win = new BrowserWindow({ ...plan.options, width: 460, height: 360, useContentSize: true, skipTaskbar: true });
+  watchWindow(win);
+  win.on("closed", () => {
+    const own = fallbacks.get(cardId);
+    if (own?.win === win) fallbacks.delete(cardId);
+  });
+  win.loadURL(url).then(() => { if (!win.isDestroyed()) win.showInactive(); }).catch(() => win.close());
+  const own = fallbacks.get(cardId);
+  if (own !== undefined) { own.win = win; own.token = mint.token; }
+}
+
 function makePair(): Pair {
   const binary = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
   const p = new Pair({
@@ -249,15 +308,21 @@ function makePair(): Pair {
       // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
       void answerKey().register(client, hello.device);
       signedDevice = hello.device;
-      // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones.
+      // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
+      // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
       void client.request<unknown>("card.list").catch(() => undefined).then((r) => {
-        for (const c of (r as { cards?: unknown[] })?.cards ?? []) sealed.fromCore(c);
+        for (const c of (r as { cards?: unknown[] })?.cards ?? []) { sealed.fromCore(c); armFallback(String((c as { id?: unknown }).id ?? "")); }
       });
       client.onNotification((method, params) => {
-        const p = params as Record<string, unknown> | undefined;
-        if (method === "core.event" && typeof p?.type === "string") {
-          if (p.type === "card_requested" || p.type === "card_pending") sealed.fromCore((p as { card?: unknown }).card);
-          if (p.type === "card_resolved") sealed.resolvedOutcome(String((p as { id?: unknown }).id ?? ""), String((p as { outcome?: unknown }).outcome ?? "cancelled") as never);
+        const e = params as Record<string, unknown> | undefined;
+        if (method === "core.event" && typeof e?.type === "string") {
+          if (e.type === "card_requested" || e.type === "card_pending") {
+            sealed.fromCore(e.card);
+            armFallback(String((e.card as { id?: unknown })?.id ?? ""));
+          } else if (e.type === "card_resolved") {
+            sealed.resolvedOutcome(String(e.id ?? ""), String(e.outcome ?? "cancelled") as never);
+            disarmFallback(String(e.id ?? ""));
+          }
         }
       });
       return loadRegistry(client);
@@ -311,6 +376,37 @@ function makePair(): Pair {
       else log("pair: ignored a ui_settings_changed event that isn't one");
     }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found") scheduleReload();
+    if (type === "card_requested") {
+      const parsed = CardRequestedEvent.safeParse(params);
+      if (parsed.success) {
+        sealed.fromCore(parsed.data.card);
+        armFallback(parsed.data.card.id);
+      } else log("pair: ignored a card_requested event that isn't one");
+    }
+    if (type === "card_resolved") {
+      const parsed = CardResolvedEvent.safeParse(params);
+      if (parsed.success) {
+        sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
+        disarmFallback(parsed.data.id);
+      }
+    }
+    // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback.
+    if (type === "card_requested") {
+      const parsed = CardRequestedEvent.safeParse(params);
+      if (parsed.success) {
+        sealed.fromCore(parsed.data.card);
+        armFallback(parsed.data.card.id);
+      } else log("pair: ignored a card_requested event that isn't one");
+    }
+    if (type === "card_resolved") {
+      const parsed = CardResolvedEvent.safeParse(params);
+      if (parsed.success) {
+        sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
+        disarmFallback(parsed.data.id);
+      }
+    }
+    // The layer-role events also ride this connection for the UI test's own page? A card_pending goes only to layers;
+    // the app's role hears card_requested. Nothing else here.
   });
   return p;
 }
@@ -338,11 +434,6 @@ function scheduleReload(): void {
     if (c !== undefined) void loadRegistry(c);
   }, 200);
 }
-
-// The sealed frames' store (spec §5.5; E-M3): cards in through the app's role events, frame channels and answers out,
-// signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
-const sealed = new SealedFrames();
-let signedDevice: string | undefined;
 
 /** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). */
 async function loadRegistry(client: DaemonClient): Promise<void> {

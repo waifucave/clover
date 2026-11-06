@@ -76,7 +76,7 @@ describe("the sealed frames' store", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);
     const made = store.mint(CARD.id, "field:title")!;
-    expect(store.buildAnswer(made.token, "allow_once", undefined, signer, "dev_04")).toMatchObject({ error: "no such sealed button" });
+    expect(store.buildAnswer(made.token, "allow_once", undefined, signer, "dev_04")).toMatchObject({ error: "a field's frame answers nothing" });
   });
 
   test("a resolved card's frames end: the look and the mint give none, and an answer out of time says so (the core took the first)", () => {
@@ -123,5 +123,19 @@ describe("the sealed frames' store", () => {
     expect(store.mint(TIMED_CARD.id, "button:deny")).toBeUndefined();
     store.fromCore(CARD);
     expect(store.mint(CARD.id, "button:deny")).not.toBeUndefined();
+  });
+});
+
+describe("the app's own fallback card's channel", () => {
+  test("one token for the whole card's page, the user's pick checked like any button's", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    expect(store.mint(CARD.id, "own")).not.toBeUndefined();
+    // The pick must be the card's own option.
+    expect(store.buildAnswer(store.mint(CARD.id, "own")!.token, "no_such", undefined, signer, "dev_a")).toMatchObject({ error: "a button answers its own option" });
+    const made = store.mint(CARD.id, "own")!;
+    const out = store.buildAnswer(made.token, "allow_once", undefined, signer, "dev_aaaatestdev01");
+    expect(out).not.toMatchObject({ error: expect.anything() });
+    expect(((out as { proof: Record<string, unknown> }).proof as { option: string }).option).toBe("allow_once");
   });
 });

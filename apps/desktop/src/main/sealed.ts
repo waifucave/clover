@@ -154,10 +154,14 @@ export class SealedFrames {
   buildAnswer(token: string, option: string, children: readonly string[] | undefined, signer: AnswerSigner, deviceId: string, at = this.now()): { proof: { card: unknown; option: string; children?: readonly string[]; device: string; at: number; signature: string }; card: SealedCard } | { error: string } {
     const ch = this.channels.get(token);
     const card = ch !== undefined ? this.cards.get(ch.cardId) : undefined;
-    if (ch === undefined || card === undefined || this.now() - ch.at > CHANNEL_TTL_MS || !ch.element.startsWith("button:")) return { error: "no such sealed button" };
-    const want = ch.element.slice("button:".length);
+    if (ch === undefined || card === undefined || this.now() - ch.at > CHANNEL_TTL_MS) return { error: "no such sealed button" };
+    if (!ch.element.startsWith("button:") && ch.element !== "own") return { error: "a field's frame answers nothing" };
+    // The app's own fallback card answers with the page's own token: the option is the user's pick, checked against
+    // the card's own options like any button's (§5.5).
+    const whole = ch.element === "own";
+    const want = whole ? option : ch.element.slice("button:".length);
     const opt = card.options.find((o) => o.id === option);
-    if (option !== want || opt === undefined) return { error: "a button answers its own option" };
+    if (opt === undefined || (!whole && option !== want)) return { error: "a button answers its own option" };
     if (this.resolved.has(card.id)) return { error: "that card is answered already" };
     this.channels.delete(token);
     const kids = children === undefined ? undefined : [...children];
@@ -168,6 +172,14 @@ export class SealedFrames {
       proof: { card: cardContentOf(card), option, ...(kids !== undefined ? { children: kids } : {}), device: deviceId, at, signature: Buffer.from(sig).toString("base64") },
       card,
     };
+  }
+
+  /** An element's default answer: a button channel's own option (the token carries it), or undefined for the app's
+   *  own whole-card page, whose pick the user names. */
+  optionOf(token: string): string | undefined {
+    const ch = this.channels.get(token);
+    if (ch === undefined || !ch.element.startsWith("button:")) return undefined;
+    return ch.element.slice("button:".length);
   }
 
   /** The core events' reason to drop or keep a card's frames: an outcome names what closed it, and every outcome ends

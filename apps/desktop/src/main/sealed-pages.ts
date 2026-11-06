@@ -167,3 +167,88 @@ export function labelOf(text: unknown): string {
   if (text !== null && typeof text === "object" && typeof (text as { en?: unknown }).en === "string") return String((text as { en: string }).en);
   return "";
 }
+
+/** The app's own fallback card (§5.5): the whole card in one page of the app's own — its sealed fields above its
+ *  buttons, in the card's tokens, so a card the parts never placed stands before the user in 2 seconds or none. The
+ *  buttons' answers ride the same frame channel as a part's (`clover:sealed-answer`), minted per option with the
+ *  `own:button:<option>` element. */
+export function ownCardPage(input: {
+  cardId: string; token: string; origin: string; issuedAt: number; expiresAt: number | null;
+  fields: Readonly<Record<string, unknown>>;
+  tokens?: Readonly<Record<string, TokenValue>>;
+  options: readonly { id: string; kind: "approve" | "deny"; label: unknown; remember?: "always" }[];
+}): string {
+  const fields = (CARD_FIELD_ORDER as readonly string[]).filter((name) => {
+    const v = input.fields[name] as SealedValue | undefined;
+    return v !== undefined && typeof v === "object" && typeof v.type === "string";
+  });
+  const bits = fields.map((name) => {
+    const value = input.fields[name] as SealedValue;
+    const body = value.type === "text"
+      ? `<p class="text">${esc(value.text)}</p>`
+      : value.type === "code"
+        ? `<pre class="code"><code>${esc(value.code)}</code></pre>`
+        : value.type === "list"
+          ? `<ul class="list">${value.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`
+          : `<dl class="rows">${value.rows.map((r) => `<dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd>`).join("")}</dl>`;
+    return `<section class="field" data-name="${esc(name)}">${body}</section>`;
+  }).join("\n");
+  const buttons = input.options.map((o) => `<button type="button" class="seal-button" data-option="${esc(o.id)}" data-kind="${esc(o.kind)}"><span class="label">${esc(labelOf(o.label))}</span></button>`).join("\n");
+  const expires = input.expiresAt === null ? "" : "";
+  return `<!doctype html>
+<html lang="en" class="seal-own">
+<head>
+<meta charset="utf-8">
+${input.tokens === undefined ? "" : `<style>${tokenCss(input.tokens)}</style>`}
+<style>
+html, body { margin: 0; background: transparent; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--clover-card-text, var(--clover-color-text, #1f1f1f));
+  padding: 0 0 14px;
+  overflow-wrap: break-word;
+}
+.field { margin: 0 0 10px }
+.field .text { margin: 0; font-weight: 500 }
+.field .code { font: var(--clover-card-font-code, 13px / 1.4 monospace); white-space: pre-wrap; overflow-wrap: anywhere }
+.list, .rows { margin: 0; padding-inline-start: 1.2em }
+.seal-button {
+  appearance: none;
+  border: none;
+  border-radius: var(--clover-card-button-radius, 10px);
+  background: var(--clover-card-approve-background, var(--clover-color-accent, #977000));
+  color: var(--clover-card-approve-text, #fff);
+  font: inherit;
+  font-weight: 500;
+  padding: 6px 14px;
+  margin-right: 8px;
+  cursor: pointer;
+}
+.seal-deny .seal-button { background: var(--clover-card-deny-background, #ededed); color: var(--clover-card-deny-text, #1f1f1f) }
+.hidden { visibility: hidden }
+</style>
+<script>
+// The answer, once, over the frame's own channel; the page's own check reads nothing else. The who is the core's; the
+// when is the card's (its own expiry for a turn the user didn't start).
+(() => {
+  const b = window.cloverSealed;
+  if (b === undefined) return;
+  document.addEventListener("click", (e) => {
+    const button = e.target instanceof Element && e.target.closest(".seal-button");
+    if (button === null) return;
+    e.preventDefault();
+    void b.answer(button.dataset.option);
+  }, { capture: true });
+})();
+</script>
+</head>
+<body data-token="${esc(input.token)}">
+${bits}
+<div class="buttons">${buttons}</div>
+</body>
+</html>
+`;
+}
+
+/** The fields in B's own order (§5.5), read at once. */
+export const CARD_FIELD_ORDER = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"] as const;

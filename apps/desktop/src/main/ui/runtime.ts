@@ -21,7 +21,7 @@ import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
-import { fieldPage, buttonPage, labelOf } from "../sealed-pages";
+import { fieldPage, buttonPage, ownCardPage, labelOf } from "../sealed-pages";
 import { sealHeaders } from "./documents";
 import type { SealedFrames, SealedValue } from "../sealed";
 
@@ -951,6 +951,9 @@ export class UiRuntime {
       const option = card.options.find((o) => o.id === element.slice("button:".length));
       if (option === undefined) return undefined;
       return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }), headers: sealHeaders() };
+    }
+    if (element === "own") {
+      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options }), headers: sealHeaders() };
     }
     return undefined;
   }

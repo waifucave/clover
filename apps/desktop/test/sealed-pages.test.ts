@@ -68,3 +68,36 @@ describe("a sealed button's page", () => {
     expect(p).toContain("answering = false"); // a refused answer can try again; one answered, the core's.
   });
 });
+
+import { ownCardPage } from "../src/main/sealed-pages";
+
+describe("the app's own fallback card page", () => {
+  test("the whole card on one page: its fields in order, the buttons, and the answers on its own tokens", () => {
+    const p = ownCardPage({
+      cardId: "card_own",
+      token: TOKEN,
+      origin: "user",
+      issuedAt: 0,
+      expiresAt: null,
+      fields: { title: { type: "text", text: "Run a command?" }, command: { type: "code", code: "rm -rf build/", language: "sh" }, risk: { type: "text", text: "Deletes a folder" } },
+      options: [
+        { id: "allow_once", kind: "approve", label: "Allow" },
+        { id: "always", kind: "approve", label: { en: "Always allow", fr: "Toujours autoriser" } },
+        { id: "deny", kind: "deny", label: "Deny" },
+      ],
+    });
+    // The fields in the card's own order, and the buttons beneath.
+    const titleAt = p.indexOf('data-name="title"');
+    const commandAt = p.indexOf('data-name="command"');
+    const riskAt = p.indexOf('data-name="risk"');
+    const buttonsAt = p.indexOf('data-option="allow_once"');
+    expect(titleAt).toBeGreaterThan(0);
+    expect(titleAt).toBeLessThan(commandAt);
+    expect(commandAt).toBeLessThan(riskAt);
+    expect(buttonsAt).toBeGreaterThan(0);
+    expect(p).toContain('data-option="always"');
+    expect(p).toContain(">Always allow</span>");
+    expect(p).toContain('data-token="' + TOKEN + '"');
+    expect(p).toContain("b.answer(button.dataset.option)");
+  });
+});
