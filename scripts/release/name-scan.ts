@@ -1,6 +1,6 @@
 // The release's name scan (plan §4 M-M2): every file a release ships, read for the owner's identity before the
 // draft goes up. Git hooks see only what enters the repo; a build can still carry an absolute builder path or a name
-// in a binary (Winter 0.2.001's leak), so the gate reads the built files themselves. The patterns live OUTSIDE this
+// in a binary (the predecessor app's 0.2.001 leak), so the gate reads the built files themselves. The patterns live OUTSIDE this
 // repo, in the owner's local-only guard (~/norma-private/git-hooks/name-guard.sh `artifacts`): a tracked copy would
 // publish the strings it keeps out. So the gate fails closed on a machine without the guard, and only the owner's
 // Mac cuts a release.
