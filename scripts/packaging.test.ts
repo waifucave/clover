@@ -91,7 +91,7 @@ describe("the installers' hooks", () => {
     const macro = text.slice(text.indexOf("!macro cloverSandbox"), text.indexOf("!macroend", text.indexOf("!macro cloverSandbox")));
     expect(macro).toContain("-Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode");
     expect(macro).toContain(`catch { exit ${SANDBOX_EXIT.declined} }`);
-    expect(macro).toContain("-Action ' + $$a + '${ACTION}'");
+    expect(macro).toContain("-Action ${ACTION} -SourceB64 ' + $$a + $$src + $$a + ' -UserB64 ' + $$a + $$sid + $$a");
     const install = text.slice(text.indexOf("!macro customInstall"), text.indexOf("!macroend", text.indexOf("!macro customInstall")));
     expect(install).toContain("${ifNot} ${isUpdated}");
     expect(install).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" ${sandboxArgs("status").join(" ")}'`);

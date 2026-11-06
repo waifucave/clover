@@ -128,14 +128,15 @@ export function parsePins(source: string | undefined): Partial<Record<SrtWinArch
  */
 export function buildEnv(env: Record<string, string | undefined>, src: string, cargoHome: string): Record<string, string | undefined> {
   const flags = [
-    "-C target-feature=+crt-static",
-    "-C link-arg=/Brepro",
-    "-C link-arg=/DEBUG:NONE",
-    "-C debuginfo=0",
+    "-Ctarget-feature=+crt-static",
+    "-Clink-arg=/Brepro",
+    "-Clink-arg=/DEBUG:NONE",
+    "-Cdebuginfo=0",
     `--remap-path-prefix=${src}=/srt`,
     `--remap-path-prefix=${cargoHome}=/cargo`,
   ];
   // CARGO_ENCODED_RUSTFLAGS (0x1f between flags): a path with a space (the owner's checkout has one) stays one flag.
+  // Each element is one argument to rustc, so `-C` and its option are joined (`-C x` would be one argument `-C x`).
   const { RUSTFLAGS: _ignored, ...rest } = env;
   return { ...rest, CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f"), CARGO_INCREMENTAL: "0" };
 }

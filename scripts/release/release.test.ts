@@ -369,8 +369,10 @@ describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win
     const env = buildEnv({ PATH: "x", RUSTFLAGS: "-C ignored" }, "C:\\Users\\Some One\\src", "C:\\cargo");
     // One flag per 0x1f: a path with a space stays whole, and RUSTFLAGS is dropped (cargo would ignore it anyway).
     const flags = env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f");
-    expect(flags).toContain("-C target-feature=+crt-static");
-    expect(flags).toContain("-C link-arg=/Brepro");
+    expect(flags).toContain("-Ctarget-feature=+crt-static");
+    expect(flags).toContain("-Clink-arg=/Brepro");
+    // One rustc argument each: no flag carries a space of its own outside a path.
+    expect(flags.filter((f) => !f.startsWith("--remap-path-prefix=")).every((f) => !f.includes(" "))).toBe(true);
     expect(flags).toContain("--remap-path-prefix=C:\\Users\\Some One\\src=/srt");
     expect(env.RUSTFLAGS).toBeUndefined();
     expect(cargoArgs("arm64", "S")).toEqual(["cargo", "build", "--release", "--locked", "--manifest-path", join("S", "vendor/srt-win-src", "Cargo.toml"), "--target", "aarch64-pc-windows-msvc"]);
@@ -478,7 +480,17 @@ describe("the Windows installer's elevated step", () => {
     expect(code).toContain(`$Pin = '${"d".repeat(64)}'`);
     expect(code).not.toMatch(/^\s*#/m);
     // Copied into the protected folder, checked there, and run only from there.
-    expect(code).toContain("Join-Path $env:ProgramFiles 'Clover Sandbox'");
+    // Program Files as Windows has it, each user's copy under their SID, the folders checked before the copy.
+    expect(code).toContain("Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clover Sandbox'");
+    expect(code).not.toContain("$env:ProgramFiles");
+    expect(code).toContain("$dir = Join-Path $base $User");
+    expect(code.indexOf("Test-Protected $base")).toBeLessThan(code.indexOf("Copy-Item"));
+    expect(code).toContain("$User -notmatch '^S-1-[0-9]+(-[0-9]+)+$'");
+    expect(code).toContain("param([string]$Action, [string]$SourceB64, [string]$UserB64)");
+    const { SANDBOX_EXIT } = await import("../../packaging/installer-hooks");
+    for (const n of [SANDBOX_EXIT.exeMissing, SANDBOX_EXIT.copyNotPinned, SANDBOX_EXIT.notProtected, SANDBOX_EXIT.badArgument]) {
+      expect(code).toContain(`exit ${n}`);
+    }
     expect(code.indexOf("Copy-Item -LiteralPath $Source -Destination $exe")).toBeLessThan(code.indexOf("(Get-CloverDigest $exe) -ne $Pin"));
     expect(code).toContain("Start-Process -FilePath $exe -ArgumentList 'sandbox', $Action");
     expect(code).not.toContain("-FilePath $Source");
@@ -493,7 +505,15 @@ describe("the Windows installer's elevated step", () => {
     expect(text).toContain('!include "${PROJECT_DIR}\\out\\sandbox.nsh"');
     expect(text).toContain("-Verb RunAs");
     expect(text).toContain("'-EncodedCommand'");
-    expect(text).toContain("$$env:CLOVERINSTALL_SANDBOX_SOURCE.Replace($$a, $$a + $$a)");
+    // The path and the SID go in base64 (UTF-16): nothing of a folder name is quoted, so no quote of any kind
+    // (PowerShell's curly ones included) can end a string.
+    expect(text).toContain("$$src = [Convert]::ToBase64String($$u.GetBytes($$env:CLOVERINSTALL_SANDBOX_SOURCE))");
+    expect(text).toContain("[Security.Principal.WindowsIdentity]::GetCurrent().User.Value");
+    expect(text).not.toContain(".Replace(");
+    // Windows' own 64-bit PowerShell, by full path, both times.
+    expect(text.match(/nsExec::ExecToLog `"\$WINDIR\\Sysnative\\WindowsPowerShell\\v1\.0\\powershell\.exe"/g)).toHaveLength(2);
+    expect(text).not.toMatch(/ExecToLog `powershell/);
+    expect(text).toContain("Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\powershell.exe'");
     expect(text).toContain(`Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_SANDBOX_SOURCE", p 0)i`);
     expect(text).not.toContain("CLOVER_CORE_EXE");
     // No elevated run of anything in the install folder.
@@ -502,5 +522,8 @@ describe("the Windows installer's elevated step", () => {
     expect(check).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" daemon stop'`);
     expect(check.indexOf("daemon stop")).toBeLessThan(check.indexOf("_CHECK_APP_RUNNING"));
     expect(check).toContain("${if} $0 == 1");
+    // An old daemon without `daemon stop`: Windows stops what is still running from this install, or the install stops.
+    expect(check).toContain("Get-Process -Name clover-core");
+    expect(check.indexOf("daemon stop")).toBeLessThan(check.indexOf("Stop-Process -Force"));
   });
 });

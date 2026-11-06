@@ -33,8 +33,12 @@ export type SandboxAction = "setup" | "remove" | "status";
 export function sandboxArgs(action: SandboxAction): string[] {
   return [SANDBOX_SUBCOMMAND, action];
 }
-/** `sandbox`'s exit codes (lane C), and Windows' own for a declined elevation prompt. */
-export const SANDBOX_EXIT = { ok: 0, failed: 1, notElevated: 2, launcherMismatch: 3, exeMissing: 4, copyNotPinned: 5, declined: 1223 } as const;
+/**
+ * `sandbox`'s exit codes (lane C, 0–3), the elevated script's own (4–7: the source missing, the copy not the pinned
+ * build, a Program Files folder a user can write to or not owned by the system, an argument that does not decode),
+ * and Windows' own for a declined elevation prompt.
+ */
+export const SANDBOX_EXIT = { ok: 0, failed: 1, notElevated: 2, launcherMismatch: 3, exeMissing: 4, copyNotPinned: 5, notProtected: 6, badArgument: 7, declined: 1223 } as const;
 /** The daemon's stop (lane C's): unelevated, no flags; 0 stopped or not running, 1 still running (keep its files). */
 export const DAEMON_STOP_ARGS = ["daemon", "stop"] as const;
 

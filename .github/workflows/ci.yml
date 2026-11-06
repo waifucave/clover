@@ -445,7 +445,8 @@ jobs:
 
       # The installer's elevated step checks a digest with its own PowerShell copy of authenticodeDigest
       # (packaging/windows/sandbox-elevated.ps1): on real binaries, under the Windows PowerShell the installer runs,
-      # the two must agree.
+      # the two must agree. srt-win.exe is unsigned; the runner's git.exe carries an embedded Authenticode
+      # signature (a cert table at the end), the shape the signed clover-core.exe has.
       - name: The installer's PowerShell digest agrees with the release's
         shell: powershell
         run: |
@@ -453,12 +454,16 @@ jobs:
           $fn = [regex]::Match($src, '(?s)function Get-CloverDigest.*?\r?\n}\r?\n').Value
           if (-not $fn) { throw 'no Get-CloverDigest in sandbox-elevated.ps1' }
           Invoke-Expression $fn
-          foreach ($arch in 'x64', 'arm64') {
-            $file = "dist/srt-win/$arch/srt-win.exe"
-            $ps = Get-CloverDigest (Resolve-Path $file).Path
-            $ts = (bun -e "import { authenticodeDigest } from './scripts/release/srt-win'; import { readFileSync } from 'node:fs'; console.log(authenticodeDigest(new Uint8Array(readFileSync('$file'))))").Trim()
-            Write-Output "$arch powershell $ps release $ts"
-            if (-not $ps -or $ps -ne $ts) { throw "the digests differ for $arch" }
+          $git = (Get-Command git.exe).Source
+          $sig = Get-AuthenticodeSignature -LiteralPath $git
+          if ($sig.SignatureType -ne 'Authenticode' -or $sig.Status -ne 'Valid') { throw "$git has no valid embedded signature ($($sig.SignatureType) $($sig.Status))" }
+          $files = @((Resolve-Path dist/srt-win/x64/srt-win.exe).Path, (Resolve-Path dist/srt-win/arm64/srt-win.exe).Path, $git)
+          foreach ($file in $files) {
+            $ps = Get-CloverDigest $file
+            $env:CLOVER_DIGEST_FILE = $file
+            $ts = (bun -e "import { authenticodeDigest } from './scripts/release/srt-win'; import { readFileSync } from 'node:fs'; console.log(authenticodeDigest(new Uint8Array(readFileSync(process.env.CLOVER_DIGEST_FILE!))))").Trim()
+            Write-Output "$file powershell $ps release $ts"
+            if (-not $ps -or $ps -ne $ts) { throw "the digests differ for $file" }
           }
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
