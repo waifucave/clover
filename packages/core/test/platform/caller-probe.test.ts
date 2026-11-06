@@ -187,4 +187,15 @@ describe("the caller check's OS probe", () => {
     expect(spawnedByDaemon(g, ancestry(g))).toBe(true);
     try { process.kill(g); } catch { /* gone */ }
   }, 30_000);
+
+  test.skipIf(process.platform !== "darwin")("spawnDisclaimed is told of the exit (no polling), with the exit code or the signal", async () => {
+    const quick = spawnDisclaimed([process.execPath, "-e", "process.exit(3)"])!;
+    expect(await quick.exited).toBe(3);
+    const slow = spawnDisclaimed([process.execPath, "-e", "setTimeout(() => {}, 20000)"])!;
+    await Bun.sleep(300);
+    const killedAt = Date.now();
+    process.kill(slow.pid, "SIGKILL");
+    expect(await slow.exited).toBe(128 + 9);
+    expect(Date.now() - killedAt).toBeLessThan(80); // not the old 100 ms poll
+  }, 20_000);
 });
