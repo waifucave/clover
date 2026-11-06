@@ -49,7 +49,7 @@ export async function accountToken(options: TokenOptions): Promise<string> {
     sub: options.account,
     dev: options.device,
     iat: options.iat ?? now,
-    exp: options.exp ?? now + 600,
+    exp: options.exp ?? now + 300,
     ...options.extra,
   };
   const signingInput = `${b64u(utf8(JSON.stringify(header)))}.${b64u(utf8(JSON.stringify(claims)))}`;

@@ -317,6 +317,31 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/companion-web:
+    dependencies:
+      '@waifucave/clover-service-handshake':
+        specifier: workspace:*
+        version: link:../../../../services/handshake
+      '@waifucave/clover-service-web':
+        specifier: workspace:*
+        version: link:../../../../services/web
+      node-datachannel:
+        specifier: 0.33.6
+        version: 0.33.6
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/composer:
     dependencies:
       lucide-react:
@@ -707,6 +732,18 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/relay-cloudflare:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/settings:
     dependencies:
       lucide-react:
@@ -892,6 +929,36 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  services/accounts:
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 1.4.8
+        version: 1.4.8(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)(vitest@4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@types/node':
+        specifier: 25.9.3
+        version: 25.9.3
+      '@waifucave/clover-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@waifucave/clover-test-harness':
+        specifier: workspace:*
+        version: link:../../packages/test-harness
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
   services/forwarder:
     devDependencies:
       '@cloudflare/vitest-plugin':
@@ -900,6 +967,30 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261023.1
         version: 5.20261023.1
+      '@types/node':
+        specifier: 25.9.3
+        version: 25.9.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/handshake:
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 1.4.8
+        version: 1.4.8(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)(vitest@4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
       '@types/node':
         specifier: 25.9.3
         version: 25.9.3
@@ -939,6 +1030,52 @@ importers:
       vitest:
         specifier: 4.1.12
         version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/relay:
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 1.4.8
+        version: 1.4.8(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)(vitest@4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/node':
+        specifier: 25.9.3
+        version: 25.9.3
+      '@waifucave/clover-plugin-relay-cloudflare':
+        specifier: workspace:*
+        version: link:../../plugins/clover/plugins/relay-cloudflare
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/web:
+    dependencies:
+      '@waifucave/clover-service-handshake':
+        specifier: workspace:*
+        version: link:../handshake
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      node-datachannel:
+        specifier: 0.33.6
+        version: 0.33.6
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
       wrangler:
         specifier: 4.153.0
         version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
@@ -1467,6 +1604,55 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@node-datachannel/android-arm64@0.33.6':
+    resolution: {integrity: sha512-UzSnd1vSN//3pqyvuufbaIQemvRfIHn/7DAy7wjoYk9tzkJp4SMk1FrNhkhmev89SH/h7yTac6PlGxGe5oHcKw==}
+    cpu: [arm64]
+    os: [android]
+
+  '@node-datachannel/darwin-arm64@0.33.6':
+    resolution: {integrity: sha512-vE2fN6D0BJJ3yZo5guJo2j1q7JeQbl+VyIs6vbkjEp654tQtTo3y7a4l3xB0bwDD27TOlkOlaSLJQRj6ZXqQdQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@node-datachannel/darwin-x64@0.33.6':
+    resolution: {integrity: sha512-EtRB2THMR11XMzbNhMEwaZtipaUxFz+PgeVx7hE+er6Ai1Fzzv7XexrMWDG11ahdpEZ8fAxlxuyELs33/WH1Cg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@node-datachannel/linux-arm64-gnu@0.33.6':
+    resolution: {integrity: sha512-phMRjx8NEfW70i768LCQDEF2C6Q2vtYsS4DPXv/zbb2cJClaU5fjKFQfQ1XBCNIi1ClfpSd3Cl/rn/7SS+paTQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-arm64-musl@0.33.6':
+    resolution: {integrity: sha512-T9bqllJ9YkpgqgRFEfsPpfgfMDXdA7CIiJ4c1XXGPLSeqVFgDbf/WCewkE7q4xA+tKRLoOOtc2XgMGwVnlxXVQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/linux-x64-gnu@0.33.6':
+    resolution: {integrity: sha512-NUTbne64++ZxwEJ9uppAAmYnFAfJAggf7gboioPdhr13P17GTQRCUgmipYrh1V0D4333x6NCBZyQaNv0n4WmpQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-x64-musl@0.33.6':
+    resolution: {integrity: sha512-dlWP4ycOJrTAl9UvxGofq0zwPhl6iAr1b0ZcBUgDfb2CXmbcJWCvg6OsJ6u8BVSV41eNXALmaRpU0wttas/f1g==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/win32-arm64-msvc@0.33.6':
+    resolution: {integrity: sha512-ttly7XRUrSOcOOGJvtm9gh2beAPUNOBOUc3Hk82LfMHHP7jJMkXNDns/ML+UVGommAcNyPhoZkRH62O7tSVQYw==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@node-datachannel/win32-x64-msvc@0.33.6':
+    resolution: {integrity: sha512-N5GW6XH11Iuu+kyHLTiCMcCHdwWwpKqvtYril0LzQm6xBgmGQN3JXxFmgi4g4usw1nLy6WhBWADjbhSXJiiEMA==}
+    cpu: [x64]
+    os: [win32]
 
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
@@ -3116,6 +3302,10 @@ packages:
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
 
+  node-datachannel@0.33.6:
+    resolution: {integrity: sha512-n7RzImzysrOVFx/lXfkQQ4fL0wsuPXBFc8KM69V29iyIor/UX7Ej+edzNGWJm+3mApZG9nkLi7FsGAZhQCDA4w==}
+    engines: {node: '>=18.20.0'}
+
   node-gyp@12.4.0:
     resolution: {integrity: sha512-OMcPNvqTCFUnNaBlmdgq+lfNqY7gTiSmNRDjY3uAXRyudeKZEZxu3CLtjMQrx4zZxCX2b/mpNqTtwuCJgXhHkw==}
     engines: {node: ^20.17.0 || >=22.9.0}
@@ -4294,6 +4484,33 @@ snapshots:
       zod: 4.6.7
 
   '@noble/hashes@1.8.0': {}
+
+  '@node-datachannel/android-arm64@0.33.6':
+    optional: true
+
+  '@node-datachannel/darwin-arm64@0.33.6':
+    optional: true
+
+  '@node-datachannel/darwin-x64@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-arm64-gnu@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-arm64-musl@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-x64-gnu@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-x64-musl@0.33.6':
+    optional: true
+
+  '@node-datachannel/win32-arm64-msvc@0.33.6':
+    optional: true
+
+  '@node-datachannel/win32-x64-msvc@0.33.6':
+    optional: true
 
   '@oxc-project/types@0.156.0': {}
 
@@ -6202,6 +6419,20 @@ snapshots:
   node-api-version@0.2.1:
     dependencies:
       semver: 7.8.6
+
+  node-datachannel@0.33.6:
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@node-datachannel/android-arm64': 0.33.6
+      '@node-datachannel/darwin-arm64': 0.33.6
+      '@node-datachannel/darwin-x64': 0.33.6
+      '@node-datachannel/linux-arm64-gnu': 0.33.6
+      '@node-datachannel/linux-arm64-musl': 0.33.6
+      '@node-datachannel/linux-x64-gnu': 0.33.6
+      '@node-datachannel/linux-x64-musl': 0.33.6
+      '@node-datachannel/win32-arm64-msvc': 0.33.6
+      '@node-datachannel/win32-x64-msvc': 0.33.6
 
   node-gyp@12.4.0:
     dependencies:
