@@ -1474,6 +1474,12 @@ if (import.meta.main) {
   if (process.argv[2] === RUNTIME_WORKFLOW_WORKER_ARG) {
     await runRuntimeWorkflowWorker();
   }
+  // K-M1: the agents' MCP bridge, which an ACP agent starts as `<clover-core> bridge` (`bridgeCommand()`). POSITIONAL,
+  // like the workers here, and checked before anything else: it speaks MCP on stdio and exits when the agent closes it.
+  if (process.argv[2] === "bridge") {
+    const { bridgeMain } = await import("./bridge-entry");
+    await bridgeMain();
+  }
   // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<clover-core> __workflow-worker`
   // already wrapped in sandbox-exec; THIS process is the sandboxed worker. Route straight to the entry
   // and never fall through to daemon-connect / TUI. (In dev/test the runtime spawns the entry .ts
@@ -1559,12 +1565,14 @@ if (import.meta.main) {
   // through a real daemon on a temp CLOVER_HOME with a FileSecretStore, the session in a Bun Worker
   // built from the second compile entrypoint. Same argv[2] shape and the same CLOVER_HOME rule as
   // `__runtime-state-probe` (it refuses without one; it never touches a real home or the Keychain).
-  // M1: bun:ffi in the compiled binary on every OS (./ffi-probe.ts); `build:daemon --smoke` runs it.
+  // M1: bun:ffi in the compiled binary on every OS (./ffi-probe.ts), and the bridge's peer-pid check through it;
+  // `build:daemon --smoke` runs both.
   if (process.argv[2] === "__ffi-probe") {
-    const { runFfiProbe } = await import("./ffi-probe");
+    const { runFfiProbe, runPeerPidProbe } = await import("./ffi-probe");
     const r = runFfiProbe();
-    process.stdout.write(`${r.line}\n`);
-    process.exit(r.ok ? 0 : 1);
+    const peer = r.ok ? await runPeerPidProbe() : { ok: false, line: "peer-pid: not run" };
+    process.stdout.write(`${r.line}\n${peer.line}\n`);
+    process.exit(r.ok && peer.ok ? 0 : 1);
   }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
