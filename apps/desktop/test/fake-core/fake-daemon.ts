@@ -206,7 +206,6 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         const proof = CardAnswerProof.safeParse(params.proof);
         if (!proof.success) return fail(-32602, `card.answer's proof isn't one: ${proof.error.issues[0]?.message ?? "no proof"}`);
         const w = proof.data.via === "device" ? { via: proof.data.via, device: proof.data.device, at: proof.data.at } : { via: proof.data.via, frame: proof.data.frame, at: proof.data.at };
-        record(opts.home, "request", { method: "card.answer", params: { id: params.id, option: params.option, ...w } });
         answerRecord.push({ id: params.id, option: params.option, ...w });
         const verdict = cardVerdict.length > 0 ? cardVerdict.shift()! : { accepted: true };
         return reply(verdict);

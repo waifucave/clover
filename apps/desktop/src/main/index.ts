@@ -1205,21 +1205,82 @@ async function smoke(): Promise<void> {
       if (done === true) steps.shift();
     }
     // The sealed UI test's click: once everything has drawn, click the named sealed frame's button so its answer
-    // rides `card.answer` to the fake daemon (unpackaged runs only).
+    // rides `card.answer` to the fake daemon (unpackaged runs only). Driven with `webContents.sendInputEvent` at the
+    // button's real coordinates, which produces trusted events (no `trust` knob in production).
     if (drawn && !sealedClicked) {
       const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
       if (spec !== undefined) {
         try {
-          const { cardId, element } = JSON.parse(spec) as { cardId?: string; element?: string };
+          const {
+            cardId, element, cover, opacity, doubleClick,
+          } = JSON.parse(spec) as {
+            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean;
+          };
           const frame = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
             (cardId === undefined || f.url.includes(cardId)) &&
             (element === undefined || f.url.includes(element)));
           if (frame !== undefined) {
-            void frame.executeJavaScript("document.querySelector('.seal-button')?.click()", true).catch(() => undefined);
+            // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
+            if (cover === true) {
+              await frame.executeJavaScript(`(() => {
+                const b = document.querySelector('.seal-button');
+                if (!b) return;
+                const c = document.createElement('div');
+                c.style.position = 'absolute';
+                c.style.inset = '0';
+                c.style.zIndex = '9999';
+                b.parentElement?.insertBefore(c, b);
+              })()`, true).catch(() => undefined);
+            }
+            if (opacity !== undefined) {
+              await frame.executeJavaScript(`(() => {
+                const b = document.querySelector('.seal-button');
+                if (!b) return;
+                b.style.opacity = ${Number(opacity)};
+              })()`, true).catch(() => undefined);
+            }
+            // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms).
+            await new Promise((r) => setTimeout(r, 350));
+            const buttonRect = await frame.executeJavaScript<{ x: number; y: number; width: number; height: number } | null>(
+              `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true);
+            const frameRect = await win.webContents.executeJavaScript<{ x: number; y: number } | null>(
+              `(() => { const f = document.querySelector('iframe[src*="clover-sealed://"]'); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.x, y: r.y }; })()`, true);
+            if (buttonRect !== null && frameRect !== null) {
+              const centerX = Math.round(frameRect.x + buttonRect.x + buttonRect.width / 2);
+              const centerY = Math.round(frameRect.y + buttonRect.y + buttonRect.height / 2);
+              const press = (kind: "down" | "up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
+              press("down");
+              press("up");
+              if (doubleClick === true) {
+                // A second press while the first answer is still in flight must not land (should-fix 3).
+                await new Promise((r) => setTimeout(r, 300));
+                press("down");
+                press("up");
+              }
+            }
             sealedClicked = true;
           }
         } catch { /* bad spec: no click */ }
+      }
+    }
+    // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
+    // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only).
+    if (drawn && !sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (w === win || w.isDestroyed()) continue;
+        if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
+        const frame = w.webContents.mainFrame;
+        const buttonRect = await frame.executeJavaScript<{ x: number; y: number; width: number; height: number } | null>(
+          `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true);
+        if (buttonRect !== null) {
+          const bounds = w.getBounds();
+          const centerX = Math.round(bounds.x + buttonRect.x + buttonRect.width / 2);
+          const centerY = Math.round(bounds.y + buttonRect.y + buttonRect.height / 2);
+          void w.webContents.sendInputEvent({ type: "mousedown", x: centerX, y: centerY, button: "left" });
+          void w.webContents.sendInputEvent({ type: "mouseup", x: centerX, y: centerY, button: "left" });
+        }
+        break;
       }
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift

@@ -8,13 +8,13 @@ export function CardEntry({ props, tokens, entry }) {
   void props;
   void tokens;
   void entry;
-  const [cards] = useState(useApprovals()[0] ? [] : []);
+  void cards;
   const approve = useRef(null);
   const deny = useRef(null);
   return h("div", { style: { position: "fixed", inset: 0 } },
-    h(Card, { id: `card_${props.cardId ?? "fixture_1"}`, className: "fc-card" },
+    h(Card, { id: props.cardId ?? "card_0a1b2c3d", className: "fc-card" },
       h("div", { ref: approve, "data-cl-fc": "approve", style: { position: "fixed", left: 20, top: 20, width: 240, height: 80 } },
-        h(Card.Approve, {})),
+        h(Card.Approve, { option: "allow_once" })),
       h("div", { ref: deny, "data-cl-fc": "deny", style: { position: "fixed", left: 20, top: 120, width: 240, height: 80 } },
-        h(Card.Deny, {}))));
+        h(Card.Deny, { option: "deny" }))));
 }
