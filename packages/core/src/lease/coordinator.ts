@@ -112,10 +112,12 @@ export class LeaseCoordinator {
     this.#offs.push(t.handle(LEASE_LINK.ready, async (_p, from) => {
       if (!this.#isComputer(from)) throw new ContractError("refused", "only a paired computer asks");
       await this.lease.refresh().catch(() => undefined);
-      return { ready: this.lease.reachable };
+      // A computer that just handed its bots over (it's quitting or about to sleep) doesn't take them back.
+      return { ready: this.lease.reachable && this.#yieldedAt === undefined };
     }));
     this.#offs.push(t.onNotify(LEASE_LINK.take, (_p, from) => {
       if (!this.#isComputer(from)) return;
+      this.#log(`${from} asks this computer to take the lease`);
       this.#takeNow = true;
       this.#kick();
     }));

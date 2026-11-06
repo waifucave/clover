@@ -78,7 +78,8 @@ export class MainChoice {
 
   /** The user made this computer the main one (here, or by an answer this computer checked). */
   chooseSelf(at: number): MainChoiceRecord {
-    this.#set({ device: this.#o.self, at, via: "user" });
+    // Later than any choice this computer knows, so its claim wins at every peer even within the same millisecond.
+    this.#set({ device: this.#o.self, at: Math.max(Math.floor(at), (this.#record?.at ?? 0) + 1), via: "user" });
     return this.#record!;
   }
 

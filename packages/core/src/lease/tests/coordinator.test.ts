@@ -43,6 +43,7 @@ async function computers(names: string[]) {
     node.mc = startMainComputer({
       home: mkdtempSync(join(tmpdir(), "clover-h-lease-")), self: device.id, registry: device.registry, transport: device.transport,
       clock, scope: () => scope, monotonic: () => performance.now(), watchSleep: false, timings: TIMINGS, userActive: () => node.active,
+      ...(process.env.LANE_H_DEBUG ? { log: (l: string) => console.log(`${Date.now() % 100000} ${name} ${l}`) } : {}),
     });
     stops.push(() => node.mc.close());
     nodes.set(name, node);
