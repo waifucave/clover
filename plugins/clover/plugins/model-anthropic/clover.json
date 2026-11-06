@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Anthropic",
+  "description": "Anthropic's models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "anthropic",
+        "name": "Anthropic",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Anthropic API key. Clover keeps it in your credential store and adds it to Anthropic's requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.anthropic.com"
+        }
+      }
+    ]
+  }
+}

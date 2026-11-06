@@ -43,5 +43,8 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     exclude: ["test/node/**"],
     testTimeout: 20_000,
+    // The files share the fakes above and read their log, where the shared test subscriptions make one file's pushes
+    // look like another's: one file at a time.
+    fileParallelism: false,
   },
 });

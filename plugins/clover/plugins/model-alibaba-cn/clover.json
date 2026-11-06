@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Alibaba Cloud Bailian China (OpenAI dialect)",
+  "description": "Alibaba Cloud Bailian China (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "alibaba-cn",
+        "name": "Alibaba Cloud Bailian China (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Alibaba Cloud Bailian China (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Alibaba Cloud Bailian China (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        }
+      }
+    ]
+  }
+}

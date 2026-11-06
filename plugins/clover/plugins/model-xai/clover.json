@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "xAI (Grok)",
+  "description": "xAI (Grok)'s models, on its openai-responses endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "xai",
+        "name": "xAI (Grok)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your xAI (Grok) API key. Clover keeps it in your credential store and adds it to xAI (Grok)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-responses",
+          "baseUrl": "https://api.x.ai/v1"
+        }
+      }
+    ]
+  }
+}

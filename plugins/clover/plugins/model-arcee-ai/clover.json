@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Arcee AI",
+  "description": "Arcee AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "arcee-ai",
+        "name": "Arcee AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Arcee AI API key. Clover keeps it in your credential store and adds it to Arcee AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.arcee.ai/api/v1"
+        }
+      }
+    ]
+  }
+}

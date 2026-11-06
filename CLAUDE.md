@@ -41,6 +41,7 @@ bun run build:winter                 # dist/winter from ../clover-sdk, for the b
 # Build and dev, on macOS, Linux and Windows (heavy: through scripts/heavy here, which runs the pinned Bun)
 bun run build:daemon                 # dist/daemon/<target>/clover-core; --target linux-x64,… or --all cross-compiles; --dry-run
 bun run build:app                    # apps/desktop, unsigned and unpacked (apps/desktop/out/dist); opens no window
+bun scripts/build-packages.ts --check  # Linux only: deb, rpm and AppImage with the daemon inside (packaging/); --dry-run elsewhere
 bun run dev:daemon --dry-run         # the dev daemon's plan; without --dry-run it builds and STARTS it (see Profiles)
 bun run dev:app --dry-run            # the dev app's plan; without --dry-run it OPENS A WINDOW: never from an agent here
 

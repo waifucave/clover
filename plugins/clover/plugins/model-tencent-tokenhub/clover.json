@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Tencent TokenHub China (OpenAI dialect)",
+  "description": "Tencent TokenHub China (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "tencent-tokenhub",
+        "name": "Tencent TokenHub China (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Tencent TokenHub China (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Tencent TokenHub China (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://tokenhub.tencentmaas.com/v1"
+        }
+      }
+    ]
+  }
+}

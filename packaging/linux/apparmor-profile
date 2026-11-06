@@ -1,0 +1,11 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# Clover's desktop app (Electron). Ubuntu 24.04 and later restrict unprivileged user namespaces, which Electron's
+# sandbox needs; this profile grants them to the app's executable only, and confines nothing else (spec §4).
+profile ${executable} /opt/${sanitizedProductName}/${executable} flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/${executable}>
+}

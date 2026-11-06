@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "SparkDesk",
+  "description": "SparkDesk's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "sparkdesk",
+        "name": "SparkDesk",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your SparkDesk API key. Clover keeps it in your credential store and adds it to SparkDesk's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://spark-api-open.xf-yun.com/v1"
+        }
+      }
+    ]
+  }
+}

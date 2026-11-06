@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "AI21 Labs",
+  "description": "AI21 Labs's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "ai21",
+        "name": "AI21 Labs",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your AI21 Labs API key. Clover keeps it in your credential store and adds it to AI21 Labs's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.ai21.com/studio/v1"
+        }
+      }
+    ]
+  }
+}

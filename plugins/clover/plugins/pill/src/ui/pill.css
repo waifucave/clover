@@ -235,8 +235,16 @@
   justify-content: flex-end;
 }
 
+.clp-menu-box:empty {
+  display: none;
+}
+
 .clp-menu {
   min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 6px;
   box-sizing: border-box;
   border-radius: 14px;
@@ -267,6 +275,19 @@
 
 .clp-menu-item .clp-portrait {
   margin: 0;
+}
+
+.clp-menu-detail {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: var(--clover-font-size-label, 13px);
+  color: var(--clover-pill-muted, #8B8B8B);
+}
+
+.clp-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--clover-pill-rim, #FFFFFF17);
 }
 
 .clp-menu-glyph {

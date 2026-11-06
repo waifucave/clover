@@ -13,7 +13,7 @@ cask "clover" do
 
   url "https://github.com/waifucave/clover/releases/download/v#{version}/Clover-#{version}.dmg"
   name "Clover"
-  desc "Menu bar app for the Clover AI engine"
+  desc "Bot-first, endlessly moddable desktop agent platform"
   homepage "https://github.com/waifucave/clover"
 
   livecheck do
@@ -23,8 +23,36 @@ cask "clover" do
 
   depends_on arch: :arm64
 
+  # electron-updater updates the app and the daemon together (spec §3.1).
   auto_updates true
 
   app "Clover.app"
-  binary "#{appdir}/Clover.app/Contents/Resources/clover-core", target: "clover"
+  binary "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core", target: "clover"
+
+  # Login start is the daemon's (lane C: a launchd agent running clover-core supervise). The app turns it on at its
+  # first launch; uninstalling removes it through the daemon's own command, as the user, before the app's files go
+  # (packaging/installer-hooks.ts): `autostart remove` stops the daemon and deletes its agent. Homebrew runs these in
+  # its own order: launchctl, then quit, then the script. The script runs through /bin/sh and exits 0 when the app's
+  # binary is gone (the app dragged to the Trash first), since Homebrew refuses a missing executable before
+  # must_succeed counts; then the launchctl stanza has already removed the agent, Clover's own label only, and
+  # must_succeed: false keeps a failing command from stopping the uninstall.
+  uninstall launchctl: "com.waifucave.clover.core",
+            quit:      "com.waifucave.clover",
+            script:    {
+              executable:   "/bin/sh",
+              args:         ["-c", '[ -x "$1" ] || exit 0; exec "$1" autostart remove', "sh", "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"],
+              sudo:         false,
+              must_succeed: false,
+            }
+
+  # The owner's rule: zap removes the caches, the preferences, the logs and the login item, and nothing else. ~/.clover
+  # (the user's bots, their history and their keys) and the app's own data stay.
+  zap trash: [
+    "~/Library/Caches/@waifucaveclover-desktop-updater",
+    "~/Library/Caches/com.waifucave.clover",
+    "~/Library/Caches/com.waifucave.clover.ShipIt",
+    "~/Library/LaunchAgents/com.waifucave.clover.core.plist",
+    "~/Library/Logs/Clover",
+    "~/Library/Preferences/com.waifucave.clover.plist",
+  ]
 end

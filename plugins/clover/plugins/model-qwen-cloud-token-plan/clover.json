@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Alibaba Cloud Token Plan (OpenAI dialect)",
+  "description": "Alibaba Cloud Token Plan (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qwen-cloud-token-plan",
+        "name": "Alibaba Cloud Token Plan (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Alibaba Cloud Token Plan (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Alibaba Cloud Token Plan (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+        }
+      }
+    ]
+  }
+}

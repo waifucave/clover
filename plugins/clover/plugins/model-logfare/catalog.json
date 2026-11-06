@@ -1,0 +1,36 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it",
+        "the vendor logs prompts, completions and metadata for research (opt-out at logfare.ai/consent) — a host must surface that before use"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://logfare.ai/docs — the vendor's own documentation, retrieved 2026-09-06: the API docs name base `https://logfare.ai/v1` and enumerate `/chat/completions`, `/messages`, `/models`.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

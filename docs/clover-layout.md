@@ -13,13 +13,16 @@ plugins/clover/plugins/<child>
 plugins/alpha/           Alpha, a top-level plugin of its own: its bot, its tab look and its assets, and any
                          children in plugins/alpha/plugins/
 services/<service>       Cloudflare Workers and the web companion
-services/shared          source the Workers share; not a package (each Worker's tsconfig includes it)
+services/shared          source the Workers share, a package (@waifucave/clover-service-shared) but not a Worker
 native/<area>            per-OS helpers in their own languages: sandbox, input, mounts, link-sidecar
 apple/                   WinterKit and WinterProtocol for the iOS app; ComputerUse and apple/Winter for reference only, not built
 extensions/              Winter for Chrome, until opensky
 spikes/<spike>           the spike lanes' experiments, one folder each
 examples/<example>       example plugins for the plugin SDK
 scripts/                 repo tools, including scripts/heavy (the heavy-job limiter, plan §8)
+packaging/               the installers' parts (lane M): the Linux scripts and AppArmor profile, the Homebrew cask, winget's
+                         manifests, the Windows installer's include, and installer-hooks.ts, which says what each does with
+                         the daemon's login start
 docs/                    the spec, the plan, these conventions, and research reports
 ```
 
@@ -74,7 +77,7 @@ docs/                    the spec, the plan, these conventions, and research rep
 ## A service
 
 * A Cloudflare Worker: `wrangler.jsonc` (or `wrangler.json`, `wrangler.toml`) beside `src/`, with `main`, `compatibility_date` and its bindings.
-* Code two Workers share lives in `services/shared/`, which is not a package and has no `package.json`: each Worker's `tsconfig.json` includes it and its bundle imports it by relative path.
+* Code two Workers share lives in `services/shared/`, a package (`@waifucave/clover-service-shared`) but not a Worker: it has no wrangler config, and its `exports` name the files others import. Each Worker's `tsconfig.json` includes it (leaving out its `test/`) and its bundle imports it by relative path; anything outside `services/` imports it by name, as the core's account tests import `@waifucave/clover-service-shared/account-token`, and declares it as a `workspace:*` dependency. Its own tests run under Bun (`bun test`).
 * Its tests run it locally: `@waifucave/clover-test-harness/workers` starts the Worker in Miniflare on `127.0.0.1` from its own wrangler config, with in-memory storage. Nothing is deployed until the live gates (plan §8, §10). `services/hello` is the example.
 
 ## A native area

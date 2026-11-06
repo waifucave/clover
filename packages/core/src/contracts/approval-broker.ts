@@ -9,7 +9,7 @@
 // waits for the first answer from a sealed frame or a paired device.
 //
 // The rules the contract pins (and the fake keeps):
-// 1. Changes, `confirm`, plugin OKs and elicitations are always cards (§5.5, S5 §7), and none of them offers an
+// 1. Changes, `confirm`, plugin OKs, elicitations and the person's browser (R10) are always cards (§5.5, S5 §7), and none of them offers an
 //    "always", whatever `ruleKey` or `options` the requester passes: each is answered on its own (`ALWAYS_CARD_KINDS`).
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
 //    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
@@ -38,13 +38,14 @@
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
-  type CardContent, type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput, cardHashInput, isUserTurn,
+  type CallBinding, type CardContent, type TurnOrigin, TREE_TRANSFER, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput,
+  cardHashInput, isUserTurn,
 } from "@waifucave/clover-protocol";
 import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 
 /** The kinds that are always cards and never offer "always" (rule 1). */
-export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation"];
+export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation", "person-browser"];
 
 /** The kinds whose card is denied after 10 minutes unanswered when the user's own message didn't start the turn
  *  (rule 6): every kind but a plugin's OK, which waits for the user. */
@@ -299,11 +300,25 @@ export interface AnswerLedger {
 export type SignedAnswerVerdict = "ok" | "bad-hash" | "unbound" | "mismatch" | "not-approve" | "bad-device" | "bad-time" | "bad-signature" | "used";
 
 /** The receiver's own card for a call (review N1, part 2): what its built-in tables say for this method and params,
- *  binding exactly this call; undefined when it shows no card for that call, which then takes no signed answer. */
+ *  binding exactly this call; undefined when it shows no card for that call, which then takes no signed answer. For
+ *  `tree.transfer` the binding comes from the params (`transferBinding`), never from `computer`, so the source and
+ *  the destination rebuild the same card (R15). */
 export type CallCardRenderer = (call: { computer: string; method: string; params: unknown }) => CardContent | undefined;
 
+/** Whether a card's binding names this computer for this call: the one that runs it; for `tree.transfer` (R15) either
+ *  end, where the params name the same two computers as the binding (`destination` is `computer`, `source` is
+ *  `source`). A `source` on any other method binds nothing. */
+export function bindsComputer(b: CallBinding, method: string, params: unknown, self: string): boolean {
+  if (b.method !== method) return false;
+  if (method !== TREE_TRANSFER) return b.source === undefined && b.computer === self;
+  const p = (params ?? {}) as { source?: unknown; destination?: unknown };
+  if (b.source === undefined || b.source === b.computer || p.source !== b.source || p.destination !== b.computer) return false;
+  return self === b.computer || self === b.source;
+}
+
 /** How a receiver takes a signed answer as proof for a call (`peer.call`, `tool.run`, a peer's `tree.*` write) or a
- *  raise (`setLevel`): it recomputes the card's hash; checks the card binds exactly this computer, method and params;
+ *  raise (`setLevel`): it recomputes the card's hash; checks the card binds exactly this computer, method and params
+ *  (`bindsComputer`: both ends of a `tree.transfer`, each with its own ledger, so each takes the one answer once);
  *  rebuilds its own card for that call (`render`) and refuses one that says anything else (`mismatch`), so a card
  *  that reads "Show the weather" can't bind a level raise; then checks the option is an approve option, that the
  *  device may answer cards (`mayAnswerCards`), the time, and the answer key's signature, and claims the card id in its
@@ -315,7 +330,7 @@ export async function verifySignedAnswer(
   const { card } = s;
   if (c.sha256(cardHashInput(card)) !== card.hash) return "bad-hash";
   const b = card.binds;
-  if (!b || b.computer !== c.self || b.method !== c.method || b.params !== c.sha256(callBindingInput(c.method, c.params))) return "unbound";
+  if (!b || !bindsComputer(b, c.method, c.params, c.self) || b.params !== c.sha256(callBindingInput(c.method, c.params))) return "unbound";
   const mine = c.render({ computer: c.self, method: c.method, params: c.params });
   if (mine === undefined || cardContentInput(mine) !== cardContentInput(card)) return "mismatch";
   if (card.options.find((o) => o.id === s.option)?.kind !== "approve") return "not-approve";

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Qwen Cloud",
+  "description": "Qwen Cloud's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qwen-cloud",
+        "name": "Qwen Cloud",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Qwen Cloud API key. Clover keeps it in your credential store and adds it to Qwen Cloud's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        }
+      }
+    ]
+  }
+}

@@ -34,16 +34,41 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
   describe("BrowserApi", () => {
     test("a bot's tab opens headless at 1280×800 in the bot's own partition; the user's in theirs", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "pack/luna" }, url: "https://example.com" }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "pack/luna" }, url: "https://example.com" }, { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "pack/luna" });
       expect(tab).toMatchObject({ computer: "Studio", place: "headless", viewport: AGENT_VIEWPORT, partition: "persist:bot-pack--luna", heldByUser: false });
       const mine = await browser.open({ owner: { kind: "user" }, show: { view: "panel-1", viewport: VIEW } }, USER);
       expect(mine).toMatchObject({ place: "shown", viewport: VIEW, partition: "persist:user" });
       expect(browser.tabs({ owner: { kind: "user" } }).map((t) => t.id)).toEqual([mine.id]);
     });
 
+    test("each caller opens tabs only for the owners it may name (#179's review, S1)", async () => {
+      const { browser } = setup();
+      const CODE: Caller = { kind: "session", sessionId: "s_code", sessionKind: "coding" };
+      const refused = async (owner: Parameters<typeof browser.open>[0]["owner"], as: Caller) => isContractError(await rejection(browser.open({ owner }, as)), "refused");
+      // A plugin acting as itself: its own partition only, never a bot's, a session's or the person's.
+      expect(await browser.open({ owner: { kind: "plugin", pluginId: "clover/browser-tool" } }, PLUGIN)).toMatchObject({ partition: "persist:plugin-clover--browser-tool" });
+      expect(await refused({ kind: "plugin", pluginId: "other" }, PLUGIN)).toBe(true);
+      expect(await refused({ kind: "bot", bot: "alpha" }, PLUGIN)).toBe(true);
+      expect(await refused({ kind: "session", session: "s_alpha" }, PLUGIN)).toBe(true);
+      expect(await refused({ kind: "user" }, PLUGIN)).toBe(true);
+      // A session: itself or its own bot; another bot or session is refused.
+      expect(await browser.open({ owner: { kind: "session", session: "s_code" } }, CODE)).toMatchObject({ partition: "persist:session-s_code" });
+      expect(await refused({ kind: "bot", bot: "alpha" }, CODE)).toBe(true);
+      expect(await refused({ kind: "session", session: "s_alpha" }, CODE)).toBe(true);
+      expect(await refused({ kind: "bot", bot: "beta" }, BOT)).toBe(true);
+      // The person's own partition: only after that session's R10 card.
+      expect(await refused({ kind: "user" }, CODE)).toBe(true);
+      browser.setUserPartition("s_code", true);
+      expect(await browser.open({ owner: { kind: "user" } }, CODE)).toMatchObject({ partition: "persist:user" });
+      expect(await refused({ kind: "user" }, BOT)).toBe(true);
+      browser.setUserPartition("s_code", false);
+      expect(await refused({ kind: "user" }, CODE)).toBe(true);
+      expect(await refused({ kind: "user" }, { kind: "peer", device: "desk0000000000000001", sessionId: "s_code" })).toBe(true);
+    });
+
     test("showing lays a tab out at the view's size; hiding brings back the agent's 1280×800, without reloading", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" }, url: "https://a.example" }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" }, url: "https://a.example" }, BOT);
       expect(await browser.show(tab.id, "panel-1", VIEW)).toMatchObject({ place: "shown", viewport: VIEW, url: "https://a.example" });
       expect(await browser.hide(tab.id)).toMatchObject({ place: "headless", viewport: AGENT_VIEWPORT, url: "https://a.example" });
     });
@@ -55,9 +80,9 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
         "view-source:https://example.com", "chrome-extension://abc/x.html", "clover-plugin://luna/x.js", "clover://app", "about:settings", "not a url",
       ];
       for (const url of refused) {
-        expect([url, isContractError(await rejection(browser.open({ owner: { kind: "bot", bot: "alpha" }, url }, PLUGIN)), "refused")]).toEqual([url, true]);
+        expect([url, isContractError(await rejection(browser.open({ owner: { kind: "bot", bot: "alpha" }, url }, BOT)), "refused")]).toEqual([url, true]);
       }
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" }, url: "https://example.com" }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" }, url: "https://example.com" }, BOT);
       for (const url of refused) expect(isContractError(await rejection(browser.navigate(tab.id, url, BOT)), "refused")).toBe(true);
       // The page's own links and redirects, and DevTools' navigation, meet the same session.
       expect(browser.pageNavigates(tab.id, "file:///etc/passwd")).toBe(false);
@@ -71,7 +96,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
 
     test("DevTools calls pass the allow list", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       browser.onCdp("Runtime.evaluate", (params) => ({ result: { value: (params as { expression: string }).expression.length } }));
       expect(await browser.cdp(tab.id, "Runtime.evaluate", { expression: "1+1" }, PLUGIN)).toEqual({ result: { value: 3 } });
       expect(await browser.cdp(tab.id, "Page.navigate", { url: "https://b.example" }, PLUGIN)).toEqual({});
@@ -82,20 +107,25 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
 
     test("a Point from a picture of another size is refused", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       const click = { type: "mousePressed", x: 10, y: 10, button: "left" };
       expect(await browser.cdp(tab.id, "Input.dispatchMouseEvent", click, PLUGIN, { viewport: AGENT_VIEWPORT })).toEqual({});
       await browser.show(tab.id, "panel-1", VIEW);
       expect(isContractError(await rejection(browser.cdp(tab.id, "Input.dispatchMouseEvent", click, PLUGIN, { viewport: AGENT_VIEWPORT })), "refused")).toBe(true);
     });
 
-    test("while the user holds a tab, an agent's commands are refused and the user's are not", async () => {
+    test("while the user holds a tab, only the user and a layer acting on their input pass (#179's review, S1)", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       browser.setHeld(tab.id, true);
       expect(isContractError(await rejection(browser.navigate(tab.id, "https://x.example", BOT)), "held")).toBe(true);
+      // A plugin's own code acting as itself (a timer carrying a tool call's action) is refused too.
       expect(isContractError(await rejection(browser.cdp(tab.id, "Page.reload", {}, PLUGIN)), "held")).toBe(true);
       expect(isContractError(await rejection(browser.screenshot(tab.id, PLUGIN)), "held")).toBe(true);
+      expect(isContractError(await rejection(browser.navigate(tab.id, "https://x.example", { kind: "peer", device: "desk0000000000000001" })), "held")).toBe(true);
+      // The view's back button: a layer's command the app saw come from the user's own click.
+      expect((await browser.navigate(tab.id, "https://back.example", PLUGIN, { userInput: true })).url).toBe("https://back.example");
+      expect(isContractError(await rejection(browser.navigate(tab.id, "https://x.example", BOT, { userInput: true })), "held")).toBe(true);
       expect((await browser.navigate(tab.id, "https://mine.example", USER)).url).toBe("https://mine.example");
       browser.setHeld(tab.id, false);
       expect((await browser.navigate(tab.id, "https://x.example", BOT)).url).toBe("https://x.example");
@@ -103,7 +133,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
 
     test("a path in a DevTools call must sit in the bot's scratch folder", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       expect(await browser.cdp(tab.id, "DOM.setFileInputFiles", { files: ["/Users/me/.clover/scratch/alpha/cv.pdf"], nodeId: 1 }, PLUGIN)).toEqual({});
       expect(isContractError(await rejection(browser.cdp(tab.id, "DOM.setFileInputFiles", { files: ["/Users/me/.ssh/id_ed25519"], nodeId: 1 }, PLUGIN)), "refused")).toBe(true);
       expect(isContractError(await rejection(browser.cdp(tab.id, "Page.setDownloadBehavior", { behavior: "allow", downloadPath: "/Users/me/.clover/scratch/alpha/../../settings" }, PLUGIN)), "refused")).toBe(true);
@@ -111,7 +141,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
 
     test("a tab no one uses rests, and goes back to the host before the next command", async () => {
       const { clock, browser, changes } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       clock.advance(FAKE_REST_AFTER_MS - 1);
       expect(browser.tabs()[0]!.place).toBe("headless");
       clock.advance(1);
@@ -123,7 +153,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
 
     test("a host that stopped drawing gives an error, never a stale picture", async () => {
       const { browser } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       browser.setStalled(tab.id, true);
       expect(isContractError(await rejection(browser.screenshot(tab.id, PLUGIN)), "failed")).toBe(true);
       browser.setStalled(tab.id, false);
@@ -132,7 +162,7 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
 
     test("DevTools events reach their listeners; closing says who closed", async () => {
       const { browser, changes } = setup();
-      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
+      const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, BOT);
       const got: [string, unknown][] = [];
       browser.onCdpEvent(tab.id, (m, p) => got.push([m, p]));
       browser.emitCdpEvent(tab.id, "Page.loadEventFired", { timestamp: 1 });

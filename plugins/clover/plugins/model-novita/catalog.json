@@ -1,0 +1,2914 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.novita.ai/openai/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/novita/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://novita.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.novita.ai/openai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "novita/deepseek/deepseek-v3.2",
+      "providerId": "novita",
+      "upstreamId": "deepseek/deepseek-v3.2",
+      "displayName": "DeepSeek V3.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 163840,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v3.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v3.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v3.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v3.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v3.2` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v3.2` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v3.2",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.269,
+          "outputPerMTokUsd": 0.4,
+          "cacheReadPerMTokUsd": 0.1345
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v3.2` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.269, completion 0.4, input_cache_read 0.1345 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v3.2",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita/deepseek/deepseek-v4-flash",
+      "providerId": "novita",
+      "upstreamId": "deepseek/deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-flash",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.28,
+          "cacheReadPerMTokUsd": 0.028
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.14, completion 0.28, input_cache_read 0.028 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita/deepseek/deepseek-v4-flash-0731",
+      "providerId": "novita",
+      "upstreamId": "deepseek/deepseek-v4-flash-0731",
+      "displayName": "DeepSeek V4 Flash 0731",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): max_output_tokens 393216",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.44,
+          "outputPerMTokUsd": 1.32,
+          "cacheReadPerMTokUsd": 0.028
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-flash-0731` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.44, completion 1.32, input_cache_read 0.028 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash-0731",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita/deepseek/deepseek-v4-pro",
+      "providerId": "novita",
+      "upstreamId": "deepseek/deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#deepseek/deepseek-v4-pro",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.6,
+          "outputPerMTokUsd": 3.2,
+          "cacheReadPerMTokUsd": 0.135
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 1.6, completion 3.2, input_cache_read 0.135 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita/deepseek/deepseek-v4-pro-0813",
+      "providerId": "novita",
+      "upstreamId": "deepseek/deepseek-v4-pro-0813",
+      "displayName": "DeepSeek V4 Pro 0813",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): max_output_tokens 393216",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.32,
+          "outputPerMTokUsd": 3.96,
+          "cacheReadPerMTokUsd": 0.044
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4-pro-0813` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 1.32, completion 3.96, input_cache_read 0.044 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro-0813",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita/deepseek/deepseek-v4.1-flash",
+      "providerId": "novita",
+      "upstreamId": "deepseek/deepseek-v4.1-flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): max_output_tokens 393216",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.006
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `deepseek/deepseek-v4.1-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.3, completion 1.2, input_cache_read 0.006 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4.1-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita/google/gemma-4-31b-it",
+      "providerId": "novita",
+      "upstreamId": "google/gemma-4-31b-it",
+      "displayName": "Gemma 4 31B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#google/gemma-4-31b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#google/gemma-4-31b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#google/gemma-4-31b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#google/gemma-4-31b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `google/gemma-4-31b-it` (read 2026-09-27): features include `function-calling` (serverless, structured-outputs, function-calling, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `google/gemma-4-31b-it` (read 2026-09-27): features include `function-calling` (serverless, structured-outputs, function-calling, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#google/gemma-4-31b-it",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.4
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `google/gemma-4-31b-it` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.14, completion 0.4 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemma-4-31b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "novita/inclusionai/ling-3.0-flash",
+      "providerId": "novita",
+      "upstreamId": "inclusionai/ling-3.0-flash",
+      "displayName": "Ling 3.0 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): context_size 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): max_output_tokens 32768",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.06,
+          "outputPerMTokUsd": 0.18,
+          "cacheReadPerMTokUsd": 0.012
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `inclusionai/ling-3.0-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.06, completion 0.18, input_cache_read 0.012 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "inclusionai/ling-3.0-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/meta-llama/llama-3.1-8b-instruct",
+      "providerId": "novita",
+      "upstreamId": "meta-llama/llama-3.1-8b-instruct",
+      "displayName": "Llama 3.1 8B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 16384,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#meta-llama/llama-3.1-8b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.02,
+          "outputPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `meta-llama/llama-3.1-8b-instruct` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.02, completion 0.05 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "llama-3.1-8b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "novita/minimax/minimax-m2.7",
+      "providerId": "novita",
+      "upstreamId": "minimax/minimax-m2.7",
+      "displayName": "MiniMax M2.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m2.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `minimax/minimax-m2.7` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `minimax/minimax-m2.7` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m2.7",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `minimax/minimax-m2.7` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.3, completion 1.2, input_cache_read 0.06 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "novita/minimax/minimax-m3",
+      "providerId": "novita",
+      "upstreamId": "minimax/minimax-m3",
+      "displayName": "MiniMax M3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `minimax/minimax-m3` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `minimax/minimax-m3` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#minimax/minimax-m3",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `minimax/minimax-m3` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.3, completion 1.2, input_cache_read 0.06 USD per 1M tokens — is_tiered_billing true: the entry's base tier is stored",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "novita/moonshotai/kimi-k2.6",
+      "providerId": "novita",
+      "upstreamId": "moonshotai/kimi-k2.6",
+      "displayName": "Kimi K2.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k2.6` (read 2026-09-27): features include `function-calling` (serverless, reasoning, structured-outputs, function-calling)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k2.6` (read 2026-09-27): features include `function-calling` (serverless, reasoning, structured-outputs, function-calling)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.6",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.8,
+          "outputPerMTokUsd": 3.4,
+          "cacheReadPerMTokUsd": 0.16
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k2.6` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.8, completion 3.4, input_cache_read 0.16 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "novita/moonshotai/kimi-k2.7-code",
+      "providerId": "novita",
+      "upstreamId": "moonshotai/kimi-k2.7-code",
+      "displayName": "Kimi K2.7 Code",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.7-code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.7-code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.7-code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.7-code — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k2.7-code` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k2.7-code` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k2.7-code",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.95,
+          "outputPerMTokUsd": 4,
+          "cacheReadPerMTokUsd": 0.19
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k2.7-code` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.95, completion 4, input_cache_read 0.19 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "novita/moonshotai/kimi-k3",
+      "providerId": "novita",
+      "upstreamId": "moonshotai/kimi-k3",
+      "displayName": "Kimi K3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/models/model-detail/moonshotai-kimi-k3 (read 2026-09-28): \"Input Capabilities text, image, video Output Capabilities text\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k3` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k3` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#moonshotai/kimi-k3",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `moonshotai/kimi-k3` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 3, completion 15, input_cache_read 0.3 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "novita/openai/gpt-oss-120b",
+      "providerId": "novita",
+      "upstreamId": "openai/gpt-oss-120b",
+      "displayName": "OpenAI gpt-oss-120b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#openai/gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `openai/gpt-oss-120b` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `openai/gpt-oss-120b` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#openai/gpt-oss-120b",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.05,
+          "outputPerMTokUsd": 0.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `openai/gpt-oss-120b` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.05, completion 0.25 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "novita/qwen/qwen3-coder-480b-a35b-instruct",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3-coder-480b-a35b-instruct",
+      "displayName": "Qwen3 Coder 480B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3-coder-480b-a35b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3-coder-480b-a35b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3-coder-480b-a35b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3-coder-480b-a35b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3-coder-480b-a35b-instruct` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3-coder-480b-a35b-instruct` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.38,
+          "outputPerMTokUsd": 1.55
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3-coder-480b-a35b-instruct` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.38, completion 1.55 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3-coder-480b-a35b-instruct",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.5-397b-a17b",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.5-397b-a17b",
+      "displayName": "Qwen3.5 397B A17B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.5-397b-a17b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.5-397b-a17b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.5-397b-a17b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.5-397b-a17b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.5-397b-a17b` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.5-397b-a17b` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.5-397b-a17b",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 3.6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.5-397b-a17b` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.6, completion 3.6 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.5-397b-a17b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.6-plus",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.6-plus",
+      "displayName": "Qwen3.6 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.6-plus — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.6-plus` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.6-plus` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.6-plus",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.7-max",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.7-max",
+      "displayName": "Qwen3.7 Max",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.7-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.7-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.7-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.7-max — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.7-max` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.7-max` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#qwen/qwen3.7-max",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.7-max` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 1.25, completion 3.75, input_cache_read 0.25 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.7-max",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.8-2.4t-a95b",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.8-2.4t-a95b",
+      "displayName": "Qwen3.8 2.4T A95B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): context_size 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-2.4t-a95b` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 2, completion 6, input_cache_read 0.25 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-2.4t-a95b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.8-27b",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.8-27b",
+      "displayName": "Qwen3.8 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): context_size 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.42,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.085
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-27b` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.42, completion 3, input_cache_read 0.085 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.8-flash",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.8-flash",
+      "displayName": "Qwen3.8 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): context_size 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.47,
+          "cacheReadPerMTokUsd": 0.016
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.15, completion 0.47, input_cache_read 0.016 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/qwen/qwen3.8-max",
+      "providerId": "novita",
+      "upstreamId": "qwen/qwen3.8-max",
+      "displayName": "Qwen3.8 Max",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): context_size 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): features include `function-calling` (serverless, reasoning, structured-outputs, function-calling)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): features include `function-calling` (serverless, reasoning, structured-outputs, function-calling)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `qwen/qwen3.8-max` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 2, completion 6, input_cache_read 0.25 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-max",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita/stepfun/step-3.7-flash",
+      "providerId": "novita",
+      "upstreamId": "stepfun/step-3.7-flash",
+      "displayName": "Step 3.7 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): context_size 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): max_output_tokens 256000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.2,
+          "outputPerMTokUsd": 1.15,
+          "cacheReadPerMTokUsd": 0.04
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `stepfun/step-3.7-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.2, completion 1.15, input_cache_read 0.04 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "stepfun/step-3.7-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/tencent/hy3",
+      "providerId": "novita",
+      "upstreamId": "tencent/hy3",
+      "displayName": "Hy3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): context_size 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): max_output_tokens 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.58,
+          "cacheReadPerMTokUsd": 0.035
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy3` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.14, completion 0.58, input_cache_read 0.035 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "tencent/hy3",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/tencent/hy4-preview",
+      "providerId": "novita",
+      "upstreamId": "tencent/hy4-preview",
+      "displayName": "Hy4 Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): context_size 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): max_output_tokens 64000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.834,
+          "outputPerMTokUsd": 2.501,
+          "cacheReadPerMTokUsd": 0.042
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `tencent/hy4-preview` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.834, completion 2.501, input_cache_read 0.042 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "tencent/hy4-preview",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/xiaomimimo/mimo-v2.5-pro",
+      "providerId": "novita",
+      "upstreamId": "xiaomimimo/mimo-v2.5-pro",
+      "displayName": "MiMo V2.5 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#xiaomimimo/mimo-v2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#xiaomimimo/mimo-v2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#xiaomimimo/mimo-v2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#xiaomimimo/mimo-v2.5-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.5-pro` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.5-pro` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#xiaomimimo/mimo-v2.5-pro",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.522,
+          "outputPerMTokUsd": 1.044,
+          "cacheReadPerMTokUsd": 0.0043
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.5-pro` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.522, completion 1.044, input_cache_read 0.0043 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "xiaomimimo/mimo-v2.5-pro",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/xiaomimimo/mimo-v2.6-flash",
+      "providerId": "novita",
+      "upstreamId": "xiaomimimo/mimo-v2.6-flash",
+      "displayName": "MiMo V2.6 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): input_modalities ['text', 'image', 'video', 'audio']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.28,
+          "cacheReadPerMTokUsd": 0.0028
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.14, completion 0.28, input_cache_read 0.0028 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "xiaomimimo/mimo-v2.6-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/xiaomimimo/mimo-v2.6-pro",
+      "providerId": "novita",
+      "upstreamId": "xiaomimimo/mimo-v2.6-pro",
+      "displayName": "MiMo V2.6 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): input_modalities ['text', 'image', 'video', 'audio']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): features include `function-calling` (serverless, function-calling, structured-outputs, reasoning)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.435,
+          "outputPerMTokUsd": 0.87,
+          "cacheReadPerMTokUsd": 0.0036
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `xiaomimimo/mimo-v2.6-pro` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.435, completion 0.87, input_cache_read 0.0036 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "xiaomimimo/mimo-v2.6-pro",
+      "modelFamily": "other"
+    },
+    {
+      "key": "novita/zai-org/glm-4.7",
+      "providerId": "novita",
+      "upstreamId": "zai-org/glm-4.7",
+      "displayName": "GLM 4.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-4.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-4.7` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-4.7` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-4.7",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 2.2,
+          "cacheReadPerMTokUsd": 0.11
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-4.7` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.6, completion 2.2, input_cache_read 0.11 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "novita/zai-org/glm-5.1",
+      "providerId": "novita",
+      "upstreamId": "zai-org/glm-5.1",
+      "displayName": "GLM 5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.1` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.1` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.1",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.38,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.1` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 1.38, completion 4.4, input_cache_read 0.26 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "novita/zai-org/glm-5.2",
+      "providerId": "novita",
+      "upstreamId": "zai-org/glm-5.2",
+      "displayName": "GLM 5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.2` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.2` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/novita/index.ts#zai-org/glm-5.2",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.2` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 1.4, completion 4.4, input_cache_read 0.26 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "novita/zai-org/glm-5.3",
+      "providerId": "novita",
+      "upstreamId": "zai-org/glm-5.3",
+      "displayName": "GLM 5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 1.4, completion 4.4, input_cache_read 0.26 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "novita/zai-org/glm-5.3-flash",
+      "providerId": "novita",
+      "upstreamId": "zai-org/glm-5.3-flash",
+      "displayName": "GLM 5.3 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): context_size 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): features include `function-calling` (function-calling, structured-outputs, reasoning, serverless)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): features include `structured-outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): features include `reasoning`; no effort vocabulary is published in the entry",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models — Novita's own public model entry `zai-org/glm-5.3-flash` (read 2026-09-27): pricing.prompt.origin_price_per_m_decimal 0.15, completion 0.5, input_cache_read 0.03 USD per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    }
+  ]
+}

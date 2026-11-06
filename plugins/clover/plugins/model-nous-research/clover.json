@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Nous Research",
+  "description": "Nous Research's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nous-research",
+        "name": "Nous Research",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Nous Research API key. Clover keeps it in your credential store and adds it to Nous Research's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://inference-api.nousresearch.com/v1"
+        }
+      }
+    ]
+  }
+}

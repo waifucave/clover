@@ -1,0 +1,267 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "reasoning continuity is tool-loop fragile: WS-13 §8.2 records a hard 400 when reasoning state is missing mid-tool-loop, and the Anthropic dialect's own continuity contract for this vendor is unproven — the tool-loop corpus must pass before promotion",
+        "admission is fetched-document but the DIALECT'S behaviour is untested: no live gate case has run against this endpoint"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://api-docs.deepseek.com/guides/anthropic_api — DeepSeek's own guide, retrieved 2026-09-06: \"our API has added support for the Anthropic API format, with the base_url being https://api.deepseek.com/anthropic\", and `export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic`. Same user-minted API key as the `deepseek` row.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "deepseek-anthropic/deepseek-flash",
+      "providerId": "deepseek-anthropic",
+      "upstreamId": "deepseek-flash",
+      "displayName": "DeepSeek V4.1 Flash (Anthropic dialect)",
+      "aliases": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — model details: both have 1M context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/create-chat-completion/ — max_tokens accepts up to 384K (393216) for both",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — vision supported for Flash; text chat input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/list-models/ — model schema lists output_modalities text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — price table lists cache-hit input rate for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — both support thinking and non-thinking; thinking is default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "deepseek-anthropic/deepseek-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://api-docs.deepseek.com/guides/anthropic_api (read 2026-10-29): the compatibility table lists assistant content `type = \"thinking\"` as Supported (and `redacted_thinking` as Not Supported). The Anthropic adapter replays the model's own thinking blocks on its next request. Whether omission errors in a tool loop is not documented for this dialect (the OpenAI-format 400 is DeepSeek's `reasoning_content` rule, not this one). Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.006
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ (retrieved 2026-09-19) — DeepSeek-V4.1-Flash PEAK rate per 1M tokens: cache-miss input $0.30, cache-hit input $0.006, output $1.20. The page also publishes lower off-peak rates ($0.15 / $0.003 / $0.60), which `ModelPricing` cannot represent. Peak is intentionally recorded so budget estimates do not under-report during peak hours; it over-reports off-peak usage.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "top_k",
+        "thinking.budget_tokens",
+        "container",
+        "mcp_servers",
+        "service_tier",
+        "tools[].cache_control",
+        "tool_choice.disable_parallel_tool_use",
+        "messages[].cache_control",
+        "messages[].citations"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "deepseek-anthropic/deepseek-v4-pro",
+      "providerId": "deepseek-anthropic",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — model details: both have 1M context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/create-chat-completion/ — max_tokens accepts up to 384K (393216) for both",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — vision not supported for V4 Pro; text chat input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/list-models/ — model schema lists output_modalities text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — price table lists cache-hit input rate for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — both support thinking and non-thinking; thinking is default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "deepseek-anthropic/deepseek-v4-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://api-docs.deepseek.com/guides/anthropic_api (read 2026-10-29): the compatibility table lists assistant content `type = \"thinking\"` as Supported (and `redacted_thinking` as Not Supported). The Anthropic adapter replays the model's own thinking blocks on its next request. Whether omission errors in a tool loop is not documented for this dialect (the OpenAI-format 400 is DeepSeek's `reasoning_content` rule, not this one). Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.32,
+          "outputPerMTokUsd": 3.96,
+          "cacheReadPerMTokUsd": 0.044
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ (retrieved 2026-09-19) — DeepSeek-V4-Pro PEAK rate per 1M tokens: cache-miss input $1.32, cache-hit input $0.044, output $3.96. The page also publishes lower off-peak rates ($0.66 / $0.022 / $1.98), which `ModelPricing` cannot represent. Peak is intentionally recorded so budget estimates do not under-report during peak hours; it over-reports off-peak usage.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "top_k",
+        "thinking.budget_tokens",
+        "container",
+        "mcp_servers",
+        "service_tier",
+        "tools[].cache_control",
+        "tool_choice.disable_parallel_tool_use",
+        "messages[].cache_control",
+        "messages[].citations"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    }
+  ]
+}

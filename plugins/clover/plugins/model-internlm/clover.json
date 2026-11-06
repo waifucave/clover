@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "InternLM (Intern-S1)",
+  "description": "InternLM (Intern-S1)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "internlm",
+        "name": "InternLM (Intern-S1)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your InternLM (Intern-S1) API key. Clover keeps it in your credential store and adds it to InternLM (Intern-S1)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://chat.intern-ai.org.cn/api/v1"
+        }
+      }
+    ]
+  }
+}

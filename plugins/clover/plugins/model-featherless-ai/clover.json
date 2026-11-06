@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Featherless AI",
+  "description": "Featherless AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "featherless-ai",
+        "name": "Featherless AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Featherless AI API key. Clover keeps it in your credential store and adds it to Featherless AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.featherless.ai/v1"
+        }
+      }
+    ]
+  }
+}

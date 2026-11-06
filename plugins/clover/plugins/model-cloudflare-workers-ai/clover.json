@@ -1,0 +1,33 @@
+{
+  "manifest": 1,
+  "name": "Cloudflare Workers AI",
+  "description": "Cloudflare Workers AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "settings": {
+    "accountId": {
+      "type": "string",
+      "title": "accountId",
+      "description": "Your Cloudflare Workers AI accountId, as its endpoint names it (https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1).",
+      "required": true
+    }
+  },
+  "contributes": {
+    "models": [
+      {
+        "provider": "cloudflare-workers-ai",
+        "name": "Cloudflare Workers AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Cloudflare Workers AI API key. Clover keeps it in your credential store and adds it to Cloudflare Workers AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.cloudflare.com/client/v4/accounts/${setting:accountId}/ai/v1"
+        }
+      }
+    ]
+  }
+}

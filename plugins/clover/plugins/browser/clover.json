@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": "Browser tool",
+  "description": "mcp__clover__Browser: a bot's hands on the Clover Browser, through the plugin API's browser calls.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "browser"
+  ],
+  "contributes": {
+    "mcpServers": {
+      "browser": {
+        "type": "host",
+        "tools": {
+          "Browser": "preload"
+        },
+        "instructions": "instructions.md",
+        "perComputer": true
+      }
+    }
+  }
+}

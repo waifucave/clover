@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Coze",
+  "description": "Coze's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "coze",
+        "name": "Coze",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Coze API key. Clover keeps it in your credential store and adds it to Coze's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.coze.com/v1"
+        }
+      }
+    ]
+  }
+}

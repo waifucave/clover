@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "NVIDIA NIM",
+  "description": "NVIDIA NIM's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nvidia",
+        "name": "NVIDIA NIM",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your NVIDIA NIM API key. Clover keeps it in your credential store and adds it to NVIDIA NIM's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://integrate.api.nvidia.com/v1"
+        }
+      }
+    ]
+  }
+}

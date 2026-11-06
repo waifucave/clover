@@ -1,0 +1,4047 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/nvidia/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read",
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "Hosted endpoints are trial/rate-limited developer access; NVIDIA marks some model endpoints deprecated without a date."
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "free",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://build.nvidia.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://integrate.api.nvidia.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "nvidia/abacusai/dracarys-llama-3.1-70b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "abacusai/dracarys-llama-3.1-70b-instruct",
+      "displayName": "Dracarys Llama 3.1 70B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#abacusai/dracarys-llama-3.1-70b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#abacusai/dracarys-llama-3.1-70b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/abacusai/dracarys-llama-3_1-70b-instruct — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/abacusai/dracarys-llama-3_1-70b-instruct — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/abacusai/dracarys-llama-3_1-70b-instruct (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/abacusai/dracarys-llama-3_1-70b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "abacusai/dracarys-llama-3.1-70b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+      "providerId": "nvidia",
+      "upstreamId": "deepseek-ai/deepseek-v4.1-flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash (read 2026-09-27): \"\"contextLength\":1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash (read 2026-09-27): \"\"max_tokens\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1048576,...,\"default\":262144}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/deepseek-ai/deepseek-v4.1-flash (read 2026-09-27): \"supports multi-turn conversations, tool calling, thinking mode, numeric reasoning effort from 1 to 100, ...\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v4.1-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "nvidia/google/gemma-2-2b-it",
+      "providerId": "nvidia",
+      "upstreamId": "google/gemma-2-2b-it",
+      "displayName": "Gemma 2 2B IT",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#google/gemma-2-2b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#google/gemma-2-2b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-2-2b-it — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-2-2b-it — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-2-2b-it (read 2026-09-27): \"\"contextLength\":8192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-2-2b-it (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/google/gemma-2-2b-it (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemma-2-2b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "nvidia/google/gemma-3n-e2b-it",
+      "providerId": "nvidia",
+      "upstreamId": "google/gemma-3n-e2b-it",
+      "displayName": "Gemma 3n E2B IT",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-3n-e2b-it (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\",\"Audio\",\"Video\"]\" — catalog row lists text-only; NVIDIA's own spec JSON states all four modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#google/gemma-3n-e2b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-3n-e2b-it — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-3n-e2b-it — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-3n-e2b-it (read 2026-09-27): \"\"contextLength\":32768\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-3n-e2b-it (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":8192,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/google/gemma-3n-e2b-it (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemma-3n-e2b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "nvidia/google/gemma-4-31b-it",
+      "providerId": "nvidia",
+      "upstreamId": "google/gemma-4-31b-it",
+      "displayName": "Gemma 4 31B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-4-31b-it (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\",\"Video\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image+Video",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#google/gemma-4-31b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-4-31b-it — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-4-31b-it — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/google/gemma-4-31b-it (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/google/gemma-4-31b-it (read 2026-09-27): \"\"reasoning\":{\"defaultEnabled\":true,...,\"inputsEnabled\":{...,\"chat_template_kwargs\":{\"enable_thinking\":true}},\"inputsDisabled\":{...,\"chat_template_kwargs\":{\"enable_thinking\":false}}}\" — toggle is the boolean sub-field enable_thinking inside chat_template_kwargs, not a separate top-level parameter — effort values ['true', 'false'] ride `chat_template_kwargs`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemma-4-31b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "nvidia/meta/llama-3.1-8b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-3.1-8b-instruct",
+      "displayName": "Llama 3.1 8B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.1-8b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3_1-8b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3_1-8b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3_1-8b-instruct (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3_1-8b-instruct (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/meta/llama-3_1-8b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-8b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/llama-3.2-11b-vision-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-3.2-11b-vision-instruct",
+      "displayName": "Llama 3.2 11B Vision Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-11b-vision-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-11b-vision-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/meta-llama-3_2-11b-vision-instruct — the model reference documents no tool/function-calling parameters; the build.nvidia.com model page no longer resolves (re-checked 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/meta-llama-3_2-11b-vision-instruct — the model reference documents no tool/function-calling parameters; the build.nvidia.com model page no longer resolves (re-checked 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct (read 2026-09-27): \"Context length ... 128k | 128k (table row for both 11B and 90B Vision)\" — maker (Meta) HF model card states 128k for the vision family; reported here per the maker-exception rule since build.nvidia.com's own page is unreachable",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct (read 2026-09-27): \"\" — plain instruction-tuned vision model; no thinking/CoT mode documented on the maker card",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.2-11b-vision-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/llama-3.2-1b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-3.2-1b-instruct",
+      "displayName": "Llama 3.2 1B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-1b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-1b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-1b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-1b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-1b-instruct (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-1b-instruct (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/meta/llama-3.2-1b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.2-1b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/llama-3.2-3b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-3.2-3b-instruct",
+      "displayName": "Llama 3.2 3B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-3b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-3b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-3b-instruct — the model page's capability record states `modelCapability.functionCalling: true`, but the model's API reference lists no `tools`/`tool_choice` fields, so the claim is held at a lower confidence (re-read 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-3b-instruct — the model page's capability record states `modelCapability.functionCalling: true`, but the model's API reference lists no `tools`/`tool_choice` fields, so the claim is held at a lower confidence (re-read 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-3b-instruct (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-3.2-3b-instruct (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/meta/llama-3.2-3b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.2-3b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/llama-3.2-90b-vision-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-3.2-90b-vision-instruct",
+      "displayName": "Llama 3.2 90B Vision Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-90b-vision-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-3.2-90b-vision-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/meta-llama-3_2-90b-vision-instruct — the model reference documents no tool/function-calling parameters; the build.nvidia.com model page no longer resolves (re-checked 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/meta-llama-3_2-90b-vision-instruct — the model reference documents no tool/function-calling parameters; the build.nvidia.com model page no longer resolves (re-checked 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct (read 2026-09-27): \"Context length ... 128k | 128k (table row for both 11B and 90B Vision)\" — maker (Meta) HF model card; build.nvidia.com's own page is unreachable",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct (read 2026-09-27): \"\" — plain instruction-tuned vision model; no thinking mode documented",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.2-90b-vision-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/llama-4-maverick-17b-128e-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-4-maverick-17b-128e-instruct",
+      "displayName": "Llama 4 Maverick 17B 128E Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-4-maverick-17b-128e-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-4-maverick-17b-128e-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://integrate.api.nvidia.com/v1/models (read 2026-09-27) — this id is ABSENT from NVIDIA's live model list and its build.nvidia.com page no longer resolves; NIM for VLMs' function-calling guide (https://docs.nvidia.com/nim/vision-language-models/1.4.1/function-calling.html) covers the model but not this hosted endpoint, so the row stays fail-closed `unknown`.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://integrate.api.nvidia.com/v1/models (read 2026-09-27) — this id is ABSENT from NVIDIA's live model list and its build.nvidia.com page no longer resolves; NIM for VLMs' function-calling guide (https://docs.nvidia.com/nim/vision-language-models/1.4.1/function-calling.html) covers the model but not this hosted endpoint, so the row stays fail-closed `unknown`.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Instruct (read 2026-09-27): \"Context length | 1M\" — maker (Meta) HF model card states 1M token context; build.nvidia.com's own page is gone",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Instruct (read 2026-09-27): \"\" — 'Reasoning & Knowledge'/'Image Reasoning' on the card are benchmark-category labels, not a thinking-mode feature; no CoT/effort parameter documented",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-4-maverick-17b-128e-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/llama-guard-4-12b",
+      "providerId": "nvidia",
+      "upstreamId": "meta/llama-guard-4-12b",
+      "displayName": "Llama Guard 4 12B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-guard-4-12b (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image (Llama Guard 4 is multimodal)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#meta/llama-guard-4-12b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-guard-4-12b — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-guard-4-12b — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 163840,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-guard-4-12b (read 2026-09-27): \"\"contextLength\":163840\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 30,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/llama-guard-4-12b (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":30,...\" — a moderation/classifier model; the endpoint caps generation at 30 tokens (it returns a short safety verdict)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/meta/llama-guard-4-12b (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-guard-4-12b",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/meta/muse-glimmer-30b",
+      "providerId": "nvidia",
+      "upstreamId": "meta/muse-glimmer-30b",
+      "displayName": "Muse Glimmer 30B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/muse-glimmer-30b (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/muse-glimmer-30b (read 2026-09-27): \"\"max_tokens\":{\"default\":8192,...,\"maximum\":16384,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/muse-glimmer-30b (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/muse-glimmer-30b (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/meta/muse-glimmer-30b (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/meta/muse-glimmer-30b (read 2026-09-27): \"Controls Inkling's reasoning effort. The levels map to `0.0`, `0.1`, `0.2`, `0.7`, `0.9`, and `0.99`, respectively.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "canonicalModelId": "muse-glimmer-30b",
+      "modelFamily": "muse"
+    },
+    {
+      "key": "nvidia/minimaxai/minimax-m2.7",
+      "providerId": "nvidia",
+      "upstreamId": "minimaxai/minimax-m2.7",
+      "displayName": "MiniMax M2.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#minimaxai/minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#minimaxai/minimax-m2.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/minimaxai/minimax-m2.7 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/minimaxai/minimax-m2.7 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/minimaxai/minimax-m2.7 (read 2026-09-27): \"\"contextLength\":204800\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/minimaxai/minimax-m2.7 (read 2026-09-27): \"\"max_tokens\":{\"default\":8192,...,\"maximum\":16384,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/minimaxai/minimax-m2.7 (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":true}\" — reasoning:true is the only evidence; the page documents no chat_template_kwargs, reasoning_effort, system-prompt toggle or reasoning_content sample for this row",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "minimaxai/minimax-m2.7",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/mistralai/devstral-2-123b-instruct-2512",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/devstral-2-123b-instruct-2512",
+      "displayName": "Devstral 2 123B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/devstral-2-123b-instruct-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/devstral-2-123b-instruct-2512 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/devstral-2-123b-instruct-2512 — the model page presents an agentic coding model and its request template carries `tools`, but states no structured `functionCalling` flag (re-read 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/devstral-2-123b-instruct-2512 — the model page presents an agentic coding model and its request template carries `tools`, but states no structured `functionCalling` flag (re-read 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/devstral-2-123b-instruct-2512 (read 2026-09-27): \"State-of-the-art open code model with deep reasoning, 256k context, and unmatched efficiency.\" — stated as \"256k\" in the page description; no structured specifications JSON is present on this page",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/devstral-2-123b-instruct-2512 (read 2026-09-27): \"\"max_tokens\":{\"default\":8192,...,\"maximum\":16384,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/devstral-2-123b-instruct-2512 (read 2026-09-27): \"...with deep reasoning...\" — marketing copy states 'deep reasoning'; no modelCapability JSON, effort parameter or toggle documented on this page",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "devstral-2-123b-instruct-2512",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "nvidia/mistralai/ministral-14b-instruct-2512",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/ministral-14b-instruct-2512",
+      "displayName": "Ministral 14B Instruct 2512",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/ministral-14b-instruct-2512 (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/ministral-14b-instruct-2512 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/ministral-14b-instruct-2512 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/ministral-14b-instruct-2512 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/ministral-14b-instruct-2512 (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/ministral-14b-instruct-2512 (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":8192,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/ministral-14b-instruct-2512 (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ministral-14b-instruct-2512",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "nvidia/mistralai/mistral-large-3-675b-instruct-2512",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/mistral-large-3-675b-instruct-2512",
+      "displayName": "Mistral Large 3 675B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512 (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mistral-large-3-675b-instruct-2512 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512 (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512 (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":8192,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512 (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "mistral-large-3-675b-instruct-2512",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "nvidia/mistralai/mistral-medium-3.5-128b",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/mistral-medium-3.5-128b",
+      "displayName": "Mistral Medium 3.5 128B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-medium-3.5-128b (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mistral-medium-3.5-128b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-medium-3.5-128b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-medium-3.5-128b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-medium-3.5-128b (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-medium-3.5-128b (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":32768,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/mistral-medium-3.5-128b (read 2026-09-27): \"\"reasoning_effort\":{\"enum\":[\"none\",\"high\"],\"default\":\"high\",...,\"description\":\"Controls reasoning effort. `high` enables full reasoning and `none` disables it.\"}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "high"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "canonicalModelId": "mistral-medium-3.5-128b",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "nvidia/mistralai/mistral-nemotron",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/mistral-nemotron",
+      "displayName": "Mistral Nemotron",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mistral-nemotron",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mistral-nemotron — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-nemotron — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-nemotron — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-nemotron (read 2026-09-27): \"128K Maximum Context Length\" — stated as \"128K\" in prose (no JSON specifications block on this page)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-nemotron (read 2026-09-27): \"\"max_tokens\":{\"default\":4096,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/mistral-nemotron (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,\"structuredOutput\":false,\"reasoning\":true}\" — reasoning:true is the only evidence; no chat_template_kwargs, reasoning_effort, system-prompt toggle or reasoning_content sample documented on this page",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "mistral-nemotron",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/mistralai/mistral-small-4-119b-2603",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/mistral-small-4-119b-2603",
+      "displayName": "Mistral Small 4 2603",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-small-4-119b-2603 (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mistral-small-4-119b-2603 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-small-4-119b-2603 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-small-4-119b-2603 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-small-4-119b-2603 (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mistral-small-4-119b-2603 (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":32768,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/mistral-small-4-119b-2603 (read 2026-09-27): \"\"reasoning_effort\":{\"enum\":[\"none\",\"high\"],\"default\":\"high\",...,\"description\":\"Controls reasoning effort. `high` enables full reasoning and `none` disables it.\"}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "high"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "canonicalModelId": "mistral-small-4-119b-2603",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "nvidia/mistralai/mixtral-8x7b-instruct-v0.1",
+      "providerId": "nvidia",
+      "upstreamId": "mistralai/mixtral-8x7b-instruct-v0.1",
+      "displayName": "Mixtral 8x7B Instruct v0.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mixtral-8x7b-instruct-v0.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#mistralai/mixtral-8x7b-instruct-v0.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mixtral-8x7b-instruct — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mixtral-8x7b-instruct — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/mistralai/mixtral-8x7b-instruct (read 2026-09-27): \"\"contextLength\":32768\" — page title confirms mixtral-8x7b-instruct-v0.1 despite the shorter URL slug",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/mistralai/mixtral-8x7b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "mixtral-8x7b-instruct-v0.1",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/moonshotai/kimi-k2.6",
+      "providerId": "nvidia",
+      "upstreamId": "moonshotai/kimi-k2.6",
+      "displayName": "Kimi K2.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#moonshotai/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#moonshotai/kimi-k2.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/moonshotai-kimi-k2-6 — the model reference describes tool calling. The build.nvidia.com model page no longer resolves (re-checked 2026-09-27); the id is still listed by https://integrate.api.nvidia.com/v1/models",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/moonshotai-kimi-k2-6 — the model reference describes tool calling. The build.nvidia.com model page no longer resolves (re-checked 2026-09-27); the id is still listed by https://integrate.api.nvidia.com/v1/models",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/moonshotai/Kimi-K2.6 (read 2026-09-27): \"Context Length | 256K\" — stated as \"256K\" in the model card table; text elsewhere confirms evals run at 262,144 tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/moonshotai/Kimi-K2.6 (read 2026-09-27): \"To use instant mode, you need to pass {'chat_template_kwargs': {\"thinking\": False}} in extra_body.\" — maker's own sub-field name is 'thinking' (nested in chat_template_kwargs), default true (Thinking mode); distinct from NVIDIA's usual 'enable_thinking' key name — the maker's effort values ['true', 'false'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "nvidia/moonshotai/kimi-k3",
+      "providerId": "nvidia",
+      "upstreamId": "moonshotai/kimi-k3",
+      "displayName": "Kimi K3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/moonshotai/kimi-k3 (read 2026-09-27): \"\"contextLength\":1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/moonshotai/kimi-k3 (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":65536,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/moonshotai/kimi-k3 (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/moonshotai/kimi-k3 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/moonshotai/kimi-k3 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/moonshotai/kimi-k3 (read 2026-09-27): \"\"reasoning_effort\":{\"enum\":[\"low\",\"high\",\"max\"],\"default\":\"max\",...,\"description\":\"Controls how long the model reasons before answering...\"}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "none"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "nvidia/nvidia/ising-calibration-1-35b-a3b",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/ising-calibration-1-35b-a3b",
+      "displayName": "Ising Calibration 1 35B A3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/ising-calibration-1-35b-a3b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/ising-calibration-1-35b-a3b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/ising-calibration-1-35b-a3b — a calibration model; the page's capability record states `modelCapability.functionCalling: false`, but the URL now renders a differently-named release (ising-calibration-1.5-31b), so the claim is held at `inferred` (re-read 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/ising-calibration-1-35b-a3b — a calibration model; the page's capability record states `modelCapability.functionCalling: false`, but the URL now renders a differently-named release (ising-calibration-1.5-31b), so the claim is held at `inferred` (re-read 2026-09-27)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/ising-calibration-1-35b-a3b",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ising-calibration-1-35b-a3b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.1-nemoguard-8b-content-safety",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.1-nemoguard-8b-content-safety",
+      "displayName": "Llama 3.1 Nemoguard 8B Content Safety",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemoguard-8b-content-safety",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemoguard-8b-content-safety — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-content-safety — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-content-safety — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-content-safety (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-content-safety (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-nemoguard-8b-content-safety",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.1-nemoguard-8b-topic-control",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+      "displayName": "Llama 3.1 Nemoguard 8B Topic Control",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemoguard-8b-topic-control",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemoguard-8b-topic-control — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-topic-control — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-topic-control — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-topic-control (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1024,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-topic-control (read 2026-09-27): \"\"max_tokens\":{\"type\":\"integer\",...,\"default\":1024} (no maximum)\" — schema gives only a default of 1024 with no explicit maximum; reported as the documented figure available",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemoguard-8b-topic-control (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-nemoguard-8b-topic-control",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "displayName": "Llama 3.1 Nemotron Nano 8B v1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemotron-nano-8b-v1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemotron-nano-8b-v1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-nano-8b-v1 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-nano-8b-v1 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-nano-8b-v1 (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-nano-8b-v1 (read 2026-09-27): \"\"max_tokens\":{...,\"default\":4096,\"maximum\":16384}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-nano-8b-v1 (read 2026-09-27): \"\"reasoning\":{\"defaultEnabled\":false,\"systemPromptEnabled\":\"detailed thinking on\",\"systemPromptDisabled\":\"detailed thinking off\",...}\" — toggle is a literal system-message string, not a request-body field — effort values ['detailed thinking on', 'detailed thinking off'] ride `system_prompt`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-nemotron-nano-8b-v1",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+      "displayName": "Llama 3.1 Nemotron Nano VL 8B v1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemotron-nano-vl-8b-v1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1 — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1 — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1 (read 2026-09-27): \"\"contextLength\":16384\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 2048,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1 (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":2048,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1 (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-nemotron-nano-vl-8b-v1",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      "displayName": "Llama 3.1 Nemotron Safety Guard 8B v3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.1-nemotron-safety-guard-8b-v3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-safety-guard-8b-v3 — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-safety-guard-8b-v3 — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-safety-guard-8b-v3 (read 2026-09-27): \"\"contextLength\":8192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/llama-3_1-nemotron-safety-guard-8b-v3 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":false,\"structuredOutput\":false,\"reasoning\":true}\" — reasoning:true is the only evidence; this is a safety/guard classifier and the page documents no chat_template_kwargs, reasoning_effort or system-prompt toggle",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-nemotron-safety-guard-8b-v3",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.3-nemotron-super-49b-v1",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.3-nemotron-super-49b-v1",
+      "displayName": "Llama 3.3 Nemotron Super 49B v1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.3-nemotron-super-49b-v1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/llama-3.3-nemotron-super-49b-v1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1 (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1 (read 2026-09-27): \"\"max_tokens\":{...,\"default\":4096,\"maximum\":16384}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1 (read 2026-09-27): \"\"reasoning\":{\"defaultEnabled\":true,\"systemPromptEnabled\":\"detailed thinking on\",\"systemPromptDisabled\":\"detailed thinking off\",...}\" — toggle is a literal system-message string, not a request-body field — effort values ['detailed thinking on', 'detailed thinking off'] ride `system_prompt`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.3-nemotron-super-49b-v1",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "displayName": "Llama 3.3 Nemotron Super 49B v1.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1_5 — hosted specifications show 131K context; integer expands rounded display to power-of-two tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1_5 — hosted specifications list text input modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1_5 — hosted specifications list text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1_5 — hosted specifications explicitly tag function calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-llama-3_3-nemotron-super-49b-v1_5 — tool/function calling is documented for model family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-llama-3_3-nemotron-super-49b-v1_5 — model card/specifications document reasoning or thinking capability",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:41:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/llama-3_3-nemotron-super-49b-v1_5 (read 2026-09-27): \"\"max_tokens\":{...,\"default\":65536,\"maximum\":65536}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "llama-3.3-nemotron-super-49b-v1.5",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3-content-safety",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3-content-safety",
+      "displayName": "Nemotron 3 Content Safety",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-content-safety (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-3-content-safety — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-content-safety — a content-safety CLASSIFIER: its output is a safety verdict, not an agent turn. NOTE the page's own capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27), which this ruling overrides on the model's documented purpose; held at `inferred` for that reason",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-content-safety — a content-safety CLASSIFIER: its output is a safety verdict, not an agent turn. NOTE the page's own capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27), which this ruling overrides on the model's documented purpose; held at `inferred` for that reason",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-content-safety (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-content-safety (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":4096,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-content-safety (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,\"structuredOutput\":false,\"reasoning\":true}\" — reasoning:true is the only evidence; no effort/toggle parameter documented",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "nemotron-3-content-safety",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3-nano-30b-a3b",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3-nano-30b-a3b",
+      "displayName": "Nemotron 3 Nano 30B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b — hosted specifications show 262K context; integer expands rounded display to power-of-two tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b — hosted specifications list text input modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b — hosted specifications list text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-nano-30b-a3b — model card/reference describes tool/function calling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-nano-30b-a3b — tool/function calling is documented for model family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-nano-30b-a3b — model card/specifications document reasoning or thinking capability",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:41:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b (read 2026-09-27): \"Other Properties Related to Output: - Maximum output size: 128K tokens\" — stated as \"128K\" in the model card prose; note the LIVE request schema on this same page caps max_tokens at a \"maximum\":32768 (default 16384) -- the 128K figure is the documented model capability, the 32768 figure is the enforced per-call request cap on this endpoint",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3-nano-30b-a3b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "displayName": "Nemotron 3 Nano Omni 30B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning — hosted specifications show 262K context; integer expands rounded display to power-of-two tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning — hosted specifications list text, image, audio, video input modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning — hosted specifications list text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard — model card/reference describes tool/function calling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard — tool/function calling is documented for model family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard — model card says supports JSON output format",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard — model card/specifications document reasoning or thinking capability",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:41:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":65536,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3-nano-omni-30b-a3b-reasoning",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3-super-120b-a12b",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3-super-120b-a12b",
+      "displayName": "Nemotron 3 Super 120B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b — hosted specifications show 1M context; integer expands rounded display to power-of-two tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b — hosted specifications list text input modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b — hosted specifications list text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard — model card/reference describes tool/function calling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard — tool/function calling is documented for model family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard — model card/specifications document reasoning or thinking capability",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:41:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "nemotron-3-super-120b-a12b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3-ultra-550b-a55b",
+      "displayName": "Nemotron 3 Ultra 550B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b — hosted specifications show 1M context; integer expands rounded display to power-of-two tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b — hosted specifications list text input modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b — hosted specifications list text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b/modelcard — model card/reference describes tool/function calling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b/modelcard — tool/function calling is documented for model family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b/modelcard — model card/specifications document reasoning or thinking capability",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:41:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b (read 2026-09-27): \"\"max_tokens\":{...,\"default\":16384,\"maximum\":32768}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3-ultra-550b-a55b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3.5-content-safety",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3.5-content-safety",
+      "displayName": "Nemotron 3.5 Content Safety",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-3.5-content-safety",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-3.5-content-safety — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-content-safety — a content-safety CLASSIFIER: its output is a safety verdict, not an agent turn. NOTE the page's own capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27), which this ruling overrides on the model's documented purpose; held at `inferred` for that reason",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-content-safety — a content-safety CLASSIFIER: its output is a safety verdict, not an agent turn. NOTE the page's own capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27), which this ruling overrides on the model's documented purpose; held at `inferred` for that reason",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-content-safety (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-content-safety (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":4096,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-content-safety (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,\"structuredOutput\":false,\"reasoning\":true}\" — reasoning:true is the only evidence; no effort/toggle parameter documented",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "nemotron-3.5-content-safety",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "displayName": "Nemotron 3.5 Lightning 30B A3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b (read 2026-09-27): \"\"contextLength\":1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b (read 2026-09-27): \"\"max_tokens\":{\"default\":16384,...,\"maximum\":32768,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b (read 2026-09-27): \"\"inputModalities\":[\"Text\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b (read 2026-09-27): \"\"reasoning\":{\"defaultEnabled\":true,...,\"chat_template_kwargs\":{\"enable_thinking\":true}} / {\"enable_thinking\":false}\" — effort values ['true', 'false'] (via `chat_template_kwargs`) are not recorded: not the literal this adapter sends, or not the serving provider's own statement",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "nemotron-3.5-lightning-30b-a3b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "displayName": "Nemotron 3.5 Super VL 120B A12B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b (read 2026-10-29): \"\\\"contextLength\\\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b (read 2026-10-29): \"\\\"max_tokens\\\":{\\\"default\\\":16384, ... The hosted function caps completion budgets at 131072 tokens.\\\",\\\"maximum\\\":131072,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b (read 2026-10-29): \"\\\"inputModalities\\\":[\\\"Text\\\",\\\"Image\\\",\\\"Video\\\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b (read 2026-10-29): \"\\\"functionCalling\\\":true\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b (read 2026-10-29): \"\\\"functionCalling\\\":true\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b (read 2026-10-29): \"\\\"defaultEnabled\\\":true\"; the card's example toggles reasoning with `extra_body={\\\"chat_template_kwargs\\\":{\\\"enable_thinking\\\": True|False}}` — a toggle, not an effort literal this adapter sends",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "nemotron-3.5-super-vl-120b-a12b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-mini-4b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-mini-4b-instruct",
+      "displayName": "Nemotron Mini 4B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-mini-4b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-mini-4b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-mini-4b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-mini-4b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-mini-4b-instruct (read 2026-09-27): \"\"contextLength\":4096\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 2048,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-mini-4b-instruct (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":2048,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/nemotron-mini-4b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "nemotron-mini-4b-instruct",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nemotron-nano-12b-v2-vl",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nemotron-nano-12b-v2-vl",
+      "displayName": "Nemotron Nano 12B v2 VL",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\",\"Video\"]\" — catalog row lists text+image only; NVIDIA's spec JSON adds Video",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-nano-12b-v2-vl — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/nemotron-nano-12b-v2-vl",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":8192,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-nano-12b-v2-vl",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/nvidia-nemotron-nano-9b-v2",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/nvidia-nemotron-nano-9b-v2",
+      "displayName": "Nemotron Nano 9B v2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nvidia-nemotron-nano-9b-v2 — hosted specifications show 131K context; integer expands rounded display to power-of-two tokens",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nvidia-nemotron-nano-9b-v2 — hosted specifications list text input modalities",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nvidia-nemotron-nano-9b-v2 — hosted specifications list text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-nvidia-nemotron-nano-9b-v2 — model card/reference describes tool/function calling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-nvidia-nemotron-nano-9b-v2 — tool/function calling is documented for model family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:41:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.api.nvidia.com/nim/reference/nvidia-nvidia-nemotron-nano-9b-v2 — model card/specifications document reasoning or thinking capability",
+          "confidence": "inferred",
+          "observedAt": "2026-09-25T10:41:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/nvidia-nemotron-nano-9b-v2 (read 2026-09-27): \"\"max_tokens\":{...,\"default\":2048,\"maximum\":8192}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nvidia-nemotron-nano-9b-v2",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "nvidia/nvidia/riva-translate-4b-instruct-v1.1",
+      "providerId": "nvidia",
+      "upstreamId": "nvidia/riva-translate-4b-instruct-v1.1",
+      "displayName": "Riva Translate 4B Instruct v1.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/riva-translate-4b-instruct-v1.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#nvidia/riva-translate-4b-instruct-v1.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/riva-translate-4b-instruct-v1_1 — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/riva-translate-4b-instruct-v1_1 — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/nvidia/riva-translate-4b-instruct-v1_1 (read 2026-09-27): \"\"max_tokens\":{\"default\":512,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/nvidia/riva-translate-4b-instruct-v1_1 (read 2026-09-27): \"\" — translation model; no thinking mode documented (modelCapability's only stated field for this page is functionCalling:false)",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "riva-translate-4b-instruct-v1.1",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/openai/gpt-oss-120b",
+      "providerId": "nvidia",
+      "upstreamId": "openai/gpt-oss-120b",
+      "displayName": "GPT OSS 120B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#openai/gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#openai/gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-120b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-120b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-120b (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-120b (read 2026-09-27): \"\"max_tokens\":{\"default\":4096,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/openai/gpt-oss-120b (read 2026-09-27): \"\"reasoning_effort\":{\"enum\":[\"low\",\"medium\",\"high\"],\"default\":\"medium\",...,\"description\":\"Controls the effort level for reasoning in reasoning-capable models. 'low' provides basic reasoning, 'medium' provides balanced reasoning, and 'high' provides detailed step-by-step reasoning.\"}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "nvidia/openai/gpt-oss-20b",
+      "providerId": "nvidia",
+      "upstreamId": "openai/gpt-oss-20b",
+      "displayName": "GPT OSS 20B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#openai/gpt-oss-20b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#openai/gpt-oss-20b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-20b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-20b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-20b (read 2026-09-27): \"\"contextLength\":131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/openai/gpt-oss-20b (read 2026-09-27): \"\"max_tokens\":{\"default\":4096,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/openai/gpt-oss-20b (read 2026-09-27): \"\"reasoning_effort\":{\"enum\":[\"low\",\"medium\",\"high\"],\"default\":\"medium\",...}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-oss-20b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "nvidia/poolside/laguna-xs-2.1",
+      "providerId": "nvidia",
+      "upstreamId": "poolside/laguna-xs-2.1",
+      "displayName": "Laguna XS 2.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/poolside/laguna-xs-2.1 (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/poolside/laguna-xs-2.1 (read 2026-09-27): \"\"max_tokens\":{\"default\":8192,...,\"maximum\":16384,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/poolside/laguna-xs-2.1 (read 2026-09-27): \"\"inputModalities\":[\"Text\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/poolside/laguna-xs-2.1 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/poolside/laguna-xs-2.1 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/poolside/laguna-xs-2.1 (read 2026-09-27): \"\"reasoning\":{\"defaultEnabled\":true,...,\"chat_template_kwargs\":{\"enable_thinking\":true}} / {\"enable_thinking\":false}\" — effort values ['true', 'false'] (via `chat_template_kwargs`) are not recorded: not the literal this adapter sends, or not the serving provider's own statement",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "poolside/laguna-xs-2.1",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/qwen/qwen3-next-80b-a3b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "qwen/qwen3-next-80b-a3b-instruct",
+      "displayName": "Qwen3 Next 80B A3B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#qwen/qwen3-next-80b-a3b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#qwen/qwen3-next-80b-a3b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3-next-80b-a3b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3-next-80b-a3b-instruct — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/qwen/qwen3-next-80b-a3b-instruct (read 2026-09-27): \"Qwen3-Next-80B-A3B-Instruct supports only instruct (non-thinking) mode and does not generate <think></think> blocks in its output.\" — the page's own modelCapability JSON says \"reasoning\":true, but this is the -Instruct (non-thinking) variant and the prose explicitly states it does not think; the \"-thinking\" sibling variant is a different, separate model. Overriding the JSON flag with the explicit prose statement.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3-next-80b-a3b-instruct (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3-next-80b-a3b-instruct (read 2026-09-27): \"\"max_tokens\":{\"default\":4096,...,\"maximum\":4096,...}\" — the model card also shows an unrelated HF generate() sample with max_new_tokens=16384, but that is a local-inference example, not this hosted endpoint's request cap",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3-next-80b-a3b-instruct",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "nvidia/qwen/qwen3.5-122b-a10b",
+      "providerId": "nvidia",
+      "upstreamId": "qwen/qwen3.5-122b-a10b",
+      "displayName": "Qwen3.5-122B-A10B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-122b-a10b (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\",\"Video\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image+Video",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#qwen/qwen3.5-122b-a10b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-122b-a10b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-122b-a10b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-122b-a10b (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-122b-a10b (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":32768,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-122b-a10b (read 2026-09-27): \"\"reasoning\":{\"defaultEnabled\":true,...,\"chat_template_kwargs\":{\"enable_thinking\":true}}\" — effort values ['true', 'false'] ride `chat_template_kwargs`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3.5-122b-a10b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "nvidia/qwen/qwen3.5-397b-a17b",
+      "providerId": "nvidia",
+      "upstreamId": "qwen/qwen3.5-397b-a17b",
+      "displayName": "Qwen3.5-397B-A17B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-397b-a17b (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\",\"Video\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image+Video",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#qwen/qwen3.5-397b-a17b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-397b-a17b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-397b-a17b — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-397b-a17b (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-397b-a17b (read 2026-09-27): \"\"max_tokens\":{\"anyOf\":[{\"type\":\"integer\",\"maximum\":32768,...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/qwen/qwen3.5-397b-a17b (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":true}; chat_template_kwargs enable_thinking present in code samples\" — defaultEnabled flag not found in the captured playground block for this row; enable_thinking true/false toggle confirmed present — effort values ['true', 'false'] ride `chat_template_kwargs`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3.5-397b-a17b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "nvidia/sarvamai/sarvam-m",
+      "providerId": "nvidia",
+      "upstreamId": "sarvamai/sarvam-m",
+      "displayName": "Sarvam M",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#sarvamai/sarvam-m",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#sarvamai/sarvam-m — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/sarvamai/sarvam-m — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/sarvamai/sarvam-m — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/sarvamai/sarvam-m (read 2026-09-27): \"\"contextLength\":32768\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/sarvamai/sarvam-m (read 2026-09-27): \"\"max_tokens\":{\"default\":16384,...,\"maximum\":16384,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/sarvamai/sarvam-m (read 2026-09-27): \"**reasoning_effort** can take three possible values: low, medium, and high to be consistent with the OpenAI API spec. Setting any of the three values just enables the t[hinking mode]...\" — code sample uses reasoning_effort=\"medium\" with comment \"`None` for disable\"; no single documented default value",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "canonicalModelId": "sarvamai/sarvam-m",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/stepfun-ai/step-3.5-flash",
+      "providerId": "nvidia",
+      "upstreamId": "stepfun-ai/step-3.5-flash",
+      "displayName": "Step 3.5 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stepfun-ai/step-3.5-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stepfun-ai/step-3.5-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.5-flash — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.5-flash — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.5-flash (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.5-flash (read 2026-09-27): \"\"max_tokens\":{\"default\":16384,...,\"maximum\":262144,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.5-flash (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...,\"reasoning\":true}; response code samples read reasoning_content\" — response includes a reasoning_content field (confirmed via code samples), but the page documents no request-side effort/toggle parameter",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "stepfun-ai/step-3.5-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/stepfun-ai/step-3.7-flash",
+      "providerId": "nvidia",
+      "upstreamId": "stepfun-ai/step-3.7-flash",
+      "displayName": "Step 3.7 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.7-flash (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]\" — catalog row lists text-only; NVIDIA's spec JSON states Text+Image (\"sparse MoE multimodal reasoning model\")",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stepfun-ai/step-3.7-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.7-flash — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.7-flash — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.7-flash (read 2026-09-27): \"\"contextLength\":262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.7-flash (read 2026-09-27): \"\"max_tokens\":{\"default\":16384,...,\"maximum\":262144,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/stepfun-ai/step-3.7-flash (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...,\"reasoning\":true}; response code samples read reasoning_content\" — response includes reasoning_content; no request-side effort/toggle parameter documented",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "stepfun-ai/step-3.7-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/stockmark/stockmark-2-100b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "stockmark/stockmark-2-100b-instruct",
+      "displayName": "Stockmark 2 100B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stockmark/stockmark-2-100b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stockmark/stockmark-2-100b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stockmark/stockmark-2-100b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#stockmark/stockmark-2-100b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 32000,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stockmark/stockmark-2-100b-instruct (read 2026-09-27): \"Input Context Length (ISL): 32,000 tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/stockmark/stockmark-2-100b-instruct (read 2026-09-27): \"\"max_tokens\":{\"default\":1024,...,\"maximum\":4096,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "stockmark/stockmark-2-100b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/upstage/solar-10.7b-instruct",
+      "providerId": "nvidia",
+      "upstreamId": "upstage/solar-10.7b-instruct",
+      "displayName": "Solar 10.7B Instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#upstage/solar-10.7b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#upstage/solar-10.7b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/upstage/solar-10_7b-instruct — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/upstage/solar-10_7b-instruct — the model page's structured capability record states `modelCapability.functionCalling: false` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/upstage/solar-10_7b-instruct (read 2026-09-27): \"\"contextLength\":4096\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/upstage/solar-10_7b-instruct (read 2026-09-27): \"\"modelCapability\":{...,\"reasoning\":false}\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "upstage/solar-10.7b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "nvidia/z-ai/glm-5.2",
+      "providerId": "nvidia",
+      "upstreamId": "z-ai/glm-5.2",
+      "displayName": "GLM 5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#z-ai/glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/nvidia/index.ts#z-ai/glm-5.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5.2 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5.2 — the model page's structured capability record states `modelCapability.functionCalling: true` (re-read 2026-09-27)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5.2 (read 2026-09-27): \"\"contextLength\":1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5.2 (read 2026-09-27): \"\"max_tokens\":{\"default\":16384,...,\"maximum\":32768,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/z-ai/glm-5.2 (read 2026-09-27): \"chat_template_kwargs example: {\"enable_thinking\":true,\"clear_thinking\":false}\" — clear_thinking is a second boolean sub-field (default false) alongside enable_thinking — effort values ['true', 'false'] ride `chat_template_kwargs`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "nvidia/z-ai/glm-5.3",
+      "providerId": "nvidia",
+      "upstreamId": "z-ai/glm-5.3",
+      "displayName": "GLM 5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3 (read 2026-09-27): \"\"contextLength\":1048576 / \"Context length up to 1,048,576 tokens\"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3 (read 2026-09-27): \"\"inputModalities\":[\"Text\"]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3 (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3 (read 2026-09-27): \"Thinking budget is controlled by `reasoning_effort`, which accepts `low`, `high`, or `max` and defaults to `max`.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "nvidia/z-ai/glm-5.3-flash",
+      "providerId": "nvidia",
+      "upstreamId": "z-ai/glm-5.3-flash",
+      "displayName": "GLM 5.3 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3-flash (read 2026-09-27): \"\"contextLength\":1048576 / \"Context length up to 1,048,576 tokens\"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3-flash (read 2026-09-27): \"\"inputModalities\":[\"Text\",\"Image\"]; \"Up to 8 images per request on this endpoint\"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3-flash (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3-flash (read 2026-09-27): \"\"modelCapability\":{\"functionCalling\":true,...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://build.nvidia.com/z-ai/glm-5-3-flash (read 2026-09-27): \"Thinking budget is controlled by `reasoning_effort`, which accepts `low`, `high`, or `max` and defaults to `max`.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    }
+  ]
+}

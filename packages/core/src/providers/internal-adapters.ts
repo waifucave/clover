@@ -42,7 +42,6 @@
  *  - `winter.azure-openai`, `winter.local-openai` — `requiresUserEndpoint` / local-only rows, which
  *    `credentialInventory()` already excludes by construction.
  */
-import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
 import {
   createAnthropicMessagesAdapter,
@@ -52,6 +51,21 @@ import {
   createResponsesAdapter,
 } from "@waifucave/clover-provider-runtime";
 import type { ProviderAdapter } from "@waifucave/clover-provider-runtime";
+import { activeCatalog } from "../runtime-sdk/model-plugins/catalog-source";
+
+/**
+ * A-M2: the catalog is the installed model plugins' (`activeCatalog()`, the SDK's compiled one until they are
+ * installed), so a provider whose plugin is switched off is gone from the internal jobs too. A provider with a CODE
+ * plugin (Codex, Google, ...) runs on that plugin through the plugin host when the plugins are installed
+ * (`setInternalCodeAdapterSource`, set by `installModelPlugins`); every other provider runs on its protocol's generic
+ * adapter here, as a session's declarative provider does.
+ */
+let codeAdapterSource: ((providerId: string) => ProviderAdapter | undefined) | undefined;
+
+/** Where a provider's code plugin adapter comes from (undefined: the SDK's family adapters below). */
+export function setInternalCodeAdapterSource(fn: ((providerId: string) => ProviderAdapter | undefined) | undefined): void {
+  codeAdapterSource = fn;
+}
 
 /** A provider-SCOPED descriptor lookup — the runtime's own `findDescriptor(catalog, providerId, model)`
  *  rule (bare upstream id, catalog key, or alias), narrowed to ONE provider so a bare model id served
@@ -59,7 +73,7 @@ import type { ProviderAdapter } from "@waifucave/clover-provider-runtime";
  *  module's header for the measurement that made this necessary. */
 export function descriptorsForProvider(providerId: string): (id: string) => WinterModelDescriptor | undefined {
   return (id) =>
-    loadCatalog().models.find(
+    activeCatalog().models.find(
       (m) => m.providerId === providerId && (m.upstreamId === id || m.key === id || m.aliases.includes(id)),
     );
 }
@@ -77,8 +91,8 @@ const FACTORIES: Readonly<Record<string, AdapterFactory>> = {
       ...(opts.tokenUrl === undefined ? {} : { tokenUrl: opts.tokenUrl }),
     }),
   // Provider-aware by construction — see this module's header.
-  "winter.anthropic-messages": () => createAnthropicMessagesAdapter({ catalog: loadCatalog() }),
-  "winter.google-generate-content": () => createGoogleGenerateContentAdapter({ catalog: loadCatalog() }),
+  "winter.anthropic-messages": () => createAnthropicMessagesAdapter({ catalog: activeCatalog() }),
+  "winter.google-generate-content": () => createGoogleGenerateContentAdapter({ catalog: activeCatalog() }),
 };
 
 /** The adapter ids the daemon can drive — the eligibility predicate's fourth condition
@@ -105,9 +119,11 @@ export function wireModelIdFor(providerId: string, bareModelId: string): string 
 /** Builds the adapter for one catalog provider, or `undefined` when its family is not drivable —
  *  the one place the table is consulted for a real turn. */
 export function internalAdapterFor(providerId: string, opts: { tokenUrl?: string } = {}): ProviderAdapter | undefined {
-  const adapterId = loadCatalog().providers.find((p) => p.id === providerId)?.adapterId;
+  const adapterId = activeCatalog().providers.find((p) => p.id === providerId)?.adapterId;
   if (adapterId === undefined) return undefined;
-  return FACTORIES[adapterId]?.(providerId, opts);
+  const factory = FACTORIES[adapterId];
+  if (factory === undefined) return undefined;
+  return codeAdapterSource?.(providerId) ?? factory(providerId, opts);
 }
 
 /**
@@ -135,7 +151,7 @@ export function internalAdapterFor(providerId: string, opts: { tokenUrl?: string
  * `https://api.deepseek.com` with the field absent).
  */
 export function catalogApiEndpointFor(providerId: string): string | undefined {
-  const catalog = loadCatalog();
+  const catalog = activeCatalog();
   const provider = catalog.providers.find((p) => p.id === providerId);
   if (provider === undefined) return undefined;
   const siblings = catalog.providers.filter((p) => p.adapterId === provider.adapterId).length;
@@ -147,6 +163,6 @@ export function catalogApiEndpointFor(providerId: string): string | undefined {
 /** The catalog `api` endpoint verbatim, WITHOUT the single-provider deferral — for the test that pins
  *  the SDK's own constants against it, and for a caller that genuinely wants the catalog's answer. */
 export function catalogApiEndpointRawFor(providerId: string): string | undefined {
-  const api = loadCatalog().providers.find((p) => p.id === providerId)?.defaultEndpoints?.api;
+  const api = activeCatalog().providers.find((p) => p.id === providerId)?.defaultEndpoints?.api;
   return api !== undefined && api.length > 0 ? api : undefined;
 }

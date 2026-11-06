@@ -1,0 +1,108 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "audit §2.1: \"Requests identified as autonomous or automated from Free accounts may require a paid plan\" — a free-tier account may not be usable for agent traffic at all, and a host must say so on the setup screen",
+        "audit OQ-4: openference.com/terms-of-service renders client-side and returned no text on 2026-09-06, so the quotes above come from the docs FAQ, which cites the ToS but is not the ToS"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "audit:§2.1 `openference` / §5.2 — Openference's own docs (docs.openference.com/introduction + /faq, retrieved 2026-09-06): curated OpenAI-compatible gateway at `https://api.openference.com/v1`, key from the dashboard, and the docs instruct the reader to \"Point any supported coding tool… to https://api.openference.com/v1\", naming Cursor, Claude Code, Cline, Codex, OpenCode and Pi.",
+      "tier": "audit"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "openference/GLM-5.2",
+      "providerId": "openference",
+      "upstreamId": "GLM-5.2",
+      "displayName": "GLM 5.2 (via Openference)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 850000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/openference/index.ts#GLM-5.2 at v3.8.50 (5458026c) — `contextLength`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/openference/index.ts#GLM-5.2 at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.2 (read 2026-09-27): \"Powerful tool invocation capabilities, enabling integration with various external toolsets\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.2 (read 2026-09-27): \"Powerful tool invocation capabilities, enabling integration with various external toolsets\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.2 (read 2026-09-27): \"Maximum Output Tokens: \"128K\"\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.2 (read 2026-09-27): \"\"thinking\": {\"type\": \"enabled\"} ... \"reasoning_effort\": \"max\"\" — Only the 'max' value is shown in the quick-start example; the page does not enumerate the full set of accepted reasoning_effort values.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Xiaomi MiMo Token Plan Europe (Anthropic dialect)",
+  "description": "Xiaomi MiMo Token Plan Europe (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "xiaomi-token-plan-eu-anthropic",
+        "name": "Xiaomi MiMo Token Plan Europe (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Xiaomi MiMo Token Plan Europe (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Xiaomi MiMo Token Plan Europe (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://token-plan-ams.xiaomimimo.com/anthropic"
+        }
+      }
+    ]
+  }
+}

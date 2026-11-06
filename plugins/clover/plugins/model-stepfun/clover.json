@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "StepFun",
+  "description": "StepFun's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "stepfun",
+        "name": "StepFun",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your StepFun API key. Clover keeps it in your credential store and adds it to StepFun's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.stepfun.com/v1"
+        }
+      }
+    ]
+  }
+}

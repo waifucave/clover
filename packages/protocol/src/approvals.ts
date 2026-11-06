@@ -22,7 +22,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, CardId, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TurnOrigin,
+  AnyPluginId, BotId, CardId, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -42,6 +42,10 @@ export const CARD_KINDS = [
    *  so no plugin can swap it. `host` is the link's site and `command` the whole link; approving opens it in the
    *  user's browser (the app does, never a plugin), denying declines. */
   "elicitation",
+  /** A session asks to drive the person's own logged-in browser partition, `user` (ruling R10; lane L): a bot or a
+   *  coding session uses its own partition otherwise. One card per session, never an "always"; on a yes the browser
+   *  lets that session alone use it (`allowPersonsBrowser(session, true)`). */
+  "person-browser",
 ] as const;
 export const CardKind = z.enum(CARD_KINDS);
 export type CardKind = z.infer<typeof CardKind>;
@@ -117,9 +121,25 @@ export type CardMeta = z.infer<typeof CardMeta>;
 
 /** The one call a card approves, when it approves a call: the computer that runs it, the method, and SHA-256 over the
  *  canonical JSON of `{ method, params }` (`callBindingInput`). A receiver takes a signed answer as proof only for the
- *  call its card binds (§8.5: a raise travels only with its signed answer). */
-export const CallBinding = z.object({ computer: ComputerName, method: utf16(128, 1), params: Sha256Hex });
+ *  call its card binds (§8.5: a raise travels only with its signed answer). `source` only for `tree.transfer` (R15):
+ *  the computer the files leave, `computer` being the one they go to; either end takes the answer, once. */
+export const CallBinding = z.object({ computer: ComputerName, source: ComputerName.optional(), method: utf16(128, 1), params: Sha256Hex });
 export type CallBinding = z.infer<typeof CallBinding>;
+
+/** Ruling R15, as lane J built it (#179's review, F2): a move or copy between two computers is one call that one card
+ *  binds, `tree.transfer`, with the operation, both tree paths and both computers. The card's `binds.computer` is the
+ *  `destination` and `binds.source` the `source`; each holder rebuilds the card from these params and checks the one
+ *  signed answer against it (`verifySignedAnswer` takes either end as itself). A binding only, never a method on the
+ *  wire: the files move by `tree.receive` and `tree.send` (computers.ts). */
+export const TREE_TRANSFER = "tree.transfer";
+export const TreeTransferParams = z.strictObject({
+  operation: z.enum(["move", "copy"]),
+  from: TreePath,
+  to: TreePath,
+  source: ComputerName,
+  destination: ComputerName,
+});
+export type TreeTransferParams = z.infer<typeof TreeTransferParams>;
 
 /** The whole card, for the app's main process and the native iOS app only. `hash` is SHA-256 over
  *  `cardHashInput(card)`; a signed answer covers it. */

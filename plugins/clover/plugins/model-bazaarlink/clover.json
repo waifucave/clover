@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "BazaarLink",
+  "description": "BazaarLink's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "bazaarlink",
+        "name": "BazaarLink",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your BazaarLink API key. Clover keeps it in your credential store and adds it to BazaarLink's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://bazaarlink.ai/api/v1"
+        }
+      }
+    ]
+  }
+}
