@@ -1622,6 +1622,107 @@ async function runDaemonStart(): Promise<void> {
   process.exitCode = 1;
 }
 
+/** `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+ *  `setup` is idempotent, `remove` exits 0 when nothing is left, `status` never elevates. Exits 0
+ *  on done, 2 when not elevated, 3 on a launcher hash mismatch (both fail closed). */
+async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  const { SANDBOX_EXIT, srtWinPath, launcherPinned, setupArgs, removeArgs, statusArgs, parseSrtStatus, setupExitMessage, NET_SESSION_PROBE } =
+    await import("@waifucave/clover-core");
+  const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
+  if (process.platform !== "win32") {
+    console.error("sandbox setup runs on Windows only");
+    process.exitCode = 1;
+    return;
+  }
+  const launcher = srtWinPath();
+  const run = async (argv: readonly string[]): Promise<{ code: number; out: string }> => {
+    try {
+      const proc = Bun.spawn([...argv], { stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true });
+      const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      return { code: await proc.exited, out: out + err };
+    } catch (e) {
+      return { code: 1, out: (e as Error).message };
+    }
+  };
+  switch (sub ?? "status") {
+    case "setup": {
+      const elevated = (await run([...NET_SESSION_PROBE])).code === 0;
+      if (!elevated) {
+        console.error("sandbox setup needs elevation; run it as administrator");
+        process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
+        return;
+      }
+      if (!launcherPinned(launcher)) {
+        console.error("sandbox setup refused: the launcher's hash doesn't match the pinned build");
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      const force = rest.includes("--force");
+      const { code, out } = await run([...setupArgs(launcher), ...(force ? ["--force"] : [])]);
+      const message = setupExitMessage(code);
+      if (message === null) {
+        console.log("Bash is set up under Clover's fence");
+        return;
+      }
+      console.error(`sandbox setup: ${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
+      process.exitCode = 1;
+      return;
+    }
+    case "remove": {
+      const elevated = (await run([...NET_SESSION_PROBE])).code === 0;
+      if (!elevated) {
+        console.error("sandbox remove needs elevation; run it as administrator");
+        process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
+        return;
+      }
+      // The launcher is gone: only exit 0 when the principal is gone too (nothing is left).
+      // When the principal exists but the pinned launcher is missing, removal can't proceed.
+      if (!launcherPinned(launcher)) {
+        const { SANDBOX_PRINCIPAL } = await import("@waifucave/clover-core");
+        const probe = await run(["net", "user", SANDBOX_PRINCIPAL]);
+        if (probe.code !== 0) {
+          console.log("Bash's fence is removed");
+          return;
+        }
+        console.error("sandbox remove refused: the principal exists but the pinned launcher is missing");
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      const { code, out } = await run([...removeArgs(launcher)]);
+      if (code !== 0) {
+        console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log("Bash's fence is removed");
+      return;
+    }
+    case "status": {
+      if (!launcherPinned(launcher)) {
+        if (rest.includes("--json")) console.log(JSON.stringify({ ready: false, reason: "launcher-missing-or-unpinned" }));
+        else console.log("Bash isn't set up under Clover's fence: the launcher is missing or unpinned");
+        return;
+      }
+      const { code, out } = await run([...statusArgs(launcher)]);
+      if (code !== 0) {
+        console.error(`sandbox status failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
+        process.exitCode = 1;
+        return;
+      }
+      const st = parseSrtStatus(out, launcher);
+      if (rest.includes("--json")) {
+        console.log(JSON.stringify({ ready: st.ready, reason: st.reason, user: st.user }));
+        return;
+      }
+      console.log(st.ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${st.reason ?? "unknown"}`);
+      return;
+    }
+    default:
+      console.error(usage);
+      process.exitCode = 1;
+  }
+}
+
 /** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
 async function runSupervise(): Promise<void> {
   const bin = process.execPath;
@@ -1884,6 +1985,14 @@ if (import.meta.main) {
     // clean stop (a Quit) ends the loop so the crash-only OS unit does not bring it back.
     await runSupervise();
     process.exit(0);
+    break;
+  }
+  case "sandbox": {
+    // `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+    // Lane M's per-user NSIS installer runs `setup` via runas at install; the app's Set up Bash
+    // action runs the same command. Exit codes: 0 done, 2 not elevated, 3 launcher hash mismatch.
+    await runSandboxCommand(sub, process.argv.slice(4));
+    process.exit(process.exitCode ?? 0);
     break;
   }
   case "daemon run": {
