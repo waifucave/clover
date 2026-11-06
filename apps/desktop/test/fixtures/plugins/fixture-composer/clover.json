@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "id": "fixture-composer",
+  "name": "Fixture composer",
+  "description": "A third-party UI plugin for the app's tests: it replaces the composer, from a layer of its own.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.js", "css": ["client/styles.css"] },
+  "contributes": {
+    "ui": [{ "spot": "composer", "component": "FixtureComposer" }]
+  }
+}
