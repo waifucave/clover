@@ -134,13 +134,13 @@ export class RemoteHolder implements Holder {
     });
   }
 
-  async stat(path: string, call: HolderCall): Promise<FileStat | null> {
-    return (await this.#call<{ stat: FileStat | null }>("tree.stat", { ...viaPeer(call), path })).stat;
+  async stat(path: string, call: HolderCall & { noFollow?: boolean }): Promise<FileStat | null> {
+    return (await this.#call<{ stat: FileStat | null }>("tree.stat", { ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}) })).stat;
   }
 
-  async read(path: string, call: HolderCall & { encoding?: "utf8" | "base64"; offset?: number; length?: number }): Promise<TreeData> {
+  async read(path: string, call: HolderCall & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
     return this.#call<TreeData>("tree.read", {
-      ...viaPeer(call), path,
+      ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}),
       ...(call.encoding === undefined ? {} : { encoding: call.encoding }),
       ...(call.offset === undefined ? {} : { offset: call.offset }),
       ...(call.length === undefined ? {} : { length: call.length }),

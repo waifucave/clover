@@ -4,7 +4,7 @@
 // is, judged at the stricter of this computer's level and the call's.
 //
 // Methods served (`peer` role). Those marked * are lane J's additions, requested of lane B for the protocol:
-//   tree.stat, tree.read, tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
+//   tree.stat (+ `noFollow`*), tree.read (+ `noFollow`*), tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
 //   tree.grep (+ `ignoreCase`*), tree.mkdir*, tree.readlink*, tree.symlink*, tree.watch*, tree.unwatch*,
 //   tool.run, tool.cancel (+ `session`*)
 // Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output, + `session`*).
@@ -30,8 +30,8 @@ const Via = { session: SessionId.optional(), level: Level.optional(), answer: Si
 
 /** What each served method takes: lane B's params, with lane J's additions marked in the header. */
 export const TREE_PEER_PARAMS = {
-  "tree.stat": M.treeStat.params,
-  "tree.read": M.treeRead.params,
+  "tree.stat": M.treeStat.params.extend({ noFollow: z.boolean().optional() }),
+  "tree.read": M.treeRead.params.extend({ noFollow: z.boolean().optional() }),
   "tree.write": M.treeWrite.params.extend({ executable: z.boolean().optional() }),
   "tree.list": M.treeList.params,
   "tree.remove": M.treeRemove.params,
@@ -165,9 +165,9 @@ export class TreeService {
       }));
     };
     const h = opts.holder;
-    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, call) }));
+    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, { ...call, ...(p.noFollow ? { noFollow: true } : {}) }) }));
     serve("tree.read", (p, call) => h.read(p.path, {
-      ...call, ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
+      ...call, ...(p.noFollow ? { noFollow: true } : {}), ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
       ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
     }));
     serve("tree.write", async (p, call) => {
