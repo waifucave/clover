@@ -317,8 +317,10 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   };
 
   return {
+    // The connection's process is held as the connection opens, on every OS (#205's S2): no pid read later can be
+    // another process's.
     opened(socket) {
-      if (!pipePeers) return false;
+      if (!pipePeers) { if (!deps.probe) handleOf(socket); return false; }
       if (pipePeers.opened(socket) !== null && !deps.probe) handleOf(socket);
       return pipePeers.isEarly(socket);
     },

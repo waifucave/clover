@@ -9,6 +9,11 @@ import { posix, win32 } from "node:path";
 
 const MAX_LINKS = 40;
 
+/** A path whose walk met more than `MAX_LINKS` links: the fence refuses it. */
+export class TooManyLinks extends Error {
+  constructor(path: string) { super(`more than ${MAX_LINKS} links on the way to ${path.slice(0, 200)}`); this.name = "TooManyLinks"; }
+}
+
 export function canonicalPath(input: string, platform: NodeJS.Platform = process.platform): string {
   const p = platform === "win32" ? win32 : posix;
   // Absolute without normalizing: `resolve` and `join` would take `..` lexically, before the links.
@@ -35,8 +40,9 @@ export function canonicalPath(input: string, platform: NodeJS.Platform = process
     let st: ReturnType<typeof lstatSync> | undefined;
     try { st = lstatSync(next); } catch { st = undefined; }
     if (st === undefined) { exists = false; at = next; continue; }
-    if (st.isSymbolicLink() && links < MAX_LINKS) {
-      links++;
+    if (st.isSymbolicLink()) {
+      // Past MAX_LINKS (a loop, or a chain built to tire the walk) the path is refused, never judged half-walked.
+      if (++links > MAX_LINKS) throw new TooManyLinks(input);
       let target: string;
       try { target = readlinkSync(next); } catch { at = next; deepestReal = next; continue; }
       // The target's components are walked in turn: from its root when absolute, else from the link's folder.

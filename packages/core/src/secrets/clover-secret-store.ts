@@ -12,6 +12,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { SecretKeySource } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners } from "../contracts/common";
 import {
@@ -61,16 +62,33 @@ export class KeychainValues implements ValueBackend {
   async delete(key: string) { await this.vault.delete(key); }
 }
 
-/** Windows and Linux: every value in one AES-256-GCM file, its 32-byte key from `key()`. */
+const SOURCE_CODES: Record<SecretKeySource, number> = { "credential-manager": 1, "secret-service": 2, "systemd-creds": 3, "key-file": 4 };
+
+/** The key source a secrets file records in its header (#205's S3): the store always uses it, never another. Null when
+ *  there's no file; `unreadable` when it isn't one this store wrote. */
+export function recordedKeySource(path: string): SecretKeySource | null | "unreadable" {
+  if (!existsSync(path)) return null;
+  let head: Buffer;
+  try { head = readFileSync(path).subarray(0, 2); } catch { return "unreadable"; }
+  if (head[0] !== 2) return "unreadable";
+  const code = head[1];
+  const found = (Object.entries(SOURCE_CODES) as [SecretKeySource, number][]).find(([, c]) => c === code);
+  return found ? found[0] : "unreadable";
+}
+
+/** Windows and Linux: every value in one AES-256-GCM file, its 32-byte key from `key()`. The header is the format
+ *  (2), the key's source, then the nonce and the tag; the key's source is authenticated with the body. */
 export class EncryptedFileValues implements ValueBackend {
-  constructor(private readonly path: string, private readonly key: () => Promise<Buffer>) {}
+  constructor(private readonly path: string, private readonly key: () => Promise<Buffer>, private readonly source: SecretKeySource) {}
 
   async #read(): Promise<Record<string, string>> {
     if (!existsSync(this.path)) return {};
     const blob = readFileSync(this.path);
-    if (blob.length < 1 + 12 + 16 || blob[0] !== 1) throw new ContractError("invalid", "the secrets file is not one this store wrote");
-    const iv = blob.subarray(1, 13), tag = blob.subarray(13, 29), body = blob.subarray(29);
+    if (blob.length < 2 + 12 + 16 || blob[0] !== 2) throw new ContractError("invalid", "the secrets file is not one this store wrote");
+    if (blob[1] !== SOURCE_CODES[this.source]) throw new ContractError("locked", "the secrets file's key is kept elsewhere than this store looks");
+    const iv = blob.subarray(2, 14), tag = blob.subarray(14, 30), body = blob.subarray(30);
     const d = createDecipheriv("aes-256-gcm", await this.key(), iv);
+    d.setAAD(blob.subarray(0, 2));
     d.setAuthTag(tag);
     try { return JSON.parse(Buffer.concat([d.update(body), d.final()]).toString("utf8")) as Record<string, string>; }
     catch { throw new ContractError("invalid", "the secrets file can't be opened with this key"); }
@@ -78,9 +96,11 @@ export class EncryptedFileValues implements ValueBackend {
 
   async #write(all: Record<string, string>): Promise<void> {
     const iv = randomBytes(12);
+    const head = Buffer.from([2, SOURCE_CODES[this.source]]);
     const c = createCipheriv("aes-256-gcm", await this.key(), iv);
+    c.setAAD(head);
     const body = Buffer.concat([c.update(JSON.stringify(all), "utf8"), c.final()]);
-    writeOwnerOnly(this.path, Buffer.concat([Buffer.from([1]), iv, c.getAuthTag(), body]));
+    writeOwnerOnly(this.path, Buffer.concat([head, iv, c.getAuthTag(), body]));
   }
 
   async get(key: string) { return (await this.#read())[key] ?? null; }
@@ -88,13 +108,22 @@ export class EncryptedFileValues implements ValueBackend {
   async delete(key: string) { const all = await this.#read(); if (key in all) { delete all[key]; await this.#write(all); } }
 }
 
-/** The secrets file's key, kept in `vault` under `name`, made on first use. */
-export function vaultKey(vault: Vault, name = "secrets-file-key"): () => Promise<Buffer> {
+/** A key may be made only while there's no secrets file: one that exists was sealed with a key that must be found,
+ *  never replaced (#205's S3). */
+const missingKey = (where: string) => new ContractError("locked", `the secrets file's key is missing from ${where}: saved logins stay locked until it's back`);
+
+/** The secrets file's key, kept in `vault` under `name`, made on first use (only while `secretsFile` doesn't exist). */
+export function vaultKey(vault: Vault, secretsFile: string, name = "secrets-file-key", where = "the OS keyring"): () => Promise<Buffer> {
   let cached: Buffer | undefined;
   return async () => {
     if (cached) return cached;
-    let text = await vault.get(name);
-    if (text === null) { text = randomBytes(32).toString("base64"); await vault.set(name, text); }
+    let text: string | null;
+    try { text = await vault.get(name); } catch { throw new ContractError("locked", `${where} didn't answer`); }
+    if (text === null) {
+      if (existsSync(secretsFile)) throw missingKey(where);
+      text = randomBytes(32).toString("base64");
+      await vault.set(name, text);
+    }
     const k = Buffer.from(text, "base64");
     if (k.length !== 32) throw new ContractError("invalid", "the secrets file's key is damaged");
     return (cached = k);
@@ -127,12 +156,13 @@ export async function probeSystemdCreds(run: CredsRunner = bunCredsRunner): Prom
 }
 
 /** The secrets file's key sealed by `systemd-creds` in `path` (`secrets.key.cred`), made on first use. */
-export function systemdCredsKey(path: string, creds: SystemdCreds, run: CredsRunner = bunCredsRunner): () => Promise<Buffer> {
+export function systemdCredsKey(path: string, creds: SystemdCreds, secretsFile: string, run: CredsRunner = bunCredsRunner): () => Promise<Buffer> {
   let cached: Buffer | undefined;
   const name = "--name=clover-secrets-key";
   return async () => {
     if (cached) return cached;
     if (!existsSync(path)) {
+      if (existsSync(secretsFile)) throw missingKey("its sealed credential (secrets.key.cred)");
       const fresh = randomBytes(32).toString("base64");
       const tmp = `${path}.${process.pid}.tmp`;
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -157,9 +187,12 @@ export function secretStoreWarning(status: SecretStoreStatus): string | null {
 }
 
 /** A headless computer's last resort: the key in a file only the user can read (status `plaintext`). */
-export function keyFileKey(path: string): () => Promise<Buffer> {
+export function keyFileKey(path: string, secretsFile: string): () => Promise<Buffer> {
   return async () => {
-    if (!existsSync(path)) writeOwnerOnly(path, randomBytes(32));
+    if (!existsSync(path)) {
+      if (existsSync(secretsFile)) throw missingKey("its key file (secrets.key)");
+      writeOwnerOnly(path, randomBytes(32));
+    }
     const k = readFileSync(path);
     if (k.length !== 32) throw new ContractError("invalid", "the key file is damaged");
     return k;
@@ -316,22 +349,55 @@ export async function openCloverSecretStore(o: {
   if (os === "macos") return new CloverSecretStore({ home: o.home, values: new KeychainValues(vault(`${o.service}.items`)), status: { backend: "keychain", plaintext: false, state: "unlocked" }, ...clock });
   const file = join(o.home, "secrets.enc");
   const keys = vault(`${o.service}.key`);
-  if (os === "windows") return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, vaultKey(keys)), status: { backend: "encrypted-file", keySource: "credential-manager", plaintext: false, state: "unlocked" }, ...clock });
-  // Linux: the Secret Service if it answers; a locked keyring someone can unlock waits; else the key file.
-  let service: "unlocked" | "locked" | "absent" = "absent";
-  // A write, not a read: a Secret Service with no login collection answers reads and refuses writes (measured on the
-  // Ubuntu 26.04 VM over SSH).
-  try { await keys.set("probe", "1"); await keys.delete("probe"); service = "unlocked"; }
-  catch (e) { service = /lock/i.test(String(e)) ? "locked" : "absent"; }
+  const store = (source: SecretKeySource, key: () => Promise<Buffer>, extra: { tpm?: boolean; locked?: string } = {}) => new CloverSecretStore({
+    home: o.home, values: new EncryptedFileValues(file, key, source),
+    status: { backend: "encrypted-file", keySource: source, ...(source === "systemd-creds" ? { tpm: extra.tpm ?? false } : {}), plaintext: source === "key-file", state: "unlocked" },
+    ...(extra.locked !== undefined ? { locked: extra.locked } : {}), ...clock,
+  });
+  const recorded = recordedKeySource(file);
+  if (recorded === "unreadable") return store(os === "windows" ? "credential-manager" : "key-file", async () => { throw new ContractError("invalid", "the secrets file is not one this store wrote"); }, { locked: "the secrets file isn't one this store wrote" });
+
+  if (os === "windows") {
+    if (recorded !== null && recorded !== "credential-manager") return store(recorded, keyFileKey(join(o.home, "secrets.key"), file), { locked: `the secrets file's key is kept in ${recorded}, which Windows doesn't have` });
+    const answers = await vaultAnswers(keys);
+    return store("credential-manager", vaultKey(keys, file, undefined, "Credential Manager"), answers === "yes" ? {} : { locked: "Credential Manager didn't answer" });
+  }
+
+  // Linux. A file already made keeps its key's source, and is locked while that source can't be reached (#205's S3).
+  const service = await probeSecretService(keys);
   const interactive = o.interactive ?? Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
-  if (service === "unlocked") return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, vaultKey(keys)), status: { backend: "encrypted-file", keySource: "secret-service", plaintext: false, state: "unlocked" }, ...clock });
-  if (service === "locked" && interactive) {
-    return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, vaultKey(keys)), status: { backend: "encrypted-file", keySource: "secret-service", plaintext: false, state: "unlocked" }, locked: "the keyring is locked: unlock it to use saved logins", ...clock });
+  const credsOf = async () => (o.systemdCreds !== undefined ? o.systemdCreds : await probeSystemdCreds(o.credsRunner));
+  const sealed = (creds: SystemdCreds) => store("systemd-creds", systemdCredsKey(join(o.home, "secrets.key.cred"), creds, file, o.credsRunner), { tpm: creds.tpm });
+  if (recorded === "secret-service") return store("secret-service", vaultKey(keys, file), service === "unlocked" ? {} : { locked: service === "absent" ? "the keyring that holds the key isn't running" : "the keyring is locked: unlock it to use saved logins" });
+  if (recorded === "systemd-creds") {
+    const creds = await credsOf();
+    return creds ? sealed(creds) : store("systemd-creds", async () => { throw missingKey("systemd-creds"); }, { locked: "systemd-creds, which holds the key, isn't available here" });
   }
-  // Headless: the key sealed by systemd-creds where it can be, the plaintext key file only as the last resort.
-  const creds = o.systemdCreds !== undefined ? o.systemdCreds : await probeSystemdCreds(o.credsRunner);
-  if (creds) {
-    return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, systemdCredsKey(join(o.home, "secrets.key.cred"), creds, o.credsRunner)), status: { backend: "encrypted-file", keySource: "systemd-creds", tpm: creds.tpm, plaintext: false, state: "unlocked" }, ...clock });
+  if (recorded === "key-file") return store("key-file", keyFileKey(join(o.home, "secrets.key"), file));
+  if (recorded === "credential-manager") return store("credential-manager", vaultKey(keys, file), { locked: "the secrets file's key is kept in Credential Manager, which Linux doesn't have" });
+
+  // A new store: the Secret Service when it answers; a keyring that is there but locked (or that answered strangely)
+  // is never passed over for the unsealed key file (#205's S3): it's waited for, or systemd-creds seals the key.
+  if (service === "unlocked") return store("secret-service", vaultKey(keys, file));
+  if (service !== "absent" && interactive) return store("secret-service", vaultKey(keys, file), { locked: "the keyring is locked: unlock it to use saved logins" });
+  const creds = await credsOf();
+  if (creds) return sealed(creds);
+  if (service !== "absent") return store("secret-service", vaultKey(keys, file), { locked: "the keyring is locked, and there's no systemd-creds to seal the key with instead" });
+  return store("key-file", keyFileKey(join(o.home, "secrets.key"), file));
+}
+
+/** Whether an OS vault answers at all (a read). */
+async function vaultAnswers(v: Vault): Promise<"yes" | "no"> {
+  try { await v.get("probe"); return "yes"; } catch { return "no"; }
+}
+
+/** The Secret Service, probed by a write (a service with no login collection answers reads and refuses writes, measured
+ *  on the Ubuntu 26.04 VM). `absent` only when the session bus says no such service is there (or there's no bus);
+ *  any other refusal is `locked`, never taken for "no keyring" (#205's S3). */
+export async function probeSecretService(keys: Vault): Promise<"unlocked" | "locked" | "absent"> {
+  try { await keys.set("probe", "1"); await keys.delete("probe"); return "unlocked"; }
+  catch (e) {
+    const m = String(e);
+    return /ServiceUnknown|was not provided by any|NoServer|Cannot autolaunch|DBUS_SESSION_BUS_ADDRESS|Failed to connect to socket|No such file or directory|not supported on this platform/i.test(m) ? "absent" : "locked";
   }
-  return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, keyFileKey(join(o.home, "secrets.key"))), status: { backend: "encrypted-file", keySource: "key-file", plaintext: true, state: "unlocked" }, ...clock });
 }

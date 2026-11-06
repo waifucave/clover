@@ -45,6 +45,7 @@ function linux() {
     getsockopt: { args: ["i32", "i32", "i32", "ptr", "ptr"], returns: "i32" },
     syscall: { args: ["i64", "i32", "i32", "ptr", "u32"], returns: "i64" },
     close: { args: ["i32"], returns: "i32" },
+    __errno_location: { args: [], returns: "ptr" },
   });
 }
 
@@ -69,6 +70,20 @@ function darwinStart(pid: number): string | null {
 const SYS_PIDFD_SEND_SIGNAL = 424n; // the same number on x86_64 and arm64 (the shared table since 5.1)
 const SO_PEERPIDFD = 77;
 
+/** A peer that is already gone when the connection is looked at: fenced, never a pid that someone else may have now
+ *  (#205's S1). */
+function gone(pid: number): PeerHandle {
+  return { pid, via: "pidfd", alive: () => false, kill: () => false, probe: () => ({}), close: () => {} };
+}
+
+const ENOPROTOOPT = 92;
+
+/** SO_PEERPIDFD came with Linux 6.5. */
+function kernelHasPeerPidfd(release: string = require("node:os").release()): boolean {
+  const m = /^(\d+)\.(\d+)/.exec(release);
+  return m !== null && (Number(m[1]) > 6 || (Number(m[1]) === 6 && Number(m[2]) >= 5));
+}
+
 function pidOnly(pid: number): PeerHandle {
   return {
     pid, via: "pid",
@@ -86,7 +101,9 @@ export function peerHandle(fd: number | null, os: DaemonPlatform, knownPid?: num
     if (knownPid === undefined || knownPid === null) return null;
     const k = win();
     if (!k) return pidOnly(knownPid);
-    const h = BigInt(k.OpenProcess!(0x1000 /* QUERY_LIMITED */ | 0x100000 /* SYNCHRONIZE */ | 0x1 /* TERMINATE */, 0, knownPid) as number | bigint);
+    let h = BigInt(k.OpenProcess!(0x1000 /* QUERY_LIMITED */ | 0x100000 /* SYNCHRONIZE */ | 0x1 /* TERMINATE */, 0, knownPid) as number | bigint);
+    // A process we may not end (another user's, a protected one) is still held, so its pid can't be reused.
+    if (h === 0n) h = BigInt(k.OpenProcess!(0x1000 | 0x100000, 0, knownPid) as number | bigint);
     if (h === 0n) return pidOnly(knownPid);
     let open = true;
     return {
@@ -120,17 +137,23 @@ export function peerHandle(fd: number | null, os: DaemonPlatform, knownPid?: num
   }
   const l = linux();
   if (!l) return null;
+  const cred = new Int32Array(3), clen = new Uint32Array([12]);
+  const credPid = (l.getsockopt!(fd, 1, 17 /* SO_PEERCRED */, ptr(cred), ptr(clen)) as number) === 0 && cred[0]! > 0 ? cred[0]! : 0;
   const out = new Int32Array(1), len = new Uint32Array([4]);
   if ((l.getsockopt!(fd, 1 /* SOL_SOCKET */, SO_PEERPIDFD, ptr(out), ptr(len)) as number) !== 0 || out[0]! < 0) {
-    // An older kernel: the pid, from SO_PEERCRED.
-    const cred = new Int32Array(3), clen = new Uint32Array([12]);
-    if ((l.getsockopt!(fd, 1, 17, ptr(cred), ptr(clen)) as number) !== 0 || !(cred[0]! > 0)) return null;
-    return pidOnly(cred[0]!);
+    // Only a kernel without SO_PEERPIDFD (before 6.5) falls back to SO_PEERCRED's pid; any other failure (ESRCH: the
+    // peer has exited) is a peer that is gone.
+    // ENOPROTOOPT, or a kernel before 6.5 (errno is read after the call, and Bun may have touched it since, so the
+    // version decides too): the option doesn't exist here.
+    const errno = (require("bun:ffi") as typeof import("bun:ffi")).read.i32(l.__errno_location!() as never, 0);
+    if (errno === ENOPROTOOPT || !kernelHasPeerPidfd()) return credPid > 0 ? pidOnly(credPid) : null;
+    return gone(credPid);
   }
   const pidfd = out[0]!;
   let pid = 0;
   try { pid = Number(/^Pid:\s+(-?\d+)/m.exec(readFileSync(`/proc/self/fdinfo/${pidfd}`, "utf8"))?.[1] ?? 0); } catch { /* no fdinfo */ }
-  if (!(pid > 0)) { l.close!(pidfd); return null; }
+  // `Pid: -1`: the process has exited (and been reaped); 0: in a pid namespace we can't see into. Both are fenced.
+  if (!(pid > 0)) { l.close!(pidfd); return gone(credPid); }
   let open = true;
   const signal = (sig: number) => open && Number(l.syscall!(SYS_PIDFD_SEND_SIGNAL, pidfd, sig, null, 0)) === 0;
   return {
