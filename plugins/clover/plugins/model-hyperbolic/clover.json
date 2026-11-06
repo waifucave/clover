@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Hyperbolic",
+  "description": "Hyperbolic's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "hyperbolic",
+        "name": "Hyperbolic",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Hyperbolic API key. Clover keeps it in your credential store and adds it to Hyperbolic's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.hyperbolic.xyz/v1"
+        }
+      }
+    ]
+  }
+}

@@ -15,7 +15,7 @@ export interface FakeView {
   locales: { lang: string; file: string }[];
   bots: "all" | string[];
   // Fields asked of lane B for `UiPluginView`.
-  source?: "bundled" | "installed" | "dev";
+  source?: "bundled" | "local" | "dev";
   enabledAt?: number;
   capabilities?: string[];
   isBot?: boolean;
@@ -94,7 +94,7 @@ export function folderView(dir: string, enabledAt = 1000): FakeView {
     themes: m.contributes?.themes ?? [],
     locales: [],
     bots: "all",
-    source: "installed",
+    source: "local",
     enabledAt,
     capabilities: m.capabilities ?? [],
     css: m.client?.css ?? [],

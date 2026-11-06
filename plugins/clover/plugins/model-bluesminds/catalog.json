@@ -1,0 +1,1376 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.bluesminds.com/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/bluesminds/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.bluesminds.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.bluesminds.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "bluesminds/claude-haiku-4-5",
+      "providerId": "bluesminds",
+      "upstreamId": "claude-haiku-4-5",
+      "displayName": "Claude Haiku 4.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-haiku-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-haiku-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-haiku-4-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"Max output | ... | 64K tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"Thinking: Extended ... Default effort: Not supported\" — Haiku 4.5 only supports manual extended thinking (thinking:{type:'enabled',budget_tokens}); it is not in the effort-parameter supportedModels list.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-haiku-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bluesminds/claude-opus-4-5",
+      "providerId": "bluesminds",
+      "upstreamId": "claude-opus-4-5",
+      "displayName": "Claude Opus 4.5 (VIP)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-opus-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-opus-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-opus-4-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-5/overview (read 2026-09-27): \"Context window: 200K tokens · Max output: 64K tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/build-with-claude/effort (read 2026-09-27): \"supportedModels: ...claude-opus-4-5-20251101... / high: The default on every model that supports effort except Claude Opus 5.5.\" — Opus 4.5 is 'the only extended-thinking-only model that supports effort' (thinking.md); it composes effort with manual budget_tokens. Not listed under xhigh/max availability, so low/medium/high are its levels. — the maker's effort values ['low', 'medium', 'high'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-opus-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bluesminds/claude-sonnet-4-5",
+      "providerId": "bluesminds",
+      "upstreamId": "claude-sonnet-4-5",
+      "displayName": "Claude Sonnet 4.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-sonnet-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-sonnet-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#claude-sonnet-4-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/overview (read 2026-09-27): \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-4-5/overview (read 2026-09-27): \"Context window: 200K tokens · Max output: 64K tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-4-5/overview (read 2026-09-27): \"Default effort | Not supported\" — Sonnet 4.5 only supports manual extended thinking; not in the effort-parameter supportedModels list.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-sonnet-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bluesminds/deepseek-chat",
+      "providerId": "bluesminds",
+      "upstreamId": "deepseek-chat",
+      "displayName": "DeepSeek Chat",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-chat — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-chat",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "bluesminds/deepseek-reasoner",
+      "providerId": "bluesminds",
+      "upstreamId": "deepseek-reasoner",
+      "displayName": "DeepSeek Reasoner",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-reasoner",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-reasoner",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-reasoner — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-reasoner",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-reasoner",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#deepseek-reasoner",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-reasoner",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "bluesminds/gemini-2.0-flash",
+      "providerId": "bluesminds",
+      "upstreamId": "gemini-2.0-flash",
+      "displayName": "Gemini 2.0 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.0-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "bluesminds/gemini-2.0-flash-exp",
+      "providerId": "bluesminds",
+      "upstreamId": "gemini-2.0-flash-exp",
+      "displayName": "Gemini 2.0 Flash (Exp)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash-exp",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash-exp",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash-exp — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash-exp",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.0-flash-exp",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.0-flash-exp",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "bluesminds/gemini-2.5-pro",
+      "providerId": "bluesminds",
+      "upstreamId": "gemini-2.5-pro",
+      "displayName": "Gemini 2.5 Pro (VIP)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gemini-2.5-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro (read 2026-09-27): \"Function calling ... Supported\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro (read 2026-09-27): \"Function calling ... Supported\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro (read 2026-09-27): \"Output token limit: 65,536\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemini-api/docs/thinking (read 2026-09-27): \"Gemini 2.5-Pro & 2.5-Flash: 'On' -- thinking enabled by default (specific level not detailed)\" — The model page itself just marks Thinking: Supported; the generic thinking guide names thinking_level but does not confirm which literal levels 2.5 Pro accepts, only that thinking is on by default.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemini-2.5-pro",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "bluesminds/glm-4-flash",
+      "providerId": "bluesminds",
+      "upstreamId": "glm-4-flash",
+      "displayName": "GLM 4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "bluesminds/glm-4.7",
+      "providerId": "bluesminds",
+      "upstreamId": "glm-4.7",
+      "displayName": "GLM 4.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#glm-4.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"Powerful tool invocation capabilities, enabling integration with various external toolsets.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"Powerful tool invocation capabilities, enabling integration with various external toolsets.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"Maximum Output Tokens: 128K\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"\"thinking\": { \"type\": \"enabled\" } ... 'disabled' or 'enabled', default is 'enabled'\" — the maker's effort values ['enabled', 'disabled'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "bluesminds/gpt-4.1",
+      "providerId": "bluesminds",
+      "upstreamId": "gpt-4.1",
+      "displayName": "GPT-4.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1 (read 2026-09-27): \"Supported features: streaming, structured_outputs, predicted_outputs, function_calling, ...\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1 (read 2026-09-27): \"Supported features: streaming, structured_outputs, predicted_outputs, function_calling, ...\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1 (read 2026-09-27): \"32,768 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1 (read 2026-09-27): \"Smartest non-reasoning model.\"",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4.1",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bluesminds/gpt-4.1-mini",
+      "providerId": "bluesminds",
+      "upstreamId": "gpt-4.1-mini",
+      "displayName": "GPT-4.1 Mini",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1-mini — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-mini (read 2026-09-27): \"Supported features: ... \"function_calling\" ... Supported tools: ... \"function_calling\"\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-mini (read 2026-09-27): \"Supported features: ... \"function_calling\" ... Supported tools: ... \"function_calling\"\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-mini (read 2026-09-27): \"32,768 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-mini (read 2026-09-27): \"reasoning is not mentioned in the supported features list\" — Page does not use the exact 'non-reasoning model' phrase (unlike the flagship gpt-4.1 page), but reasoning is absent from its supported-features list, consistent with the rest of the GPT-4.1 family.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4.1-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bluesminds/gpt-4.1-nano",
+      "providerId": "bluesminds",
+      "upstreamId": "gpt-4.1-nano",
+      "displayName": "GPT-4.1 Nano",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1-nano",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1-nano",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4.1-nano — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-nano (read 2026-09-27): \"Supported features: ... \"function_calling\" ... Supported tools: ... \"function_calling\"\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-nano (read 2026-09-27): \"Supported features: ... \"function_calling\" ... Supported tools: ... \"function_calling\"\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-nano (read 2026-09-27): \"32,768 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-nano (read 2026-09-27): \"reasoning is not mentioned in the supported features list\" — Page does not use the exact 'non-reasoning model' phrase (unlike the flagship gpt-4.1 page), but reasoning is absent from its supported-features list, consistent with the rest of the GPT-4.1 family.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4.1-nano",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bluesminds/gpt-4o",
+      "providerId": "bluesminds",
+      "upstreamId": "gpt-4o",
+      "displayName": "GPT-4o",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4o (read 2026-09-27): \"16,384 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-4o",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bluesminds/gpt-4o-mini",
+      "providerId": "bluesminds",
+      "upstreamId": "gpt-4o-mini",
+      "displayName": "GPT-4o Mini",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o-mini — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#gpt-4o-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4o-mini (read 2026-09-27): \"16,384 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-4o-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bluesminds/grok-3",
+      "providerId": "bluesminds",
+      "upstreamId": "grok-3",
+      "displayName": "Grok-3 (VIP)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#grok-3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-3",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "bluesminds/kimi-k2",
+      "providerId": "bluesminds",
+      "upstreamId": "kimi-k2",
+      "displayName": "Kimi K2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "bluesminds/kimi-k2-thinking",
+      "providerId": "bluesminds",
+      "upstreamId": "kimi-k2-thinking",
+      "displayName": "Kimi K2 Thinking",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2-thinking",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2-thinking",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2-thinking — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2-thinking",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#kimi-k2-thinking",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2-thinking",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "bluesminds/minimax-m2.5",
+      "providerId": "bluesminds",
+      "upstreamId": "minimax-m2.5",
+      "displayName": "MiniMax M2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#minimax-m2.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "bluesminds/qwen-max",
+      "providerId": "bluesminds",
+      "upstreamId": "qwen-max",
+      "displayName": "Qwen Max (VIP)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-max — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen-max",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "bluesminds/qwen-plus",
+      "providerId": "bluesminds",
+      "upstreamId": "qwen-plus",
+      "displayName": "Qwen Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-plus — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "bluesminds/qwen-turbo",
+      "providerId": "bluesminds",
+      "upstreamId": "qwen-turbo",
+      "displayName": "Qwen Turbo",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-turbo — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bluesminds/index.ts#qwen-turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen-turbo",
+      "modelFamily": "qwen"
+    }
+  ]
+}

@@ -226,10 +226,13 @@ function makePair(): Pair {
       exitApp();
     },
   });
-  // The Clover Browser (lane L): the daemon drives its tabs over the pair.
+  // The Clover Browser (lane L): the daemon drives its tabs over the pair. The browser host's own contract names a
+  // plugin's tab owner by its plugin field (lane L's `contract.ts`); the protocol's owner names it `pluginId`
+  // (B-M1), so the boundary translates the one field and leaves lane L's shapes alone until its fix is in.
   p.handle("app.tab.open", async (params) => {
     const a = BROWSER_METHODS.appTabOpen.params.parse(params);
-    return { tab: await browserHost().open(a) };
+    const owner = a.owner.kind === "plugin" ? { kind: "plugin" as const, plugin: a.owner.pluginId } : a.owner;
+    return { tab: await browserHost().open({ id: a.id, owner, ...(a.url !== undefined ? { url: a.url } : {}), place: a.place }) };
   });
   p.handle("app.tab.command", async (params) => {
     const a = BROWSER_METHODS.appTabCommand.params.parse(params);

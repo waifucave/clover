@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Tencent TokenHub International (Anthropic dialect)",
+  "description": "Tencent TokenHub International (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "tencent-tokenhub-intl-anthropic",
+        "name": "Tencent TokenHub International (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Tencent TokenHub International (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Tencent TokenHub International (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://tokenhub-intl.tencentmaas.com"
+        }
+      }
+    ]
+  }
+}

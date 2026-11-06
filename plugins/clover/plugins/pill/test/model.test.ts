@@ -19,7 +19,7 @@ import {
 import { SPRING, retarget, restingSpring, settleSeconds, settled, springAt, springStep, stepSpring } from "../src/model/spring";
 import { CHILD_PALETTES, GLOW_ALPHAS, GLOW_REACH, PALETTES, PLUME, PropulsionPlume, WorkingAnimation, childPalette, cssRgb, mulberry32, plumeColor, toolGlyph, type PlumeThrow } from "../src/model/plume";
 import { assignPaletteSlots, childLayout, childStatus, entrance, stoppable } from "../src/model/children";
-import { UPDATE_LABEL, plainReply, shortened, stripBold, turnPreview } from "../src/model/preview";
+import { updateLabel, plainReply, shortened, stripBold, turnPreview } from "../src/model/preview";
 import { cardTrailing, chooseOption, draftComplete, emptyDraft, isSealed, questionAdvance, questionAnswers, typeOther, type Question } from "../src/model/cards";
 import { APPROVAL, LINK, QUESTION, QUESTIONS } from "../src/fixtures";
 
@@ -278,7 +278,7 @@ describe("a pinned turn (the Swift reference's dispatchPillTurnPreview and dispa
       { prompt: "Still going", reply: "" },
     ];
     expect(turnPreview(turns, 0)).toEqual({ prompt: "First line", reply: "ok", position: "1/4" });
-    expect(turnPreview(turns, 1)!.prompt).toBe(UPDATE_LABEL);
+    expect(turnPreview(turns, 1)!.prompt).toBe(updateLabel());
     expect(turnPreview(turns, 2)!.reply).toBe("stopped");
     expect(turnPreview(turns, 3)!.reply).toBe("no reply yet");
     expect(turnPreview(turns, 9)).toBeNull();

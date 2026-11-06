@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Nebius Token Factory",
+  "description": "Nebius Token Factory's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nebius",
+        "name": "Nebius Token Factory",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Nebius Token Factory API key. Clover keeps it in your credential store and adds it to Nebius Token Factory's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.tokenfactory.nebius.com/v1"
+        }
+      }
+    ]
+  }
+}

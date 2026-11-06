@@ -1,0 +1,21 @@
+{
+  "name": "@waifucave/clover-service-relay",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The Cloudflare relay a user runs in their own Cloudflare account: carries a link's end-to-end encrypted frames between two of their devices when no direct path works, and keeps sealed sync mail for a device that is away.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.8",
+    "@cloudflare/workers-types": "5.20261023.1",
+    "@types/node": "26.6.5",
+    "@waifucave/clover-plugin-relay-cloudflare": "workspace:*",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.153.0"
+  }
+}

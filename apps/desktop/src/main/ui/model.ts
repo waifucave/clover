@@ -187,8 +187,11 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
 
 function fromView(v: Record<string, unknown>): UiPluginExtras {
   const strings = (x: unknown) => (Array.isArray(x) && x.every((y) => typeof y === "string") ? (x as string[]) : undefined);
+  // The core's source names (B-M1's enum): bundled, index, npm, local, wrapped, dev. What the runtime cares about is
+  // where the plugin came from as the resolver rule 5 reads it: the bundled tree, a dev one, or installed beside them.
+  const source = v.source === "bundled" ? "bundled" : v.source === "dev" ? "dev" : v.source === "index" || v.source === "npm" || v.source === "local" || v.source === "wrapped" ? "installed" : undefined;
   return {
-    ...(v.source === "bundled" || v.source === "installed" || v.source === "dev" ? { source: v.source } : {}),
+    ...(source !== undefined ? { source: source as UiSource } : {}),
     ...(typeof v.enabledAt === "number" ? { enabledAt: v.enabledAt } : {}),
     ...(strings(v.capabilities) ? { capabilities: strings(v.capabilities)! } : {}),
     ...(typeof v.isBot === "boolean" ? { isBot: v.isBot } : {}),

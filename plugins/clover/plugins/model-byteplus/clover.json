@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "BytePlus ModelArk",
+  "description": "BytePlus ModelArk's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "byteplus",
+        "name": "BytePlus ModelArk",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your BytePlus ModelArk API key. Clover keeps it in your credential store and adds it to BytePlus ModelArk's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ark.ap-southeast.bytepluses.com/api/v3"
+        }
+      }
+    ]
+  }
+}

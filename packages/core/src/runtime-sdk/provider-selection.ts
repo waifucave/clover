@@ -1,4 +1,4 @@
-import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { activeCatalog } from "./model-plugins/catalog-source";
 import type { WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
 import type { ModelFamilyListing, ProviderSelection } from "@waifucave/clover-agent-sdk";
 import { credentialRefFor } from "./keychain";
@@ -22,7 +22,7 @@ export function testProviderNameFor(model: string | undefined): string | undefin
  *  `key` already IS the provider-qualified tag. Replaces `catalogRowsFor`'s broad alias/upstreamId
  *  matching (a bare-id concept that no longer exists — a tag names exactly one row or none). */
 export function rowForTag(tag: string): WinterModelDescriptor | undefined {
-  return loadCatalog().models.find((m) => m.key === tag);
+  return activeCatalog().models.find((m) => m.key === tag);
 }
 
 /**
@@ -87,7 +87,7 @@ const TOOLS_GATED_ADAPTER_IDS: ReadonlySet<string> = new Set([
 export function toolsRefusedFor(row: WinterModelDescriptor): boolean {
   if (row.toolCalling.value === "native") return false;
   if (row.toolCalling.confidence !== "unknown") return true;
-  const adapterId = loadCatalog().providers.find((p) => p.id === row.providerId)?.adapterId;
+  const adapterId = activeCatalog().providers.find((p) => p.id === row.providerId)?.adapterId;
   return adapterId !== undefined && TOOLS_GATED_ADAPTER_IDS.has(adapterId);
 }
 
@@ -164,7 +164,7 @@ export function providerFor(tag: ModelTag | string, home?: string): ProviderSele
  * listing carries exactly one row per catalog row, nothing synthesized.
  */
 export function familyListingFromCatalog(): ModelFamilyListing {
-  const catalog = loadCatalog();
+  const catalog = activeCatalog();
   const families = catalog.families.map((family) => {
     const inFamily = catalog.models.filter((m) => m.modelFamily === family.id);
     const canonicalIds = [...new Set(inFamily.map((m) => m.canonicalModelId))];

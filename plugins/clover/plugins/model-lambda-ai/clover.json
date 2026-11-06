@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Lambda AI",
+  "description": "Lambda AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "lambda-ai",
+        "name": "Lambda AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Lambda AI API key. Clover keeps it in your credential store and adds it to Lambda AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.lambda.ai/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Yi (01.AI)",
+  "description": "Yi (01.AI)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "yi",
+        "name": "Yi (01.AI)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Yi (01.AI) API key. Clover keeps it in your credential store and adds it to Yi (01.AI)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.lingyiwanwu.com/v1"
+        }
+      }
+    ]
+  }
+}

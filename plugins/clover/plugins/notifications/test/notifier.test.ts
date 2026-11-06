@@ -153,5 +153,19 @@ describe("the host half and the manifest", () => {
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.notifier.notify(update("message", { bot: "gone" }));
     expect(shown.map((s) => s.title)).toEqual(["Alpha", "gone"]);
+    await host.stop();
+  });
+
+  test("the words come in the user's language through the plugin API's t; a key it lacks stays English", async () => {
+    const log = { info: () => {}, warn: () => {}, error: () => {} };
+    const { desktop, shown } = fakeDesktop();
+    const fr: Record<string, string> = { "clover.notifications.message": "Vous a envoyé un message", "clover.notifications.unseen": "{count} non lus" };
+    await host.start({ log, desktop, t: (key, params) => (fr[key] ?? key).replace(/\{(\w+)\}/g, (_, n: string) => String(params?.[n] ?? "")) });
+    await host.notifier.notify(update("message", { bot: "alpha", unseen: 3 }));
+    await host.notifier.notify(update("card", { bot: "alpha", unseen: 1 }));
+    await host.stop();
+    expect(shown.map((s) => s.body)).toEqual(["Vous a envoyé un message · 3 non lus", "Needs your OK"]);
+    // Stopped, English again.
+    expect(noticeWords(update("message", { unseen: 1 }), "Alpha").body).toBe("Sent you a message");
   });
 });

@@ -1,0 +1,1616 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/qwen-cloud/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.qwencloud.com/ — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://dashscope-intl.aliyuncs.com/compatible-mode/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "qwen-cloud/deepseek-v4-flash",
+      "providerId": "qwen-cloud",
+      "upstreamId": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#deepseek-v4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#deepseek-v4-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4-flash | ✓ | ✓ | ✓ | Implicit only | —\" — Function calling column of the 'Other features' table.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4-flash | ✓ | ✓ | ✓ | Implicit only | —\" — Function calling column of the 'Other features' table.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"deepseek-v4-flash | 1M | 384k *\" — Table uses K=1024 elsewhere on this site (384k literally = 393,216, matching the parameter-defaults table); reported as 1000000 per common.md's K=1000 convention for the '1M' context figure itself.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4-flash | 1.0 | 0.95 | - | - | 393,216 shared | 393,216 shared\" — 'max_tokens' column of the Parameter defaults table, shared with the thinking budget.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4.1-flash, deepseek-v4-pro-0813, deepseek-v4-pro, deepseek-v4-flash, and deepseek-v4-flash-0731 have thinking mode enabled by default. You can use the `reasoning_effort` parameter... Valid values: `low` (supported only by deepseek-v4.1-flash, deepseek-v4-flash-0731, and deepseek-v4-pro-...\" — For deepseek-v4-flash specifically the note says: 'low and medium produce the same behavior as high, and xhigh produces the same behavior as max' — i.e. low is accepted but aliased to high, not a distinct level for this id, so efforts=[high, max].",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qwen-cloud/deepseek-v4-pro",
+      "providerId": "qwen-cloud",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#deepseek-v4-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#deepseek-v4-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4-pro | ✓ | ✓ | ✓ | ✓ | —\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4-pro | ✓ | ✓ | ✓ | ✓ | —\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"deepseek-v4-pro | 1M | 384k *\" — Same K=1024 caveat as deepseek-v4-flash.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/deepseek (read 2026-09-27): \"deepseek-v4-pro | 1.0 | 0.95 | - | - | 393,216 shared | 393,216 shared\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat (read 2026-09-27): \"DeepSeek-V4 and GLM series: Options: `high` ... `max` ... low and medium map to high, xhigh maps to max. Applies to glm-5.2, glm-5.1, glm-5, deepseek-v4-pro, and deepseek-v4-flash (excluding deepseek-v4-flash-0731).\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qwen-cloud/glm-5.2",
+      "providerId": "qwen-cloud",
+      "upstreamId": "glm-5.2",
+      "displayName": "GLM 5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#glm-5.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.2 | ✓ | ✓ | ✓ (non-thinking mode only) | ✓ (implicit only)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.2 | ✓ | ✓ | ✓ (non-thinking mode only) | ✓ (implicit only)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.3, glm-5.2, and glm-5.2-fast-preview are the latest GLM models with 1M context length.\" — IMPORTANT CONFLICT ON THE SAME SITE: docs.qwencloud.com's 'text-generation-models' Recommended-models summary table separately states `glm-5.2 | 198k | ...` (quote: \"glm-5.2 | 198k | ✓ | ✓ | — | ✓\", same URL as this fact's page but the getting-started/text-generation-models sub-page). The dedicat...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.2 and glm-5.2-fast-preview support thinking and non-thinking modes via the `enable_thinking` parameter ... | glm-5.2 | true | 1.0 | 0.95 | 20 | 1.0 |\" — Default given here is for enable_thinking (true), not for reasoning_effort — the API reference separately gives reasoning_effort options high/max with default high for GLM, but does not restate a default specifically tagged to glm-5.2 alone beyond that family statement.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `clear_thinking` \"is supported only by the GLM series models glm-5.3, glm-5.2, glm-5.1, and glm-5. The default value is true for glm-5.3 and false for the other models\"; https://www.alibabacloud.com/help/en/model-studio/glm: \"false: Retains the reasoning_content from previous turns and provides it to the model along with the context.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/glm-5.2"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `clear_thinking` \"is supported only by the GLM series models glm-5.3, glm-5.2, glm-5.1, and glm-5. The default value is true for glm-5.3 and false for the other models\"; https://www.alibabacloud.com/help/en/model-studio/glm: \"false: Retains the reasoning_content from previous turns and provides it to the model along with the context.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qwen-cloud/glm-5.2-fast-preview",
+      "providerId": "qwen-cloud",
+      "upstreamId": "glm-5.2-fast-preview",
+      "displayName": "GLM 5.2 Fast Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#glm-5.2-fast-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#glm-5.2-fast-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.2-fast-preview | ✓ | ✓ | ✓ (non-thinking mode only) | ✓ (implicit only)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.2-fast-preview | ✓ | ✓ | ✓ (non-thinking mode only) | ✓ (implicit only)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.3, glm-5.2, and glm-5.2-fast-preview are the latest GLM models with 1M context length.\" — Same 1M-vs-198k conflict as glm-5.2 above (the summary table's 198k figure is for glm-5.2 specifically, not clearly stated for glm-5.2-fast-preview, but flagged for consistency).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/glm (read 2026-09-27): \"glm-5.2 and glm-5.2-fast-preview support thinking and non-thinking modes via the `enable_thinking` parameter\" — No separate default row for glm-5.2-fast-preview in the Parameter defaults table (only glm-5.2 and glm-5.1 are listed there).",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.2-fast-preview",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qwen-cloud/kimi-k2.7-code",
+      "providerId": "qwen-cloud",
+      "upstreamId": "kimi-k2.7-code",
+      "displayName": "Kimi K2.7 Code",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/kimi (read 2026-09-27): \"kimi-k2.7-code is the most capable Kimi model for coding... Supports text, image, and video input, thinking mode, conversation, and agent tasks.\" — Same contradiction as the alibaba/alibaba-cn kimi-k2.7-code rows; catalog currently has text-only for this row too.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#kimi-k2.7-code — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/kimi (read 2026-09-27): \"Function calling | ✓ | ✓\" — 'Supported features' table, kimi-k2.7-code column.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/kimi (read 2026-09-27): \"Function calling | ✓ | ✓\" — 'Supported features' table, kimi-k2.7-code column.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/third-party-models/kimi (read 2026-09-27): \"kimi-k3 and kimi-k2.7-code are thinking-only models: thinking mode is always enabled (`enable_thinking` defaults to `true` and cannot be disabled)\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/kimi-k2.7-code"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "qwen-cloud/qwen3.5-122b-a10b",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.5-122b-a10b",
+      "displayName": "Qwen3.5 122B A10B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.5-122b-a10b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.5-122b-a10b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-122b-a10b | 256k | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-122b-a10b | 256k | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-122b-a10b | 256k | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"256k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-122b-a10b | 256k | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"64k\"; site's K may be 1024 elsewhere so the true value could be 65536 — table gives only the abbreviation.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it — most are hybrid.\" — Thinking Budget column = 80k, i.e. thinking_budget cap, not a named effort level.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.4,
+          "outputPerMTokUsd": 3.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.5-122b-a10b — QwenCloud lists $0.40 input and $3.20 output per 1M tokens for this exact API model (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.5-122b-a10b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.5-397b-a17b",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.5-397b-a17b",
+      "displayName": "Qwen3.5 397B A17B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.5-397b-a17b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.5-397b-a17b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-397b-a17b | 256k | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-397b-a17b | 256k | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-397b-a17b | 256k | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"256k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-397b-a17b | 256k | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 3.6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.5-397b-a17b — QwenCloud lists $0.60 input and $3.60 output per 1M tokens for this exact API model (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.5-397b-a17b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.5-plus-2026-04-20",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.5-plus-2026-04-20",
+      "displayName": "Qwen3.5 Plus (2026-04-20)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.5-plus-2026-04-20",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.5-plus-2026-04-20 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-plus-2026-04-20 | 1M | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-plus-2026-04-20 | 1M | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-plus-2026-04-20 | 1M | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.5-plus-2026-04-20 | 1M | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.4,
+          "outputPerMTokUsd": 2.4,
+          "cacheReadPerMTokUsd": 0.04,
+          "cacheWritePerMTokUsd": 0.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.5-plus-2026-04-20 — QwenCloud's <=256K tier lists $0.40 input, $2.40 output, $0.50 explicit cache creation, and $0.04 explicit cache read per 1M tokens. The page also advertises a 1M context, but publishes no rate above 256K; ModelPricing therefore records the published <=256K rate only (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.5-plus-2026-04-20",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.6-27b",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.6-27b",
+      "displayName": "Qwen3.6 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.6-27b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.6-27b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-27b | 256k | 64k | 80k | ✓ | — | ✓\" — Function-calling column is ✓ (built-in tools column is the '—').",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-27b | 256k | 64k | 80k | ✓ | — | ✓\" — Function-calling column is ✓ (built-in tools column is the '—').",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-27b | 256k | 64k | 80k | ✓ | — | ✓\" — stated as \"256k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-27b | 256k | 64k | 80k | ✓ | — | ✓\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 3.6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.6-27b — QwenCloud lists $0.60 input and $3.60 output per 1M tokens for this exact API model (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.6-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.6-35b-a3b",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.6-35b-a3b",
+      "displayName": "Qwen3.6 35B A3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.6-35b-a3b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.6-35b-a3b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-35b-a3b | 256k | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-35b-a3b | 256k | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-35b-a3b | 256k | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"256k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-35b-a3b | 256k | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.375,
+          "outputPerMTokUsd": 2.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.6-35b-a3b — QwenCloud lists $0.375 input and $2.25 output per 1M tokens for this exact API model (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.6-35b-a3b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.6-plus",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.6-plus",
+      "displayName": "Qwen3.6 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.6-plus — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-plus | 1M | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-plus | 1M | 64k | 80k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-plus | 1M | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.6-plus | 1M | 64k | 80k | ✓ | ✓ | ✓\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/qwen3.6-plus"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.05,
+          "cacheWritePerMTokUsd": 0.625
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.6-plus — QwenCloud's <=256K tier lists $0.50 input, $3.00 output, $0.625 explicit cache creation, and $0.05 explicit cache read per 1M tokens. The page also advertises a 1M context, but publishes no rate above 256K; ModelPricing therefore records the published <=256K rate only (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.6-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.7-flash",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.7-flash",
+      "displayName": "Qwen3.7 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat — the image-input pixel limit applies to \"qwen3.8-max, qwen3.8-max-0902, qwen3.8-flash, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-omni-flash, Qwen3.7 series, ...: 16,777,216\" (image input implied; video not stated for this id)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — Structured output ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/run-and-scale/context-cache — context cache supported on qwen3.8-max, max-0902, flash, 2.4t-a95b, 27b and qwen3.7-flash (implicit and explicit cache)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking — \"Qwen3.7 Flash series (Hybrid thinking mode, thinking mode enabled by default): qwen3.7-flash, qwen3.7-flash-2026-07-15\"; Chat thinking depth is `thinking_budget` (256k max per https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models), not reasoning_effort",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/qwen3.7-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.03,
+          "outputPerMTokUsd": 0.13,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 32001,
+              "inputPerMTokUsd": 0.1,
+              "outputPerMTokUsd": 0.4
+            },
+            {
+              "minPromptTokens": 256001,
+              "inputPerMTokUsd": 0.2,
+              "outputPerMTokUsd": 0.8
+            }
+          ]
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/model-prices (read 2026-10-29) — Singapore, qwen3.7-flash (\"Currently equivalent to qwen3.7-flash-2026-07-15\"), International: 0<Token≤32K $0.030 / $0.130; 32K<Token≤256K $0.100 / $0.400; 256K<Token≤1M $0.200 / $0.800 (input / output per 1 million tokens).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.7-max-2026-06-08",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.7-max-2026-06-08",
+      "displayName": "Qwen3.7 Max (2026-06-08)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.7-max-2026-06-08",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.7-max-2026-06-08 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-max-2026-06-08 | 1M | 64k | 256k | ✓ | ✓ | —\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-max-2026-06-08 | 1M | 64k | 256k | ✓ | ✓ | —\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-max-2026-06-08 | 1M | 64k | 256k | ✓ | ✓ | —\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-max-2026-06-08 | 1M | 64k | 256k | ✓ | ✓ | —\" — stated as \"64k\"; this conflicts with the Alibaba Cloud Model Studio zh/intl page's 131072 for the plain `qwen3.7-max` id (which is a DIFFERENT provider row) — the two providers document different numbers for what is presumably the same underlying model.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/qwen3.7-max-2026-06-08"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2.5,
+          "outputPerMTokUsd": 7.5,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 3.125
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.7-max-2026-06-08 — QwenCloud lists $2.50 input, $7.50 output, $0.50 implicit-cache input, and $3.125 explicit-cache creation per 1M tokens. It separately lists $0.25 explicit cache read; the one cacheRead field records the higher implicit-cache rate so estimates do not under-report either cache mode (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.7-max-2026-06-08",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.7-plus",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.7-plus",
+      "displayName": "Qwen3.7 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.7-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.7-plus — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-plus | 1M | 64k | 256k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-plus | 1M | 64k | 256k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-plus | 1M | 64k | 256k | ✓ | ✓ | ✓\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.7-plus | 1M | 64k | 256k | ✓ | ✓ | ✓\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"Toggle with `enable_thinking`. All Qwen3+ models support it.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/qwen3.7-plus"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.32,
+          "outputPerMTokUsd": 1.28,
+          "cacheReadPerMTokUsd": 0.064,
+          "cacheWritePerMTokUsd": 0.4
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.7-plus — QwenCloud's current <=256K 20%-off price is $0.32 input, $1.28 output, $0.064 implicit-cache input, and $0.40 explicit-cache creation per 1M tokens. It separately lists $0.032 explicit cache read; the one cacheRead field records the higher implicit-cache rate. The undiscounted $0.40/$1.60 list price and the current promotion are both disclosed by the page (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.7-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.8-2.4t-a95b",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.8-2.4t-a95b",
+      "displayName": "Qwen3.8 2.4T A95B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — stated as \"128k\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat — the image-input pixel limit applies to \"qwen3.8-max, qwen3.8-max-0902, qwen3.8-flash, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-omni-flash, Qwen3.7 series, ...: 16,777,216\" (image input implied; video not stated for this id)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — Structured output ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/run-and-scale/context-cache — context cache supported on qwen3.8-max, max-0902, flash, 2.4t-a95b, 27b and qwen3.7-flash (implicit and explicit cache)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat (read 2026-10-29): \"**`qwen3.8-max`, `qwen3.8-max-0902`, `qwen3.8-flash`, `qwen3.8-2.4t-a95b`, `qwen3.8-27b`:** Options: `low`, `medium`, `xhigh`. Default: `xhigh`. Cannot be set together with thinking_budget ... OpenAI standard value mapping: `max` is mapped to xhigh, `high` is mapped to xhigh, `minimal` is mapped to low, and `none` is mapped to enable_thinking=False.\"; https://www.alibabacloud.com/help/en/model-studio/deep-thinking: thinking mode only for qwen3.8-2.4t-a95b",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "defaultEffort": "xhigh",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/model-prices (read 2026-10-29) — Singapore, qwen3.8-2.4t-a95b, International, Non-Thinking and Thinking modes, 0<Token≤1M: input $2, output $6 per 1 million tokens (output = chain of thought + answer).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-2.4t-a95b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.8-flash",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.8-flash",
+      "displayName": "Qwen3.8 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.8-flash` | 1M | 128k | 256k | ✓ | ✓ | ✓ |\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.8-flash` | 1M | 128k | 256k | ✓ | ✓ | ✓ |\" — stated as \"128k\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat — the image-input pixel limit applies to \"qwen3.8-max, qwen3.8-max-0902, qwen3.8-flash, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-omni-flash, Qwen3.7 series, ...: 16,777,216\" (image input implied; video not stated for this id); Qwen Cloud's Token Plan describes qwen3.8-flash as \"Reasoning, visual understanding, text generation\" (https://docs.qwencloud.com/token-plan/personal/token-plan-personal-overview)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-flash` | 1M | 128k | 256k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-flash` | 1M | 128k | 256k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-flash` | 1M | 128k | 256k | ✓ | ✓ | ✓ |\" — Structured output ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/run-and-scale/context-cache — context cache supported on qwen3.8-max, max-0902, flash, 2.4t-a95b, 27b and qwen3.7-flash (implicit and explicit cache)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat (read 2026-10-29): \"**`qwen3.8-max`, `qwen3.8-max-0902`, `qwen3.8-flash`, `qwen3.8-2.4t-a95b`, `qwen3.8-27b`:** Options: `low`, `medium`, `xhigh`. Default: `xhigh`. Cannot be set together with thinking_budget ... OpenAI standard value mapping: `max` is mapped to xhigh, `high` is mapped to xhigh, `minimal` is mapped to low, and `none` is mapped to enable_thinking=False.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "defaultEffort": "xhigh",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/qwen3.8-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.47
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/model-prices (read 2026-10-29) — Singapore tab, qwen3.8-flash, International, 0<Token≤1M: input $0.15, output $0.47 per 1 million tokens (the same figures as alibaba/qwen3.8-flash).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud/qwen3.8-max",
+      "providerId": "qwen-cloud",
+      "upstreamId": "qwen3.8-max",
+      "displayName": "Qwen3.8 Max",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.8-max",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/qwen-cloud/index.ts#qwen3.8-max — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.8-max | 1M | 128k | 256k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.8-max | 1M | 128k | 256k | ✓ | ✓ | ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.8-max | 1M | 128k | 256k | ✓ | ✓ | ✓\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-09-27): \"qwen3.8-max | 1M | 128k | 256k | ✓ | ✓ | ✓\" — stated as \"128k\". Note: this conflicts with the Alibaba Cloud Model Studio (alibaba/alibaba-cn) page's exact figure of 131072 for the same model id — different provider, kept separate per sourcing rules; flagged in top-level notes.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat (read 2026-09-27): \"`qwen3.8-max`, `qwen3.8-max-0902`, `qwen3.8-flash`, `qwen3.8-2.4t-a95b`, `qwen3.8-27b`: Options: `low`, `medium`, `xhigh`. Default: `xhigh`.\" — qwen3.8-max also enables thinking by default (enable_thinking not required to be set).",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "defaultEffort": "xhigh",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "qwen-cloud/qwen3.8-max"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.25,
+          "cacheWritePerMTokUsd": 2.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.qwencloud.com/models/qwen3.8-max — QwenCloud lists $2 input, $6 output, $0.25 implicit-cache input, and $2.50 explicit-cache creation per 1M tokens. It separately lists $0.17 explicit cache read; the one cacheRead field records the higher implicit-cache rate so estimates do not under-report either cache mode (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-max",
+      "modelFamily": "qwen"
+    }
+  ]
+}

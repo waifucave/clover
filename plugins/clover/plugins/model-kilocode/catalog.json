@@ -1,0 +1,304 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "the fetched vendor base URL DISAGREES with the pinned upstream entry (`/api/gateway` vs `/api/openrouter`); the document is the stronger evidence but the live gate is what settles it",
+        "vendor ToS forbids sending HIPAA/PCI-DSS/GLBA-regulated data, which is a deployment constraint a host must surface (audit §2.1)"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "audit:§2.1 `kilocode` / §5.2 — Kilo Gateway authentication docs (kilo.ai/docs/gateway/authentication, retrieved 2026-09-06): OpenAI-compatible API at base `https://api.kilo.ai/api/gateway`, \"Bearer token passed in the Authorization header\", organization tokens via `X-KiloCode-OrganizationId`, per-token pricing with free credits.",
+      "tier": "audit"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "kilocode/anthropic/claude-opus-5",
+      "providerId": "kilocode",
+      "upstreamId": "anthropic/claude-opus-5",
+      "displayName": "Claude Opus 5 (via Kilo)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/kilocode/index.ts#anthropic/claude-opus-5 at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `anthropic/claude-opus-5` (read 2026-09-27): supported_parameters include `tools` and `tool_choice`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `anthropic/claude-opus-5` (read 2026-09-27): supported_parameters include `tools` and `tool_choice`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `anthropic/claude-opus-5` (read 2026-09-27): context_length 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `anthropic/claude-opus-5` (read 2026-09-27): top_provider.max_completion_tokens 128000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `anthropic/claude-opus-5` (read 2026-09-27): pricing.prompt 0.000005 / completion 0.000025 / input_cache_read 0.0000005 / input_cache_write 0.00000625 USD per token",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `anthropic/claude-opus-5` (read 2026-09-27): supported_parameters include `reasoning` and `reasoning_effort`; the entry's own effort variants are ['none', 'low', 'medium', 'high', 'xhigh', 'max']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-opus-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "kilocode/google/gemini-3.1-pro-preview",
+      "providerId": "kilocode",
+      "upstreamId": "google/gemini-3.1-pro-preview",
+      "displayName": "Gemini 3.1 Pro (via Kilo)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/kilocode/index.ts#google/gemini-3.1-pro-preview at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `google/gemini-3.1-pro-preview` (read 2026-09-27): supported_parameters include `tools` and `tool_choice`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `google/gemini-3.1-pro-preview` (read 2026-09-27): supported_parameters include `tools` and `tool_choice`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `google/gemini-3.1-pro-preview` (read 2026-09-27): context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `google/gemini-3.1-pro-preview` (read 2026-09-27): top_provider.max_completion_tokens 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.1,
+          "cacheWritePerMTokUsd": 0.1875
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `google/gemini-3.1-pro-preview` (read 2026-09-27): pricing.prompt 0.000001 / completion 0.000006 / input_cache_read 0.0000001 / input_cache_write 0.0000001875 USD per token",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `google/gemini-3.1-pro-preview` (read 2026-09-27): supported_parameters include `reasoning` and `reasoning_effort`; the entry's own effort variants are ['low', 'medium', 'high']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemini-3.1-pro-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "kilocode/openai/gpt-5.6-sol",
+      "providerId": "kilocode",
+      "upstreamId": "openai/gpt-5.6-sol",
+      "displayName": "GPT-5.6 Sol (via Kilo)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/kilocode/index.ts#openai/gpt-5.6-sol at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `openai/gpt-5.6-sol` (read 2026-09-27): supported_parameters include `tools` and `tool_choice`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `openai/gpt-5.6-sol` (read 2026-09-27): supported_parameters include `tools` and `tool_choice`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `openai/gpt-5.6-sol` (read 2026-09-27): context_length 1050000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `openai/gpt-5.6-sol` (read 2026-09-27): top_provider.max_completion_tokens 128000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 4,
+          "outputPerMTokUsd": 20,
+          "cacheReadPerMTokUsd": 0.4,
+          "cacheWritePerMTokUsd": 5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `openai/gpt-5.6-sol` (read 2026-09-27): pricing.prompt 0.000004000000 / completion 0.000020000000 / input_cache_read 0.000000400000 / input_cache_write 0.000005000000 USD per token",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.kilo.ai/api/gateway/models — Kilo Gateway's own public model entry `openai/gpt-5.6-sol` (read 2026-09-27): supported_parameters include `reasoning` and `reasoning_effort`; the entry's own effort variants are ['none', 'low', 'medium', 'high', 'xhigh', 'max']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-5.6-sol",
+      "modelFamily": "gpt"
+    }
+  ]
+}

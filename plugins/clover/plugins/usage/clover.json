@@ -6,6 +6,7 @@
   "capabilities": ["usage.read"],
   "client": { "entry": "client/index.tsx" },
   "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
     "ui": [
       { "spot": "island.tab", "id": "tab", "component": "UsageTabEntry", "title": "Usage", "order": 800, "attention": "never" },
       { "spot": "settings.section", "id": "settings", "component": "UsageSection", "title": "Usage", "order": 800 }

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Typhoon",
+  "description": "Typhoon's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "typhoon",
+        "name": "Typhoon",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Typhoon API key. Clover keeps it in your credential store and adds it to Typhoon's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.opentyphoon.ai/v1"
+        }
+      }
+    ]
+  }
+}

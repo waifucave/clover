@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "OpenAdapter",
+  "description": "OpenAdapter's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "openadapter",
+        "name": "OpenAdapter",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OpenAdapter API key. Clover keeps it in your credential store and adds it to OpenAdapter's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.openadapter.in/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "ClinePass",
+  "description": "ClinePass's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "clinepass",
+        "name": "ClinePass",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your ClinePass API key. Clover keeps it in your credential store and adds it to ClinePass's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.cline.bot/api/v1"
+        }
+      }
+    ]
+  }
+}

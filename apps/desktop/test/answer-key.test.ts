@@ -66,7 +66,7 @@ describe("the answer key", () => {
     const vault = safeStorageVault(file, fakeStorage, "win32");
     const key = new AnswerKey(vault);
     expect(key.sign(new Uint8Array([1, 2, 3]))).toHaveLength(64);
-    key.vault.save(new Uint8Array(key.sign(new Uint8Array([4]))));
+    vault.save(new Uint8Array(key.sign(new Uint8Array([4]))));
     expect(key.publicKey()).toHaveLength(44);
     expect(vault.held).toBe("none");
   });

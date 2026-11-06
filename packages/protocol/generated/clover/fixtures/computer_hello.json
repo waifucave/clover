@@ -1,0 +1,19 @@
+{
+  "type": "computer_hello",
+  "ts": 1781270000000,
+  "name": "Studio",
+  "os": "macos",
+  "hasDisplay": true,
+  "agents": [
+    "claude-code"
+  ],
+  "level": "ask-risky",
+  "tree": {
+    "home": "/Users/me",
+    "botsRoot": "/Users/me/.clover/bots",
+    "os": "macos",
+    "bots": [
+      "alpha"
+    ]
+  }
+}

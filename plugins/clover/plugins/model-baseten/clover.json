@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Baseten",
+  "description": "Baseten's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "baseten",
+        "name": "Baseten",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Baseten API key. Clover keeps it in your credential store and adds it to Baseten's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://inference.baseten.co/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/agentrouter/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://agentrouter.org — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", Anthropic Messages at https://agentrouter.org. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "agentrouter/claude-opus-4-8",
+      "providerId": "agentrouter",
+      "upstreamId": "claude-opus-4-8",
+      "displayName": "Claude Opus 4.8",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#claude-opus-4-8",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#claude-opus-4-8",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#claude-opus-4-8 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://agentrouter.org/docs/claude-code.html — AgentRouter's Claude Code guide sets ANTHROPIC_BASE_URL to https://agentrouter.org and names the Claude Opus models (claude-opus-5, claude-opus-4-8) as the ones to use through that Anthropic route",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://agentrouter.org/docs/claude-code.html — AgentRouter's Claude Code guide sets ANTHROPIC_BASE_URL to https://agentrouter.org and names the Claude Opus models (claude-opus-5, claude-opus-4-8) as the ones to use through that Anthropic route",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-8/overview (read 2026-09-27): \"Max output | 128K tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-8/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\"",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-opus-4.8",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "agentrouter/claude-opus-5",
+      "providerId": "agentrouter",
+      "upstreamId": "claude-opus-5",
+      "displayName": "Claude Opus 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#claude-opus-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#claude-opus-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#claude-opus-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://agentrouter.org/docs/claude-code.html — AgentRouter's Claude Code guide sets ANTHROPIC_BASE_URL to https://agentrouter.org and names the Claude Opus models (claude-opus-5, claude-opus-4-8) as the ones to use through that Anthropic route",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://agentrouter.org/docs/claude-code.html — AgentRouter's Claude Code guide sets ANTHROPIC_BASE_URL to https://agentrouter.org and names the Claude Opus models (claude-opus-5, claude-opus-4-8) as the ones to use through that Anthropic route",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-5/overview (read 2026-09-27): \"Max output | 128K tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-5/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\"",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-opus-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "agentrouter/gpt-5.6-sol",
+      "providerId": "agentrouter",
+      "upstreamId": "gpt-5.6-sol",
+      "displayName": "GPT-5.6 Sol",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#gpt-5.6-sol",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#gpt-5.6-sol",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#gpt-5.6-sol — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#gpt-5.6-sol",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/agentrouter/index.ts#gpt-5.6-sol",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gpt-5.6-sol",
+      "modelFamily": "gpt"
+    }
+  ]
+}

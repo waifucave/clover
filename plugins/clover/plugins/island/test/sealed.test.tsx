@@ -19,7 +19,7 @@ import { LiquidCard } from "../src/ui/Liquid";
 import { NeedsYou, OpenIsland } from "../src/ui/OpenIsland";
 import { SealedCardContent } from "../src/ui/CardContent";
 import { ISLAND_CSS } from "../src/ui/styles";
-import { ISLAND_CARD_SOURCES, MIN_SEALED_BUTTON, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
+import { ISLAND_CARD_SOURCES, MIN_SEALED_BUTTON, resolveCardTokens, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
 import { mockSealedKit } from "../src/mock-kit";
 import { ISLAND_STORIES as STORIES } from "../src/gallery";
 import { APPROVAL, APPROVAL_2, APPROVAL_ALWAYS, LINK, NO_NOTCH, NOTCH, QUESTION, SEALED } from "../src/fixtures";
@@ -223,6 +223,17 @@ describe("the frames take the island's own tokens", () => {
       expect(name.startsWith("card.")).toBe(true);
       if ("token" in source) expect(source.fallback, name).toBe(String(base[source.token]));
     }
+  });
+
+  test("card styling (G-M3): the frames get every card token, the theme's face, the ✓'s own ink, and never a keyword", () => {
+    const { CARD_TOKENS } = require("../../../../../packages/plugin-sdk/src/catalogs/tokens") as { CARD_TOKENS: readonly { name: string }[] };
+    expect(Object.keys(ISLAND_CARD_SOURCES).sort()).toEqual(CARD_TOKENS.map((x) => x.name).sort());
+    const src = ISLAND_CARD_SOURCES["card.approve.text"]!;
+    expect("token" in src && src.token).toBe("island.accept.text");
+    const font = ISLAND_CARD_SOURCES["card.font.family"]!;
+    expect("token" in font && font.token).toBe("font.sans");
+    const unresolved = resolveCardTokens(ISLAND_CARD_SOURCES, () => "system");
+    for (const [key, source] of Object.entries(ISLAND_CARD_SOURCES)) if ("token" in source) expect(unresolved[key], key).toBe(source.fallback);
   });
 
   test("a theme's ✓ reaches the approval's frames as it reaches the question's circle", () => {

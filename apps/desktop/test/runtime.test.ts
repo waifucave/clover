@@ -86,7 +86,7 @@ describe("a part from another layer: a frame with a single-use token", () => {
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const view = s.rt.resolve(shell.shellFrame, tab.mount, "composer");
     const item = view.items[0]!;
-    if (item.kind !== "frame") throw new Error("not a frame");
+    if (item.kind !== "frame") throw new Error(`not a frame: ${JSON.stringify(view)}`);
     const token = new URL(item.url).searchParams.get("mount")!;
     return { s, shell, tab, item, token };
   }

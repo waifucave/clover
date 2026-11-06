@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Pioneer AI",
+  "description": "Pioneer AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "pioneer",
+        "name": "Pioneer AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Pioneer AI API key. Clover keeps it in your credential store and adds it to Pioneer AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.pioneer.ai/v1"
+        }
+      }
+    ]
+  }
+}

@@ -6,9 +6,12 @@ import {
   AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
   PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
-import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
+import { CloverSessionEvent, SENT_AT_WINDOW_MS, SessionView, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
 import { Caller as CallerSchema } from "../src/common";
 import { PEER_STREAM_GRANTS } from "../src/devices";
+import { NeedsAnswer } from "../src/computers";
+import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
+import { paramsFor } from "../src/rpc";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
@@ -175,14 +178,18 @@ describe("the allow lists", () => {
     expect(CLOVER_METHODS.get("card.list")!.roles).not.toContain("plugin-host");
   });
 
-  test("a plugin's calls never make a sensitive change, mint a token or install a plugin (§5.5)", () => {
+  test("a plugin's calls never make a sensitive change, mint a token, or install a plugin as its own OK (§5.5)", () => {
     for (const role of PLUGIN_ROLES) {
       for (const name of calls(role)) {
         const m = CLOVER_METHODS.get(name)!;
         expect(m.change).not.toBe("sensitive");
-        expect(["layer.token", "plugin.install", "plugin.dev.add", "card.answer", "card.list"]).not.toContain(name);
+        expect(["layer.token", "plugin.dev.add", "card.answer", "card.list"]).not.toContain(name);
       }
     }
+    // A layer installs only with the bundled-only `plugins.install` (the plugin index browser), and what it installs
+    // lands found with its sealed OK card (F-M2's review, S1); the plugin host never installs.
+    expect(calls("plugin-host")).not.toContain("plugin.install");
+    expect(CLOVER_METHODS.get("plugin.install")!.capability).toBe("plugins.install");
   });
 
   test("a plugin's call needs a capability unless it becomes a card, is its own confirm, or is the host channel", () => {
@@ -239,7 +246,8 @@ describe("the allow lists", () => {
   test("a method only the user may call is open to user roles, or to a layer when it becomes a card", () => {
     for (const m of methods.filter((x) => x.userOnly)) {
       for (const r of m.roles) {
-        if (r === "layer") expect(m.change).toBeDefined();
+        // plugin.install raises its own card, the plugin's OK, instead of a change's (F-M2's review, S1).
+        if (r === "layer") expect([m.name, m.change !== undefined || m.name === "plugin.install"]).toEqual([m.name, true]);
         else expect([...USER_ROLES, "peer"]).toContain(r);
       }
     }
@@ -410,5 +418,108 @@ describe("relayed messages and peer file calls (review N2, N3, N5)", () => {
     const write = CLOVER_METHODS.get("tree.write")!;
     expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, session: "s_remote", level: "ask" }).success).toBe(true);
     expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, level: "everything" }).success).toBe(false);
+  });
+});
+
+describe("B-M1's contract asks (lanes E, G, J, K, L)", () => {
+  const params = (name: string) => CLOVER_METHODS.get(name)!.params;
+  test("tabs: a session without a bot owns its own, and a tab says which view has it live (R8, R10)", () => {
+    const tab = { id: "tab_1", computer: "Studio", owner: { kind: "session", session: "s_code" }, partition: "session-s_code", url: "https://a.example/", title: "A", place: "shown", viewport: { width: 800, height: 600 }, loading: false, heldByUser: false, view: "browser" };
+    expect(CLOVER_EVENTS.get("tab_changed")!.schema.safeParse({ type: "tab_changed", ts: 1, tab }).success).toBe(true);
+    expect(params("browser.open").safeParse({ owner: { kind: "bot", bot: "alpha" }, show: { view: "browser", viewport: { width: 800, height: 600 } } }).success).toBe(true);
+    expect(params("browser.open").safeParse({ owner: { kind: "user" }, show: true }).success).toBe(false);
+  });
+
+  test("the tree serves lane J's methods to peers and layers, and its notices go to peers only", () => {
+    for (const name of ["tree.mkdir", "tree.readlink", "tree.symlink", "tree.watch", "tree.unwatch"]) {
+      expect([name, CLOVER_METHODS.get(name)?.roles]).toEqual([name, ["peer", "layer"]]);
+    }
+    expect(params("tree.write").safeParse({ path: "home/Studio/a.sh", data: { encoding: "utf8", text: "x" }, executable: true }).success).toBe(true);
+    expect(params("tree.grep").safeParse({ pattern: "x", cwd: "home/Studio", ignoreCase: true }).success).toBe(true);
+    for (const type of ["tree_changed", "computer_hello"]) expect([type, CLOVER_EVENTS.get(type)?.roles]).toEqual([type, ["peer"]]);
+  });
+
+  test("lane J's peer side: the direct path, holds, levels, Mirror, terminals, and the refusal an answer lifts", () => {
+    for (const name of ["tree.judge", "tree.receive", "tree.sent", "computer.takeHold", "computer.releaseHold", "computer.releaseSession", "computer.holds", "mcp.mirror"]) {
+      expect([name, CLOVER_METHODS.get(name)?.roles]).toEqual([name, ["peer"]]);
+    }
+    // One answer for a move or copy between computers (R15).
+    expect(params("tree.receive").safeParse({ from: "home/Laptop1/p", to: "home/Studio/p", move: true, level: "ask-risky" }).success).toBe(true);
+    // A peer sets the receiver's own level; the app names the computer.
+    expect(params("computer.setLevel").safeParse({ level: "automatic" }).success).toBe(true);
+    expect(params("computer.setLevel").safeParse({ name: "Studio", level: "ask" }).success).toBe(true);
+    expect(CLOVER_METHODS.get("computer.setLevel")!.roles).toContain("peer");
+    expect(params("terminal.open").safeParse({ cwd: "home/Studio/p", cols: 80, rows: 24, level: "ask-risky" }).success).toBe(true);
+    expect(params("terminal.open").safeParse({ computer: "Studio", cols: 80, rows: 24 }).success).toBe(true);
+    expect(params("tool.cancel").safeParse({ callId: "c1", session: "s_alpha" }).success).toBe(true);
+    expect(NeedsAnswer.safeParse({ needsAnswer: true, computer: "Studio", method: "tree.write" }).success).toBe(true);
+  });
+
+  test("the plugin host carries the call an API call was made in (R7), and a layer's plugin view is complete (lane E)", () => {
+    expect(params("pluginHost.api").safeParse({ pluginId: "clover/browser", callId: "c1", call: "browser.tabs", args: [], invocation: "inv_1" }).success).toBe(true);
+    const view = CLOVER_METHODS.get("plugin.ui")?.result;
+    expect(view).toBeDefined();
+    expect(CLOVER_METHODS.get("app.notify")!.result.safeParse({ shown: false }).success).toBe(true);
+    expect(CLOVER_METHODS.get("app.notify.close")?.direction).toBe("from-daemon");
+  });
+});
+
+describe("#179's review and H-M1's asks", () => {
+  const params = (name: string) => CLOVER_METHODS.get(name)!.params;
+
+  test("R15's one binding names both computers, with lane J's params (F2)", () => {
+    const call = { operation: "move", from: "home/Laptop1/p", to: "home/Studio/p", source: "Laptop1", destination: "Studio" };
+    expect(TreeTransferParams.safeParse(call).success).toBe(true);
+    expect(TreeTransferParams.safeParse({ ...call, operation: "rename" }).success).toBe(false);
+    expect(TreeTransferParams.safeParse({ ...call, move: true }).success).toBe(false);
+    expect(TREE_TRANSFER).toBe("tree.transfer");
+    expect(CLOVER_METHODS.has(TREE_TRANSFER)).toBe(false); // a binding, never a method
+    expect(CallBinding.safeParse({ computer: "Studio", source: "Laptop1", method: TREE_TRANSFER, params: "a".repeat(64) }).success).toBe(true);
+  });
+
+  test("a peer's computer.setLevel can't name a computer (S3)", () => {
+    const spec = CLOVER_METHODS.get("computer.setLevel")!;
+    expect(paramsFor(spec, "peer").safeParse({ level: "automatic" }).success).toBe(true);
+    expect(paramsFor(spec, "peer").safeParse({ name: "Laptop1", level: "automatic" }).success).toBe(false);
+    expect(paramsFor(spec, "app").safeParse({ name: "Laptop1", level: "automatic" }).success).toBe(true);
+    expect(paramsFor(spec, "app").safeParse({ name: "Laptop1", level: "automatic", answer: undefined, extra: 1 }).success).toBe(false);
+    // A method without a peer variant parses the same for every role.
+    expect(paramsFor(CLOVER_METHODS.get("tree.read")!, "peer")).toBe(CLOVER_METHODS.get("tree.read")!.params);
+  });
+
+  test("the user's words from the pill reach the daemon only from the app (S2)", () => {
+    const spec = CLOVER_METHODS.get("pill.send")!;
+    expect(spec.roles).toEqual(["app"]);
+    expect(spec.userOnly).toBe(true);
+    expect(allowedMethods("layer").has("pill.send")).toBe(false);
+    for (const to of [{ bot: "alpha" }, { session: "s_alpha" }, { target: "home#lights" }]) {
+      expect([to, spec.params.safeParse({ to, text: "hi", clientMessageId: "m1" }).success]).toEqual([to, true]);
+    }
+    expect(spec.params.safeParse({ to: { bot: "alpha", session: "s_alpha" }, text: "hi", clientMessageId: "m1" }).success).toBe(false);
+  });
+
+  test("a plugin acting as itself has a partition of its own (S1)", () => {
+    expect(params("browser.open").safeParse({ owner: { kind: "plugin", pluginId: "clover/browser-tool" } }).success).toBe(true);
+  });
+
+  test("F-M2's review: installs and the switch go by the OK, and a session shows its branch and changes", () => {
+    const install = CLOVER_METHODS.get("plugin.install")!;
+    expect(install.roles).toEqual(["app", "cli", "layer"]);
+    expect(install.result.safeParse({ id: "tarot", state: "found", treeHash: "sha256:" + "a".repeat(64), card: "card_ok000001" }).success).toBe(true);
+    expect(params("plugin.setEnabled").safeParse({ id: "tarot", enabled: true, okHash: "sha256:" + "a".repeat(64) }).success).toBe(true);
+    const session = { id: "s_code", kind: "coding", computer: "Studio", status: "idle", startedAt: 1, updatedAt: 2, branch: "feat/x", changes: 3 };
+    expect(SessionView.safeParse(session).success).toBe(true);
+    expect(SessionView.safeParse({ ...session, changes: -1 }).success).toBe(false);
+  });
+
+  test("H-M1: connSeq on the link's hello, and the app's answer key", () => {
+    const hello = { protocolVersion: 1, device: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", epoch: 0, features: [] };
+    expect(params("peer.hello").safeParse({ ...hello, connSeq: 3 }).success).toBe(true);
+    expect(params("peer.hello").safeParse(hello).success).toBe(false);
+    expect(CLOVER_METHODS.get("peer.hello")!.result.safeParse({ ...hello, connSeq: 4 }).success).toBe(true);
+    const set = CLOVER_METHODS.get("device.answerKey.set")!;
+    expect([set.roles, set.userOnly]).toEqual([["app"], true]);
+    expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(true);
+    expect(set.params.safeParse({ publicKey: "not base64!", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(false);
   });
 });
