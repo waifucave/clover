@@ -55,6 +55,12 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.welcome.no-claude": "Claude subscriptions can't be used here; an Anthropic Console sign-in (billed to your API account) can.",
   "clover.core.welcome.two-factor": "Your account is the key to every computer you add, so turn on two-factor sign-in for it.",
 
+  // The terminal's paste door
+  "clover.core.terminal.paste-title": { one: "Paste {count} line into the terminal?", other: "Paste {count} lines into the terminal?" },
+  "clover.core.terminal.paste-detail": "Each line may run as a command on that computer.",
+  "clover.core.terminal.paste": "Paste",
+  "clover.core.terminal.cancel": "Cancel",
+
   // The main process
   "clover.core.tray.open": "Open Clover",
   "clover.core.tray.quit": "Quit Clover",

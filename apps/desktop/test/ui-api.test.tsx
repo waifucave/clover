@@ -61,6 +61,13 @@ function fakeBridge(views: Record<string, SpotView>) {
       calls.push({ op: "entries", args: [mount, spot, key] });
       return [{ ref: "clover/island#usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
     },
+    api: async (mount, method, params) => {
+      calls.push({ op: "api", args: [mount, method, params] });
+      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } } : { ok: true };
+    },
+    terminalInput: async (mount, terminalId, input) => {
+      calls.push({ op: "terminalInput", args: [mount, terminalId, input] });
+    },
     userSend: async (mount, to, message) => {
       calls.push({ op: "userSend", args: [mount, to, message] });
       return {};
@@ -103,7 +110,7 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+const hooks: { api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -130,6 +137,7 @@ describe("the UI API in a layer", () => {
       const q = ui.useQuestions();
       hooks.questions = () => q.questions;
       hooks.userSend = ui.useUserSend();
+      hooks.api = ui.usePluginApi();
       const menu = ui.useMenu();
       const drag = ui.useDrag();
       const open = ui.useOpen();
@@ -316,6 +324,32 @@ describe("the UI API in a layer", () => {
     expect(hooks.questions!()).toEqual([q]);
     // The sidebar isn't a surface's part: it has no way to send as the user.
     expect(hooks.userSend).toBeUndefined();
+  });
+
+  test("the plugin API in a layer: the terminal on the part's own connection, written only from trusted input", async () => {
+    const term = hooks.api!.terminal!;
+    expect(await term.open({ computer: "Laptop", cols: 80, rows: 24 })).toEqual({ terminalId: "term_1" });
+    // (The sidebar's last-drawn copy is the one whose hooks the test holds: the calls name its mount.)
+    const opened = fake.calls.find((c) => c.op === "api" && c.args[1] === "terminal.open")!;
+    const mount = opened.args[0];
+    expect(opened.args).toEqual([mount, "terminal.open", { computer: "Laptop", cols: 80, rows: 24 }]);
+    // A made-up event sends nothing; the user's own key press goes to the core, which derives its bytes itself.
+    await expect(term.input("term_1", { type: "keydown", isTrusted: false } as never)).rejects.toThrow("only the user's own");
+    await term.input("term_1", { type: "keydown", isTrusted: true, key: "l" } as never);
+    await term.input("term_1", { type: "paste", isTrusted: true } as never);
+    expect(fake.calls.filter((c) => c.op === "terminalInput").map((c) => c.args)).toEqual([[mount, "term_1", { kind: "key", key: "l" }], [mount, "term_1", { kind: "paste" }]]);
+    // Output, from the plugin's own connection's events: subscribed once, for this terminal only.
+    const got: string[] = [];
+    const off = term.onData("term_1", (d) => got.push(d));
+    await act(async () => {
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "terminal_output", terminalId: "term_1", data: "$ " } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "terminal_output", terminalId: "term_2", data: "other" } });
+      fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "terminal_output", terminalId: "term_1", data: "not mine" } });
+    });
+    off();
+    expect(got).toEqual(["$ "]);
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "events.subscribe", { areas: ["computers"] }] });
+    expect((await hooks.api!.conversation!.get!("s")) as unknown).toEqual({ id: "s", computer: "Laptop" });
   });
 
   test("props across a frame's edge: functions become markers; markers become functions", () => {

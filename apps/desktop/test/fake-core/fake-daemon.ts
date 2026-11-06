@@ -89,6 +89,9 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
   const quitRequested = new Promise<{ handOver: boolean }>((r) => (resolveQuit = r));
   const authed = new WeakSet<Socket>();
   const signedIn = new Set<string>();
+  const layerTokens = new Map<string, string>();
+  const layerOf = new WeakMap<Socket, string>();
+  let terminals = 0;
   const off = new Set<string>();
   const removed = new Set<string>();
   const summary = (id: string, name: string, source: string) => ({
@@ -121,9 +124,29 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
       return reply({ proof, pid });
     }
     if (method === "protocol.hello") {
+      // A layer's connection: the token `layer.token` minted, for that plugin only.
+      if (params.role === "layer") {
+        if (typeof params.token !== "string" || layerTokens.get(params.token) !== params.pluginId) return fail(-32001, "unauthorized");
+        authed.add(s);
+        layerOf.set(s, params.pluginId as string);
+        return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "plugin", pluginId: params.pluginId }, device: "dev_fake", features: [] });
+      }
       if (params.role !== "app" || params.token !== token) return fail(-32001, "unauthorized");
       authed.add(s);
       return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "dev_fake", features: [] });
+    }
+    // A layer's calls: what the fake knows a layer may ask (the terminal's, events), answered as that plugin.
+    const layer = layerOf.get(s);
+    if (layer !== undefined) {
+      if (method === "events.subscribe") return reply({ ok: true });
+      if (method === "terminal.open") {
+        const id = `term_${++terminals}`;
+        reply({ terminalId: id });
+        setTimeout(() => send(s, { jsonrpc: "2.0", method: "core.event", params: { type: "terminal_output", ts: Date.now(), terminalId: id, data: "\u001b[?2004h$ " } }), 10);
+        return;
+      }
+      if (method === "terminal.write" || method === "terminal.resize" || method === "terminal.close") return reply({ ok: true });
+      return fail(-32003, `a layer doesn't call ${method} here`);
     }
     if (!authed.has(s)) return fail(-32001, "hello required first");
     switch (method) {
@@ -141,8 +164,11 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         return reply({ plugins: opts.ui ?? [] });
       case "ui.settings":
         return reply({ picks: [], lists: [], ...opts.settings });
-      case "layer.token":
-        return reply({ token: `layer-${String(params.pluginId)}-${randomBytes(8).toString("hex")}` });
+      case "layer.token": {
+        const t = `layer-${String(params.pluginId)}-${randomBytes(8).toString("hex")}`;
+        layerTokens.set(t, String(params.pluginId));
+        return reply({ token: t });
+      }
       case "point.list":
         if (opts.models === undefined) return fail(-32601, "no point.list");
         return reply({ points: [{ name: "models", shape: "list", declaredBy: "core", spot: false, occupants: opts.models.map((m) => ({ pluginId: m.id, entry: "models" })), waiting: [], replacesShipped: false, private: false }] });

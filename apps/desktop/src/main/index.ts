@@ -13,7 +13,7 @@ import { hostname, release as osRelease } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, Notification, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -24,9 +24,12 @@ import { cliLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
-import { daemonEndpoint, type DaemonClient } from "./protocol/client";
+import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
+import { LayerLinks } from "./layer-links";
+import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
+import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
@@ -146,6 +149,8 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
+    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
+    terminalInput: (windowId, pluginId, terminalId, input) => terminalInput(windowId, pluginId, terminalId, input),
     userSend: async (windowId, to, message) => {
       // One key press or click the main process saw come to the window covers one send (§5.5).
       if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
@@ -356,6 +361,8 @@ async function maybeWelcome(client: DaemonClient): Promise<void> {
 }
 
 function stateChanged(s: PairState): void {
+  // The layers' connections go with the pair's; each opens again on its plugin's next call.
+  if (s.kind !== "connected") layerLinks.closeAll();
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
   const status = s.kind === "reconnecting" ? "Reconnecting to Clover…" : s.kind === "unavailable" ? "Clover isn't running" : s.kind === "starting-daemon" ? "Starting Clover…" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
@@ -633,6 +640,59 @@ function clickThrough(s: Surface): void {
 /** The menu broker's gate: menus open only right after the user's click or key press in that window, one at a time. */
 const menus = new MenuGate();
 
+/** Each plugin layer's own connection to the core (its plugin API). */
+const layerLinks = new LayerLinks({
+  appClient: () => pair?.client,
+  dial: () => dialDaemon(daemonEndpoint(home)),
+  appToken: () => readAppToken(home, env),
+  pid: process.pid,
+  appVersion: app.getVersion(),
+  onEvent: (pluginId, method, params) => {
+    const e = params as { type?: unknown; terminalId?: unknown; data?: unknown; exited?: unknown } | undefined;
+    if (method === CORE_EVENT_NOTIFICATION && e?.type === "terminal_output" && typeof e.terminalId === "string") {
+      pasteModes.output(e.terminalId, typeof e.data === "string" ? e.data : "", e.exited !== undefined);
+    }
+    runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params });
+  },
+  log,
+});
+
+/** The terminals' trusted input: each window's key presses as the main process saw them, and each terminal's paste
+ *  mode from its output (terminal-input.ts). */
+const keys = new KeyLog();
+const pasteModes = new PasteModes();
+
+async function terminalInput(windowId: number, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void> {
+  if (input.kind === "key") {
+    const seen = keys.take(windowId, input.key);
+    if (seen === undefined) throw new LayerError("only a key press the app saw reaches a terminal");
+    const data = keyBytes(seen, process.platform);
+    if (data !== undefined) await layerLinks.call(pluginId, "terminal.write", { terminalId, data });
+    return;
+  }
+  // The paste door: the chord the app saw, the clipboard the app reads, bracketed when the program asked, and the
+  // user's OK before more than one line goes.
+  if (!keys.takePaste(windowId, process.platform)) throw new LayerError("only a paste the app saw reaches a terminal");
+  const text = await clipboard.readText();
+  if (text === "") return;
+  const paste = preparePaste(text, pasteModes.bracketed(terminalId));
+  if (paste.needsOk && !(await okToPaste(windowId, paste.lines))) {
+    log("terminal: a paste of several lines was turned down");
+    return;
+  }
+  await layerLinks.call(pluginId, "terminal.write", { terminalId, data: paste.data, paste: true });
+}
+
+/** Asks before a paste of more than one line goes to a terminal (a headless run answers with CLOVER_TEST_PASTE_OK). */
+async function okToPaste(windowId: number, lines: number): Promise<boolean> {
+  if (headless) return process.env.CLOVER_TEST_PASTE_OK === "1";
+  const t = (key: string, params?: Record<string, string | number>) => translate(runtime.coreStrings(), `clover.core.${key}`, params);
+  const win = BrowserWindow.fromId(windowId);
+  const options = { type: "question" as const, message: t("terminal.paste-title", { count: lines }), detail: t("terminal.paste-detail"), buttons: [t("terminal.paste"), t("terminal.cancel")], defaultId: 1, cancelId: 1, noLink: true };
+  const r = win !== null && !win.isDestroyed() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+  return r.response === 0;
+}
+
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
 
@@ -757,6 +817,7 @@ function watchWindow(win: BrowserWindow): void {
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
       sends.input(id);
+      keys.saw(id, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
@@ -770,6 +831,7 @@ function watchWindow(win: BrowserWindow): void {
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
+    keys.forget(id);
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);

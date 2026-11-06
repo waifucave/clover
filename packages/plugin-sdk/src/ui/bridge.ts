@@ -176,6 +176,8 @@ export type LayerMessage =
   /** The themes' sheets for this document changed (a theme, a style entry, a part placed). */
   | { type: "sheets"; sheets: readonly ThemeSheet[] }
   | { type: "strings"; strings: StringTable }
+  /** An event on a plugin's own connection to the core (its subscriptions' `core.event`s), for that plugin's parts. */
+  | { type: "api-event"; pluginId: string; method: string; params: unknown }
   /** Questions waiting in any session, with their text: only to a document whose plugin has `conversation.read`. */
   | { type: "questions"; questions: readonly PendingQuestion[] }
   /** The core root only: one of the core's own pages to show over the window (the welcome guide, safe mode's plugin
@@ -307,6 +309,11 @@ export interface LayerBridge {
   /** The `clover` layer only: the session the window shows now (null: none), so a desktop notification for it is held
    *  back while the app is in front. */
   activeSession(mount: string, session: string | null): void;
+  /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
+  api(mount: string, method: string, params?: unknown): Promise<unknown>;
+  /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives
+   *  from the input it saw come to the window (a key press's bytes; a paste through the paste door). */
+  terminalInput(mount: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part, inside the key press or click that sends (`useUserSend`):
    *  the core carries them to the daemon as `pill.send` only after it saw that input come to this window. */
   userSend(mount: string, to: UserSendTarget, message: { text: string; images?: readonly { mediaType: string; data: Uint8Array }[] }): Promise<{ seq?: number }>;

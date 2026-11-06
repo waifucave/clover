@@ -617,13 +617,64 @@ export function useT(): (key: string, params?: Record<string, string | number>) 
   return useCallback((key: string, params?: Record<string, string | number>) => translate(table, key, params), [table]);
 }
 
-/** The plugin API in this layer: only `plugin` and `t` in E-M1; the rest reaches layers with lane B's host side. */
+/** Hears the events on this plugin's own connection to the core. */
+function onApiEvent(pluginId: string, listener: (method: string, params: unknown) => void): () => void {
+  return onLayerMessage((m) => {
+    if (m.type === "api-event" && m.pluginId === pluginId) listener(m.method, m.params);
+  });
+}
+
+/** The areas each plugin's connection already subscribed to, in this document. */
+const subscribed = new Map<string, Set<string>>();
+function subscribe(mount: string, pluginId: string, area: string): void {
+  const areas = subscribed.get(pluginId) ?? new Set<string>();
+  subscribed.set(pluginId, areas);
+  if (areas.has(area)) return;
+  areas.add(area);
+  void rt().bridge.api(mount, "events.subscribe", { areas: [area] }).catch(() => areas.delete(area));
+}
+
+/** `terminal` (components of the bundled `clover` tree): what reaches a terminal the core derives from the trusted
+ *  key press or paste the part hands over; output comes as `terminal_output` on the plugin's own connection. */
+function terminalApi(mount: string, pluginId: string): NonNullable<PluginApi["terminal"]> {
+  const api = <T,>(method: string, params: unknown) => rt().bridge.api(mount, method, params) as Promise<T>;
+  return {
+    open: (opts) => api<{ terminalId: string }>("terminal.open", opts),
+    input: async (terminalId, event) => {
+      if (!event.isTrusted) throw new Error("only the user's own key press or paste reaches a terminal");
+      if (event.type === "paste") return rt().bridge.terminalInput(mount, terminalId, { kind: "paste" });
+      const key = (event as unknown as { key?: unknown }).key;
+      if (typeof key !== "string") return;
+      return rt().bridge.terminalInput(mount, terminalId, { kind: "key", key });
+    },
+    onData: (terminalId, fn) => {
+      subscribe(mount, pluginId, "computers");
+      return onApiEvent(pluginId, (method, params) => {
+        const e = params as { type?: unknown; terminalId?: unknown; data?: unknown; exited?: { code: number | null } } | undefined;
+        if (method !== "core.event" || e?.type !== "terminal_output" || e.terminalId !== terminalId) return;
+        fn(typeof e.data === "string" ? e.data : "", e.exited);
+      });
+    },
+    resize: (terminalId, cols, rows) => api<void>("terminal.resize", { terminalId, cols, rows }).then(() => undefined),
+    close: (terminalId) => api<void>("terminal.close", { terminalId }).then(() => undefined),
+  };
+}
+
+/** The plugin API in this layer: `plugin`, `t`, `terminal`, and `conversation`'s `list` and `get`, each on the part's
+ *  own plugin's connection, where the daemon checks it as that plugin; the rest reaches layers with lane B's host side
+ *  (B-M2). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
   return useMemo(() => {
     const unavailable = (what: string) => () => Promise.reject(new Error(`${what} isn't available in layers yet`));
+    const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
     return {
+      terminal: terminalApi(part.mount, part.entry.pluginId),
+      conversation: {
+        list: (filter?: { bot?: string; kinds?: string[] }) => call<{ sessions: unknown[] }>("session.list", filter ?? {}).then((r) => r.sessions),
+        get: (session: string) => call<{ session: unknown }>("session.get", { id: session }).then((r) => r.session),
+      } as unknown as PluginApi["conversation"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       points: { list: unavailable("points") } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
@@ -635,7 +686,7 @@ export function usePluginApi(): PluginApi {
       confirm: unavailable("confirm") as unknown as PluginApi["confirm"],
       t,
     } as PluginApi;
-  }, [part.entry.pluginId, t]);
+  }, [part.entry.pluginId, part.mount, t]);
 }
 
 /** A menu the core shows for this part (it crosses the frame's edge, so the core draws it, natively): data only,

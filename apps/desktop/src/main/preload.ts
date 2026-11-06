@@ -42,6 +42,8 @@ if (isRoot || isLayer) {
     webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
     activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),
     userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message }),
+    api: (mount, method, params) => ipcRenderer.invoke("clover:api", { mount, method, params }),
+    terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     onMessage: (listener) => {

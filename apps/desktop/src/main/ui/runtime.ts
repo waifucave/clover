@@ -959,6 +959,17 @@ export class UiRuntime {
     return { windowId: part.windowId, pluginId: part.plugin.id };
   }
 
+  /** A message to every document that holds a part of this plugin (its connection's events). */
+  pluginMessage(pluginId: string, message: LayerMessage): void {
+    const docs = new Set<string>();
+    for (const m of this.mounts.values()) {
+      if (m.plugin?.id !== pluginId) continue;
+      const doc = this.docOf(m);
+      if (doc?.frame !== undefined && doc.kind === "frame") docs.add(doc.id);
+    }
+    for (const id of docs) this.post(id, message);
+  }
+
   /** A message to a window's core root only (the core's own pages). */
   rootMessage(windowId: number, message: LayerMessage): void {
     for (const m of this.mounts.values()) if (m.windowId === windowId && m.kind === "root" && m.frame !== undefined) this.post(m.id, message);

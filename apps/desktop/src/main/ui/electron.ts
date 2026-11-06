@@ -233,6 +233,10 @@ export interface IpcHooks {
   open(pluginId: string, target: OpenTarget): Promise<void>;
   /** Where a part's native view goes in the window (undefined: nowhere now); `used` when the person just used it. */
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
+  /** A part's plugin-API call, on its plugin's own connection to the core. */
+  api(pluginId: string, method: string, params: unknown): Promise<unknown>;
+  /** A key press or paste in a terminal part's element, to write what the main process derives from its own input. */
+  terminalInput(windowId: number, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
   userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }): Promise<{ seq?: number }>;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
@@ -422,6 +426,23 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.webFrame(place.windowId, mount, web, bounds);
     });
   });
+  handle("clover:api", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const method = str(a.method, 128);
+    if (mount === undefined || method === undefined) throw new LayerError("bad request");
+    return hooks.api(runtime.partOf(s.frame, mount), method, a.params);
+  });
+  handle("clover:terminal-input", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const terminalId = str(a.terminalId, 128);
+    const input = (a.input ?? {}) as { kind?: unknown; key?: unknown };
+    if (mount === undefined || terminalId === undefined) throw new LayerError("bad request");
+    const checked = input.kind === "paste" ? { kind: "paste" as const } : input.kind === "key" && typeof input.key === "string" && input.key.length <= 32 ? { kind: "key" as const, key: input.key } : undefined;
+    if (checked === undefined) throw new LayerError("not a key press or a paste");
+    return hooks.terminalInput(s.windowId, runtime.partOf(s.frame, mount), terminalId, checked);
+  });
   handle("clover:user-send", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
@@ -475,7 +496,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }
