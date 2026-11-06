@@ -10,7 +10,8 @@
 //   2. stages it in apps/desktop/out/daemon/, where electron-builder.yml's extraResources picks it up
 //   3. builds the app (apps/desktop's `build`) once, and packages it: electron-builder --linux <formats> --<arch>
 //   4. with --check, opens each package and checks it holds the daemon, the AppArmor profile and packaging/linux's
-//      scripts (`checkPackage`)
+//      scripts, with sound file modes: the app and the daemon root's and 0755, nothing world-writable, nothing
+//      set-user-ID (`checkPackage`)
 // Output: apps/desktop/out/dist/. Nothing is signed, published or installed.
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -78,14 +79,52 @@ export const REQUIRED_FILES = ["/opt/Clover/resources/daemon/clover-core", "/opt
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
 
+/** The executables a package runs as root's files: the app and the daemon, `rwxr-xr-x root root`. */
+export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core"] as const;
+
+export interface PackageEntry {
+  mode: string;
+  owner: string;
+  group: string;
+  path: string;
+}
+
 /**
- * The problems with one package, from its file list (`dpkg-deb -c`, `rpm -qlp`) and its scripts (`dpkg-deb -I … postinst`,
- * `rpm -qp --scripts`). An empty list is a good package.
+ * One package's long file listing, parsed: `dpkg-deb -c` (`-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover`)
+ * or `rpm -qlvp` (`-rwxr-xr-x 1 root root 100 Nov  5 12:00 /opt/Clover/clover`). A link's ` -> target` is dropped.
+ */
+export function parseListing(format: "deb" | "rpm", listing: string): PackageEntry[] {
+  const line = format === "deb"
+    ? /^(\S{10})\s+([^/\s]+)\/(\S+)\s+\d+\s+\S+\s+\S+\s+\.?(\/.*?)(?: -> .*)?$/
+    : /^(\S{10})\s+\d+\s+(\S+)\s+(\S+)\s+\d+\s+\S+\s+\d+\s+\S+\s+(\/.*?)(?: -> .*)?$/;
+  const entries: PackageEntry[] = [];
+  for (const raw of listing.split("\n")) {
+    const m = line.exec(raw.trim());
+    if (m) entries.push({ mode: m[1]!, owner: m[2]!, group: m[3]!, path: m[4]!.replace(/\/$/, "") || "/" });
+  }
+  return entries;
+}
+
+const isRoot = (name: string): boolean => name === "root" || name === "0";
+
+/**
+ * The problems with one package, from its long file listing (`dpkg-deb -c`, `rpm -qlvp`) and its scripts (`dpkg-deb -I …
+ * postinst`, `rpm -qp --scripts`). An empty list is a good package: it holds the daemon and the AppArmor profile, the
+ * app and the daemon are `rwxr-xr-x` and root's, nothing is world-writable (links aside), and nothing is set-user-ID
+ * or set-group-ID (chrome-sandbox gets its set-user-ID bit from the after-install script, only where it needs one).
  */
 export function checkPackage(format: "deb" | "rpm", listing: string, scripts: string): string[] {
-  // dpkg-deb -c prints `drwxr-xr-x root/root 0 2026-11-05 12:00 ./opt/Clover/…`; rpm -qlp prints the bare path.
-  const paths = new Set(listing.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => (format === "deb" ? (l.split(/\s+/).pop() ?? "").replace(/^\./, "") : l)));
-  const problems = REQUIRED_FILES.filter((f) => !paths.has(f)).map((f) => `${format}: ${f} is missing`);
+  const entries = parseListing(format, listing);
+  const byPath = new Map(entries.map((e) => [e.path, e]));
+  const problems = REQUIRED_FILES.filter((f) => !byPath.has(f)).map((f) => `${format}: ${f} is missing`);
+  for (const path of EXECUTABLES) {
+    const e = byPath.get(path);
+    if (e !== undefined && (e.mode !== "-rwxr-xr-x" || !isRoot(e.owner) || !isRoot(e.group))) problems.push(`${format}: ${path} is ${e.mode} ${e.owner}/${e.group}, not -rwxr-xr-x root/root`);
+  }
+  for (const e of entries) {
+    if (!e.mode.startsWith("l") && e.mode[8] === "w") problems.push(`${format}: ${e.path} is world-writable (${e.mode})`);
+    if (/[sS]/.test(e.mode[3]! + e.mode[6]!)) problems.push(`${format}: ${e.path} is set-user-ID or set-group-ID (${e.mode})`);
+  }
   if (!scripts.includes(AFTER_INSTALL_MARK)) problems.push(`${format}: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`);
   if (!scripts.includes("apparmor_parser")) problems.push(`${format}: its scripts never load the AppArmor profile`);
   return problems;
@@ -110,7 +149,7 @@ function checkBuilt(outDir: string, arch: LinuxArch, formats: readonly LinuxForm
     const path = join(outDir, file);
     console.log(`build-packages: ${file} (${(statSync(path).size / 1_048_576).toFixed(1)} MB)`);
     if (format === "AppImage") continue; // it runs its own runtime to list itself; the app checks its daemon at first launch
-    const listing = format === "deb" ? run(["dpkg-deb", "-c", path], outDir) : run(["rpm", "-qlp", path], outDir);
+    const listing = format === "deb" ? run(["dpkg-deb", "-c", path], outDir) : run(["rpm", "-qlvp", path], outDir);
     const scripts = format === "deb" ? run(["dpkg-deb", "-I", path, "postinst"], outDir) : run(["rpm", "-qp", "--scripts", path], outDir);
     if (listing.status !== 0 || scripts.status !== 0) { problems.push(`${format} (${arch}): could not open it: ${listing.stdout.slice(0, 300)}${scripts.stdout.slice(0, 300)}`); continue; }
     problems.push(...checkPackage(format, listing.stdout, scripts.stdout).map((p) => `${p} (${arch})`));

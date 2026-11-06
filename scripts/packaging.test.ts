@@ -3,10 +3,11 @@
 // build-packages.ts's pure parts. The packages themselves are built and opened by CI's packages job.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, autostartArgs } from "../packaging/installer-hooks";
-import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, packageArchNames, parseBuildPackagesArgs } from "./build-packages";
+import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, autostartArgs } from "../packaging/installer-hooks";
+import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, packageArchNames, parseBuildPackagesArgs, parseListing } from "./build-packages";
 import { caskFrom } from "./release-lib";
 import { renderWinget, wingetInstallerUrl } from "./winget";
 
@@ -30,9 +31,11 @@ function renderLinux(rel: string): string {
 }
 
 describe("the installers' hooks", () => {
-  test("the one command they call is lane C's login start", () => {
-    expect(autostartArgs("disable")).toEqual([AUTOSTART_SUBCOMMAND, "disable"]);
+  test("the one command they call is lane C's login start, and an uninstall removes it (stopping the daemon)", () => {
+    expect(autostartArgs("remove")).toEqual([AUTOSTART_SUBCOMMAND, "remove"]);
     expect(AUTOSTART_SUBCOMMAND).toBe("autostart");
+    // `disable` would keep the definitions and leave the daemon running, its files locked on Windows.
+    for (const [installer, hook] of Object.entries(INSTALLER_HOOKS)) if (hook.onUninstall !== null) expect(hook.onUninstall, installer).toBe("remove");
   });
 
   test("no installer turns login start on (the app does, at its first launch), and every hook file exists", () => {
@@ -42,23 +45,37 @@ describe("the installers' hooks", () => {
     }
   });
 
-  test("the Homebrew cask's uninstall turns it off through the daemon, as the user", () => {
+  test("the Homebrew cask's uninstall removes it through the daemon, as the user, and goes on without the app", () => {
     const code = codeLines(read("packaging/clover.rb.tmpl"), "#").join("\n");
-    expect(code).toContain('executable: "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"');
-    expect(code).toContain(`args:       ${JSON.stringify(autostartArgs("disable")).replace(/,/g, ", ")}`);
-    expect(code).toContain("sudo:       false");
+    expect(code).toContain('executable:   "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"');
+    expect(code).toContain(`args:         ${JSON.stringify(autostartArgs("remove")).replace(/,/g, ", ")}`);
+    expect(code).toContain("sudo:         false");
+    // Homebrew fails an uninstall whose script fails unless told otherwise; the app may already be gone.
+    expect(code).toContain("must_succeed: false");
+    // The fallback for a deleted app, Clover's own label only.
+    expect(code).toContain(`uninstall launchctl: "${LAUNCHD_LABEL}"`);
   });
 
-  test("the Windows uninstaller turns it off through the daemon, and not on an upgrade", () => {
+  test("the cask's zap takes the app's caches, web storage, updater cache and login agent, never ~/.clover", () => {
+    const code = codeLines(read("packaging/clover.rb.tmpl"), "#").join("\n");
+    for (const path of ["~/Library/Application Support/Clover", "~/Library/Caches/com.waifucave.clover", "~/Library/Caches/com.waifucave.clover.ShipIt",
+      "~/Library/Caches/@waifucaveclover-desktop-updater", "~/Library/HTTPStorages/com.waifucave.clover", `~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`]) {
+      expect(code).toContain(JSON.stringify(path));
+    }
+    expect(code).not.toMatch(/"~\/\.clover[^"]*"/);
+  });
+
+  test("the Windows uninstaller removes it through the daemon, without a console window, and not on an upgrade", () => {
     const code = codeLines(read("packaging/windows/installer.nsh"), ";");
     expect(code).toContain("!macro customUnInstall");
     expect(code).toContain("${ifNot} ${isUpdated}");
-    expect(code).toContain(`ExecWait '"$INSTDIR\\resources\\daemon\\clover-core.exe" ${autostartArgs("disable").join(" ")}'`);
+    expect(code).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" ${autostartArgs("remove").join(" ")}'`);
+    expect(code).not.toContain("ExecWait");
   });
 
-  test("none reaches launchctl, systemctl or Task Scheduler itself, and none turns it on", () => {
+  test("none reaches systemctl or Task Scheduler itself, launchctl only in the cask's fallback, and none turns it on", () => {
     for (const [rel, comment] of [["packaging/clover.rb.tmpl", "#"], ["packaging/windows/installer.nsh", ";"], ["packaging/linux/after-install.sh", "#"], ["packaging/linux/after-remove.sh", "#"]] as const) {
-      const code = codeLines(read(rel), comment).join("\n");
+      const code = codeLines(read(rel), comment).filter((l) => !(rel.endsWith(".rb.tmpl") && l === `uninstall launchctl: "${LAUNCHD_LABEL}",`)).join("\n");
       expect(code, rel).not.toMatch(/\b(launchctl|systemctl|schtasks)\b/);
       expect(code, rel).not.toContain(`${AUTOSTART_SUBCOMMAND} enable`);
     }
@@ -185,17 +202,66 @@ describe("build-packages.ts", () => {
 
   test("a package is checked for the daemon, the AppArmor profile and packaging/linux's after-install", () => {
     const debListing = [
-      "drwxr-xr-x 0/0 0 2026-11-05 12:00 ./opt/Clover/",
-      "-rwxr-xr-x 0/0 100 2026-11-05 12:00 ./opt/Clover/clover",
-      "-rwxr-xr-x 0/0 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
-      "-rw-r--r-- 0/0 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
+      "drwxr-xr-x root/root 0 2026-11-05 12:00 ./opt/Clover/",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
+      "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/chrome-sandbox",
+      "lrwxrwxrwx root/root 0 2026-11-05 12:00 ./opt/Clover/libvk.so -> libvulkan.so.1",
     ].join("\n");
     const scripts = `CLI='${AFTER_INSTALL_MARK}'\napparmor_parser --replace x`;
     expect(checkPackage("deb", debListing, scripts)).toEqual([]);
-    expect(checkPackage("rpm", "/opt/Clover/clover\n/opt/Clover/resources/apparmor-profile\n", scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing"]);
+    const rpmListing = [
+      "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
+      "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
+    ].join("\n");
+    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing"]);
     expect(checkPackage("deb", debListing, "ln -sf /opt/Clover/clover /usr/bin/clover")).toEqual([
       `deb: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`,
       "deb: its scripts never load the AppArmor profile",
     ]);
+  });
+
+  test("and for its file modes: the app and the daemon 0755 and root's, nothing world-writable, nothing set-user-ID", () => {
+    const base = [
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
+      "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
+    ];
+    const scripts = `CLI='${AFTER_INSTALL_MARK}'\napparmor_parser --replace x`;
+    const swap = (i: number, line: string) => base.map((l, j) => (j === i ? line : l)).join("\n");
+    expect(checkPackage("deb", swap(1, "-rwxrwxr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core"), scripts))
+      .toEqual(["deb: /opt/Clover/resources/daemon/clover-core is -rwxrwxr-x root/root, not -rwxr-xr-x root/root"]);
+    expect(checkPackage("deb", swap(0, "-rwxr-xr-x builder/builder 100 2026-11-05 12:00 ./opt/Clover/clover"), scripts))
+      .toEqual(["deb: /opt/Clover/clover is -rwxr-xr-x builder/builder, not -rwxr-xr-x root/root"]);
+    expect(checkPackage("deb", [...base, "-rw-rw-rw- root/root 1 2026-11-05 12:00 ./opt/Clover/resources/app.asar"].join("\n"), scripts))
+      .toEqual(["deb: /opt/Clover/resources/app.asar is world-writable (-rw-rw-rw-)"]);
+    expect(checkPackage("deb", [...base, "-rwsr-xr-x root/root 1 2026-11-05 12:00 ./opt/Clover/chrome-sandbox"].join("\n"), scripts))
+      .toEqual(["deb: /opt/Clover/chrome-sandbox is set-user-ID or set-group-ID (-rwsr-xr-x)"]);
+    // rpm -qlvp's spelling, a link among them: a link's lrwxrwxrwx is not a world-writable file.
+    const rpm = [
+      "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
+      "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-core",
+      "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
+      "lrwxrwxrwx    1 root     root           14 Nov  5 12:00 /opt/Clover/libvk.so -> libvulkan.so.1",
+      "-rwxr-sr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/helper",
+    ].join("\n");
+    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
+    expect(checkPackage("rpm", rpm, scripts)).toEqual(["rpm: /opt/Clover/helper is set-user-ID or set-group-ID (-rwxr-sr-x)"]);
+  });
+
+  test("after-remove acts on a removal only, never on an upgrade (the rpm runs it after the new version's after-install)", () => {
+    if (process.platform === "win32") return;
+    const dir = mkdtempSync(join(tmpdir(), "clover-after-remove-"));
+    const log = join(dir, "calls.log");
+    writeFileSync(join(dir, "update-alternatives"), `#!/bin/sh\necho "update-alternatives $*" >> '${log}'\n`, { mode: 0o755 });
+    const run = (arg: string): string => {
+      writeFileSync(log, "");
+      const r = spawnSync("bash", ["-s", arg], { input: renderLinux("packaging/linux/after-remove.sh"), env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}` }, encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      return readFileSync(log, "utf8");
+    };
+    for (const arg of ["upgrade", "failed-upgrade", "1", "2"]) expect(run(arg), arg).toBe("");
+    for (const arg of ["remove", "purge", "0"]) expect(run(arg), arg).toBe(`update-alternatives --remove clover ${AFTER_INSTALL_MARK}\n`);
   });
 });
