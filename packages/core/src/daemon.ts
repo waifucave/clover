@@ -66,6 +66,8 @@ import { ApprovedProjectRules } from "./agent/approved-project-rules";
 import { sdkGlobalConfigPath, sdkHomeFor, sdkSettingsPath, trustRecordFile } from "./agent/paths";
 import { forgetSdkFile, liveSdkGlobalConfig, liveSdkSettings, readSdkGlobalConfigDetailed, readSdkSettingsDetailed } from "./sdk-files";
 import { ApprovalBroker } from "./agent/approvals";
+import { UpdateGate } from "./update/gate";
+import { updateHandlers } from "./update/service";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
 import { createPersistedChildren, type AgentRegistry } from "./agent/bg-agent-registry";
@@ -257,6 +259,9 @@ export interface RunningDaemon {
    * child) off this rather than off a mirror it built itself.
    */
   clover: CloverSessionDrivers;
+  /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
+   *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
+  updateGate: UpdateGate;
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
    *  capability server's `session_spawn` and every driver's turn-settled hook reach. */
   dispatchChildren: DispatchChildren | undefined;
@@ -2362,6 +2367,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(bgAgents?.list(sid) ?? []).map((a) => ({ threadId: a.threadId, parentThreadId: "main", status: a.status === "running" ? "running" as const : "completed" as const, ...(a.status === "running" ? {} : { stopReason: a.status }) })),
     ],
   };
+  // M-M2: the update's idle gate (src/update/gate.ts). The daemon's own work is here; K's runners, routines, live Bash
+  // runners and the bots add theirs through `RunningDaemon.updateGate`.
+  const updateGate = new UpdateGate();
+  updateGate.register({ name: "turns", count: () => signals.activeTurnCount() });
+  updateGate.register({
+    name: "agents",
+    count: () => cloverDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
+  });
+  updateGate.register({ name: "approvals", count: () => approvalBroker.pendingCount() });
   const childrenRpc = createChildrenRpc({
     registry: () => bgAgents,
     facetFor: (sid) => { const backend = runtime?.records.get(sid)?.backendSessionId; return backend === undefined || runtimeSdk === undefined ? undefined : attachedFacetFor(runtimeSdk, backend); },
@@ -3129,6 +3143,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
+    handlers: updateHandlers({ gate: updateGate, current: CORE_VERSION, channel: () => "latest", log: (line) => console.error(line) }),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3346,6 +3361,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
+    updateGate,
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze

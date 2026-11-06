@@ -10,6 +10,14 @@
 // verified are the bytes parsed: nothing is fetched twice. Downgrades are off (a replayed older signed file can't
 // roll the app back). Packaged apps only; on Linux only the AppImage updates itself (the deb and the rpm update
 // through apt and dnf).
+//
+// The idle gate (spec §3.1: "An update waits until the daemon is between turns and no agent runs, then stops the pair,
+// installs both and starts them again"): the update downloads in the background and never installs on its own at a
+// quit (`autoInstallOnAppQuit` off). While one is ready, `InstallGate` asks the daemon every minute (`update.status`);
+// at the first idle answer it asks `update.apply` (the daemon readies its restart and answers `now`), says
+// `pair.exiting{update}`, stops the pair, waits for the daemon to go and installs, starting the new app after. The
+// user's own Quit (whose question already says what would stop) installs too once the pair has stopped, without
+// starting the app again. Nothing here ever installs over a running turn.
 import type { RequestOptions } from "node:http";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -93,18 +101,114 @@ export function updatesItself(packaged: boolean, platform: NodeJS.Platform, env:
 }
 
 export const UPDATE_CHECK_MS = 4 * 60 * 60 * 1000;
+/** While an update is ready, how often the app asks the daemon whether it is idle. */
+export const IDLE_POLL_MS = 60_000;
+
+export interface InstallGateDeps {
+  /** `update.status`'s idle verdict; undefined when the daemon can't be asked (then nothing installs). */
+  status(): Promise<{ idle: boolean; busy: readonly string[] } | undefined>;
+  /** `update.apply`: `now` once the daemon is idle and ready for its restart. */
+  apply(): Promise<"now" | "when-idle" | undefined>;
+  /** `pair.exiting{update}`: the app leaves on purpose, and the pair stops with it. */
+  exiting(): Promise<void>;
+  /** Stops the app's side (the pair's connection, the browser, the tray) before the install. */
+  stopApp(): void;
+  /** Resolves once the daemon has gone (bounded), so the installer never meets its files in use. */
+  daemonGone(): Promise<void>;
+  /** electron-updater's quitAndInstall; `relaunch`: start the new app after (an idle install) or not (a Quit). */
+  install(relaunch: boolean): void;
+  /** Runs `fn` every `ms`; returns a stop. */
+  every(ms: number, fn: () => void): () => void;
+  log(line: string): void;
+}
+
+/** When a downloaded update installs: at the daemon's first idle moment, or at the user's Quit. */
+export class InstallGate {
+  #ready: string | undefined;
+  #stopPolling: (() => void) | undefined;
+  #checking = false;
+  #installing = false;
+
+  constructor(private readonly d: InstallGateDeps, private readonly pollMs = IDLE_POLL_MS) {}
+
+  /** The version downloaded and waiting, if any. */
+  get ready(): string | undefined {
+    return this.#ready;
+  }
+
+  get installing(): boolean {
+    return this.#installing;
+  }
+
+  /** An update finished downloading: ask now, then every `pollMs`, until an idle moment installs it. */
+  downloaded(version: string): Promise<void> {
+    this.#ready = version;
+    this.#stopPolling ??= this.d.every(this.pollMs, () => void this.check());
+    return this.check();
+  }
+
+  /** One poll: installs if the daemon is idle and agrees. */
+  async check(): Promise<void> {
+    if (this.#ready === undefined || this.#installing || this.#checking) return;
+    this.#checking = true;
+    try {
+      const status = await this.d.status().catch(() => undefined);
+      if (status === undefined) return this.d.log("updater: the daemon can't be asked whether it is idle; the update waits");
+      if (!status.idle) return this.d.log(`updater: ${this.#ready} waits for an idle moment (${status.busy.join(", ") || "busy"})`);
+      const at = await this.d.apply().catch(() => undefined);
+      if (at !== "now") return this.d.log(`updater: the daemon isn't ready for the restart yet (${at ?? "no answer"})`);
+      await this.#install(true);
+    } finally {
+      this.#checking = false;
+    }
+  }
+
+  /** The user's Quit, after `pair.quit` stopped the pair: installs (without starting the app again) and owns the exit.
+   *  False when there is nothing to install, and the caller exits as usual. */
+  async quitting(): Promise<boolean> {
+    if (this.#ready === undefined || this.#installing) return false;
+    this.d.log(`updater: installing ${this.#ready} at the user's Quit`);
+    await this.#install(false, false);
+    return true;
+  }
+
+  async #install(relaunch: boolean, tellDaemon = true): Promise<void> {
+    this.#installing = true;
+    this.#stopPolling?.();
+    this.#stopPolling = undefined;
+    this.d.log(`updater: installing ${this.#ready}${relaunch ? " now the daemon is idle" : ""}`);
+    if (tellDaemon) await this.d.exiting();
+    this.d.stopApp();
+    await this.d.daemonGone();
+    this.d.install(relaunch);
+  }
+
+  /** Stops the polling (the app is leaving for another reason). */
+  stop(): void {
+    this.#stopPolling?.();
+    this.#stopPolling = undefined;
+  }
+}
 
 export interface UpdaterDeps {
   packaged: boolean;
   resourcesPath: string;
-  /** The update is downloaded and installs when the app quits. */
+  /** The update is downloaded and checked, and installs at an idle moment (`InstallGate`). */
   onReady(version: string): void;
   log(line: string): void;
 }
 
-/** Starts the checks (now, then every UPDATE_CHECK_MS); returns a stop. A no-op where the app doesn't update itself. */
-export async function startUpdater(deps: UpdaterDeps): Promise<() => void> {
-  if (!updatesItself(deps.packaged, process.platform, process.env)) return () => {};
+export interface Updater {
+  stop(): void;
+  /** Quits and installs the downloaded update; `relaunch` starts the new app after. */
+  install(relaunch: boolean): void;
+}
+
+const NO_UPDATER: Updater = { stop: () => {}, install: () => {} };
+
+/** Starts the checks (now, then every UPDATE_CHECK_MS). A no-op where the app doesn't update itself. */
+export async function startUpdater(deps: UpdaterDeps): Promise<Updater> {
+  if (!updatesItself(deps.packaged, process.platform, process.env)) return NO_UPDATER;
   let config: ReturnType<typeof parseUpdateConfig>;
   try {
     config = parseUpdateConfig(readFileSync(join(deps.resourcesPath, "app-update.yml"), "utf8"));
@@ -113,7 +217,7 @@ export async function startUpdater(deps: UpdaterDeps): Promise<() => void> {
   }
   if (config === undefined) {
     deps.log("updater: no GitHub publish settings in app-update.yml; this build doesn't update itself");
-    return () => {};
+    return NO_UPDATER;
   }
   const { autoUpdater } = (await import("electron-updater")).default;
   autoUpdater.logger = { info: (m: unknown) => deps.log(`updater: ${String(m)}`), warn: (m: unknown) => deps.log(`updater: ${String(m)}`), error: (m: unknown) => deps.log(`updater: ${String(m)}`), debug: () => {} };
@@ -124,7 +228,8 @@ export async function startUpdater(deps: UpdaterDeps): Promise<() => void> {
   // Setting the channel turns downgrades on; a signed older file must never take the app back.
   autoUpdater.allowDowngrade = false;
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Never at an arbitrary quit (a crash's restart, a restart into safe mode): only through InstallGate.
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on("update-downloaded", (info: { version: string }) => deps.onReady(info.version));
   autoUpdater.on("error", (err: Error) => deps.log(`updater: ${err.message}`));
   const check = (): void => {
@@ -133,5 +238,12 @@ export async function startUpdater(deps: UpdaterDeps): Promise<() => void> {
   check();
   const timer = setInterval(check, UPDATE_CHECK_MS);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return {
+    stop: () => clearInterval(timer),
+    install: (relaunch) => {
+      // macOS (Squirrel) reads this instead of quitAndInstall's arguments: relaunch, or install as the app quits.
+      autoUpdater.autoRunAppAfterInstall = relaunch;
+      autoUpdater.quitAndInstall(true, relaunch);
+    },
+  };
 }

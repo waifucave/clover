@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RequestOptions } from "node:http";
 import { generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
-import { FeedRefused, feedFileOf, parseUpdateConfig, updatesItself, verifyingExecutor, VerifiedGitHubProvider } from "../src/main/updater";
+import { FeedRefused, feedFileOf, IDLE_POLL_MS, InstallGate, parseUpdateConfig, updatesItself, verifyingExecutor, VerifiedGitHubProvider, type InstallGateDeps } from "../src/main/updater";
 
 const FEED = "version: 1.2.3\nfiles:\n  - url: Clover-1.2.3-mac.zip\n    sha512: abc\n    size: 10\npath: Clover-1.2.3-mac.zip\nsha512: abc\nreleaseDate: '2026-11-06T00:00:00.000Z'\n";
 
@@ -100,5 +100,96 @@ describe("the app's updates", () => {
     expect(updatesItself(true, "win32", {})).toBe(true);
     expect(updatesItself(true, "linux", {})).toBe(false);
     expect(updatesItself(true, "linux", { APPIMAGE: "/home/u/Clover.AppImage" })).toBe(true);
+  });
+
+  describe("the idle gate (InstallGate) against a fake daemon", () => {
+    /** A fake daemon answering `update.status` and `update.apply` from its busy work, and a log of what the app did. */
+    function harness(busy: string[] = []) {
+      const daemon = { busy, up: true, prepared: 0 };
+      const did: string[] = [];
+      let tick: (() => void) | undefined;
+      const deps: InstallGateDeps = {
+        status: async () => (daemon.up ? { idle: daemon.busy.length === 0, busy: [...daemon.busy] } : undefined),
+        apply: async () => {
+          if (!daemon.up) return undefined;
+          if (daemon.busy.length > 0) return "when-idle";
+          daemon.prepared++;
+          return "now";
+        },
+        exiting: async () => { did.push("pair.exiting{update}"); },
+        stopApp: () => { did.push("stop the app"); },
+        daemonGone: async () => { daemon.up = false; did.push("daemon gone"); },
+        install: (relaunch) => { did.push(relaunch ? "install, then start" : "install"); },
+        every: (ms, fn) => {
+          expect(ms).toBe(IDLE_POLL_MS);
+          tick = fn;
+          return () => { tick = undefined; did.push("polling stopped"); };
+        },
+        log: () => {},
+      };
+      const gate = new InstallGate(deps);
+      // One poll's worth: what `every` would run a minute later.
+      const poll = async () => { tick?.(); await Bun.sleep(0); await Bun.sleep(0); };
+      return { daemon, did, gate, poll, polling: () => tick !== undefined };
+    }
+
+    test("busy: the update waits, polling every minute; at the first idle moment it installs and starts again", async () => {
+      const { daemon, did, gate, poll, polling } = harness(["turns:1"]);
+      await gate.downloaded("1.3.0");
+      expect(gate.ready).toBe("1.3.0");
+      expect(did).toEqual([]);
+      expect(polling()).toBe(true);
+      daemon.busy = ["agents:2", "approvals:1"];
+      await poll();
+      expect(did).toEqual([]);
+      daemon.busy = [];
+      await poll();
+      expect(daemon.prepared).toBe(1);
+      expect(did).toEqual(["polling stopped", "pair.exiting{update}", "stop the app", "daemon gone", "install, then start"]);
+      expect(polling()).toBe(false);
+      // Installs once.
+      await poll();
+      await gate.check();
+      expect(did.filter((d) => d.startsWith("install"))).toHaveLength(1);
+    });
+
+    test("idle when the download finishes: it installs at once", async () => {
+      const { did, gate } = harness();
+      await gate.downloaded("1.3.0");
+      expect(did).toEqual(["polling stopped", "pair.exiting{update}", "stop the app", "daemon gone", "install, then start"]);
+    });
+
+    test("a turn that starts between the status and the apply keeps the update waiting", async () => {
+      const { daemon, did, gate } = harness();
+      const status = daemon.busy;
+      // The status reads idle; by the apply, a turn has started.
+      daemon.busy = status;
+      const realStatus = gate["d" as never] as InstallGateDeps;
+      const answerIdle = realStatus.status;
+      realStatus.status = async () => { const s = await answerIdle(); daemon.busy = ["turns:1"]; return s; };
+      await gate.downloaded("1.3.0");
+      expect(did).toEqual([]);
+      expect(daemon.prepared).toBe(0);
+    });
+
+    test("a daemon that can't be asked never gets an update installed over it", async () => {
+      const { daemon, did, gate, poll } = harness();
+      daemon.up = false;
+      await gate.downloaded("1.3.0");
+      await poll();
+      expect(did).toEqual([]);
+    });
+
+    test("the user's Quit installs the update without starting the app again; with none, the Quit is as usual", async () => {
+      const none = harness();
+      expect(await none.gate.quitting()).toBe(false);
+      expect(none.did).toEqual([]);
+      const { did, gate } = harness(["turns:1"]);
+      await gate.downloaded("1.3.0");
+      expect(await gate.quitting()).toBe(true);
+      // pair.quit already stopped the pair: no pair.exiting, and no second install.
+      expect(did).toEqual(["polling stopped", "stop the app", "daemon gone", "install"]);
+      expect(await gate.quitting()).toBe(false);
+    });
   });
 });
