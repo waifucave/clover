@@ -1009,13 +1009,16 @@ async function smoke(): Promise<void> {
     }
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w)))) break;
-    // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn, the surface's layer is made to hang
-    // (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says so only
-    // after its hang timeout with input waiting for that frame, and input doesn't reach a hidden window's
+    // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
+    // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
+    // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says
+    // so only after its hang timeout with input waiting for that frame, and input doesn't reach a hidden window's
     // out-of-process frames, so the test raises the event itself; everything after it is the app's own path.
     const hangOn = process.env.CLOVER_SMOKE_HANG;
     const target = hangOn === undefined ? undefined : surfaces.get(hangOn)?.win;
-    if (drawn && !hung && target !== undefined && !target.isDestroyed()) {
+    const targetFact = hangOn === undefined ? undefined : surfaceFacts.find((x) => x.id === hangOn);
+    const targetLayer = targetFact?.frames.find((f) => f.url.startsWith("clover-plugin://"));
+    if (drawn && !hung && target !== undefined && !target.isDestroyed() && targetLayer !== undefined && targetLayer.rendered) {
       const layer = target.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://"));
       if (layer !== undefined) {
         hung = true;
