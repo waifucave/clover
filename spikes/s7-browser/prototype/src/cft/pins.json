@@ -1,0 +1,43 @@
+{
+  "version": "156.0.8078.80",
+  "why": "The same Chromium as Electron 45.2.2 (156.0.8078.80), so the browser where no app runs is the same engine as the app's.",
+  "base": "https://storage.googleapis.com/chrome-for-testing-public",
+  "artifacts": {
+    "chrome-headless-shell": {
+      "linux64": {
+        "bytes": 126922702,
+        "sha256": "547dcd374e02961bf998f6046a267644f8502225c36bb78ca307dab32a0b3eb4"
+      },
+      "linux-arm64": {
+        "bytes": 126679292,
+        "sha256": "5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607"
+      },
+      "mac-arm64": {
+        "bytes": 103982159,
+        "sha256": "ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac"
+      },
+      "win64": {
+        "bytes": 125772546,
+        "sha256": "10a77466005e7f64e00f1a75fd1ea81f4a38a60093c65fea6895843b26e60a9a"
+      }
+    },
+    "chrome": {
+      "linux64": {
+        "bytes": 201329937,
+        "sha256": "b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7"
+      },
+      "linux-arm64": {
+        "bytes": 200722708,
+        "sha256": "1f496a826c9ba4d6a5f5bf2de686145fe718528c2cc3dbeb96b5893b89653724"
+      },
+      "mac-arm64": {
+        "bytes": 195027080,
+        "sha256": "8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1"
+      },
+      "win64": {
+        "bytes": 208152768,
+        "sha256": "16edb57d6107bf1c48a7c149b8d78b155fe614410093796dd72441fd6640540f"
+      }
+    }
+  }
+}

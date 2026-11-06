@@ -1,0 +1,1172 @@
+{
+  "meta": {
+    "label": "viewport-linux-x11",
+    "status": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "x11",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": ":99",
+    "displays": [
+      "1920x1080@1"
+    ],
+    "gpu": {
+      "2d_canvas": "disabled_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "vulkan": "disabled_off",
+      "webgl": "disabled_off",
+      "webgpu": "disabled_off",
+      "webgpu_on_vk_via_gl_interop": "disabled_off",
+      "webnn": "disabled_off"
+    },
+    "seconds": 157.04
+  },
+  "checks": {
+    "osr": {
+      "sizes": [
+        {
+          "variant": "default",
+          "windowSize": "1280x800",
+          "contentSize": "1280x800",
+          "layout": "1280x800@1",
+          "frame": "1280x800",
+          "ok": true
+        }
+      ],
+      "sizeFix": "default",
+      "texture": {
+        "textures": 0,
+        "popups": 0,
+        "bitmaps": 0,
+        "empties": 0,
+        "paints": 0,
+        "works": false,
+        "error": "not asked for: GPU compositing is \"disabled_software\" here (asking hung the main process on the Linux runners)"
+      },
+      "rates": [
+        {
+          "config": "offscreen, bitmap, 10 fps, animated",
+          "mode": "bitmap",
+          "fps": 10,
+          "painting": true,
+          "rates": {
+            "seconds": 4,
+            "intervalHz": 99.95,
+            "chainHz": 98.7,
+            "rafHz": 10,
+            "maxIntervalGapMs": 10,
+            "maxChainGapMs": 14,
+            "maxRafGapMs": 101,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 10,
+          "texturesPerSec": 0,
+          "cpuTotal": 10.49,
+          "cpuByType": {
+            "Browser": 3,
+            "GPU": 1.5,
+            "Utility": 0,
+            "Tab": 6
+          },
+          "rendererPct": 6
+        },
+        {
+          "config": "offscreen, bitmap, 30 fps, animated",
+          "mode": "bitmap",
+          "fps": 30,
+          "painting": true,
+          "rates": {
+            "seconds": 4,
+            "intervalHz": 100.22,
+            "chainHz": 90.98,
+            "rafHz": 29.99,
+            "maxIntervalGapMs": 13,
+            "maxChainGapMs": 15,
+            "maxRafGapMs": 35,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 29.99,
+          "texturesPerSec": 0,
+          "cpuTotal": 27.99,
+          "cpuByType": {
+            "Browser": 9,
+            "GPU": 5,
+            "Utility": 0,
+            "Tab": 14
+          },
+          "rendererPct": 14
+        },
+        {
+          "config": "offscreen, bitmap, 60 fps, animated",
+          "mode": "bitmap",
+          "fps": 60,
+          "painting": true,
+          "rates": {
+            "seconds": 4,
+            "intervalHz": 99.95,
+            "chainHz": 94.45,
+            "rafHz": 59.97,
+            "maxIntervalGapMs": 14,
+            "maxChainGapMs": 14,
+            "maxRafGapMs": 18,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 59.97,
+          "texturesPerSec": 0,
+          "cpuTotal": 49.23,
+          "cpuByType": {
+            "Browser": 15.49,
+            "GPU": 10.24,
+            "Utility": 0,
+            "Tab": 23.49
+          },
+          "rendererPct": 23.49
+        },
+        {
+          "config": "offscreen, bitmap, 30 fps, painting stopped, animated",
+          "mode": "bitmap",
+          "fps": 30,
+          "painting": false,
+          "rates": {
+            "seconds": 4.01,
+            "intervalHz": 100.12,
+            "chainHz": 91.64,
+            "rafHz": 29.96,
+            "maxIntervalGapMs": 12,
+            "maxChainGapMs": 14,
+            "maxRafGapMs": 35,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 0,
+          "texturesPerSec": 0,
+          "cpuTotal": 18.72,
+          "cpuByType": {
+            "Browser": 0.5,
+            "GPU": 4.49,
+            "Utility": 0,
+            "Tab": 13.73
+          },
+          "rendererPct": 13.73
+        },
+        {
+          "config": "offscreen, bitmap, 10 fps, quiet page",
+          "mode": "bitmap",
+          "fps": 10,
+          "painting": true,
+          "rates": {
+            "seconds": 4,
+            "intervalHz": 2,
+            "chainHz": 0,
+            "rafHz": 0,
+            "maxIntervalGapMs": 500,
+            "maxChainGapMs": 0,
+            "maxRafGapMs": 0,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 4.25,
+          "texturesPerSec": 0,
+          "cpuTotal": 4.25,
+          "cpuByType": {
+            "Browser": 2.5,
+            "GPU": 0.75,
+            "Utility": 0,
+            "Tab": 1
+          },
+          "rendererPct": 1
+        },
+        {
+          "config": "offscreen, bitmap, painting stopped, quiet page",
+          "mode": "bitmap",
+          "fps": 10,
+          "painting": false,
+          "rates": {
+            "seconds": 4.01,
+            "intervalHz": 2,
+            "chainHz": 0,
+            "rafHz": 0,
+            "maxIntervalGapMs": 500,
+            "maxChainGapMs": 0,
+            "maxRafGapMs": 0,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 0,
+          "texturesPerSec": 0,
+          "cpuTotal": 2,
+          "cpuByType": {
+            "Browser": 0.25,
+            "GPU": 0.75,
+            "Utility": 0,
+            "Tab": 1
+          },
+          "rendererPct": 1
+        },
+        {
+          "config": "host window, animated",
+          "mode": "host",
+          "rates": {
+            "seconds": 4.01,
+            "intervalHz": 100.02,
+            "chainHz": 94.79,
+            "rafHz": 60.11,
+            "maxIntervalGapMs": 13,
+            "maxChainGapMs": 14,
+            "maxRafGapMs": 18,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 0,
+          "texturesPerSec": 0,
+          "cpuTotal": 23.2,
+          "cpuByType": {
+            "Browser": 0,
+            "GPU": 1.75,
+            "Utility": 0,
+            "Tab": 21.46
+          },
+          "rendererPct": 21.46
+        },
+        {
+          "config": "host window, quiet page",
+          "mode": "host",
+          "rates": {
+            "seconds": 4.01,
+            "intervalHz": 2,
+            "chainHz": 0,
+            "rafHz": 0,
+            "maxIntervalGapMs": 500,
+            "maxChainGapMs": 0,
+            "maxRafGapMs": 0,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "paintsPerSec": 0,
+          "texturesPerSec": 0,
+          "cpuTotal": 1,
+          "cpuByType": {
+            "Browser": 0,
+            "GPU": 0.25,
+            "Utility": 0,
+            "Tab": 0.75
+          },
+          "rendererPct": 0.75
+        }
+      ],
+      "captures": [
+        {
+          "config": "offscreen, bitmap, painting on (10 fps)",
+          "method": "capturePage",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 61,
+            "p50": 97,
+            "p95": 98,
+            "max": 98,
+            "mean": 89.8
+          },
+          "staleMs": {
+            "n": 5,
+            "min": -82,
+            "p50": -82,
+            "p95": -46,
+            "max": -46,
+            "mean": -74.8
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "offscreen, bitmap, painting on (10 fps)",
+          "method": "cdpJpeg",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 296,
+            "p50": 297,
+            "p95": 313,
+            "max": 313,
+            "mean": 300.4
+          },
+          "staleMs": {
+            "n": 5,
+            "min": -282,
+            "p50": -266,
+            "p95": -265,
+            "max": -265,
+            "mean": -269.4
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "offscreen, bitmap, painting on (10 fps)",
+          "method": "osrPaint",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 0,
+            "p50": 0,
+            "p95": 1,
+            "max": 1,
+            "mean": 0.2
+          },
+          "staleMs": {
+            "n": 5,
+            "min": 32,
+            "p50": 39,
+            "p95": 44,
+            "max": 44,
+            "mean": 38.4
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "offscreen, bitmap, painting on (10 fps)",
+          "method": "newest paint → JPEG",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 6.73,
+            "p50": 6.81,
+            "p95": 7.87,
+            "max": 7.87,
+            "mean": 7.05
+          },
+          "staleMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "offscreen, bitmap, painting stopped",
+          "method": "capturePage",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 57,
+            "p50": 97,
+            "p95": 98,
+            "max": 98,
+            "mean": 89.2
+          },
+          "staleMs": {
+            "n": 5,
+            "min": -84,
+            "p50": -83,
+            "p95": -43,
+            "max": -43,
+            "mean": -75.4
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "offscreen, bitmap, painting stopped",
+          "method": "cdpJpeg",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 297,
+            "p50": 299,
+            "p95": 312,
+            "max": 312,
+            "mean": 301.4
+          },
+          "staleMs": {
+            "n": 5,
+            "min": -283,
+            "p50": -269,
+            "p95": -269,
+            "max": -269,
+            "mean": -272.2
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "host window",
+          "method": "capturePage",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 13,
+            "p50": 14,
+            "p95": 28,
+            "max": 28,
+            "mean": 16.4
+          },
+          "staleMs": {
+            "n": 5,
+            "min": 0,
+            "p50": 11,
+            "p95": 15,
+            "max": 15,
+            "mean": 10.2
+          },
+          "size": "1280x800",
+          "errors": []
+        },
+        {
+          "config": "host window",
+          "method": "cdpJpeg",
+          "tries": 5,
+          "ok": 5,
+          "ms": {
+            "n": 5,
+            "min": 80,
+            "p50": 80,
+            "p95": 82,
+            "max": 82,
+            "mean": 80.8
+          },
+          "staleMs": {
+            "n": 5,
+            "min": -39,
+            "p50": -38,
+            "p95": -37,
+            "max": -37,
+            "mean": -38.2
+          },
+          "size": "1280x800",
+          "errors": []
+        }
+      ],
+      "cost": [
+        {
+          "config": "4 quiet offscreen tabs (bitmap, 10 fps)",
+          "perTabMiB": 55.39,
+          "perTabCpuPct": 2.83,
+          "base": {
+            "tabs": 0,
+            "memBest": 321404928,
+            "memKind": "pss",
+            "memRss": 515915776,
+            "cpuPct": 0.67,
+            "cpuByType": {
+              "Browser": 0.67,
+              "GPU": 0,
+              "Utility": 0
+            },
+            "procs": 3
+          },
+          "step": {
+            "tabs": 4,
+            "memBest": 553723904,
+            "memKind": "pss",
+            "memRss": 1186279424,
+            "cpuPct": 11.99,
+            "cpuByType": {
+              "Browser": 5.75,
+              "GPU": 2.75,
+              "Utility": 0,
+              "Tab": 3.5
+            },
+            "procs": 7
+          }
+        },
+        {
+          "config": "4 quiet offscreen tabs (bitmap), painting stopped",
+          "perTabMiB": 29.86,
+          "perTabCpuPct": 1.56,
+          "base": {
+            "tabs": 0,
+            "memBest": 354174976,
+            "memKind": "pss",
+            "memRss": 549081088,
+            "cpuPct": 0,
+            "cpuByType": {
+              "Browser": 0,
+              "GPU": 0,
+              "Utility": 0
+            },
+            "procs": 3
+          },
+          "step": {
+            "tabs": 4,
+            "memBest": 479415296,
+            "memKind": "pss",
+            "memRss": 1111879680,
+            "cpuPct": 6.25,
+            "cpuByType": {
+              "Browser": 0.25,
+              "GPU": 2.5,
+              "Utility": 0,
+              "Tab": 3.5
+            },
+            "procs": 7
+          }
+        },
+        {
+          "config": "4 quiet tabs in one shared host window",
+          "perTabMiB": 30.74,
+          "perTabCpuPct": 1.06,
+          "base": {
+            "tabs": 0,
+            "memBest": 325195776,
+            "memKind": "pss",
+            "memRss": 520097792,
+            "cpuPct": 0,
+            "cpuByType": {
+              "Browser": 0,
+              "GPU": 0,
+              "Utility": 0
+            },
+            "procs": 3
+          },
+          "step": {
+            "tabs": 4,
+            "memBest": 454134784,
+            "memKind": "pss",
+            "memRss": 1027751936,
+            "cpuPct": 4.25,
+            "cpuByType": {
+              "Browser": 0,
+              "GPU": 0.5,
+              "Utility": 0,
+              "Tab": 3.75
+            },
+            "procs": 7
+          }
+        }
+      ],
+      "windows": {
+        "4 offscreen tabs open (nothing else shown)": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [],
+          "ms": 25
+        },
+        "4 tabs in the shared host window": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "2097280 1x1+0+0 IsViewable \"S7 shared host\""
+          ],
+          "ms": 56
+        }
+      },
+      "scale2": {
+        "layout": "1280x800@2",
+        "frame": "2560x1600",
+        "capturePage": "2560x1600 in 36 ms"
+      }
+    },
+    "viewport": {
+      "mode": "bitmap",
+      "modeWhy": "no shared textures on this machine (GPU compositing \"disabled_software\"): CPU bitmaps",
+      "shows": [
+        {
+          "cycle": 1,
+          "firstFrameMs": 20,
+          "reflowMs": 31,
+          "layout": "1000x700",
+          "frame": "1000x700",
+          "hideMs": 1
+        },
+        {
+          "cycle": 2,
+          "firstFrameMs": 22,
+          "reflowMs": 35,
+          "layout": "1000x700",
+          "frame": "1000x700",
+          "hideMs": 1
+        }
+      ],
+      "oracle": [
+        {
+          "when": "shown (first time)",
+          "sameDocument": true,
+          "ticksAdvanced": true,
+          "sseKept": true,
+          "formKept": true,
+          "layout": "1000x700@1",
+          "detail": "token same, loads +0, navigations +0, ticks 15→21, sse opens 1 (server 1) msgs 14→21, field \"typed by the bot\", checked true"
+        },
+        {
+          "when": "hidden again (the agent's 1280x800)",
+          "sameDocument": true,
+          "ticksAdvanced": true,
+          "sseKept": true,
+          "formKept": true,
+          "layout": "1280x800@1",
+          "detail": "token same, loads +0, navigations +0, ticks 378→393, sse opens 1 (server 1) msgs 376→391, field \"x日本s7-paste-ok\", checked true"
+        },
+        {
+          "when": "shown again",
+          "sameDocument": true,
+          "ticksAdvanced": true,
+          "sseKept": true,
+          "formKept": true,
+          "layout": "1000x700@1",
+          "detail": "token same, loads +0, navigations +0, ticks 393→402, sse opens 1 (server 1) msgs 391→400, field \"x日本s7-paste-ok\", checked true"
+        },
+        {
+          "when": "hidden at the end",
+          "sameDocument": true,
+          "ticksAdvanced": true,
+          "sseKept": true,
+          "formKept": true,
+          "layout": "1280x800@1",
+          "detail": "token same, loads +0, navigations +0, ticks 402→417, sse opens 1 (server 1) msgs 400→415, field \"x日本s7-paste-ok\", checked true"
+        }
+      ],
+      "steps": [
+        {
+          "name": "mouse: a click lands where the person clicked",
+          "ok": true,
+          "ms": 103,
+          "detail": "{\"at\":\"260,40\",\"page\":{\"x\":260,\"y\":40,\"t\":1793877663162},\"forwarded\":{\"mouseMove\":1,\"mouseDown\":1,\"mouseUp\":1}}"
+        },
+        {
+          "name": "wheel: the page scrolls",
+          "ok": true,
+          "ms": 324,
+          "detail": "{\"scrollY\":600,\"wheels\":4,\"forwardedWheels\":4}"
+        },
+        {
+          "name": "keys: typing, Backspace and select-all in the field",
+          "ok": true,
+          "ms": 1215,
+          "detail": "{\"typed\":\"typed by the botabc\",\"afterBackspace\":\"typed by the botab\",\"afterSelectAllAndX\":\"x\",\"focused\":\"field\",\"pageHasFocus\":true,\"keys\":[\"End\",\"a\",\"b\",\"c\",\"Backspace\",\"x\"]}"
+        },
+        {
+          "name": "IME: a composition in the viewport is composed and committed in the page",
+          "ok": true,
+          "ms": 859,
+          "detail": "{\"field\":\"x日本\",\"midField\":\"xにほ\",\"compositions\":[\"start:\",\"update:にほ\",\"update:日本\",\"update:日本\",\"end:日本\"],\"forwarded\":{\"set\":2,\"commit\":1,\"text\":0}}"
+        },
+        {
+          "name": "paste: the person's paste reaches the page as a paste",
+          "ok": true,
+          "ms": 934,
+          "detail": "{\"field\":\"x日本s7-paste-ok\",\"pasteEvents\":[\"s7-paste-ok\"],\"clipboard\":\"s7-paste-ok\",\"forwarded\":1}"
+        },
+        {
+          "name": "select text: a mouse drag across the page's text selects it",
+          "ok": true,
+          "ms": 758,
+          "detail": "{\"selection\":\"s7 select and copy this sentence please\"}"
+        },
+        {
+          "name": "copy: the copy key (⌘C, Ctrl+C) in the viewport copies the page's selection",
+          "ok": true,
+          "ms": 32,
+          "detail": "{\"selection\":\"s7 select and copy this sentence please\",\"clipboard\":\"s7 select and copy this sentence please\",\"forwardedEdits\":2}"
+        },
+        {
+          "name": "copy: a right click on the selection, then the menu's Copy (webContents.copy)",
+          "ok": true,
+          "ms": 87,
+          "detail": "{\"at\":\"660,240\",\"selectionText\":\"s7 select and copy this sentence please\",\"canCopy\":true,\"menuSourceType\":\"mouse\",\"clipboard\":\"s7 select and copy this sentence please\"}"
+        },
+        {
+          "name": "<select>: it opens, and the keys choose an option",
+          "ok": true,
+          "ms": 1636,
+          "detail": "{\"value\":\"c\",\"changes\":[\"c\"],\"popupTextures\":0,\"popupRects\":[\"bitmap 180x146+480+48\",\"bitmap 180x146+480+48\",\"bitmap 180x146+480+48\"],\"viewerPopups\":0,\"viewerPopupSizes\":[]}"
+        },
+        {
+          "name": "cursor: the page's cursor reaches the viewport",
+          "ok": true,
+          "ms": 1203,
+          "detail": "{\"events\":[\"hand\",\"text\",\"crosshair\",\"move\"],\"viewerCursors\":[\"pointer\",\"text\",\"crosshair\",\"move\"]}"
+        },
+        {
+          "name": "drag: an HTML5 drag inside the page, sent as plain mouse events",
+          "ok": false,
+          "ms": 1318,
+          "detail": "{\"page\":[\"dragstart\"]}"
+        },
+        {
+          "name": "drag: the same, with the browser's drag handed to the viewport (CDP Input.setInterceptDrags)",
+          "ok": true,
+          "ms": 1320,
+          "detail": "{\"page\":[\"dragstart\",\"dragenter\",\"dragover\",\"drop:s7-dragged\",\"dragend:copy\"],\"intercepted\":1,\"dispatched\":[\"dragEnter\",\"dragOver\",\"drop\"]}"
+        },
+        {
+          "name": "file chooser: answered with a file, no dialog",
+          "ok": true,
+          "ms": 128,
+          "detail": "{\"choosers\":[{\"at\":1793877672968,\"mode\":\"selectSingle\"}],\"files\":[\"s7-upload.txt:23:hello from the viewport\"]}"
+        },
+        {
+          "name": "a window the page opens: offscreen too, its opener kept, shown in the viewport and clicked",
+          "ok": false,
+          "ms": 3797,
+          "detail": "{\"offscreen\":true,\"visible\":false,\"size\":\"480x360\",\"painting\":true,\"frameRate\":30,\"pageSize\":\"0x0\",\"sameProcessAsOpener\":true,\"openerFramesOfTheChildSize\":0,\"paintsAfterRepaint\":0,\"pageState\":\"{\\\"clicks\\\":0,\\\"hasOpener\\\":true,\\\"loadedAt\\\":1793877673109}\",\"directClick\":false,\"paints\":0,\"openerMessages\":[\"popup:hello\"],\"clickedInViewport\":false}"
+        },
+        {
+          "name": "a cross-site window the page opens (Electron #55565): offscreen, its opener kept, shown in the viewport and clicked",
+          "ok": true,
+          "ms": 5742,
+          "detail": "{\"offscreen\":true,\"visible\":false,\"size\":\"480x360\",\"painting\":true,\"frameRate\":30,\"pageSize\":\"480x360\",\"sameProcessAsOpener\":false,\"openerFramesOfTheChildSize\":0,\"paintsAfterRepaint\":1,\"pageState\":\"{\\\"clicks\\\":0,\\\"hasOpener\\\":true,\\\"loadedAt\\\":1793877676926}\",\"directClick\":true,\"paints\":6,\"openerMessages\":[\"popup:hello\",\"popup:hello@other-site\",\"popup:click@other-site\",\"popup:click@other-site\"],\"clickedInViewport\":true}"
+        },
+        {
+          "name": "resize: the page reflows to the viewport, no reload",
+          "ok": true,
+          "ms": 172,
+          "detail": "{\"oneMs\":23,\"quickThreeMs\":43,\"backMs\":21,\"resizes\":[\"1793877682037:1000x700\",\"1793877682600:800x560\",\"1793877682634:900x620\",\"1793877682677:760x520\",\"1793877682718:820x580\",\"1793877682751:1000x700\"],\"applied\":[\"1793877682033:1000x700\",\"1793877682598:800x560\",\"1793877682625:900x620\",\"1793877682675:760x520\",\"1793877682709:820x580\",\"1793877682746:1000x700\"],\"token\":\"same\"}"
+        },
+        {
+          "name": "find-in-page: matches found and drawn",
+          "ok": true,
+          "ms": 8,
+          "detail": "{\"requestId\":0,\"matches\":1,\"selectionArea\":{\"x\":202,\"y\":163,\"width\":32,\"height\":16},\"activeMatchOrdinal\":1,\"finalUpdate\":true}"
+        },
+        {
+          "name": "DevTools: open on the offscreen tab (detached window)",
+          "ok": true,
+          "ms": 728,
+          "detail": "{\"opened\":true}"
+        },
+        {
+          "name": "accessibility: the page's tree is there to read over CDP (the OS sees none of it)",
+          "ok": true,
+          "ms": 5,
+          "detail": "{\"nodes\":58,\"button\":true,\"accessibilitySupport\":false}"
+        },
+        {
+          "name": "a 2x display: the device-metrics override at a scale of 2 gives the viewport 2x frames",
+          "ok": false,
+          "ms": 1603,
+          "detail": "{\"pageDpr\":2,\"layout\":\"1000x700\",\"frame\":\"1000x700\",\"viewerCanvas\":\"1000x700\"}"
+        },
+        {
+          "name": "the tab's webContents.focus(): does the hidden window take the OS focus from the viewport?",
+          "ok": true,
+          "ms": 701,
+          "detail": "{\"viewerFocusedBefore\":true,\"after\":true,\"focusedWindow\":\"S7 viewport\",\"pageHasFocus\":true,\"tabVisible\":false}"
+        }
+      ],
+      "latency": {
+        "viewport, mouse": {
+          "trials": 20,
+          "ms": {
+            "n": 20,
+            "min": 11,
+            "p50": 14,
+            "p95": 31,
+            "max": 32,
+            "mean": 15.4
+          },
+          "parts": {
+            "to the page's handler": {
+              "n": 20,
+              "min": 0,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "mean": 0.8
+            },
+            "to the paint event": {
+              "n": 20,
+              "min": 3,
+              "p50": 3,
+              "p95": 4,
+              "max": 4,
+              "mean": 3.35
+            },
+            "paint → drawn in the viewer": {
+              "n": 20,
+              "min": 0,
+              "p50": 1,
+              "p95": 1,
+              "max": 2,
+              "mean": 0.6
+            },
+            "drawn → on screen (2 rAFs)": {
+              "n": 20,
+              "min": 7,
+              "p50": 10,
+              "p95": 26,
+              "max": 28,
+              "mean": 11.45
+            }
+          }
+        },
+        "viewport, key": {
+          "trials": 10,
+          "ms": {
+            "n": 10,
+            "min": 11,
+            "p50": 12,
+            "p95": 17,
+            "max": 17,
+            "mean": 13.5
+          },
+          "parts": {
+            "to the page's handler": {
+              "n": 10,
+              "min": 0,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "mean": 0.8
+            },
+            "to the paint event": {
+              "n": 10,
+              "min": 3,
+              "p50": 4,
+              "p95": 4,
+              "max": 4,
+              "mean": 3.6
+            },
+            "paint → drawn in the viewer": {
+              "n": 10,
+              "min": 0,
+              "p50": 0,
+              "p95": 4,
+              "max": 4,
+              "mean": 0.6
+            },
+            "drawn → on screen (2 rAFs)": {
+              "n": 10,
+              "min": 3,
+              "p50": 8,
+              "p95": 13,
+              "max": 13,
+              "mean": 9.3
+            }
+          }
+        },
+        "native view, mouse": {
+          "trials": 20,
+          "ms": {
+            "n": 20,
+            "min": 4,
+            "p50": 5,
+            "p95": 11,
+            "max": 11,
+            "mean": 6.35
+          },
+          "parts": {
+            "to the page's handler": {
+              "n": 20,
+              "min": 0,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "mean": 0.35
+            }
+          }
+        },
+        "native view, key": {
+          "trials": 10,
+          "ms": {
+            "n": 10,
+            "min": 14,
+            "p50": 16,
+            "p95": 18,
+            "max": 18,
+            "mean": 16.1
+          },
+          "parts": {
+            "to the page's handler": {
+              "n": 10,
+              "min": 0,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "mean": 0.5
+            }
+          }
+        }
+      },
+      "fps": {
+        "viewport, animated page": {
+          "drawnPerSec": 59.99,
+          "paintsPerSec": 59.99,
+          "sentPerSec": 59.99,
+          "droppedPerSec": 0,
+          "pageRafPerSec": 59.99,
+          "mbPerSec": 58.6,
+          "drawMsP50": 1,
+          "drawMsP95": 1.2,
+          "cpuTotal": 56.24,
+          "cpuBrowser": 26.24,
+          "cpuGpu": 4.5,
+          "cpuOffscreenRenderer": 6.75,
+          "cpuViewerRenderer": 18.75
+        },
+        "viewport, smooth scroll": {
+          "ms": 904,
+          "viewerFramesPerSec": 61.95,
+          "pageRafPerSec": 60.84
+        },
+        "native view, animated page": {
+          "pageRafPerSec": 59.99,
+          "cpuTotal": 8.75,
+          "cpuBrowser": 0.25,
+          "cpuGpu": 2.25,
+          "cpuRenderer": 6.25
+        },
+        "native view, smooth scroll": {
+          "ms": 908,
+          "pageRafPerSec": 60.57
+        }
+      },
+      "windows": {
+        "a hidden offscreen tab and the viewer": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "2097287 1000x727+60+60 IsViewable \"S7 viewport\""
+          ],
+          "ms": 24
+        },
+        "a <select> open": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "2097287 1000x727+60+60 IsViewable \"S7 viewport\""
+          ],
+          "ms": 38
+        },
+        "a file chooser open": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "2097287 1000x727+60+60 IsViewable \"S7 viewport\""
+          ],
+          "ms": 23
+        },
+        "the page's window open (offscreen)": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "2097287 1000x727+60+60 IsViewable \"S7 viewport\""
+          ],
+          "ms": 22
+        },
+        "the page's cross-site window open (offscreen)": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "2097287 1000x727+60+60 IsViewable \"S7 viewport\""
+          ],
+          "ms": 27
+        }
+      },
+      "viewer": {
+        "frames": 523,
+        "textures": 0,
+        "bitmaps": 523,
+        "popups": 0,
+        "popupSizes": [],
+        "lastSeq": 523,
+        "lastSize": "1000x700",
+        "sizes": [
+          "1793877662499:1280x800",
+          "1793877662514:1000x700",
+          "1793877678612:480x360",
+          "1793877682046:1280x800",
+          "1793877682061:1000x700",
+          "1793877682615:800x560",
+          "1793877682643:900x620",
+          "1793877682693:760x520",
+          "1793877682726:820x580",
+          "1793877682762:1000x700",
+          "1793877700328:1280x800",
+          "1793877700345:1000x700"
+        ],
+        "drawMs": [],
+        "errors": [],
+        "inputs": 189,
+        "control": false,
+        "cursor": "pointer",
+        "textureReceiver": true,
+        "firstFrameAt": 1793877662507,
+        "lastFrameAt": 1793877700376,
+        "focused": "ime",
+        "hasFocus": true,
+        "drawMsSummary": {
+          "n": 300,
+          "min": 0.8,
+          "p50": 1,
+          "p95": 2.6,
+          "max": 8.4,
+          "mean": 1.34
+        }
+      },
+      "counters": {
+        "sent": 523,
+        "dropped": 0,
+        "fullFrames": 4,
+        "mbSent": 525.29,
+        "outstandingTextures": 0,
+        "forwarded": {
+          "mouseMove": 56,
+          "mouseDown": 33,
+          "mouseUp": 33,
+          "mouseWheel": 4,
+          "keyDown": 20,
+          "keyUp": 20,
+          "char": 14,
+          "edit": 2,
+          "ime-start": 1,
+          "ime-set": 2,
+          "ime-commit": 1,
+          "paste": 1,
+          "mouseLeave": 2
+        },
+        "errors": [],
+        "tabTextures": 0,
+        "tabPopupTextures": 0,
+        "tabEmptyPaints": 0,
+        "tabPaints": 528
+      }
+    }
+  },
+  "errors": [],
+  "assertions": [
+    {
+      "name": "an offscreen tab draws with no window (CPU bitmaps asked at 30 fps: rAF above 10 Hz)",
+      "ok": true,
+      "detail": "{\"rafHz\":29.992501874531364}"
+    },
+    {
+      "name": "capturePage works on an offscreen tab",
+      "ok": true,
+      "detail": "{\"ok\":5,\"tries\":5,\"errors\":[]}"
+    },
+    {
+      "name": "four offscreen tabs put no window on screen",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "no reload across show and hide through the viewport: same document, its timers, its socket, its form",
+      "ok": true,
+      "detail": "[\"shown (first time): token same, loads +0, navigations +0, ticks 15→21, sse opens 1 (server 1) msgs 14→21, field \\\"typed by the bot\\\", checked true\",\"hidden again (the agent's 1280x800): token same, loads +0, navigations +0, ticks 378→393, sse opens 1 (server 1) msgs 376→391, field \\\"x日本s7-paste-ok\\\", checked true\",\"shown again: token same, loads +0, navigations +0, ticks 393→402, sse opens 1 (server 1) msgs 391→400, field \\\"x日本s7-paste-ok\\\", checked true\",\"hidden at the end: token same, loads +0, navigations +0, ticks 402→417, sse opens 1 (server 1) msgs 400→415, field \\\"x日本s7-paste-ok\\\", checked true\"]"
+    },
+    {
+      "name": "through the viewport: mouse: a click lands where the person clicked",
+      "ok": true,
+      "detail": "{\"at\":\"260,40\",\"page\":{\"x\":260,\"y\":40,\"t\":1793877663162},\"forwarded\":{\"mouseMove\":1,\"mouseDown\":1,\"mouseUp\":1}}"
+    },
+    {
+      "name": "through the viewport: wheel: the page scrolls",
+      "ok": true,
+      "detail": "{\"scrollY\":600,\"wheels\":4,\"forwardedWheels\":4}"
+    },
+    {
+      "name": "through the viewport: keys: typing, Backspace and select-all in the field",
+      "ok": true,
+      "detail": "{\"typed\":\"typed by the botabc\",\"afterBackspace\":\"typed by the botab\",\"afterSelectAllAndX\":\"x\",\"focused\":\"field\",\"pageHasFocus\":true,\"keys\":[\"End\",\"a\",\"b\",\"c\",\"Backspace\",\"x\"]}"
+    },
+    {
+      "name": "through the viewport: IME: a composition in the viewport is composed and committed in the page",
+      "ok": true,
+      "detail": "{\"field\":\"x日本\",\"midField\":\"xにほ\",\"compositions\":[\"start:\",\"update:にほ\",\"update:日本\",\"update:日本\",\"end:日本\"],\"forwarded\":{\"set\":2,\"commit\":1,\"text\":0}}"
+    },
+    {
+      "name": "through the viewport: paste: the person's paste reaches the page as a paste",
+      "ok": true,
+      "detail": "{\"field\":\"x日本s7-paste-ok\",\"pasteEvents\":[\"s7-paste-ok\"],\"clipboard\":\"s7-paste-ok\",\"forwarded\":1}"
+    },
+    {
+      "name": "through the viewport: <select>: it opens, and the keys choose an option",
+      "ok": true,
+      "detail": "{\"value\":\"c\",\"changes\":[\"c\"],\"popupTextures\":0,\"popupRects\":[\"bitmap 180x146+480+48\",\"bitmap 180x146+480+48\",\"bitmap 180x146+480+48\"],\"viewerPopups\":0,\"viewerPopupSizes\":[]}"
+    },
+    {
+      "name": "through the viewport: cursor: the page's cursor reaches the viewport",
+      "ok": true,
+      "detail": "{\"events\":[\"hand\",\"text\",\"crosshair\",\"move\"],\"viewerCursors\":[\"pointer\",\"text\",\"crosshair\",\"move\"]}"
+    },
+    {
+      "name": "through the viewport: drag: the same, with the browser's drag handed to the viewport (CDP Input.setInterceptDrags)",
+      "ok": true,
+      "detail": "{\"page\":[\"dragstart\",\"dragenter\",\"dragover\",\"drop:s7-dragged\",\"dragend:copy\"],\"intercepted\":1,\"dispatched\":[\"dragEnter\",\"dragOver\",\"drop\"]}"
+    },
+    {
+      "name": "through the viewport: file chooser: answered with a file, no dialog",
+      "ok": true,
+      "detail": "{\"choosers\":[{\"at\":1793877672968,\"mode\":\"selectSingle\"}],\"files\":[\"s7-upload.txt:23:hello from the viewport\"]}"
+    },
+    {
+      "name": "through the viewport: resize: the page reflows to the viewport, no reload",
+      "ok": true,
+      "detail": "{\"oneMs\":23,\"quickThreeMs\":43,\"backMs\":21,\"resizes\":[\"1793877682037:1000x700\",\"1793877682600:800x560\",\"1793877682634:900x620\",\"1793877682677:760x520\",\"1793877682718:820x580\",\"1793877682751:1000x700\"],\"applied\":[\"1793877682033:1000x700\",\"1793877682598:800x560\",\"1793877682625:900x620\",\"1793877682675:7"
+    },
+    {
+      "name": "through the viewport: find-in-page: matches found and drawn",
+      "ok": true,
+      "detail": "{\"requestId\":0,\"matches\":1,\"selectionArea\":{\"x\":202,\"y\":163,\"width\":32,\"height\":16},\"activeMatchOrdinal\":1,\"finalUpdate\":true}"
+    },
+    {
+      "name": "through the viewport: DevTools: open on the offscreen tab (detached window)",
+      "ok": true,
+      "detail": "{\"opened\":true}"
+    },
+    {
+      "name": "through the viewport: accessibility: the page's tree is there to read over CDP (the OS sees none of it)",
+      "ok": true,
+      "detail": "{\"nodes\":58,\"button\":true,\"accessibilitySupport\":false}"
+    },
+    {
+      "name": "through the viewport: the tab's webContents.focus(): does the hidden window take the OS focus from the viewport?",
+      "ok": true,
+      "detail": "{\"viewerFocusedBefore\":true,\"after\":true,\"focusedWindow\":\"S7 viewport\",\"pageHasFocus\":true,\"tabVisible\":false}"
+    },
+    {
+      "name": "a known gap, pinned: an HTML5 drag sent as plain mouse events doesn't drop in an offscreen tab",
+      "ok": true,
+      "detail": "{\"page\":[\"dragstart\"]}"
+    },
+    {
+      "name": "a known gap, pinned: a window the page opens, made offscreen, paints nothing",
+      "ok": true,
+      "detail": "{\"offscreen\":true,\"visible\":false,\"size\":\"480x360\",\"painting\":true,\"frameRate\":30,\"pageSize\":\"0x0\",\"sameProcessAsOpener\":true,\"openerFramesOfTheChildSize\":0,\"paintsAfterRepaint\":0,\"pageState\":\"{\\\"clicks\\\":0,\\\"hasOpener\\\":true,\\\"loadedAt\\\":1793877673109}\",\"directClick\":false,\"paints\":0,\"openerMessage"
+    },
+    {
+      "name": "the viewport draws an animated page at 45 fps or more",
+      "ok": true,
+      "detail": "{\"drawnPerSec\":59.98500374906273,\"paintsPerSec\":59.98500374906273,\"sentPerSec\":59.98500374906273,\"droppedPerSec\":0,\"pageRafPerSec\":59.98500374906273,\"mbPerSec\":58.601987686672075,\"drawMsP50\":1,\"drawMsP95\":1.2000000000116415,\"cpuTotal\":56.23594101474632,\"cpuBrowser\":26.243439140214942,\"cpuGpu\":4.498875281179709,\"cpuOffscreenRenderer\":6.748312921769557,\"cpuViewerRenderer\":18.745313671582107}"
+    }
+  ]
+}

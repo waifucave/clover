@@ -1,0 +1,293 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "seconds": 162.4
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: browser gone (Runtime.evaluate) — the browser exited (0); stderr: ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory | ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory | ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory | ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default | [1105/010231.256398:ERROR:media/audio/alsa/alsa_util.cc:204] PcmOpen: plug:default,No such file or directory | [1105/010233.210255:INFO:CONSOLE:303] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:43411/pages/probe.js (303) | [1105/010233.210284:INFO:CONSOLE:305] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:43411/pages/probe.js (305) | [1105/010238.516635:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe",
+        "screenshots: browser gone (Target.createTarget) — the browser exited (0); stderr: ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory | ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory | ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory | ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default | [1105/010231.256398:ERROR:media/audio/alsa/alsa_util.cc:204] PcmOpen: plug:default,No such file or directory | [1105/010233.210255:INFO:CONSOLE:303] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:43411/pages/probe.js (303) | [1105/010233.210284:INFO:CONSOLE:305] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:43411/pages/probe.js (305) | [1105/010238.516635:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe"
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "linux64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux64/chrome-headless-shell-linux64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 126922702,
+        "unpackedBytes": 287428833,
+        "files": 287,
+        "symlinks": 0,
+        "downloadMs": 842,
+        "extractMs": 927,
+        "sha256": "547dcd374e02961bf998f6046a267644f8502225c36bb78ca307dab32a0b3eb4",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/010230.174803:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGTRAP); stderr: [1105/010230.351582:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 146
+        }
+      ],
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "pipe",
+      "start": {
+        "transport": "pipe",
+        "coldMs": 146,
+        "warmMs": 45,
+        "portMs": 49
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 171.42,
+            "memKind": "pss",
+            "rssMiB": 466.26,
+            "procs": 6,
+            "cpuPct": 0
+          },
+          {
+            "tabs": 1,
+            "memMiB": 206.21,
+            "memKind": "pss",
+            "rssMiB": 594.77,
+            "procs": 7,
+            "cpuPct": 2.24
+          },
+          {
+            "tabs": 2,
+            "memMiB": 228.96,
+            "memKind": "pss",
+            "rssMiB": 712.28,
+            "procs": 8,
+            "cpuPct": 3.48
+          },
+          {
+            "tabs": 4,
+            "memMiB": 271.45,
+            "memKind": "pss",
+            "rssMiB": 945.91,
+            "procs": 10,
+            "cpuPct": 7.21
+          },
+          {
+            "tabs": 8,
+            "memMiB": 356.49,
+            "memKind": "pss",
+            "rssMiB": 1413.48,
+            "procs": 14,
+            "cpuPct": 13.14
+          }
+        ],
+        "perIdleTabMiB": 23.13,
+        "browserBaseMiB": 171.42,
+        "fourContextsMiB": 93.28,
+        "animatedTabCpuPct": 20.9,
+        "secondBrowserBaseMiB": 111.77,
+        "secondBrowserProcs": 6,
+        "firstBrowserMiBAtThatMoment": 509.95
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "screenshots: browser exited (0) during Page.captureScreenshot — the browser exited (0); stderr: ALSA lib confmisc.c:855:(parse_card) cannot find card '0' | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_card_inum returned error: No such file or directory | ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory | ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name | ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory | ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory | ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default | [3638:3638:1105/010349.829105:ERROR:media/audio/alsa/alsa_util.cc:204] PcmOpen: plug:default,No such file or directory | [3470:3528:1105/010406.187367:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "linux64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome",
+        "reused": false,
+        "zipBytes": 201329937,
+        "unpackedBytes": 422995514,
+        "files": 301,
+        "symlinks": 0,
+        "downloadMs": 690,
+        "extractMs": 1459,
+        "sha256": "b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #16 0x5601574a303a (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome+0x7646039) |   r8: 000031a00013c263  r9: 0000000000000001 r10: 0000000000000008 r11: 0000000000000246 |  r12: 0000000000000006 r13: 0000560000000000 r14: 0000000000000016 r15: 00007ffdd08cbdc8 |   di: 0000000000000bce  si: 0000000000000bce  bp: 00007ffdd08cb740  bx: 0000000000000bce |   dx: 0000000000000006  ax: 0000000000000000  cx: 00007fc74469ec0c  sp: 00007ffdd08cb700 |   ip: "
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGABRT); stderr: #16 0x55ff6e12c03a (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome+0x7646039) |   r8: 00000ad00013c263  r9: 0000000000000001 r10: 0000000000000008 r11: 0000000000000246 |  r12: 0000000000000006 r13: 000055fc00000000 r14: 0000000000000016 r15: 00007ffed335efa8 |   di: 0000000000000bdf  si: 0000000000000bdf  bp: 00007ffed335e920  bx: 0000000000000bdf |   dx: 0000000000000006  ax: 0000000000000000  cx: 00007f76c789ec0c  sp: 00007ffed335e8e0 |   ip: 00007f76c789ec0c ef"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 237
+        }
+      ],
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "pipe",
+      "start": {
+        "transport": "pipe",
+        "coldMs": 237,
+        "warmMs": 170,
+        "portMs": 230
+      },
+      "tabs": [
+        {
+          "tab": "first (created first)",
+          "visibility": "hidden",
+          "layout": "1280x657",
+          "intervalHz": 2,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxRafGapMs": 0,
+          "mediaPlayedPerSec": 0,
+          "decodedFps": 0,
+          "audioState": "suspended"
+        },
+        {
+          "tab": "second (created last)",
+          "visibility": "visible",
+          "layout": "1280x657",
+          "intervalHz": 99.96,
+          "chainHz": 99.36,
+          "rafHz": 59.98,
+          "maxRafGapMs": 17,
+          "mediaPlayedPerSec": 0,
+          "decodedFps": 0,
+          "audioState": "suspended"
+        }
+      ],
+      "resize": {
+        "toViewMs": 2,
+        "backMs": 5012,
+        "sameDocument": false,
+        "layouts": [
+          1280,
+          1000,
+          null
+        ]
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 437.07,
+            "memKind": "pss",
+            "rssMiB": 1379.66,
+            "procs": 12,
+            "cpuPct": 0.99
+          },
+          {
+            "tabs": 1,
+            "memMiB": 467.93,
+            "memKind": "pss",
+            "rssMiB": 1543.35,
+            "procs": 13,
+            "cpuPct": 1.98
+          },
+          {
+            "tabs": 2,
+            "memMiB": 488.2,
+            "memKind": "pss",
+            "rssMiB": 1695.81,
+            "procs": 14,
+            "cpuPct": 1.73
+          },
+          {
+            "tabs": 4,
+            "memMiB": 524.67,
+            "memKind": "pss",
+            "rssMiB": 1994.73,
+            "procs": 16,
+            "cpuPct": 1.48
+          },
+          {
+            "tabs": 8,
+            "memMiB": 557.16,
+            "memKind": "pss",
+            "rssMiB": 2354.8,
+            "procs": 18,
+            "cpuPct": 2.22
+          }
+        ],
+        "perIdleTabMiB": 15.01,
+        "browserBaseMiB": 437.07,
+        "fourContextsMiB": 388.47,
+        "animatedTabCpuPct": 23,
+        "secondBrowserBaseMiB": 287.7,
+        "secondBrowserProcs": 11,
+        "firstBrowserMiBAtThatMoment": 3357.73
+      }
+    }
+  }
+}

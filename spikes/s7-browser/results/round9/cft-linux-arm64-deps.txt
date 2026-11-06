@@ -1,0 +1,38 @@
+Unable to find image 'ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852' locally
+docker.io/library/ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852: Pulling from library/ubuntu
+e2d2bb84d022: Pulling fs layer
+e2d2bb84d022: Download complete
+e2d2bb84d022: Pull complete
+Digest: sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+Status: Downloaded newer image for ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+== missing on a bare ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+	libX11.so.6 => not found
+	libXcomposite.so.1 => not found
+	libXdamage.so.1 => not found
+	libXext.so.6 => not found
+	libXfixes.so.3 => not found
+	libXrandr.so.2 => not found
+	libasound.so.2 => not found
+	libatk-1.0.so.0 => not found
+	libatspi.so.0 => not found
+	libdbus-1.so.3 => not found
+	libexpat.so.1 => not found
+	libgbm.so.1 => not found
+	libgio-2.0.so.0 => not found
+	libglib-2.0.so.0 => not found
+	libgobject-2.0.so.0 => not found
+	libnspr4.so => not found
+	libnss3.so => not found
+	libnssutil3.so => not found
+	libxcb.so.1 => not found
+	libxkbcommon.so.0 => not found
+== missing after installing: libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libdbus-1-3 libexpat1 libgbm1 libglib2.0-0t64 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxext6 libx11-6 libxcb1 libasound2t64 fonts-liberation ca-certificates 
+(end)
+== packages installed for them
+141
+== a start (as root in a container: --no-sandbox)
+[1105/043933.232138:WARNING:device/bluetooth/dbus/bluez_dbus_manager.cc:209] Floss manager service not available, cannot set Floss enable/disable.
+[1105/043933.236838:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[1105/043933.242608:WARNING:media/gpu/vaapi/vaapi_wrapper.cc:1655] drmGetDevices2() has not found any devices
+[1105/043933.244044:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+<html><head></head><body><p>ok</p></body></html>

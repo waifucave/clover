@@ -1,0 +1,20 @@
+{
+  "manifest": 1,
+  "name": "Fish Audio",
+  "description": "Bots' voices from Fish Audio: speech with its free voice model by default, and listening, with your own Fish Audio key. Without a key, bots stay text-only.",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "capabilities": ["network:api.fish.audio"],
+  "auth": [
+    {
+      "method": "api-key",
+      "secret": "fish-api-key",
+      "help": "Your own Fish Audio API key, from your account on fish.audio. Clover keeps it in your credential store and adds it to Fish Audio's requests itself; this plugin never sees it."
+    }
+  ],
+  "contributes": {
+    "voices": [
+      { "id": "fish-audio", "name": "Fish Audio", "speak": true, "listen": true, "handler": "voice" }
+    ]
+  }
+}
