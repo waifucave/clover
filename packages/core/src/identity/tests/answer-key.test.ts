@@ -13,7 +13,7 @@ import { AnswerKey, answerKeyHolder } from "../answer-key";
 import { DeviceKey } from "../device-key";
 
 describe("answer key", () => {
-  test("held by the Keychain on macOS, Hello or the TPM on Windows, and marked none elsewhere", () => {
+  test("held by the Keychain on macOS, the TPM on Windows (never Hello, which prompts), and marked none elsewhere", () => {
     expect(answerKeyHolder("macos", { appKeychain: true })).toBe("app-keychain");
     expect(answerKeyHolder("macos", {})).toBe("none");
     // Never Windows Hello, which prompts: the TPM, or nothing.
