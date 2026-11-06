@@ -43,3 +43,32 @@ jobs:
             packages/core/junit.xml
             packages/core/run.log
           retention-days: 3
+  scripts:
+    name: scripts on linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Scripts on Linux
+        run: |
+          start=$(date +%s)
+          bun test scripts --reporter=junit --reporter-outfile=junit.xml > run.log 2>&1 || echo "exit $?" >> run.log
+          echo "seconds $(( $(date +%s) - start ))" >> run.log
+          tail -5 run.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: scripts-linux
+          path: |
+            junit.xml
+            run.log
+          retention-days: 3
