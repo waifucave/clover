@@ -66,9 +66,11 @@ export function installerTargetSid(execPath: string = process.execPath): string 
 
 /** `powershell -EncodedCommand`: run a script without interpolating it into a `-Command` string.
  *  Paths with `$`, quotes or backticks stay inert (UTF-16LE base64, the only encoding `-EncodedCommand`
- *  takes), so a hostile or odd profile path can never break out of the command. */
+ *  takes), so a hostile or odd profile path can never break out of the command. Every script starts with
+ *  `$ProgressPreference='SilentlyContinue'`: first-use module notices ("Preparing modules…") arrive as
+ *  CLIXML on stderr, and `run()` merges the streams — silence keeps machine output parseable. */
 export function psEncodedArgs(script: string): readonly string[] {
-  const b64 = Buffer.from(script, "utf16le").toString("base64");
+  const b64 = Buffer.from(`$ProgressPreference='SilentlyContinue';${script}`, "utf16le").toString("base64");
   return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand", b64];
 }
 
