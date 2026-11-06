@@ -615,7 +615,7 @@ describe("the exclusive launch lease (spec one-session-at-a-time)", () => {
 describe("the minimal child env (should-fix)", () => {
   test("fixed PATH, no HOME or tokens", () => {
     const e = minimalChildEnv({ PATH: "/evil", HOME: "/h", GH_TOKEN: "x", SystemRoot: "C:\\Windows", USERPROFILE: "C:\\U", ProgramData: "C:\\P" } as NodeJS.ProcessEnv);
-    expect(e.PATH).toBe("C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem");
+    expect(e.PATH).toBe("C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0");
     expect(e.HOME).toBeUndefined();
     expect(e.GH_TOKEN).toBeUndefined();
     expect(e.SystemRoot).toBe("C:\\Windows");

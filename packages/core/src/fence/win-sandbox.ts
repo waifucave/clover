@@ -289,7 +289,7 @@ export function parseWhoamiSid(stdout: string): string | null {
  *  `ProgramData` stay because identity-adjacent lookups may read them; the fence never trusts them. */
 export function minimalChildEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const out: Record<string, string> = {
-    PATH: "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem",
+    PATH: "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
   };
   for (const k of ["SystemRoot", "windir", "SystemDrive", "TEMP", "TMP", "PATHEXT", "USERPROFILE", "ProgramData"]) {
     const v = env[k];
