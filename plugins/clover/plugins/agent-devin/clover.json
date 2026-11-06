@@ -1,0 +1,22 @@
+{
+  "manifest": 1,
+  "name": "Devin",
+  "description": "Devin's CLI (`devin acp`) as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "devin",
+        "name": "Devin",
+        "protocol": "acp",
+        "command": "devin",
+        "args": [
+          "acp"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

@@ -17,7 +17,11 @@ import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
-import { QUIRKS } from "../quirks";
+import { bundledBackends } from "../testing/bundled-backends";
+
+// The bundled backends' rows, as their plugins hold them.
+const ROWS = bundledBackends();
+const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
 import { agentMethods } from "../rpc";
 import { FAKE_AGENT_PATH, fakeLaunch } from "../testing/harness";
 import { agentToolDefs } from "../tools";

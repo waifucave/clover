@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "name": "DeepSeek Harness",
+  "description": "DeepSeek Harness (`dsh --profile acp`) as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "deepseek",
+        "name": "DeepSeek Harness",
+        "protocol": "acp",
+        "command": "dsh",
+        "args": [
+          "--profile",
+          "acp"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

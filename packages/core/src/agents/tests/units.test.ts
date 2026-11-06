@@ -19,7 +19,13 @@ import { FakeFence } from "../../contracts/fakes/fence";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { fakeLaunch } from "../testing/harness";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
-import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
+import { bundledBackends } from "../testing/bundled-backends";
+
+// The bundled backends' rows, as their plugins hold them.
+const ROWS = bundledBackends();
+const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
+const CURSOR_QUIRKS = QUIRKS["cursor"]!;
+const ANTIGRAVITY_QUIRKS = QUIRKS["antigravity"]!;
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { MAX_CHECKED_PATHS, agentPaths } from "../paths";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPaths } from "../transcript";
@@ -502,7 +508,7 @@ describe("the backends' rows", () => {
       for (const os of ["macos", "linux", "windows"] as const) expect(q.launch.command[os]?.length ?? 0).toBeGreaterThan(0);
       const m = new RegExp(q.launch.identity.versionPattern, "m").exec(lines[id]!);
       expect(m).not.toBeNull();
-      expect(QUIRK_SOURCES[id]).toBeDefined();
+      expect(ROWS[id]!.file.source.length).toBeGreaterThan(0);
       expect(q.mcp.transports).toContain("stdio");
       // No backend's sandbox is admitted yet: each asks for the user's OK until its gates pass.
       expect(admissionFor(ADMISSIONS, id, "macos", (m![1] ?? m![0]).trim()).status).not.toBe("protected");

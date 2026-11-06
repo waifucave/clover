@@ -1,0 +1,22 @@
+{
+  "manifest": 1,
+  "name": "Gemini CLI",
+  "description": "Gemini CLI (`gemini --acp`) as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "gemini",
+        "name": "Gemini CLI",
+        "protocol": "acp",
+        "command": "gemini",
+        "args": [
+          "--acp"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

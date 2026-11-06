@@ -1,0 +1,93 @@
+{
+  "notes": "Antigravity CLI (`agy acp`, missing from its top-level help), 1.4.12. S5 §2, edits 3, 4 and 8.",
+  "source": "measured (S5)",
+  "quirks": {
+    "launch": {
+      "identity": {
+        "versionArgs": [
+          "--version"
+        ],
+        "versionPattern": "^(\\d+\\.\\d+\\.\\d+)\\s*$",
+        "signer": "EQHXZ8M8AV"
+      },
+      "envAllow": [],
+      "envSet": {
+        "AGY_CLI_DISABLE_AUTO_UPDATE": "1"
+      },
+      "versions": ">=1.4.12 <1.5.0"
+    },
+    "capabilities": {
+      "snakeCaseDuplicates": true,
+      "httpMcpUnadvertised": true
+    },
+    "mcp": {
+      "transports": [
+        "stdio",
+        "http"
+      ],
+      "storesPlainText": true,
+      "passesEnvironment": true,
+      "instructionsReachPrompt": "unknown",
+      "systemPromptChannel": "_meta.antigravity.systemPrompt.append",
+      "tellsConversationId": true
+    },
+    "sessions": {
+      "load": {
+        "supported": true,
+        "replays": true
+      },
+      "resume": {
+        "supported": true,
+        "replays": true
+      },
+      "replayKeepsToolCallIds": true,
+      "listFiltersHonestly": false,
+      "close": true
+    },
+    "turns": {
+      "refusal": "ends-turn",
+      "cancelLeavesToolCallsOpen": true,
+      "reportsUsage": true,
+      "quotaErrorsAsText": false
+    },
+    "permissions": {
+      "optionKinds": [
+        "allow_once",
+        "reject_once"
+      ],
+      "neverAsks": [
+        "read-only MCP calls"
+      ],
+      "mcpNames": null
+    },
+    "config": {
+      "modelOption": "model",
+      "effortOption": "thought_level",
+      "effortInModel": false,
+      "choicePersists": false
+    },
+    "auth": {
+      "methods": [
+        {
+          "id": "oauth-personal",
+          "headless": false
+        },
+        {
+          "id": "oauth-business",
+          "headless": false
+        }
+      ],
+      "requiredError": {
+        "code": -32000
+      }
+    },
+    "progress": {
+      "countsChildProcesses": true
+    },
+    "placement": "local",
+    "marks": [
+      "stores-plain-text",
+      "passes-environment"
+    ]
+  }
+}

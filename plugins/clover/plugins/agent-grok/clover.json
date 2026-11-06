@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "name": "Grok",
+  "description": "Grok CLI (`grok agent stdio`) as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "grok",
+        "name": "Grok",
+        "protocol": "acp",
+        "command": "grok",
+        "args": [
+          "agent",
+          "stdio"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

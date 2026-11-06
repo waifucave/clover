@@ -46,6 +46,8 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
+  /** Its `agentBackends` entry's name, for Settings. */
+  name?: string;
   quirks: AgentQuirks;
   clock: Clock;
   /** Overrides the quirks' command (an `agentBackends` entry's `command` and `args`). */
@@ -71,7 +73,7 @@ export interface AcpBackendOptions {
   selections?: UserSelections;
   /** Makes the Windows job object for one agent; lane C's `AgentJob.create` by default. */
   makeJob?: () => AgentJobLike | null;
-  /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
+  /** The agent's read-only mode, for an agent that acts without asking (its quirks file's `readOnlyMode`). */
   readOnlyMode?: { option: string; values: readonly string[] };
 }
 
@@ -108,6 +110,7 @@ export function currentOs(): Os {
 export class AcpAgentBackend implements AgentBackend {
   readonly id: string;
   readonly pluginId: string;
+  readonly name: string | undefined;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
   readonly #selections: UserSelections;
@@ -115,6 +118,7 @@ export class AcpAgentBackend implements AgentBackend {
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
+    this.name = opts.name;
     this.quirks = opts.quirks;
     this.#opts = opts;
     this.#selections = opts.selections ?? new UserSelections();
