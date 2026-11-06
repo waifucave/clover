@@ -278,8 +278,14 @@ export class CloverLinkTransport implements LinkTransport {
 
   /** Whether a "not paired yet" refusal from `peer` still means "try again": just after this side added it. */
   inUnpairedGrace(peer: string): boolean {
+    return this.unpairedGraceLeft(peer) > 0;
+  }
+
+  /** How long that grace has left, in ms (0 when it's over). */
+  unpairedGraceLeft(peer: string): number {
     const d = this.#o.registry.get(peer);
-    return d !== undefined && d.revokedAt === undefined && this.#o.clock.now() - d.addedAt < this.#o.unpairedGraceMs;
+    if (d === undefined || d.revokedAt !== undefined) return 0;
+    return Math.max(0, this.#o.unpairedGraceMs - (this.#o.clock.now() - d.addedAt));
   }
 
   #revoked(peer: string): void {
@@ -348,20 +354,32 @@ class PeerLink implements Link {
     if (!this.#dialing && this.#t.opts.clock.monotonic() - this.#lastDialFailedAt < this.#t.opts.failFastMs) throw offline(this.peer);
     const dial = this.#dialing ?? this.#dial();
     // Whichever comes first: this side's dial, or the peer's own dial in (a peer that restarted dials its computers).
+    const clock = this.#t.opts.clock;
     return new Promise<Session>((resolve, reject) => {
       let settled = false;
+      let waitTimer: TimerHandle | undefined;
       const done = (fn: () => void) => {
         if (settled) return;
         settled = true;
         this.#bestWaiters.delete(onBest);
         signal?.removeEventListener("abort", onAbort);
+        if (waitTimer) clock.clearTimeout(waitTimer);
         fn();
       };
       const onBest = (s: Session) => done(() => resolve(s));
       const onAbort = () => done(() => reject(new ContractError("cancelled", "the dial was cancelled")));
       this.#bestWaiters.add(onBest);
       signal?.addEventListener("abort", onAbort, { once: true });
-      dial.then((s) => done(() => resolve(s)), (e: unknown) => done(() => (this.#best ? resolve(this.#best) : reject(e))));
+      dial.then((s) => done(() => resolve(s)), (e: unknown) => {
+        if (this.#best) return done(() => resolve(this.#best!));
+        // Just paired, or the peer just restarted: its sidecar may not know this device yet. The redial, or the peer's
+        // own dial in, gets through in a moment, so the caller waits for it, up to one dial's timeout.
+        if (isContractError(e) && e.detail?.unpaired === true && this.#t.inUnpairedGrace(this.peer)) {
+          if (!settled && !waitTimer) waitTimer = clock.setTimeout(() => done(() => reject(e)), Math.min(this.#t.opts.dialTimeoutMs, this.#t.unpairedGraceLeft(this.peer)));
+          return;
+        }
+        done(() => reject(e));
+      });
     });
   }
 
