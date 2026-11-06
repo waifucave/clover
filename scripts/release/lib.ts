@@ -1,6 +1,7 @@
 // Clover's release (plan §4 M-M2): the update channels and feeds, the artifacts each OS's release holds, and the
 // signing and notarization commands, as pure functions the release scripts (build.ts, publish.ts) and their tests
-// share. Nothing here runs a command or reads a secret; `writeServedCopies` is its one write, into a build's output.
+// share. Nothing here reads a secret; `writeServedCopies` and `writeBuildCommit` are its only writes, into a build's
+// output, and `writeBuildCommit` its only command (git).
 //
 // The feed: electron-updater's GitHub provider over this public repository's releases (electron-builder.yml's
 // `publish`), the same releases the Homebrew cask and winget download from. A release is tagged v<version> and holds
@@ -12,7 +13,8 @@
 // electron-updater reads `<channel>-mac.yml`, `<channel>.yml` (Windows), `<channel>-linux.yml` and
 // `<channel>-linux-arm64.yml` from the newest release its channel allows.
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const CHANNELS = ["latest", "beta"] as const;
@@ -47,6 +49,28 @@ export function installers(version: string, os: ReleaseOs): string[] {
     // electron-builder spells the architecture per format: the rpm's file says arm64 where the package says aarch64.
     case "linux-arm64": return [`clover_${version}_arm64.deb`, `clover-${version}.arm64.rpm`, `Clover-${version}-arm64.AppImage`];
   }
+}
+
+/** The file a build leaves saying which commit it was built from (publish.ts tags the release at it). */
+export function buildCommitFile(os: ReleaseOs): string {
+  return `BUILD-COMMIT-${os}.txt`;
+}
+
+/** The checkout's commit, or a refusal: a release build is of a commit, and a signed one of a clean checkout. */
+export function checkoutCommit(root: string, requireClean: boolean): string {
+  const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+  const commit = (head.stdout ?? "").trim();
+  if (head.status !== 0 || !/^[0-9a-f]{40}$/.test(commit)) throw new Error("a release builds from a git checkout");
+  if (requireClean) {
+    const dirty = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: root, encoding: "utf8" });
+    if (dirty.status !== 0 || (dirty.stdout ?? "").trim() !== "") throw new Error("a signed release builds from a clean checkout: commit or stash the changes first");
+  }
+  return commit;
+}
+
+/** Records the commit a build came from beside its files (`buildCommitFile`). */
+export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string): void {
+  writeFileSync(join(outDir, buildCommitFile(os)), `${commit}\n`);
 }
 
 /** Every file `os`'s release build must leave: its installers and its update files for each channel served. */
@@ -198,6 +222,34 @@ export function parseCodesignDisplay(out: string): CodeSignature {
     timestamped: /^Timestamp=/m.test(out),
     adhoc: flags.split(",").includes("adhoc") || /^Signature=adhoc$/m.test(out),
   };
+}
+
+/** The entitlement keys in `codesign -d --entitlements - --xml <path>`'s plist (none when it printed none). */
+export function parseEntitlementKeys(xml: string): string[] {
+  return [...xml.matchAll(/<key>([^<]+)<\/key>\s*<true\s*\/>/g)].map((m) => m[1]!).sort();
+}
+
+/** The keys an entitlements file grants. */
+export function entitlementsIn(plist: string): string[] {
+  return parseEntitlementKeys(plist);
+}
+
+/** One file's Authenticode check, from PowerShell's `Get-AuthenticodeSignature` (`<Status>|<signer subject>`). */
+export function authenticodeProblems(name: string, line: string, publisher: string): string[] {
+  const [status = "", subject = ""] = line.trim().split("|");
+  const problems: string[] = [];
+  if (status !== "Valid") problems.push(`${name}'s Authenticode signature is ${status || "missing"}, not Valid`);
+  const m = /(?:^|,\s*)CN=(?:"([^"]+)"|([^,]+))/.exec(subject);
+  const cn = m?.[1] ?? m?.[2]?.trim();
+  if (status === "Valid" && cn !== publisher) problems.push(`${name} is signed by ${cn ?? "(no CN)"}, not ${publisher}`);
+  return problems;
+}
+
+/** The PowerShell that reports a file's Authenticode status and signer, one line, for `authenticodeProblems`. */
+export function authenticodeCommand(path: string): string[] {
+  const literal = path.replace(/'/g, "''");
+  return ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+    `$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; Write-Output ($s.Status.ToString() + '|' + $(if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }))`];
 }
 
 /** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). */

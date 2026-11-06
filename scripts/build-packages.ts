@@ -21,7 +21,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, st
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
-import { channelArgs, parseChannel, writeServedCopies, type Channel } from "./release/lib";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -220,6 +220,9 @@ export function main(argv: readonly string[], root: string): number {
   rmSync(staged, { recursive: true, force: true });
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
+  // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).
+  const commit = checkoutCommit(root, false);
+  for (const a of args.arches) writeBuildCommit(outDir, a === "x64" ? "linux-x64" : "linux-arm64", commit);
   if (args.check) {
     const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
     for (const p of problems) console.error(`build-packages: ${p}`);
