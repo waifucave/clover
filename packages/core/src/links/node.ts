@@ -15,6 +15,7 @@ import { DeviceKey } from "../identity/device-key";
 import { retryRevokes, syncAccountDevices, type RevokeOptions } from "../devices/account-devices";
 import { startMainComputer, type MainComputerHandle, type MainComputerOptions } from "../lease/main";
 import { AccountLeaseScope, GroupLeaseScope, type LeaseScope } from "../lease/scope";
+import { SharedClock, type TimeSource } from "../clock/shared-clock";
 import { AccountDirectory } from "./account-directory";
 import { DirectoryDriver, type DirectoryDriverOptions } from "./directory-driver";
 import { FileDeviceRegistry, type FileDeviceRegistryOptions } from "../devices/registry";
@@ -47,6 +48,9 @@ export interface DeviceLinksOptions {
   services?: RevokeOptions["services"];
   /** The main computer (the lease, H-M2): its timings for tests, or false for none (a test of the links alone). */
   mainComputer?: false | Pick<MainComputerOptions, "timings" | "monotonic" | "watchSleep" | "userActive" | "log">;
+  /** Public time for the shared clock's reference (`SntpTimeSource` in the daemon); none by default, so tests never
+   *  reach the network. */
+  publicTime?: TimeSource;
   /** How the directories are driven: false for none (tests that drive them by hand). */
   driver?: false | Pick<DirectoryDriverOptions, "republishMs" | "backoffMs" | "log">;
   /** The transport's timings, for tests. */
@@ -65,6 +69,8 @@ export interface DeviceLinks {
   driver?: DirectoryDriver;
   /** The main computer: the lease, the main choice and the coordinator (absent when `mainComputer: false`). */
   main?: MainComputerHandle;
+  /** The shared clock (§6.4): the lease's holder is the reference. What every stamp a message carries reads. */
+  clock: SharedClock;
   /** Publishes this device's addresses to its pairs and the account, and sends pending registrations and revocations
    *  (the driver calls it at start, on a timer and on network changes). */
   refresh(): Promise<void>;
@@ -222,6 +228,20 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     });
   }
 
+  const sharedClock = new SharedClock({
+    self: key.id, base: o.clock, transport, reference: () => main?.lease.state().holder ?? null,
+    ...(o.publicTime ? { publicTime: o.publicTime } : {}),
+  });
+  let lastHolder: string | null | undefined;
+  if (main) {
+    offs.push(main.lease.watch((st) => {
+      if (st.holder === lastHolder) return;
+      lastHolder = st.holder;
+      sharedClock.referenceChanged();
+    }));
+  }
+  sharedClock.start();
+
   const revokeOptions = (): RevokeOptions => ({
     registry, store: o.store, ...(o.handshake ? { handshake: o.handshake } : {}), ...(o.account ? { account: o.account } : {}),
     ...(o.services ? { services: o.services } : {}),
@@ -257,7 +277,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   };
   return {
     key, boxKey, registry, wire, transport, pairing, ...(directory ? { directory } : {}),
-    ...(accountDirectory ? { accountDirectory } : {}), ...(driver ? { driver } : {}), ...(main ? { main } : {}),
+    ...(accountDirectory ? { accountDirectory } : {}), ...(driver ? { driver } : {}), ...(main ? { main } : {}), clock: sharedClock,
     async refresh() {
       if (driver) await driver.refresh();
       else {
@@ -270,6 +290,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     async close() {
       driver?.close();
       main?.close();
+      sharedClock.close();
       for (const off of offs.splice(0)) off();
       await pairing.close();
       await transport.close();
