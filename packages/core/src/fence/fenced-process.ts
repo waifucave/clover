@@ -10,6 +10,7 @@ import { closeSync, existsSync, mkdtempSync, openSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
+import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
 import { macFenceProfile } from "./macos-profile";
@@ -45,8 +46,9 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       available: true,
       run: (r) => {
-        const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
-        const profile = macFenceProfile({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller });
+        const ctx = fenceContextFor(r.who.caller);
+        const policy = o.fence.policy(ctx);
+        const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
         return runCommand(r, { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
       },
     };
@@ -73,8 +75,8 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         writeFileSync(file, filter, { mode: 0o600 });
         const fd = openSync(file, "r");
         try {
-          const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
-          const plan = bwrapPlan({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
+          const ctx = fenceContextFor(r.who.caller);
+          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller: callerPlaces(o.fence.cloverHome, os, ctx) });
           const result = await runCommand(r, { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
           const note = heldFolderNote(result.stderr, plan.held);

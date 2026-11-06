@@ -71,8 +71,11 @@ describe("one tree across computers", () => {
     await laptop.node.registry.setLevel("Laptop1", "automatic", { via: "terminal" });
     await cluster.join();
     expect(studio.node.tree.resolve("bots/alpha/memory/MEMORY.md")).toMatchObject({ computer: "Laptop1", area: "bot", bot: "alpha" });
-    await studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT });
-    expect(readFileSync(join(laptop.cloverHome, "bots/alpha/memory/MEMORY.md"), "utf8")).toBe("# Memory\n");
+    // A bot's memory is its own sessions' alone (the owner's decision, #197): another computer's call is a peer's, so the
+    // holder refuses it there. The rest of the bot's folder is the Clover home's too, default-deny: fenced as well.
+    expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT }))).toBe("fenced");
+    expect(await code(studio.node.tree.write("bots/alpha/agents/a_1.md", { encoding: "utf8", text: "# Agent\n" }, { as: BOT }))).toBe("fenced");
+    expect(existsSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"))).toBe(false);
     expect(await code(studio.node.tree.read("bots/luna/x", { as: BOT }))).toBe("not_found");
   });
 });
@@ -115,7 +118,7 @@ describe("the holder's rules (review N2, S6 edits 5 and 6)", () => {
     const dirLink = process.platform === "win32" ? "junction" : "dir";
     symlinkSync(join(laptop.cloverHome, "settings"), join(laptop.home, "d"), dirLink);
     expect(await code(tree.write("home/Laptop1/d/settings.json", { encoding: "utf8", text: "{}" }, { as: BOT }))).toBe("fenced");
-    expect(await code(tree.list("home/Laptop1/d", { as: BOT }))).toBe("ok"); // settings are write-fenced, not hidden
+    expect(await code(tree.list("home/Laptop1/d", { as: BOT }))).toBe("fenced"); // the Clover home is default-deny, reads too
     // A link that leaves the home isn't followed, and its target isn't told.
     const outside = mkdtempSync(join(tmpdir(), "lane-j-outside-"));
     writeFileSync(join(outside, "hosts"), "secret");

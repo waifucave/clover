@@ -14,20 +14,25 @@
 //   plugin-oks             plugins-state/oks/; installed-plugins plugins-state/installed.json;
 //                          adult-confirmation plugins-state/adult.json (B's registry records)
 //   plugin-data            plugin-data/
+//   plugins                plugins/ (a bot's plugin comes in only through `plugin.install`'s OK card)
+//   transcripts            sessions/ (sessions' records) and transcripts/ (every session's event log)
+//   usage                  usage/ (the usage ledger)
+//   sessions-runtime       sessions-runtime/ (the bot driver's state per session)
 //   run-folder             run/ (read-denied)
 //   secrets-file, key-file secrets.enc, secrets.key, on Windows and Linux only (read-denied); macOS's Keychain
 //                          holds them
 //   dev-folders            wherever the user keeps them
 //
-// Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review; `plugins` by the
-// controller's ruling on B's registry review; `sessions-runtime` from A-M3's review), so not yet in
-// `fencedSet()`: `pendingFenced` below.
+// The login-start places (under the user's home), the browser profiles (under userData), the OK'd agent installs and
+// the bot-memory items (per bot) are laid out in fence.ts, which holds the home, userData and options. Waiting on
+// kinds in B's contract, so not yet in `fencedSet()`: `pendingFenced` below.
 import { readdirSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FencedKind } from "../contracts/fence";
+import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
 
-export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
+export type LaidOutKind = Exclude<FencedKind, "dev-folders" | "bot-memory" | "login-start" | "browser-profiles" | "agent-installs">;
 
 /** Windows joins with backslashes, except under a home written POSIX-style (`/Users/me/.clover`, as B's conformance
  *  suite writes every OS's paths), so the items come back in the form the home was given. */
@@ -51,46 +56,44 @@ export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, str
     "installed-plugins": [h("plugins-state", "installed.json")],
     "adult-confirmation": [h("plugins-state", "adult.json")],
     "plugin-data": [h("plugin-data")],
+    plugins: [h("plugins")],
+    transcripts: [h("sessions"), h("transcripts")],
+    usage: [h("usage")],
+    "sessions-runtime": [h("sessions-runtime")],
     "run-folder": [h("run")],
     "secrets-file": offMac(h("secrets.enc")),
     "key-file": offMac(h("secrets.key")),
   };
 }
 
-/** The items of the fenced set whose kinds B's contract doesn't have yet (spec §9.1; D-M2, L-M1, S2), by the kind
- *  asked for. `userData` is the app's own folder (E's), where the Clover Browser keeps its partitions. */
+/** The items of the fenced set whose kinds B's contract doesn't have yet (spec §9.1), by the kind asked for. */
 export function pendingFenced(o: {
-  home: string; cloverHome: string; os: Os; userData?: string;
-  /** The install folders of the coding agents the user has OK'd to run unsandboxed (lane K, keyed to each program's
-   *  real path and hash): the resolved program's folder, and npm's global package folder for its package. Write-denied
-   *  to sessions and agents, so none can swap in a new copy of itself or of another agent. */
-  agentInstalls?: readonly string[];
+  home: string; cloverHome: string; os: Os;
 }): Record<string, string[]> {
-  // `plugins`: the installed plugins folder (spec §2), write-denied to sessions, agents and plugin code, reads
-  // allowed. A bot's plugin comes in only through `plugin.install`'s OK card, and is made in a dev folder, which the
-  // fence follows by its real path (`followDevFolders`).
-  // `sessions-runtime`: the bot driver's state per session (A-M3), which a turn resumes from.
+  // `session-transcripts`: the runtime's transcript store (`storeProjectsDir`: `<home>/projects`, and
+  // `<home>/sdk/projects` on a build whose router applies run homes). A bot's prompt carries its `MEMORY.md`, so its
+  // transcript holds the memory: read- and write-denied to every tool runner, bots' own sessions included. The home
+  // default-deny covers the store too; this names it for its refusal.
+  // Windows: the per-user Git for Windows, whose bash runs hooks: a fenced caller can't plant one there.
   const p = pathFor(o.os, o.cloverHome);
   const u = (...parts: string[]) => p.join(o.home, ...parts);
-  const loginStart: Record<Os, string[]> = {
-    macos: [u("Library", "LaunchAgents"), u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
-      u(".zshrc"), u(".zprofile"), u(".zshenv"), u(".zlogin"), u(".bashrc"), u(".bash_profile"), u(".profile")],
-    linux: [u(".config", "systemd", "user"), u(".config", "autostart"), u(".bashrc"), u(".bash_profile"), u(".profile"),
-      u(".zshrc"), u(".zprofile"), u(".zshenv"), u(".config", "environment.d")],
-    windows: [u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
-      u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"), u(".bashrc"), u(".bash_profile"), u(".profile"), u(".minttyrc")],
-  };
   return {
-    transcripts: [p.join(o.cloverHome, "transcripts")], // `transcriptsDir(home)`, joined in this OS's form
-    usage: [p.join(o.cloverHome, "usage")],
-    "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
-    "login-start": loginStart[o.os],
-    "agent-installs": [...(o.agentInstalls ?? [])],
-    plugins: [p.join(o.cloverHome, "plugins")],
+    // The store's two spellings: `<home>/sdk/projects` is the store on a run-home build, and on a migrated home
+    // `<home>/projects` is its compatibility link; on router 0.0.11 `<home>/projects` is the store itself.
+    "session-transcripts": [p.join(o.cloverHome, "projects"), ...(linkedRouterSupportsRunHome() ? [p.join(o.cloverHome, "sdk", "projects")] : [])],
     // Windows: the per-user Git for Windows, whose bash runs hooks (#205's S4): a fenced caller can't plant one there.
     "hook-shell": o.os === "windows" ? [u("AppData", "Local", "Programs", "Git")] : [],
-    "sessions-runtime": [p.join(o.cloverHome, "sessions-runtime")],
   };
+}
+
+/** The login item's files (B's contract `login-start`): macOS's LaunchAgents plist and its parked copy, Linux's
+ *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */
+export function loginStartPaths(home: string, cloverHome: string, os: Os): string[] {
+  const p = pathFor(os, home);
+  const u = (...parts: string[]) => p.join(home, ...parts);
+  if (os === "macos") return [u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), p.join(cloverHome, "login")];
+  if (os === "linux") return [u(".config", "systemd", "user", "clover-core.service")];
+  return [];
 }
 
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */

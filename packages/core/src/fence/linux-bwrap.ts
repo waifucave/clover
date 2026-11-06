@@ -1,14 +1,17 @@
 // Linux: the fence as a bubblewrap sandbox, for a command run under it (spec §9.1). Built from the fence's
 // `SandboxPolicy` at each run. A mount can't deny a path that isn't there yet, so the shape differs from macOS's:
 //   * the whole tree read-only, then the writable roots (the home, temp) writable;
-//   * the Clover home, every folder that holds a fenced item inside it, and the nearest present folder of a fenced
-//     item that isn't there yet (a `.zshrc` never made: the home itself, then), bound read-only again, and only their
-//     children that are neither fenced nor such a folder bound back writable: a fenced file that doesn't exist yet
-//     can't be made, and nothing new appears where Clover names things;
-//   * every folder between a writable root and a fenced item outside those is bound onto itself, so it's a mount
-//     point: renaming or removing it fails (EBUSY), and the item can't be moved out;
+//   * the Clover home itself is a tmpfs view holding only the runner's own folders (`outputs/<session>`,
+//     `scratch/<bot>`, `routines/<bot>`, its bot's folder read-only with its `memory` read-write, and a plugin's own
+//     `plugin-data/<id>`), each bound over it with its access: Landlock can't nest an allow inside a deny, and neither
+//     can a mount, so the home deny is the absence of everything else (B's contract, `policyAllows`'s order);
+//   * every fenced item outside the Clover home (the login-start places, development folders, OK'd agent installs, the
+//     browser's partitions), and every folder that holds one inside a writable root, bound read-only again, and only
+//     their children that are neither fenced nor such a folder bound back writable: a fenced file that doesn't exist
+//     yet can't be made, and nothing new appears where Clover names things;
+//   * every folder between a writable root and an outside fenced item is bound onto itself, so it's a mount point:
+//     renaming or removing it fails (EBUSY), and the item can't be moved out;
 //   * a hard link across mounts fails (EXDEV), so none can be made from a fenced file;
-//   * read-denied items hidden (an empty tmpfs, or /dev/null for a file);
 //   * no network (`--unshare-net`, abstract sockets included), and no Unix socket on the disk either (a network
 //     namespace doesn't cover them: a seccomp filter, `unixSocketFilter`, makes `socket(AF_UNIX)` and io_uring fail;
 //     `socketpair` stays, for pipes between its own processes), its own pid namespace (no other process's /proc), a new
@@ -16,7 +19,6 @@
 import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
-import { foldName } from "./fold";
 import type { CallerPlaces } from "./per-caller";
 
 export interface BwrapInput {
@@ -29,7 +31,7 @@ export interface BwrapInput {
   readonly fs?: { kind(path: string): "dir" | "file" | "other" | null; list(dir: string): string[] };
   /** The fd (in the child) bwrap reads the seccomp filter from. */
   readonly seccompFd?: number;
-  /** The runner's caller (`callerPlaces`): bots' memory and the bot driver's state, after the denies. */
+  /** The runner's caller: its own folders are the only ways back into the Clover home's view. */
   readonly caller?: CallerPlaces;
 }
 
@@ -56,35 +58,32 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   const fs = input.fs ?? realFs;
   const { policy, cloverHome } = input;
   const writable = policy.allowWrite.filter((w) => fs.kind(w) === "dir");
-  const fenced = new Set(policy.denyWrite);
+  // Only the fenced items outside the Clover home take the read-only shape: everything under the home is hidden by
+  // its tmpfs view below. The home itself is in the deny lists (the default-deny); it is the view, not an item.
+  const fenced = new Set([...policy.denyWrite].filter((d) => !inside(d, cloverHome)));
   const a: string[] = ["--die-with-parent", "--new-session", "--unshare-net", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
     "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
   for (const w of writable) a.push("--bind", w, w);
 
-  // Where Clover names things: the Clover home and each folder holding a fenced item inside it, top-down.
+  // Where Clover names things outside its home: the nearest folder that is there takes the naming folders' shape
+  // when a fenced item isn't there yet (a `.zshrc` a bash user never made, the login unit on a fresh home):
+  // read-only, its present children writable, nothing new in it (fails closed: no new top-level names there for the
+  // command). `held` names each such folder for the refusal's explanation.
   const naming = new Set<string>();
-  if (fs.kind(cloverHome) === "dir") naming.add(cloverHome);
   for (const d of fenced) {
-    if (!inside(d, cloverHome) || d === cloverHome) continue;
-    for (let p = dirname(d); inside(p, cloverHome); p = dirname(p)) { naming.add(p); if (p === cloverHome) break; }
-  }
-  // A fenced item that isn't there yet (a `.zshrc` a bash user never made, `~/.config/autostart`) can't be kept from
-  // being made by a mount on itself, so the nearest folder that is there takes the naming folders' shape: read-only,
-  // its present children writable, nothing new in it (fails closed: no new top-level names there for the command).
-  for (const d of fenced) {
-    if (fs.kind(d) !== null) continue;
+    if (inside(d, cloverHome) || fs.kind(d) !== null) continue;
     let p = dirname(d);
     while (fs.kind(p) === null && p !== dirname(p)) p = dirname(p);
     if (writable.some((w) => inside(p, w))) {
-      if (!naming.has(p) && !inside(p, cloverHome)) held.push({ folder: p, because: d });
+      if (!naming.has(p)) held.push({ folder: p, because: d });
       naming.add(p);
     }
   }
-  // Folders between a writable root and a fenced item (or the Clover home), outside the naming set: mount points.
+  // Folders between a writable root and an outside fenced item: mount points, so it can't be renamed out.
   const holders = new Set<string>();
-  for (const d of [...fenced, cloverHome]) {
+  for (const d of fenced) {
     for (let p = dirname(d); p !== dirname(p); p = dirname(p)) {
-      if (naming.has(p)) continue;
+      if (naming.has(p) || inside(p, cloverHome)) continue;
       if (!writable.some((w) => inside(p, w))) break;
       holders.add(p);
     }
@@ -94,45 +93,43 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     if (fs.kind(n) !== "dir") continue;
     a.push("--ro-bind", n, n);
     for (const name of fs.list(n).sort()) {
-      const c = join(n, name);
-      if (fenced.has(c) || naming.has(c) || [...fenced].some((d) => inside(d, c))) continue;
-      const k = fs.kind(c);
-      if (k === "dir" || k === "file") a.push("--bind", c, c);
+      const c2 = join(n, name);
+      if (fenced.has(c2) || naming.has(c2) || [...fenced].some((d) => inside(d, c2))) continue;
+      const k = fs.kind(c2);
+      if (k === "dir" || k === "file") a.push("--bind", c2, c2);
     }
   }
   // Fenced items elsewhere (development folders): read-only where they are.
-  for (const d of [...fenced].sort()) if (!inside(d, cloverHome) && fs.kind(d) !== null) a.push("--ro-bind", d, d);
-  // Read-denied items, hidden.
+  for (const d of [...fenced].sort()) if (fs.kind(d) !== null) a.push("--ro-bind", d, d);
+  // Read-denied items outside the home, hidden (an empty tmpfs, or /dev/null for a file).
   for (const r of [...policy.denyRead].sort()) {
+    if (inside(r, cloverHome)) continue;
     const k = fs.kind(r);
     if (k === "dir") a.push("--tmpfs", r, "--remount-ro", r);
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
   }
-  // The caller's rules (`per-caller.ts`): `bots/` becomes an empty read-only tmpfs holding only what this caller may
-  // see, each bot folder's entries but `memory` read-only, and the owner's own memory writable (a mount point, so
-  // it can't be removed or moved); a bot made while the command runs isn't in it at all. The bot driver's state
-  // likewise: hidden, but the caller's own state file, read-only.
-  const c = input.caller;
-  if (c) {
-    if (fs.kind(c.bots) === "dir") {
-      a.push("--tmpfs", c.bots);
-      for (const x of fs.list(c.bots).sort()) {
-        const folder = join(c.bots, x);
-        if (fs.kind(folder) !== "dir") continue;
-        for (const e of fs.list(folder).sort()) {
-          const entry = join(folder, e);
-          if (foldName(e) === "memory") { if (c.ownMemory !== null && entry === c.ownMemory && fs.kind(entry) === "dir") a.push("--bind", entry, entry); continue; }
-          const k = fs.kind(entry);
-          if (k === "dir" || k === "file") a.push("--ro-bind", entry, entry);
-        }
-      }
-      a.push("--remount-ro", c.bots);
+
+  // The Clover home as a tmpfs view holding only the caller's own folders (the home default-deny, for runners).
+  // Without a caller every own folder is absent: the view holds nothing.
+  if (fs.kind(cloverHome) === "dir") {
+    const c = input.caller;
+    a.push("--tmpfs", cloverHome);
+    // Shallow first: the top folders exist so a runner can list its own view, and each folder on the way to a
+    // bind is made, so no bind needs its destination to exist.
+    const ro: [string | null | undefined] = [c?.ownBot];
+    const rw = [c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory];
+    const dirs = new Set(["bots", "outputs", "scratch", "routines", "plugin-data"].map((t) => `${cloverHome}/${t}`));
+    for (const p of [...ro, ...rw].filter((p): p is string => typeof p === "string")) {
+      for (let d = dirname(p); d !== cloverHome && inside(d, cloverHome); d = dirname(d)) dirs.add(d);
     }
-    if (fs.kind(c.runtime) === "dir") {
-      a.push("--tmpfs", c.runtime);
-      if (c.ownRuntime !== null && fs.kind(c.ownRuntime) === "file") a.push("--ro-bind", c.ownRuntime, c.ownRuntime);
-      a.push("--remount-ro", c.runtime);
+    for (const d of [...dirs].sort((x, y) => x.length - y.length)) a.push("--dir", d);
+    if (c?.ownBot !== null && c?.ownBot !== undefined && fs.kind(c.ownBot) === "dir") a.push("--ro-bind", c.ownBot, c.ownBot);
+    for (const p of rw) {
+      if (p === null || p === undefined) continue;
+      const k = fs.kind(p);
+      if (k === "dir" || k === "file") a.push("--bind", p, p);
     }
+    a.push("--remount-ro", cloverHome);
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
   if (policy.closedDoors.length > 0) {
