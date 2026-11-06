@@ -590,6 +590,11 @@ export class BotSessionDriver implements SessionDriver {
     }
     for (const e of batch.broadcast) this.#emit(e as never);
     for (const e of batch.persist) this.#emit(e as never);
+    // A turn the runtime ran on its own (a background task's notification), with no host turn: its holds on the
+    // computers' screens go at its end too.
+    if (main && msg.type === "result" && (t === undefined || t.ended)) {
+      void Promise.resolve().then(() => this.#d.holds?.releaseSession(this.#ctx.sessionId)).catch((err: unknown) => this.#log(`bot driver ${this.#ctx.sessionId}: releasing holds failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
     if (t === undefined || t.ended) return;
     const folded = hostInputFoldedCount(msg);
     if (folded !== undefined) {

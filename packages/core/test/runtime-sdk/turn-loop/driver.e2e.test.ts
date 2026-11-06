@@ -239,7 +239,8 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const { frames, query } = tappedQuery();
     // The pause stops background tasks (the next test); here the task is left to finish while the pause holds, as a
     // task the stop missed by a moment would (or one `Query.stopTask` stopped, which also sends a notification).
-    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, pausePollMs: 3_600_000 }));
+    const released: number[] = [];
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, pausePollMs: 3_600_000, holds: { releaseSession: () => { released.push(Date.now()); return 0; } } }));
     const resultsAfter = (t: number) => frames.filter((f) => f.msg.type === "result" && f.at > t);
     try {
       const end = await driver.turn(user('CALL Bash {"command":"sleep 2; echo finished","run_in_background":true,"description":"wait"}'), control());
@@ -255,6 +256,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       for (let i = 0; i < 150 && resultsAfter(resumedAt).length === 0; i++) await Bun.sleep(100);
       expect(resultsAfter(resumedAt)).toHaveLength(1);
       expect(frames.some((f) => f.at > pausedAt && f.at < resumedAt && f.msg.type === "assistant")).toBe(false);
+      // The turn the runtime ran on its own let go of its holds at its end, as a host turn does.
+      for (let i = 0; i < 20 && !released.some((at) => at >= resumedAt); i++) await Bun.sleep(50);
+      expect(released.some((at) => at >= resumedAt)).toBe(true);
     } finally {
       await driver.stop();
     }
