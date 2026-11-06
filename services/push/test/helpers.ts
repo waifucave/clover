@@ -3,6 +3,8 @@
 import { env, exports } from "cloudflare:workers";
 
 import { b64u, utf8 } from "../../shared/encoding";
+import type { StepLimiter } from "../../shared/testing/step-limiter";
+import push from "../src/index";
 import type { FakeLogEntry } from "./fake-log";
 
 export const ORIGIN = "https://push.test";
@@ -51,19 +53,24 @@ export function apnsToken(prefix = "a1"): string {
   return prefix + [...random].map((b) => b.toString(16).padStart(2, "0")).join("") + "00";
 }
 
-/**
- * Rate-limit windows are aligned to the wall clock's minutes (miniflare, like Cloudflare): a test that counts
- * toward a limit starts its burst well clear of the next minute, so the window cannot reset half-way.
- */
-export async function clearOfMinuteBoundary(needMs = 12_000): Promise<void> {
-  const left = 60_000 - (Date.now() % 60_000);
-  if (left < needMs) await new Promise((r) => setTimeout(r, left + 50));
-}
-
 export async function fakeLog(): Promise<FakeLogEntry[]> {
   return (await (await fetch("https://fake.test/__log")).json()) as FakeLogEntry[];
 }
 
 export async function resetFakes(): Promise<void> {
   await fetch("https://fake.test/__reset", { method: "POST" });
+}
+
+/**
+ * The Worker with its rate limits replaced by StepLimiters (shared/testing/step-limiter.ts), so a test of a limit
+ * doesn't depend on the wall clock's minutes or the runner's speed. Everything else is the real binding.
+ */
+export function callWith(limiters: Partial<Record<"NOTIFY_RATE" | "API_RATE", StepLimiter>>) {
+  const limited = { ...env, ...limiters } as typeof env;
+  return (token: string | null, method: string, path: string, body?: unknown): Promise<Response> => {
+    const headers: Record<string, string> = {};
+    if (token) headers.authorization = `Bearer ${token}`;
+    if (body !== undefined) headers["content-type"] = "application/json";
+    return push.fetch(new Request(`${ORIGIN}${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }), limited);
+  };
 }

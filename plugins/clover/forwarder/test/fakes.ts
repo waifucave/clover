@@ -221,3 +221,15 @@ export class FakeClock implements Clock {
 export async function settle(): Promise<void> {
   for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+/**
+ * Waits on the real condition, for work whose length a fixed number of turns can't bound (a Blob's arrayBuffer(),
+ * WebCrypto under load); fails after `timeoutMs` of wall time.
+ */
+export async function until(condition: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting for the condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
