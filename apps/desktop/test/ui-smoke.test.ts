@@ -265,6 +265,19 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expectQuiet(r);
   }, 120_000);
 
+  test("a window that stays unresponsive while every document in it answers restarts the app into safe mode after the longer window", () => {
+    // The GPU or compositor case: the window is said to be unresponsive (as Chromium says it), each document answers
+    // its ping, and the longer window (60 s, shortened here) runs out. The relaunch itself is left out of the run.
+    const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_UNRESPONSIVE: "1", CLOVER_SMOKE_COMPOSITOR_MS: "1500", CLOVER_SMOKE_SETTLE_MS: "5000", CLOVER_SMOKE_NO_RESTART: "1" });
+    expectShell(r);
+    expect(r.all).toMatch(/went unresponsive; not answering: none/);
+    expect(r.all).toContain("every document answers; it has 2 s to come back");
+    expect(r.all).toContain("stayed unresponsive: restarting in safe mode");
+    expect(r.all).not.toContain("stopping a hung layer's process");
+    expectBothStopped(r);
+    expectQuiet(r);
+  }, 120_000);
+
   test("S9's DNS-prefetch probe: a layer looks up no host name; the same document without its allowlist does", () => {
     const guarded = "fixture-dns-probe.example";
     const control = "fixture-dns-control-probe.example";

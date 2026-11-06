@@ -1,7 +1,7 @@
 // The host's brokers (S9 §3): menus as data placed by the core, drags as grants between parts, and where a surface
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
-import { HangWatch, hangVerdict } from "../src/main/hang";
+import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
 import { MENU_INPUT_WINDOW_MS, MenuGate, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
@@ -177,12 +177,42 @@ describe("a hang restarts the app into safe mode (ruling R9)", () => {
   });
 });
 
+describe("a window that stays unresponsive while its documents answer (the GPU or compositor case)", () => {
+  test("it gets the longer window; a root that stops answering meanwhile brings the restart sooner, never later", () => {
+    const timers = new Map<number, { fn: () => void; ms: number }>();
+    let n = 0;
+    const fake = { set: ((fn: () => void, ms: number) => { timers.set(++n, { fn, ms }); return n; }) as unknown as typeof setTimeout, clear: ((id: number) => timers.delete(id)) as unknown as typeof clearTimeout };
+    const restarted: number[] = [];
+    const w = new HangWatch((id) => restarted.push(id), fake);
+    w.unresponsive(1, HANG_COMPOSITOR_MS, 0);
+    expect([...timers.values()].map((t) => t.ms)).toEqual([HANG_COMPOSITOR_MS]);
+    // The root then stops answering: the sooner end wins.
+    w.unresponsive(1, HANG_RESTART_MS, 1_000);
+    expect([...timers.values()].map((t) => t.ms)).toEqual([HANG_RESTART_MS]);
+    // A later "longer" never pushes it back.
+    w.unresponsive(1, HANG_COMPOSITOR_MS, 2_000);
+    expect([...timers.values()].map((t) => t.ms)).toEqual([HANG_RESTART_MS]);
+    // Coming back in time cancels it; staying away restarts the app, once.
+    w.responsive(1);
+    expect(timers.size).toBe(0);
+    w.unresponsive(1, HANG_COMPOSITOR_MS, 3_000);
+    for (const t of [...timers.values()]) t.fn();
+    expect(restarted).toEqual([1]);
+  });
+
+  test("every document answering means the longer window, not a restart now; a silent root means the short one", () => {
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 20, answered: true }], 1)).toEqual({ restart: false, later: true, kill: [] });
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: false }], 1)).toEqual({ restart: true, later: false, kill: [] });
+    expect(HANG_COMPOSITOR_MS).toBe(60_000);
+  });
+});
+
 describe("which document hung (the E-M1 check's should-fix)", () => {
   test("a plugin layer that doesn't answer has its process stopped; only a silent core root restarts the app", () => {
-    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 20, answered: true }, { kind: "layer", osPid: 30, answered: false }, { kind: "layer", osPid: 30, answered: false }], 1)).toEqual({ restart: false, kill: [30] });
-    expect(hangVerdict([{ kind: "root", osPid: 10, answered: false }, { kind: "layer", osPid: 20, answered: true }], 1)).toEqual({ restart: true, kill: [] });
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 20, answered: true }, { kind: "layer", osPid: 30, answered: false }, { kind: "layer", osPid: 30, answered: false }], 1)).toEqual({ restart: false, later: true, kill: [30] });
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: false }, { kind: "layer", osPid: 20, answered: true }], 1)).toEqual({ restart: true, later: false, kill: [] });
     // Never the app's own process, nor one that holds a core root, nor a frame with no process known.
-    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 10, answered: false }, { kind: "layer", osPid: 1, answered: false }, { kind: "layer", answered: false }], 1)).toEqual({ restart: false, kill: [] });
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 10, answered: false }, { kind: "layer", osPid: 1, answered: false }, { kind: "layer", answered: false }], 1)).toEqual({ restart: false, later: true, kill: [] });
   });
 });
 

@@ -16,7 +16,7 @@ import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, se
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
-import { HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
+import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
@@ -580,9 +580,14 @@ const menus = new MenuGate();
 /** The person's mouse-downs, by window (the view-frame gate). */
 const pointers = new PointerLog();
 
-/** Ruling R9: a core root that stays unresponsive restarts the app into safe mode. */
+/** Ruling R9: a core root that stays unresponsive restarts the app into safe mode; so does a window that stays
+ *  unresponsive while its documents answer, after a longer window (the smoke run's hang test may shorten it). */
 const hangs = new HangWatch((windowId) => {
   log(`window ${windowId} stayed unresponsive: restarting in safe mode`);
+  if (args.smoke && process.env.CLOVER_SMOKE_NO_RESTART === "1") {
+    log("smoke: the restart is left out");
+    return;
+  }
   void restart(true);
 });
 
@@ -614,7 +619,16 @@ async function diagnoseHang(win: BrowserWindow): Promise<void> {
     }
   }
   if (verdict.restart) hangs.unresponsive(win.id);
+  // Every document answers, yet the window doesn't (the GPU process or the compositor, or a hang killing a layer
+  // didn't end): it gets the longer window to come back.
+  else if (verdict.later) {
+    log(`window ${win.id}: every document answers; it has ${Math.round(compositorMs / 1000)} s to come back`);
+    hangs.unresponsive(win.id, compositorMs);
+  }
 }
+
+/** The longer window; the smoke run's test of it shortens it (unpackaged runs only). */
+const compositorMs = args.smoke && !app.isPackaged && Number(process.env.CLOVER_SMOKE_COMPOSITOR_MS ?? "0") > 0 ? Number(process.env.CLOVER_SMOKE_COMPOSITOR_MS) : HANG_COMPOSITOR_MS;
 
 /** Where each native view goes (ruling R8: the place the person used last), as the Clover Browser's `setView`. */
 const views = new ViewFrames((name, target) => {
@@ -822,6 +836,12 @@ async function smoke(): Promise<void> {
     webFacts = await probeWeb();
     const texts = [...[...frames, ...surfaceFacts.flatMap((x) => x.frames)].map((f) => f.text), ...webFacts.map((w) => w.text)];
     const drawn = shell?.shell === true && shell.composer && others.size >= wanted && layers.every((f) => f.rendered);
+    // The compositor case (`CLOVER_SMOKE_UNRESPONSIVE=1`): the main window is said to be unresponsive while every
+    // document in it answers.
+    if (drawn && !hung && process.env.CLOVER_SMOKE_UNRESPONSIVE === "1") {
+      hung = true;
+      win.webContents.emit("unresponsive");
+    }
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w)))) break;
     // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn, the surface's layer is made to hang
