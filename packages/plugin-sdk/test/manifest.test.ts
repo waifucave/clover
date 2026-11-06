@@ -363,6 +363,12 @@ describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun proce
     expect(issues({ settings, ...model("https://user:pw@api.example.com/v1") })).toEqual([at]);
     expect(issues({ settings, ...declared, ...model("${setting:region}") }).includes(at)).toBe(true);
     expect(issues({ settings, capabilities: ["network:${setting:region}.github.io"], ...model("https://${setting:region}.github.io/v1") })).toContain(at);
+    // #187's check 2: the refused model leaves the cleaned manifest; a good one stays.
+    const kept = (over: Record<string, unknown>) => validateManifest({ manifest: 1, id: "bedrock", name: "Bedrock", settings, ...over }, { folderName: "bedrock" }).manifest?.contributes?.models ?? [];
+    expect(kept(model("https://${setting:region}.example.com/v1"))).toEqual([]);
+    expect(kept({ ...model("https://user@api.example.com/v1") })).toEqual([]);
+    expect(kept({ ...declared, ...model("https://${setting:region}.example.com/v1") })).toHaveLength(1);
+    expect(kept({ ...model("https://${secret:region}.example.com/v1") })).toEqual([]);
     const report = validateManifest({ manifest: 1, id: "bedrock", name: "Bedrock", settings, capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] }, { folderName: "bedrock" });
     expect(report.dynamicHosts).toBe(true);
   });

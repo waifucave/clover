@@ -18,15 +18,16 @@
 // * `release` (Hand over and quit, §3.1) lets another computer take the lease at once.
 // * The fencing token (H-M2's review, check 2) is the lease's scope, epoch and holder (`fencingTokenOf`). Every act a
 //   computer asks of another (`peer.call`, a tree call, a level change) carries the sender's as `fence`. The receiver
-//   judges it against its own lease, filled from its own lease events (`FenceGuard`): it takes only its own lease's
-//   scope, refuses an older epoch and the same epoch from another holder (a split takeover), and once it has seen a
-//   token for its scope refuses an act without one. So a main that lost its lease without knowing, asleep or cut off,
+//   judges it against its own lease, filled only from its own lease events (`FenceGuard`): it takes only its own
+//   lease's scope and epoch and holder, so an older epoch, one ahead of its records (until they catch up) and the same
+//   epoch from another holder (a split takeover) are refused, and once it has seen a token for its scope an act without
+//   one is. So a main that lost its lease without knowing, asleep or cut off,
 //   can't act through the others.
 // * Without an account the user's account-less devices form one group (item 85): their lease is the group's record at
 //   the handshake, which members admit one another to when they pair, so a takeover works as with an account. Only a
 //   computer that can reach neither the handshake nor the last holder over any link leaves taking over to the user
 //   (§6.4, `{ byUser: true }`).
-import { fenceVerdict, noteFence, type FenceVerdict, type FenceView, type FencingToken, type LeaseView } from "@waifucave/clover-protocol";
+import { fenceVerdict, type FenceVerdict, type FenceView, type FencingToken, type LeaseView } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
 export type LeaseState = LeaseView;
@@ -50,13 +51,10 @@ export class FenceGuard {
     this.#own = own;
   }
 
-  /** Judges an act's token, and records one it accepts. */
+  /** Judges an act's token. Its view moves only from `observe`, never from a token (#187's check 2). */
   check(token: FencingToken | undefined): FenceVerdict {
     const v = fenceVerdict(this.#own, token, this.#seen);
-    if (v === "ok" && token !== undefined && this.#own !== undefined) {
-      this.#own = noteFence(this.#own, token);
-      this.#seen = true;
-    }
+    if (v === "ok" && token !== undefined) this.#seen = true;
     return v;
   }
 }
