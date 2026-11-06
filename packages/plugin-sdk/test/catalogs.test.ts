@@ -424,3 +424,14 @@ describe("the catalog document", () => {
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
   });
 });
+
+describe("format upgrades (§5.1 \"Formats\")", () => {
+  test("a document's format comes from its version key; newer is refused, current left", async () => {
+    const { formatOf, upgradeDocument } = await import("../src/formats/upgrade");
+    expect(formatOf({ manifest: 1, name: "x" })).toEqual({ format: "manifest", version: 1 });
+    expect(formatOf({ theme: 1 })).toEqual({ format: "theme", version: 1 });
+    expect(formatOf({ name: "plain json" })).toBeUndefined();
+    expect(upgradeDocument({ layout: 1 })).toEqual({ status: "current", format: "layout", version: 1 });
+    expect(upgradeDocument({ locale: 7 })).toEqual({ status: "newer", format: "locale", version: 7, reads: 1 });
+  });
+});

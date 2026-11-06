@@ -9,7 +9,9 @@
 //   - lines are sorted by their paths' UTF-8 bytes;
 //   - the hash is SHA-256 of the lines' UTF-8 bytes, written `sha256:<hex>`;
 //   - `.DS_Store` and `Thumbs.db` files and `.git` folders are left out at any depth; empty folders count for nothing.
-// Symlinks inside the folder are lane B's M1 to settle (followed as their target's bytes, or refused).
+// Symlinks (settled at B-M1, in the core's `registry/tree.ts`): a symlink to a file inside the folder counts as that
+// file's bytes and executable bit under the link's own path; one out of the folder, to a folder, or dangling makes the
+// plugin invalid.
 
 export interface TreeEntry {
   /** Relative to the plugin folder, with `/`. */
