@@ -182,6 +182,12 @@ describe("what the disk holds", () => {
     fs.copyFileSync(join(elsewhere, "secrets.key"), join(h2, "secrets.key"));
     fs.writeFileSync(join(h2, "secrets.key.cred"), "sealed");
     expect((await openCloverSecretStore({ home: h2, service: "svc", os: "linux", vault: () => absent(), interactive: false, systemdCreds: null })).status()).toMatchObject({ state: "locked" });
+    // #205 check 3: the keyring locked (or unreachable) when the store opens: the planted key-file claim waits for it.
+    const lockedRing: Vault = { get: async () => { throw new Error("the collection is locked"); }, set: async () => { throw new Error("the collection is locked"); }, delete: async () => false };
+    const whileLocked = await openCloverSecretStore({ home: h, service: "svc", os: "linux", vault: () => lockedRing, interactive: false, systemdCreds: null });
+    expect(whileLocked.status()).toMatchObject({ state: "locked" });
+    await expect(whileLocked.get({ owner: { kind: "core" }, name: "x" })).rejects.toThrow(/locked/);
+    await expect(whileLocked.set({ owner: { kind: "core" }, name: "new" }, "fresh")).rejects.toThrow(/locked/);
   });
 
   test("a plaintext key is a warning, never silent; a sealed one isn't", () => {

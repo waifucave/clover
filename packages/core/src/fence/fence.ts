@@ -102,6 +102,12 @@ export class CloverFence implements Fence {
     if (this.os === "windows") {
       const local = windowsLocalForm(raw);
       if (local === null) return null;
+      // A drive-relative path (`C:name`) resolves against that drive's own current folder, which this process
+      // doesn't track the way the opener does (#205's check 3): refused.
+      if (/^[A-Za-z]:(?![\\/])/.test(local)) return null;
+      // A share on this computer (localhost, a loopback address, its own names) reaches its disk past every drive
+      // path the fence names, and an admin share (`C$`) anywhere does too (the controller's ruling): refused.
+      if (isRefusedShare(local)) return null;
       path = local;
     }
     try {
@@ -110,6 +116,7 @@ export class CloverFence implements Fence {
       const forms = linksFirst === textual ? [linksFirst] : [linksFirst, textual];
       // On a real Windows disk every form judged is a drive path or a \\server\share path (#205's check 2).
       if (this.os === "windows" && isWindowsDiskForm(this.#cloverHome) && !forms.every(isWindowsDiskForm)) return null;
+      if (this.os === "windows" && forms.some((f) => isRefusedShare(f))) return null;
       return forms;
     } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
   }
@@ -308,4 +315,29 @@ export function windowsLocalForm(raw: string): string | null {
 /** A drive path (`C:\…`) or a share path (`\\server\share\…`), nothing else. */
 export function isWindowsDiskForm(p: string): boolean {
   return /^[A-Za-z]:([\\/]|$)/.test(p) || /^[\\/]{2}(?![?.][\\/])[^\\/]+[\\/][^\\/]+/.test(p);
+}
+
+/** The names this computer answers to on a share path: localhost, loopback addresses, its NetBIOS and DNS names. */
+function thisComputersNames(): Set<string> {
+  const os = require("node:os") as typeof import("node:os");
+  const names = new Set(["localhost", ".", "::1", "0:0:0:0:0:0:0:1", "[::1]"]);
+  const host = os.hostname().toLowerCase();
+  names.add(host);
+  names.add(host.split(".")[0]!);
+  const cn = process.env.COMPUTERNAME?.toLowerCase();
+  if (cn) names.add(cn);
+  const dns = process.env.USERDNSDOMAIN?.toLowerCase();
+  if (cn && dns) names.add(`${cn}.${dns}`);
+  for (const addrs of Object.values(os.networkInterfaces())) for (const a of addrs ?? []) names.add(a.address.toLowerCase());
+  return names;
+}
+
+/** A `\\server\share` path to an admin share (`X$`, anywhere), or to any share on this computer (#205's check 3). */
+export function isRefusedShare(p: string, names: () => Set<string> = thisComputersNames): boolean {
+  const m = /^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)/.exec(p);
+  if (!m) return false;
+  const server = m[1]!.toLowerCase(), share = m[2]!;
+  if (share.endsWith("$")) return true;
+  if (/^127\./.test(server) || server.endsWith(".ipv6-literal.net") || server === "localhost" || server.startsWith("localhost.")) return true;
+  return names().has(server);
 }
