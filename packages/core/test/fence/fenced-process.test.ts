@@ -620,6 +620,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     // Plain init and clone, as a bot runs them: Clover's empty template installs no hooks.
     expect(ok(await w.run(`git init -q . && test ! -e .git/hooks && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x`))).toBe(true);
     expect(existsSync(join(w.home, "project", ".git", "hooks"))).toBe(false);
+    mkdirSync(join(w.home, "clone")); // the held home takes no new top-level names: the target exists first
     expect(ok(await w.run(`git clone -q . ../clone && test ! -e ../clone/.git/hooks && cd ../clone && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m y && git log --oneline | wc -l`))).toBe(true);
     expect(existsSync(join(w.home, "clone", ".git", "hooks"))).toBe(false);
   }, 60_000);

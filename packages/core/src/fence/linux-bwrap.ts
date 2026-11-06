@@ -120,10 +120,6 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
   }
 
-  // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. It is bound
-  // back even without a caller: the template holds no runner data, only Clover's empty template.
-  const template = gitTemplateDir(cloverHome);
-  if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
   // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): the session's own
   // repo's hooks are bound read-only (other repos under the home are the known limit, above).
   if (input.repoHooks !== null && input.repoHooks !== undefined && fs.kind(input.repoHooks) === "dir") {
@@ -149,6 +145,10 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
       const k = fs.kind(p);
       if (k === "dir" || k === "file") a.push("--bind", p, p);
     }
+    // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. Bound after
+    // the tmpfs, which would otherwise hide it.
+    const template = gitTemplateDir(cloverHome);
+    if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
     a.push("--remount-ro", cloverHome);
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
