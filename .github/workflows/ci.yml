@@ -117,6 +117,11 @@ jobs:
       - name: The rename's rules, the layout, the workspaces and the CI areas
         run: bun test scripts/rename/ scripts/layout.test.ts scripts/workspaces.test.ts scripts/ci-changes.test.ts
 
+      # The headless shell's pin (lane L's, plugins/clover/plugins/browser/headless-shell.pins.json) follows the app's
+      # Electron: the same Chromium milestone (spec §12.1). It warns while the file doesn't exist yet.
+      - name: The headless shell's pin follows Electron
+        run: bun scripts/check-headless-pin.ts
+
   # One job per machine (macOS arm64, Linux x64 and arm64, Windows x64), each step run only when this change needs it:
   #  - every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
   #    script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
