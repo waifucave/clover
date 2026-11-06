@@ -71,7 +71,7 @@ jobs:
       - name: cargo-about, and Bash's fence launcher (Windows)
         if: matrix.os == 'win'
         run: |
-          cargo install --locked cargo-about@0.9.2
+          cargo install --locked --features cli cargo-about@0.9.2
           bun scripts/release/srt-win.ts --arch x64
 
       - name: Build the release (unsigned)

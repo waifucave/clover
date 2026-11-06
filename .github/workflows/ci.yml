@@ -430,7 +430,7 @@ jobs:
           bun-version-file: .bun-version
 
       - name: cargo-about, for the notices
-        run: cargo install --locked cargo-about@0.9.2
+        run: cargo install --locked --features cli cargo-about@0.9.2
 
       - name: Build twice from clean clones, and compare
         run: |
