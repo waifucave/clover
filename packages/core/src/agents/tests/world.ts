@@ -69,6 +69,8 @@ export interface WorldOptions {
   askDuringReplay?: boolean;
   selections?: UserSelections;
   pause?: AgentPauseGate;
+  /** The bridge tokens' life, on the world's clock. */
+  tokenTtlMs?: number;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -119,7 +121,7 @@ export class World {
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });
     this.host = new FakeSessionHost({ clock: this.clock, approvals: this.approvals });
     this.host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, this.parentDriver);
-    this.tokens = new BridgeTokens(o.table ? { table: o.table } : {});
+    this.tokens = new BridgeTokens({ ...(o.table ? { table: o.table } : {}), ...(o.tokenTtlMs ? { ttlMs: o.tokenTtlMs, now: () => this.clock.now() } : {}) });
     this.watchdog = new StallWatchdog({ clock: this.clock, ...(o.wallNow ? { wallNow: o.wallNow } : {}), ...(o.table ? { table: o.table } : {}) });
     const quirks = fakeLaunch(o.quirks ?? WELL_BEHAVED_QUIRKS);
     this.agent = writeFakeAgent(join(this.root, "agent"), {

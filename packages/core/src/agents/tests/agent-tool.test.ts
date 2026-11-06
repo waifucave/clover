@@ -548,6 +548,66 @@ describe("the pause switch pauses background agents too (the owner's ruling)", (
   });
 });
 
+describe("K-M2 review", () => {
+  test("a bridge call held by the pause never runs once the agent is stopped (blocking 1)", async () => {
+    const gate = pauseSwitch();
+    const ran: string[] = [];
+    const w = make({
+      pause: gate,
+      pluginTools: {
+        tools: async () => [{ name: "Render", description: "Render.", inputSchema: { type: "object" } }],
+        call: async (_s, c) => (ran.push(c.tool), { content: [{ type: "text", text: "rendered" }], isError: false }),
+      },
+      script: [[{ wait: true }, { mcp: { server: "$bridge", tool: "Render", input: {}, ask: false } }, { say: "done" }]],
+    });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    await new Promise((res) => setTimeout(res, 800));
+    await w.manager.stop(r.sessionId, { bot: "alpha" });
+    gate.set(false);
+    await new Promise((res) => setTimeout(res, 500));
+    expect(ran).toEqual([]);
+  });
+
+  test("the moment the switch pauses, a busy agent that acts without asking is cancelled (should-fix 4)", async () => {
+    const gate = pauseSwitch();
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ pause: gate, quirks, level: "ask", script: [[{ wait: true }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("cancelled");
+  });
+
+  test("a session outliving its bridge token is restarted under a new one at a turn boundary (minor 12)", async () => {
+    const w = make({ tokenTtlMs: 2 * 60 * 60_000, script: [[{ say: "one" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    const before = w.report("started").length;
+    w.clock.advance(90 * 60_000);
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.report("started").length).toBe(before + 1);
+    expect(w.report("session").map((x) => x["how"])).toEqual(["new", "resume"]);
+    expect(w.tokens.ageOf(r.sessionId)).toBeLessThan(60 * 60_000);
+    expect(readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8")).toContain("token-renewed");
+  });
+
+  test("start refuses a program other than the one admitted (should-fix 5)", async () => {
+    const w = make();
+    const fence = w.fence.policy();
+    const base = { sessionId: "s", root: w.project, fence, bridge: { name: "b", command: "x", args: [], env: {}, tools: [] } };
+    const err = await w.backend.start({ ...base, admitted: { path: "/somewhere/else", version: "1.0.0" } }).catch((e: unknown) => e);
+    expect((err as Error).message).toContain("its program changed");
+    const d = await w.backend.detect();
+    const err2 = await w.backend.start({ ...base, admitted: { path: d.path!, version: d.version!, sha256: "0".repeat(64) } }).catch((e: unknown) => e);
+    expect((err2 as Error).message).toContain("its program changed");
+    expect(w.report("started")).toEqual([]);
+  });
+});
+
 describe("a hostile agent (review 12)", () => {
   test("client methods Clover didn't offer are refused, and the token never reaches the session's log", async () => {
     const w = make({ script: [[{ clientCall: { method: "fs/read_text_file", params: { path: "/etc/hosts" } } }, { clientCall: { method: "terminal/create", params: { command: "id" } } }, { sayBridgeToken: true }]] });

@@ -81,6 +81,17 @@ export class BridgeTokens {
     g.setPid(agentPid);
   }
 
+  /** How long ago the session's token was minted; undefined without one. */
+  ageOf(sessionId: string): number | undefined {
+    const g = this.#bySession.get(sessionId);
+    return g && !g.revoked ? this.#now() - g.mintedAt : undefined;
+  }
+
+  /** The tokens' life. */
+  get ttlMs(): number {
+    return this.#ttlMs;
+  }
+
   has(sessionId: string): boolean {
     const g = this.#bySession.get(sessionId);
     return g !== undefined && !g.revoked;
@@ -120,6 +131,12 @@ export class BridgeTokens {
   release(sessionId: string, connection: number): void {
     const g = this.#bySession.get(sessionId);
     if (g && g.live === connection) delete g.live;
+  }
+
+  /** Revokes the session's token if it is bound to this agent process (or not bound yet). */
+  revokeBoundTo(sessionId: string, agentPid: number): void {
+    const g = this.#bySession.get(sessionId);
+    if (g && (g.agentPid === undefined || g.agentPid === agentPid)) this.revoke(sessionId);
   }
 
   revoke(sessionId: string): void {

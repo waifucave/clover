@@ -9,7 +9,7 @@
 // and the four methods, each refused once the session's token is gone (review 5: the revoke's close may not have
 // reached the connection yet).
 import { CLOVER_ERR } from "@waifucave/clover-protocol";
-import { bridgeMethodHandlers, CloverRpcError, type BridgeGate, type CloverHandler } from "../../ipc/clover";
+import { bridgeMethodHandlers, CloverRpcError, type BridgeGate, type CloverConn, type CloverHandler } from "../../ipc/clover";
 import type { BridgeTokens } from "./tokens";
 import type { BridgeToolDef } from "./tools";
 
@@ -33,13 +33,20 @@ export function bridgeCloverParts(tokens: BridgeTokens, h: BridgeHandlers): Brid
   const live = (sessionId: string) => {
     if (!tokens.has(sessionId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this bridge's token was revoked");
   };
-  return {
-    bridge: { gate: tokens, sessionInfo: (id) => h.sessionInfo(id) },
-    handlers: bridgeMethodHandlers({
-      tools: async (id) => (live(id), h.tools(id)),
-      call: async (id, c) => (live(id), h.call(id, c)),
-      sendMessage: async (id, m) => (live(id), h.sendMessage(id, m)),
-      glossary: async (id, q) => (live(id), h.glossary(id, q)),
-    }),
-  };
+  const methods = bridgeMethodHandlers({
+    tools: async (id) => (live(id), h.tools(id)),
+    call: async (id, c) => (live(id), h.call(id, c)),
+    sendMessage: async (id, m) => (live(id), h.sendMessage(id, m)),
+    glossary: async (id, q) => (live(id), h.glossary(id, q)),
+  });
+  // Where C's connection names the bridge connection `accept` let in, each request checks it is still that token's
+  // live one (K-M2 review 6); one live connection per token makes the session check the same thing until then.
+  const handlers = Object.fromEntries(Object.entries(methods).map(([name, fn]) => [name, (conn: CloverConn, params: unknown) => {
+    const b = (conn as { bridge?: { sessionId?: string; connection?: number } }).bridge;
+    if (b?.sessionId !== undefined && b.connection !== undefined && !tokens.isLive(b.sessionId, b.connection)) {
+      throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this bridge's connection isn't its token's live one");
+    }
+    return fn(conn, params);
+  }]));
+  return { bridge: { gate: tokens, sessionInfo: (id) => h.sessionInfo(id) }, handlers };
 }

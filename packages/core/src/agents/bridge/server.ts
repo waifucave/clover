@@ -78,7 +78,11 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         link.close();
-        if (attempt === 1 && /unverified-caller/.test(msg)) continue;
+        if (attempt === 1 && /unverified-caller/.test(msg)) {
+          // Apart from the client it collided with: 50 to 250 ms (K-M2 review 7).
+          await new Promise((r) => setTimeout(r, 50 + Math.floor(Math.random() * 200)));
+          continue;
+        }
         broken = msg;
         throw err;
       }

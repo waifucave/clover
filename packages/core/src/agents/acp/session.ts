@@ -135,6 +135,8 @@ export class AcpAgentSession implements AgentSession {
   #readOnly = false;
   /** The mode before the read-only one, to switch back to. */
   #modeBefore: string | undefined;
+  /** ACP's session modes (`modes` at `session/new`, `current_mode_update`), for agents that offer no `mode` option. */
+  #modes: { available: string[]; current?: string } | undefined;
   #permission: ((ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>) | undefined;
   #turn: Turn | undefined;
   #turnDone: Promise<unknown> | undefined;
@@ -277,6 +279,12 @@ export class AcpAgentSession implements AgentSession {
       this.#agentSessionId = id;
     }
     this.#config = readConfigOptions(obj(result)?.["configOptions"]) ?? this.#config;
+    const modes = obj(obj(result)?.["modes"]);
+    if (modes) {
+      const available = (Array.isArray(modes["availableModes"]) ? modes["availableModes"] : []).map((m) => str(obj(m)?.["id"])).filter((x): x is string => !!x);
+      const current = str(modes["currentModeId"]);
+      this.#modes = { available, ...(current ? { current } : {}) };
+    }
     await this.#setBackLeftovers();
     if (opts.readOnly) await this.setReadOnly(true);
     if (opts.model !== undefined) await this.setConfig("model", opts.model);
@@ -404,22 +412,42 @@ export class AcpAgentSession implements AgentSession {
     }
   }
 
-  /** Switches the agent into its read-only mode, or back to the mode it had. Refused when it offers no read-only mode. */
+  /** Switches the agent into its read-only mode, or back to the mode it had: its `mode` config option, else ACP's
+   *  `session/set_mode`. Refused when it offers no read-only mode, or its answer doesn't show the mode set (check 1's
+   *  minor 11: Clover counts on the agent's own word only once it says so). */
   async setReadOnly(on: boolean): Promise<void> {
     if (on === this.#readOnly) return;
     const mode = this.#readOnlyMode;
     const option = mode ? this.#config.find((c) => c.id === mode.option) : undefined;
+    const refuse = (why: string): never => {
+      throw new ContractError("refused", `this agent acts without asking and ${why}, so it can't run at read-only`);
+    };
     if (on) {
-      const value = mode?.values.find((v) => option?.values.includes(v));
-      if (!option || value === undefined) {
-        throw new ContractError("refused", "this agent acts without asking and offers no read-only mode, so it can't run at read-only");
+      if (option) {
+        const value = mode!.values.find((v) => option.values.includes(v));
+        if (value === undefined) refuse("offers no read-only mode");
+        this.#modeBefore = option.currentValue;
+        if (option.currentValue !== value) await this.#setOption(option.id, value!);
+        if (this.#config.find((c) => c.id === option.id)?.currentValue !== value) refuse("didn't confirm its read-only mode");
+      } else {
+        const value = mode?.values.find((v) => this.#modes?.available.includes(v));
+        if (value === undefined) refuse("offers no read-only mode");
+        this.#modeBefore = this.#modes!.current;
+        if (this.#modes!.current !== value) {
+          await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: value }, CONFIG_TIMEOUT_MS);
+          this.#modes!.current = value!;
+        }
       }
-      this.#modeBefore = option.currentValue;
-      if (option.currentValue !== value) await this.#setOption(option.id, value);
       this.#readOnly = true;
       return;
     }
-    if (option && this.#modeBefore !== undefined && option.currentValue !== this.#modeBefore) await this.#setOption(option.id, this.#modeBefore);
+    if (this.#modeBefore !== undefined) {
+      if (option && option.currentValue !== this.#modeBefore) await this.#setOption(option.id, this.#modeBefore);
+      else if (!option && this.#modes && this.#modes.current !== this.#modeBefore) {
+        await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: this.#modeBefore }, CONFIG_TIMEOUT_MS);
+        this.#modes.current = this.#modeBefore;
+      }
+    }
     this.#readOnly = false;
   }
 
@@ -569,6 +597,14 @@ export class AcpAgentSession implements AgentSession {
       default:
         // Plans, commands, modes, titles, config and usage updates: progress, recorded on the wire.
         if (str(update?.["sessionUpdate"]) === "config_option_update") this.#config = readConfigOptions(update?.["configOptions"]) ?? this.#config;
+        if (str(update?.["sessionUpdate"]) === "current_mode_update" && this.#modes) {
+          const id = str(update?.["currentModeId"]) ?? str(update?.["modeId"]);
+          if (id) {
+            this.#modes.current = id;
+            // The agent left its read-only mode on its own: Clover no longer counts on it.
+            if (this.#readOnly && !this.#readOnlyMode?.values.includes(id)) this.#readOnly = false;
+          }
+        }
         return;
     }
   }

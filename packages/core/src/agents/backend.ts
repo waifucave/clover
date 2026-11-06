@@ -27,7 +27,8 @@ import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admis
 import type { PluginParts } from "./placement";
 import type { StdioMcpServer } from "./acp/types";
 import { AgentJob } from "../platform/win-job";
-import { buildAgentEnv, launchContained, type AgentJobLike } from "./process/launch";
+import { programHash } from "./sandbox/oks";
+import { buildAgentEnv, launchContained, spawnPlan, type AgentJobLike } from "./process/launch";
 import { versionSatisfies } from "./version";
 
 export { versionSatisfies } from "./version";
@@ -77,6 +78,8 @@ export interface AcpBackendOptions {
 export interface AcpStartSpec extends AgentStartSpec {
   /** The session runs at read-only: an agent that acts without asking must start in its read-only mode. */
   readOnly?: boolean;
+  /** The program the manager admitted (and the user OK'd, with its file's hash): `start` refuses another. */
+  admitted?: { path: string; version?: string; sha256?: string };
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -86,8 +89,8 @@ export interface AgentWire {
   stderr?: (chunk: Uint8Array) => void;
   /** `contains`: on Windows, the agent's job, which the bridge's caller check reads instead of the process tree. */
   launched?: (pid: number, contains?: (pid: number) => boolean) => void;
-  /** The agent's process exited, for whatever reason. */
-  exited?: () => void;
+  /** The agent's process exited, for whatever reason (its pid). */
+  exited?: (pid: number) => void;
   /** Where its sandbox files go: inside the fenced run folder, so no bot or agent can rewrite them. */
   setupDir?: string;
   /** The plugins' skills, agent definitions and hooks in this session's scope. */
@@ -162,6 +165,13 @@ export class AcpAgentBackend implements AgentBackend {
     const d = await this.detect();
     if (!d.installed || !d.path) throw new ContractError("not_installed", d.reason ?? `${this.id} isn't installed on this computer`);
     if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${d.path} isn't ${this.id}'s program`);
+    // The program Clover admitted, not another one that took its place since (K-M2 review 5).
+    if (spec.admitted) {
+      const a = spec.admitted;
+      if (d.path !== a.path || d.version !== a.version || (a.sha256 !== undefined && (await programHash(d.path)) !== a.sha256)) {
+        throw new ContractError("refused", `${this.id} wasn't started: its program changed after it was checked`);
+      }
+    }
     if (!this.quirks.mcp.transports.includes("stdio")) throw new ContractError("refused", `${this.id} takes no stdio MCP server, so the bridge can't reach it`);
     const readOnly = spec.readOnly === true && this.quirks.marks.includes("unasked-actions");
     if (readOnly && !this.#opts.readOnlyMode) throw new ContractError("refused", `${this.id} acts without asking and has no read-only mode, so it can't start at read-only`);
@@ -203,7 +213,7 @@ export class AcpAgentBackend implements AgentBackend {
     }, { ...(this.#opts.table ? { table: this.#opts.table } : {}), ...(job ? { job } : {}) });
     if (!proc.contained) throw new ContractError("refused", `${this.id} wasn't started: it couldn't be put in its job object`);
     if (proc.pid) wire.launched?.(proc.pid, proc.contains);
-    void proc.exited.then(() => wire.exited?.());
+    void proc.exited.then(() => wire.exited?.(proc.pid));
     return AcpAgentSession.open({
       quirks: this.quirks,
       clock: this.#opts.clock,
@@ -252,7 +262,14 @@ export function resolveProgram(program: string, pathVar: string | undefined): st
 
 function runCapture(cmd: string, args: string[], env: Record<string, string>, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let plan: ReturnType<typeof spawnPlan>;
+    try {
+      plan = spawnPlan(cmd, args);
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    const child = spawn(plan.file, plan.args, { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: plan.verbatim });
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (c: string) => {

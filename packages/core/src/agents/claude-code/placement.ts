@@ -11,7 +11,7 @@
 // `turn.start` → `UserPromptSubmit`, `turn.end` → `Stop`, `compact.before` → `PreCompact`, `compact.after` →
 // `SessionStart` (matcher `compact`). `message.out` has no Claude Code event, so those hooks aren't placed.
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import type { HookEvent, PluginParts } from "../placement";
 import { DEFAULT_HOOK_TIMEOUT_MS } from "./hook-shim";
 
@@ -51,6 +51,9 @@ export interface PlacementResult {
 }
 
 /** Writes the session's Claude Code plugin into `dir` and returns the `_meta` that hands it to the adapter. */
+/** The longest a hook may run (§5.3's per-hook limits stop here). */
+export const MAX_HOOK_TIMEOUT_MS = 60_000;
+
 export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: { command: string; args: readonly string[] } }): PlacementResult {
   const root = join(ctx.dir, CLAUDE_PLUGIN_FOLDER);
   mkdirSync(join(root, ".claude-plugin"), { recursive: true, mode: 0o700 });
@@ -76,7 +79,12 @@ export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: 
 
   const hooks: Record<string, { matcher?: string; hooks: { type: "command"; command: string; timeout: number }[] }[]> = {};
   for (const h of parts.hooks) {
-    const timeoutMs = h.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
+    // A hook runs as an absolute path, never a name a PATH could swap (K-M2 review 9).
+    if (!isAbsolute(h.command)) {
+      placed.skipped.push({ id: h.id, why: "its command isn't an absolute path" });
+      continue;
+    }
+    const timeoutMs = Math.min(Math.max(1, Math.floor(h.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS)), MAX_HOOK_TIMEOUT_MS);
     const command = [ctx.shim.command, ...ctx.shim.args, "--timeout", String(timeoutMs), "--", h.command, ...(h.args ?? [])].map(shellQuote).join(" ");
     let any = false;
     for (const on of h.on) {

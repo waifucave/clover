@@ -80,7 +80,10 @@ const UNMEASURED = {
   turns: { refusal: "unknown", cancelLeavesToolCallsOpen: true, reportsUsage: true, quotaErrorsAsText: false },
   progress: { countsChildProcesses: true },
   placement: "local",
-  marks: [],
+  // They load the user's own settings (Claude Code's `permissions.allow` and `defaultMode`, Codex's `approval_policy`,
+  // the others' approval modes), so they may act without asking: held as such until the live gates measure them (K-M2
+  // review 2). At read-only each starts in its read-only mode (`READ_ONLY_MODES`), or not at all.
+  marks: ["unasked-actions"],
 } as const satisfies Partial<AgentQuirks>;
 
 /** Claude Code, through `@agentclientprotocol/claude-agent-acp` 0.100.0 (the Claude Agent SDK underneath). Its fence
@@ -192,4 +195,9 @@ export const QUIRK_SOURCES: Readonly<Record<string, "measured (S5)" | "docs and 
  *  `configOptions`. Kept beside the quirks, not in them, since lane B's fakes pin the quirks' shape. */
 export const READ_ONLY_MODES: Readonly<Record<string, { option: string; values: readonly string[] }>> = {
   cursor: { option: "mode", values: ["ask", "plan"] },
+  // From their docs, unmeasured: a `mode` option or ACP session mode with one of these values, confirmed by the
+  // agent's answer, or the agent doesn't start at read-only. Grok and DeepSeek have none known: refused there.
+  "claude-code": { option: "mode", values: ["plan"] },
+  codex: { option: "mode", values: ["read-only"] },
+  gemini: { option: "mode", values: ["plan", "default"] },
 };

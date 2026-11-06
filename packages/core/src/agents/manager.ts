@@ -41,7 +41,7 @@ import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
 import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
-import { MemoryAgentOks, type AgentOks } from "./sandbox/oks";
+import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { agentPaths } from "./paths";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
@@ -85,6 +85,9 @@ export interface AgentPauseGate {
   mayAct(): boolean;
   watch?(fn: () => void): () => void;
 }
+
+/** A bridge token this close to its expiry is renewed at the next turn. */
+const TOKEN_RENEW_MARGIN_MS = 60 * 60_000;
 
 /** How often a held agent looks at the switch when the gate can't say it moved. */
 const PAUSE_POLL_MS = 1_000;
@@ -141,6 +144,8 @@ interface Entry {
   session?: AgentSession;
   /** Holds waiting for the pause switch. */
   held: number;
+  /** Aborted when the session ends or the daemon closes: a held call never runs after that. */
+  gone: AbortController;
   resumedAt?: number;
 }
 
@@ -153,9 +158,23 @@ export class AgentManager {
   readonly #entries = new Map<string, Entry>();
   readonly #oks: AgentOks;
 
+  readonly #unpause: (() => void) | undefined;
+
   constructor(opts: AgentManagerOptions) {
     this.#o = opts;
     this.#oks = opts.oks ?? new MemoryAgentOks();
+    // The ruling (K-M2 review 4): the moment the switch says paused, a busy agent that acts without asking is cancelled,
+    // since Clover can't hold what it isn't asked about. Without `watch`, it is cancelled at its next tool call.
+    this.#unpause = opts.pause?.watch?.(() => {
+      if (opts.pause!.mayAct()) return;
+      for (const e of this.#entries.values()) this.#cancelForPause(e);
+    });
+  }
+
+  #cancelForPause(e: Entry, toolCallId?: string): void {
+    if (!e.backend.quirks.marks.includes("unasked-actions") || !e.session || !e.driver.busy()) return;
+    e.transcript.call({ ts: this.#o.clock.now(), type: "paused", cancelled: true, ...(toolCallId ? { toolCallId } : {}) });
+    void e.session.cancel();
   }
 
   /** A session's sandbox setup folder, inside the fenced run folder. */
@@ -188,7 +207,8 @@ export class AgentManager {
       stderr: (chunk) => e.transcript.stderr(chunk),
       launched: (pid, contains) => this.#o.tokens.bind(sessionId, pid, contains),
       // A leaked copy of the token is useless once the agent is gone (S5 edit 4).
-      exited: () => this.#o.tokens.revoke(sessionId),
+      // Only the token bound to this process: a renewed one (a restart under a new token) stays.
+      exited: (pid) => this.#o.tokens.revokeBoundTo(sessionId, pid),
       setupDir: this.setupDir(sessionId),
       ...(e.parts ? { parts: e.parts } : {}),
     };
@@ -285,7 +305,7 @@ export class AgentManager {
     transcript.redact(token);
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
-      held: 0, serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
+      held: 0, gone: new AbortController(), serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
@@ -298,9 +318,12 @@ export class AgentManager {
       beforeTurn: async (session) => {
         // A turn withdrawn while held ends `interrupted` (the driver checks its signal next).
         await this.#hold(entry).catch(() => {});
-        await this.#applyLevel(entry, session);
+        const renewed = await this.#renewIfOld(entry, session);
+        await this.#applyLevel(entry, renewed ?? session);
+        return renewed;
       },
       ended: () => {
+        entry.gone.abort();
         this.#o.tokens.revoke(id);
         entry.unwatch?.();
         rmSync(this.setupDir(id), { recursive: true, force: true });
@@ -325,8 +348,9 @@ export class AgentManager {
    *  stalled. */
   async #hold(e: Entry): Promise<void> {
     const gate = this.#o.pause;
+    if (e.gone.signal.aborted) throw new ContractError("closed", "this agent's session has ended");
     if (!gate || gate.mayAct()) return;
-    const signal = e.driver.currentSignal();
+    const signals = [e.driver.currentSignal(), e.gone.signal].filter((x): x is AbortSignal => x !== undefined);
     e.held++;
     try {
       await new Promise<void>((resolve) => {
@@ -334,7 +358,7 @@ export class AgentManager {
         const done = () => {
           off?.();
           if (timer !== undefined) this.#o.clock.clearTimeout(timer);
-          signal?.removeEventListener("abort", done);
+          for (const sig of signals) sig.removeEventListener("abort", done);
           resolve();
         };
         const check = () => {
@@ -342,8 +366,8 @@ export class AgentManager {
           else if (!gate.watch) timer = this.#o.clock.setTimeout(check, PAUSE_POLL_MS);
         };
         const off = gate.watch?.(check);
-        signal?.addEventListener("abort", done, { once: true });
-        if (signal?.aborted) return done();
+        for (const sig of signals) sig.addEventListener("abort", done, { once: true });
+        if (signals.some((sig) => sig.aborted)) return done();
         check();
       });
     } finally {
@@ -351,7 +375,35 @@ export class AgentManager {
       // The stall window starts again from the resume.
       e.resumedAt = this.#o.clock.now();
     }
-    if (signal?.aborted) throw new ContractError("cancelled", "the turn was withdrawn while the bots were paused");
+    if (signals.some((sig) => sig.aborted)) throw new ContractError("cancelled", "withdrawn while the bots were paused");
+  }
+
+  /** A held bridge call goes on only if its session and token are still live after the hold (review 1). */
+  async #holdForBridge(id: string): Promise<Entry> {
+    const e = this.#entries.get(id);
+    if (!e) throw new ContractError("closed", "this agent's session has ended");
+    await this.#hold(e);
+    if (this.#entries.get(id) !== e || !this.#o.tokens.has(id)) throw new ContractError("closed", "this agent's session has ended");
+    return e;
+  }
+
+  /** A session that outlives its bridge token (12 hours) would lose its bridge: at the turn boundary before the
+   *  token's last hour, the agent is restarted under a new token, with an honest `resume` or a `load` whose replay is
+   *  dropped (K-M2 review 12). An agent that can't reattach keeps its token until it expires. */
+  async #renewIfOld(e: Entry, session: AgentSession): Promise<AgentSession | undefined> {
+    const age = this.#o.tokens.ageOf(e.id);
+    if (age === undefined || age < this.#o.tokens.ttlMs - TOKEN_RENEW_MARGIN_MS) return undefined;
+    const q = e.backend.quirks.sessions;
+    if (!q.load.supported && !(q.resume.supported && !q.resume.replays)) return undefined;
+    const agentSessionId = e.daemon.agentSessionId ?? session.agentSessionId;
+    e.unwatch?.();
+    await session.stop();
+    // The old process's exit revokes the old token; the new one is minted after it.
+    await new Promise((r) => setTimeout(r, 0));
+    e.token = this.#o.tokens.mint(e.id);
+    e.transcript.redact(e.token);
+    e.transcript.call({ ts: this.#o.clock.now(), type: "token-renewed" });
+    return this.#startAgent(e, { agentSessionId });
   }
 
   /** At each turn, the computer's level as it is now (check 2's minor 5): an agent that acts without asking goes into
@@ -365,7 +417,7 @@ export class AgentManager {
   }
 
   /** Before an agent launches: an agent that isn't sandboxed, or is outside its tested versions, needs the user's OK. */
-  async #admit(e: Entry): Promise<void> {
+  async #admit(e: Entry): Promise<NonNullable<AcpStartSpec["admitted"]>> {
     const d = await e.backend.detect();
     if (!d.installed) throw new ContractError("not_installed", d.reason ?? `${e.backend.id} isn't installed on this computer`);
     if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${e.backend.id}'s program isn't its publisher's`);
@@ -375,12 +427,16 @@ export class AgentManager {
       why.push(`it has no sandbox Clover can count on here${detail ? ` (${detail})` : ""}`);
     }
     if (!d.versionOk) why.push(`its version ${d.version ?? "(unknown)"} is outside the versions Clover was tested with`);
-    if (why.length === 0) return;
-    await this.#requireOk(e, d.version ?? "unknown", why.join("; "), d.sandboxed);
+    const admitted = { path: d.path ?? "", ...(d.version === undefined ? {} : { version: d.version }) };
+    if (why.length === 0) return admitted;
+    // The OK is for this program: its real path and its file's hash (K-M2 review 5).
+    const sha256 = (await programHash(admitted.path)) ?? "";
+    await this.#requireOk(e, { version: d.version ?? "unknown", path: admitted.path, sha256 }, why.join("; "), d.sandboxed);
+    return { ...admitted, ...(sha256 ? { sha256 } : {}) };
   }
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
-    await this.#admit(e);
+    const admitted = await this.#admit(e);
     e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
     e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
@@ -400,6 +456,7 @@ export class AgentManager {
       fence: this.#o.fence.policy(),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
+      admitted,
     };
     const session = await e.backend.start(spec);
     e.session = session;
@@ -414,9 +471,8 @@ export class AgentManager {
     // its next tool call instead, and the next turn waits for the switch.
     if (e.backend.quirks.marks.includes("unasked-actions")) {
       session.onEvent((ev) => {
-        if (ev.type !== "tool_call" || !this.#o.pause || this.#o.pause.mayAct() || !e.driver.busy()) return;
-        e.transcript.call({ ts: this.#o.clock.now(), type: "paused", toolCallId: ev.id, cancelled: true });
-        void session.cancel();
+        if (ev.type !== "tool_call" || !this.#o.pause || this.#o.pause.mayAct()) return;
+        this.#cancelForPause(e, ev.id);
       });
     }
     const s = session as { openCalls?: () => { id: string; kind: string; startedAtWall: number }[]; waitingOnUser?: () => boolean };
@@ -435,9 +491,10 @@ export class AgentManager {
 
   /** The OK for an agent `#admit` doesn't let through (no admitted sandbox, or a version outside the tested ones):
    *  asked once per backend, version and computer, as a change card. Tests may skip it. */
-  async #requireOk(e: Entry, version: string, reason: string, sandboxed: boolean): Promise<void> {
+  async #requireOk(e: Entry, program: { version: string; path: string; sha256: string }, reason: string, sandboxed: boolean): Promise<void> {
     if (this.#o.startUnsandboxedForTests === true) return;
-    const key = { backend: e.backend.id, version, computer: e.computer };
+    const { version } = program;
+    const key = { backend: e.backend.id, computer: e.computer, ...program };
     if (this.#oks.has(key)) return;
     const signal = e.driver.currentSignal();
     const decision = await this.#o.approvals.request({
@@ -457,6 +514,7 @@ export class AgentManager {
         source: { type: "rows", rows: [
           { label: "Agent", value: sealedText(e.backend.id, 4000) },
           { label: "Version", value: sealedText(version, 4000) },
+          { label: "Program", value: sealedText(program.path, 4000) },
           { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
           { label: "Folder", value: sealedText(e.root, 4000) },
         ] },
@@ -571,9 +629,11 @@ export class AgentManager {
   /** The daemon is closing: every agent's process ends and its token goes, and the daemon's records stay, so the
    *  next daemon reattaches the sessions the host restores. */
   async close(): Promise<void> {
+    this.#unpause?.();
     const entries = [...this.#entries.values()];
     this.#entries.clear();
     await Promise.all(entries.map(async (e) => {
+      e.gone.abort();
       e.unwatch?.();
       this.#o.tokens.revoke(e.id);
       this.#o.approvals.cancelSession(e.id);
@@ -601,9 +661,13 @@ export class AgentManager {
         return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
       },
       call: async (id, c) => {
-        const e = this.#entries.get(id);
-        if (!e) return { content: [{ type: "text", text: "This agent's session has ended." }], isError: true };
-        await this.#hold(e).catch(() => {});
+        let e: Entry;
+        try {
+          e = await this.#holdForBridge(id);
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          return { content: [{ type: "text", text: `Not run: ${why}.` }], isError: true };
+        }
         const signal = e.driver.currentSignal();
         return source.call(id, c, {
           computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
@@ -611,8 +675,7 @@ export class AgentManager {
         });
       },
       sendMessage: async (id, m) => {
-        const e = this.#entries.get(id);
-        if (e) await this.#hold(e).catch(() => {});
+        await this.#holdForBridge(id);
         return this.agentMessage(id, m.text, m.to);
       },
       glossary: (id, q) => (this.#o.glossary ? this.#o.glossary(id, q) : Promise.resolve({ results: [], loaded: [] })),

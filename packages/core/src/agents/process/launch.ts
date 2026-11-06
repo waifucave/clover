@@ -5,7 +5,10 @@
 //   too (a command run under a terminal often starts its own session). On Windows the containment is lane C's job
 //   object (`AgentJob`, platform/win-job.ts): the process is assigned to a new, unnamed job with no breakaway right
 //   after it starts, and an agent no job can be made for is ended at once and refused. `stop` ends the job (then the
-//   `taskkill /T` tree, for anything that escaped), and the job is closed when the process exits. The job is also
+//   `taskkill /T` tree, for anything that escaped), and the job is closed when the process exits. Bun can't start a
+//   process suspended, so the job is assigned right after the spawn; `AgentJob.assign` also takes the processes it
+//   started in that moment, and one that escaped anyway fails the bridge's check (K-M2 review 10). A `.cmd` (an npm
+//   bin) runs through `cmd.exe` (`spawnPlan`), since `node:child_process` won't start one without a shell. The job is also
 //   the bridge's caller check there (`contains`), since a Windows process tree proves nothing.
 // * Its environment comes from an allow-list (edit 4): a small base set every program needs, plus the names the
 //   backend's quirks allow and set. Nothing named `CLOVER_*` from the daemon's own environment passes. The bridge
@@ -83,9 +86,24 @@ export interface LaunchedAgent {
 
 export const STOP_GRACE_MS = 3_000;
 
+/** Characters `cmd.exe` would read in a command line, refused in a `.cmd`'s arguments. */
+const CMD_META = /[%^&|<>"!\r\n]/;
+
+/** How a program is spawned without a shell. On Windows, `node:child_process` refuses a `.cmd` or `.bat` (an npm
+ *  bin's shim) with EINVAL (measured on the VM, Bun 1.4.4), so one runs through `cmd.exe /d /s /c` with every part
+ *  quoted, and arguments `cmd.exe` would interpret are refused. */
+export function spawnPlan(command: string, args: readonly string[], platform: NodeJS.Platform = process.platform): { file: string; args: string[]; verbatim: boolean } {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(command)) return { file: command, args: [...args], verbatim: false };
+  for (const a of [command, ...args]) if (CMD_META.test(a)) throw new Error(`a .cmd's argument holds a character cmd.exe would read: ${JSON.stringify(a).slice(0, 80)}`);
+  const line = [command, ...args].map((a) => `"${a}"`).join(" ");
+  return { file: process.env["ComSpec"] ?? "C:\\Windows\\System32\\cmd.exe", args: ["/d", "/s", "/c", `"${line}"`], verbatim: true };
+}
+
 export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableReader; job?: AgentJobLike } = {}): LaunchedAgent {
   const posix = process.platform !== "win32";
-  const child = spawn(spec.command, [...spec.args], {
+  const plan = spawnPlan(spec.command, spec.args);
+  const child = spawn(plan.file, plan.args, {
+    windowsVerbatimArguments: plan.verbatim,
     cwd: spec.cwd,
     env: spec.env,
     stdio: ["pipe", "pipe", spec.onStderr ? "pipe" : "ignore"],

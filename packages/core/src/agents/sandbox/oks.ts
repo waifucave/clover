@@ -2,17 +2,23 @@
 // user's OK, which says it could read Clover's logins and approve its own cards; like Devin, Clover never quietly
 // runs one unsandboxed").
 //
-// The OK is asked once per backend, version and computer, as a change card (`agent-unsandboxed`, which the broker
-// always shows and never offers "always" for), and kept here; a new version of the agent asks again. The record is
+// The OK is asked once per backend, version, computer, the program's real path and the SHA-256 of its file, as a
+// change card (`agent-unsandboxed`, which the broker always shows and never offers "always" for), and kept here; a
+// new version, another program earlier on PATH, or an edited copy asks again (K-M2 review 5). The record is
 // Clover's own, in `<home>/trust/agent-oks.json`, inside the fenced set's `trust` folder, so no bot or agent can
 // write itself an OK (lane C confirms the path in its fenced set).
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export interface AgentOkKey {
   backend: string;
   version: string;
   computer: string;
+  /** The program's real path. */
+  path: string;
+  /** The SHA-256 of the program's file. */
+  sha256: string;
 }
 
 export interface AgentOks {
@@ -20,7 +26,7 @@ export interface AgentOks {
   grant(key: AgentOkKey, by: { cardId?: string; at: number }): void;
 }
 
-const keyOf = (k: AgentOkKey) => `${k.computer}\u0000${k.backend}\u0000${k.version}`;
+const keyOf = (k: AgentOkKey) => [k.computer, k.backend, k.version, k.path ?? "", k.sha256 ?? ""].join("\u0000");
 
 export class MemoryAgentOks implements AgentOks {
   readonly #set = new Set<string>();
@@ -70,4 +76,17 @@ export class FileAgentOks implements AgentOks {
     writeFileSync(tmp, `${JSON.stringify(f, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, this.#path);
   }
+}
+
+/** The SHA-256 of a program's file, or undefined where it isn't one regular file. */
+export async function programHash(path: string): Promise<string | undefined> {
+  try {
+    if (!statSync(path).isFile()) return undefined;
+  } catch {
+    return undefined;
+  }
+  return new Promise((resolve) => {
+    const h = createHash("sha256");
+    createReadStream(path).on("data", (c) => h.update(c)).on("end", () => resolve(h.digest("hex"))).on("error", () => resolve(undefined));
+  });
 }

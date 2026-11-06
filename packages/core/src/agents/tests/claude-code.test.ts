@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOOK_SHIM_PATH, dropAllow, hookShimCommand, parseShimArgs, runHook } from "../claude-code/hook-shim";
-import { CLAUDE_PLUGIN_FOLDER, matcherOf, placeInClaudeCode, shellQuote } from "../claude-code/placement";
+import { CLAUDE_PLUGIN_FOLDER, MAX_HOOK_TIMEOUT_MS, matcherOf, placeInClaudeCode, shellQuote } from "../claude-code/placement";
 import type { PluginParts } from "../placement";
 import { waitFor, World } from "./world";
 
@@ -55,6 +55,17 @@ describe("placing plugins' parts in Claude Code", () => {
     expect(hooks.SessionStart[0].matcher).toBe("compact");
   });
 
+  test("a hook whose command isn't an absolute path is skipped, and a timeout is capped (K-M2 review 9)", () => {
+    const dir = join(root, "setup-9");
+    const r = placeInClaudeCode({ skills: [], agents: [], hooks: [
+      { id: "rel", pluginId: "acme/guard", on: ["tool.before"], command: "guard" },
+      { id: "long", pluginId: "acme/guard", on: ["tool.before"], command: "/opt/acme/guard", timeoutMs: 10 * 60_000 },
+    ] }, { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    expect(r.placed.skipped).toEqual([{ id: "rel", why: "its command isn't an absolute path" }]);
+    const hooks = JSON.parse(readFileSync(join(dir, CLAUDE_PLUGIN_FOLDER, "hooks", "hooks.json"), "utf8")).hooks;
+    expect(hooks.PreToolUse[0].hooks[0].command).toContain(`--timeout ${MAX_HOOK_TIMEOUT_MS} --`);
+  });
+
   test("matchers and shell quoting", () => {
     expect(matcherOf(undefined)).toBeUndefined();
     expect(matcherOf(["*"])).toBeUndefined();
@@ -74,6 +85,15 @@ describe("the hook shim", () => {
     const ask = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", updatedInput: { command: "ls" } } };
     expect(JSON.parse(dropAllow(JSON.stringify(ask)))).toEqual(ask);
     expect(dropAllow("plain text context")).toBe("plain text context");
+    // Fail closed (K-M2 review 3): an allow followed by trailing text, a second object, a top-level array, a
+    // permission request's allow and keys nobody listed are all dropped.
+    const allowJson = JSON.stringify(allow);
+    expect(dropAllow(`${allowJson} and more`)).toBe("");
+    expect(dropAllow(`${allowJson}\n${allowJson}`)).toBe("");
+    expect(dropAllow(`[${allowJson}]`)).toBe("");
+    expect(JSON.parse(dropAllow(JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } })))).toEqual({ hookSpecificOutput: { hookEventName: "PermissionRequest" } });
+    expect(JSON.parse(dropAllow(JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "no" } } })))).toEqual({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "no" } } });
+    expect(dropAllow(JSON.stringify({ permissionDecision: "allow", whatever: 1 }))).toBe("");
     expect(parseShimArgs(["--timeout", "500", "--", "/bin/x", "a"])).toEqual({ timeoutMs: 500, command: "/bin/x", args: ["a"] });
     expect(parseShimArgs(["--", "/bin/x"])!.timeoutMs).toBe(10_000);
     expect(parseShimArgs(["nothing"])).toBeNull();
@@ -87,6 +107,15 @@ describe("the hook shim", () => {
     const slow = await runHook("/bin/sh", ["-c", "sleep 5"], "{}", 200);
     expect(slow).toMatchObject({ code: 0, stdout: "" });
     expect(slow.stderr).toContain("ran past 200 ms");
+  });
+
+  test.skipIf(process.platform === "win32")("a hook's timeout ends what it started too (K-M2 review 8)", async () => {
+    const pidFile = join(root, "grandchild.pid");
+    await runHook("/bin/sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], "{}", 300);
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    await new Promise((r) => setTimeout(r, 200));
+    const alive = (() => { try { process.kill(pid, 0); return true; } catch { return false; } })();
+    expect(alive).toBe(false);
   });
 
   test("as a process: Claude Code's input reaches the hook on stdin, and an allow never comes back", async () => {

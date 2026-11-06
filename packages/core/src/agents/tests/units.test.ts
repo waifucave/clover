@@ -10,7 +10,7 @@ import { MAX_RAW_INPUT_CHARS, capRawInput, onceOnly } from "../acp/session";
 import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "../acp/types";
 import { AcpAgentBackend, versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
-import { buildAgentEnv, launchContained } from "../process/launch";
+import { buildAgentEnv, launchContained, spawnPlan } from "../process/launch";
 import { bridgeCloverParts } from "../bridge/handlers";
 import { BRIDGE_ENV, runBridge } from "../bridge/server";
 import type { CloverConn } from "../../ipc/clover";
@@ -417,6 +417,16 @@ describe("the bridge's hello", () => {
 });
 
 describe("Windows containment (lane C's AgentJob)", () => {
+  test("a .cmd runs through cmd.exe, every part quoted; an argument cmd.exe would read is refused", () => {
+    expect(spawnPlan("/usr/bin/x", ["a"], "darwin")).toEqual({ file: "/usr/bin/x", args: ["a"], verbatim: false });
+    const plan = spawnPlan("C:\\npm\\codex-acp.cmd", ["--flag", "a b"], "win32");
+    expect(plan.verbatim).toBe(true);
+    expect(plan.args.slice(0, 3)).toEqual(["/d", "/s", "/c"]);
+    expect(plan.args[3]).toBe('""C:\\npm\\codex-acp.cmd" "--flag" "a b""');
+    expect(() => spawnPlan("C:\\x.cmd", ["a&calc"], "win32")).toThrow();
+    expect(() => spawnPlan("C:\\x.bat", ["%PATH%"], "win32")).toThrow();
+  });
+
   test("an agent that can't join its job is ended and refused; a backend with no job refuses to start", async () => {
     const job = { assign: () => false, contains: () => false, terminate: () => true, close: () => {} };
     const p = launchContained({ command: process.execPath, args: ["-e", "setTimeout(() => {}, 30000)"], cwd: tmpdir(), env: { PATH: process.env["PATH"] ?? "" } }, { job });
@@ -461,16 +471,18 @@ describe("sandbox admissions and OKs", () => {
     expect(admissionFor(table, "x", "macos", undefined)).toMatchObject({ status: "unverified" });
   });
 
-  test("an OK is kept per backend, version and computer, in the fenced trust folder", () => {
+  test("an OK is kept per backend, version, computer, program path and file hash, in the fenced trust folder", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-k-oks-"));
     try {
       const oks = new FileAgentOks(home);
-      const key = { backend: "cursor", version: "2026.10.22", computer: "Studio" };
+      const key = { backend: "cursor", version: "2026.10.22", computer: "Studio", path: "/opt/cursor-agent", sha256: "a".repeat(64) };
       expect(oks.has(key)).toBe(false);
       oks.grant(key, { cardId: "card_abcdef", at: 1 });
       expect(new FileAgentOks(home).has(key)).toBe(true);
       expect(oks.has({ ...key, version: "2026.11.1" })).toBe(false);
       expect(oks.has({ ...key, computer: "Desk" })).toBe(false);
+      expect(oks.has({ ...key, path: "/tmp/cursor-agent" })).toBe(false);
+      expect(oks.has({ ...key, sha256: "b".repeat(64) })).toBe(false);
       expect(agentOksPath(home)).toBe(join(home, "trust", "agent-oks.json"));
     } finally {
       rmSync(home, { recursive: true, force: true });
