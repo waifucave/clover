@@ -10,7 +10,7 @@
 // One Fence per computer: each computer fences its own home, and the folder tree asks the fence of the computer that
 // holds the files (§9.1 "Approvals follow the files"). Paths are absolute and canonical on that computer; the real
 // implementation canonicalizes per OS (case, symlinks, junctions, 8.3 names, hard-link aliases), the fake is POSIX.
-import type { Os } from "@waifucave/clover-protocol";
+import type { Caller, Os } from "@waifucave/clover-protocol";
 import { isInside, type Unsubscribe } from "./common";
 
 /** The fenced set (§9.1), plus the files that hold secrets on Windows and Linux (§8.5). */
@@ -32,6 +32,12 @@ export const FENCED_KINDS = [
   "adult-confirmation",
   /** Development folders themselves (§5.6): they reload on every change without asking. */
   "dev-folders",
+  /** The bot driver's state per session, `<home>/sessions-runtime/` (A-M3), which a turn resumes from. */
+  "sessions-runtime",
+  /** Each bot's folder, `<home>/bots/<bot>/` (its memory and its agents), the item being `<home>/bots/` with `deny:
+   *  "bash-write"`: write-denied to every session's Bash and agents' sandboxes (`policy`), and a bot's session reads and
+   *  writes only its own bot's folder through its file tools (`check`'s and `policy`'s `bot`, `otherBotFolder`). */
+  "bot-memory",
   /** The installed plugins folder, `<home>/plugins/` (#197's check 2): bots, agents and plugin code get a plugin in only
    *  through `plugin.install`'s OK card, and develop plugins in development folders, so nothing they write there loads
    *  or changes a plugin the user OK'd. Read-only to them. */
@@ -62,13 +68,17 @@ export const FENCED_KINDS = [
 export type FencedKind = (typeof FENCED_KINDS)[number];
 
 /** The items whose contents the fence hides from reads as well as writes. */
+/** The items write-denied to command runners only (`bash-write`). */
+export const BASH_WRITE_KINDS: readonly FencedKind[] = ["bot-memory"];
 export const READ_DENIED_KINDS: readonly FencedKind[] = ["run-folder", "browser-profiles", "secrets-file", "key-file"];
 
 export interface FencedPath {
   kind: FencedKind;
   /** Absolute and canonical; a folder covers everything inside it. */
   path: string;
-  deny: "write" | "read-write";
+  /** `bash-write`: write-denied to command runners only (Bash, agents' sandboxes, `policy`), while file tools meet the
+   *  item's own rule in `check` (`bot-memory`: a bot's session reaches only its own bot's folder). */
+  deny: "write" | "read-write" | "bash-write";
 }
 
 export type FenceOp =
@@ -98,6 +108,49 @@ export interface SandboxPolicy {
   network: "none" | "filtered";
 }
 
+/** Who an operation is for, for `bot-memory`: `bot`, a bot's session (or an agent it delegates), which reaches only
+ *  its own bot's folder; `noBots`, a caller that reaches none (plugin code, a peer's session that names no bot); neither,
+ *  the user's own (a coding session they drive, the core), which reads them all. */
+export interface FenceContext {
+  bot?: string;
+  noBots?: boolean;
+}
+
+/** The `bot-memory` context for a caller (`Fence.forCaller`). */
+export function fenceContextFor(caller: Caller): FenceContext {
+  switch (caller.kind) {
+    case "user":
+    case "core":
+      return {};
+    case "plugin":
+      return { noBots: true };
+    case "peer":
+      return caller.bot !== undefined ? { bot: caller.bot } : { noBots: true };
+    case "session":
+      if (caller.sessionKind === "coding") return {}; // a coding session the user drives reads every bot's folder
+      return caller.bot !== undefined ? { bot: caller.bot } : {};
+  }
+}
+
+/** A fence bound to one caller: the same rules, with its `bot-memory` reach. */
+export type CallerFence = Pick<Fence, "os" | "fencedSet" | "touches" | "checkAgentRoot"> & {
+  readonly context: FenceContext;
+  check(op: FenceOp): FenceVerdict;
+  /** `bots`: the bots there are, so a bot's runner is read-denied the others' folders. */
+  policy(opts?: { bots?: readonly string[] }): SandboxPolicy;
+};
+
+/** The `bot-memory` rule for file tools: for a bot's session, a path inside another bot's folder under
+ *  `<cloverHome>/bots/` is refused, to read or to write; its own bot's folder is its own. Names compare folded. */
+export function otherBotFolder(path: string, ctx: FenceContext | undefined, o: { os?: Os; cloverHome: string }): string | undefined {
+  if (ctx?.bot === undefined && !ctx?.noBots) return undefined;
+  const bots = `${o.cloverHome.replace(/[\\/]+$/, "")}/bots`;
+  if (!isInsideFolded(path, bots, o.os) || foldPath(path, o.os) === foldPath(bots, o.os)) return undefined;
+  const rest = path.replace(/\\/g, "/").slice(bots.length).replace(/^\/+/, "");
+  const name = rest.split("/")[0] ?? "";
+  return ctx.bot !== undefined && foldName(name, o.os) === foldName(ctx.bot, o.os) ? undefined : `${bots}/${name}`;
+}
+
 export interface Fence {
   readonly os: Os;
   fencedSet(): readonly FencedPath[];
@@ -105,13 +158,20 @@ export interface Fence {
    *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. Names
    *  compare folded on every OS (`foldName`), whether or not the item exists yet, and a name that isn't ASCII where
    *  Clover names things under its home is refused (`nonAsciiAlias`). */
-  check(op: FenceOp): FenceVerdict;
+  check(op: FenceOp, ctx?: FenceContext): FenceVerdict;
   /** The first fenced item any of `paths` reaches, for any access: an agent's request touching one is always a card,
    *  at every level (§9.3). */
   touches(paths: readonly string[]): FencedPath | null;
-  /** `Agent` refuses a root folder that holds the Clover home or a development folder (§5.6, §9.3). */
+  /** `Agent` refuses a root folder inside the Clover home or holding it, inside or holding any fenced item, or inside or
+   *  holding a development folder (§5.6, §9.3; #197's check 3): coding agents run unsandboxed, so a root there would let
+   *  one edit an OK'd plugin, settings or a plugin's data. */
   checkAgentRoot(root: string): FenceVerdict;
-  policy(): SandboxPolicy;
+  /** The fence as one caller meets it (#197's check 3): a bot's sessions, and the agents it delegates, are read-denied
+   *  other bots' `bot-memory` folders; the user's coding sessions read them all. */
+  forCaller(caller: Caller): CallerFence;
+  /** The arrays for one command runner; for a bot's session (`ctx.bot`), every other bot's folder is read-denied too
+   *  (`bots` lists the bots there are). */
+  policy(ctx?: FenceContext & { bots?: readonly string[] }): SandboxPolicy;
   /** The set changed: a development folder was added or removed, or a plugin's data folder appeared. */
   watch(fn: () => void): Unsubscribe;
 }
@@ -203,7 +263,10 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
   for (const path of paths) {
     for (const item of set) {
       if (writes) {
-        if (inside(path, item.path) || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
+        // A `bash-write` item is the runners' alone to keep out of; a file tool may write inside it (its own rule
+        // decides), never delete or move the item or a folder that holds it.
+        const within = inside(path, item.path) && !(item.deny === "bash-write" && foldPath(path, o.os) !== foldPath(item.path, o.os));
+        if (within || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
       } else if (item.deny === "read-write" && inside(path, item.path)) {
         return { allowed: false, reason: item.kind, path: item.path };
       }

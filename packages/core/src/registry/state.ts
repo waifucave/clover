@@ -99,7 +99,6 @@ const OkSchema = z.object({
   plugins: z.record(z.string(), Fingerprint),
   cards: z.string(),
   codePaths: z.array(z.string()),
-  runFields: z.boolean(),
 });
 const AdultSchema = z.object({ confirmedAt: z.number() });
 

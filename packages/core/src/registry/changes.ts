@@ -45,9 +45,6 @@ export interface OkSnapshot {
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
-  /** Some plugin of the tree has a field of what runs (a `stdio` server, a hook's or agent backend's command, a host,
-   *  client or helper, a point's program or code field): then every file but media counts as code (#197's check 2). */
-  runFields: boolean;
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -77,19 +74,6 @@ const DATA_EXTENSIONS = new Set([
   "vrm", "glb", "gltf", "bin", "moc3", "motion3", "exp3", "physics3", "pose3", "cdi3", "model3",
   "mp3", "wav", "ogg", "m4a", "flac", "opus", "mp4", "webm", "mov",
 ]);
-
-/** Media, which stays data even in a plugin with run fields: images, audio, video, fonts and model weights. */
-const MEDIA_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "heic", "ico",
-  "mp3", "wav", "ogg", "m4a", "flac", "opus", "mp4", "webm", "mov",
-  "woff", "woff2", "ttf", "otf",
-  "vrm", "glb", "moc3", "safetensors", "gguf", "onnx",
-]);
-
-/** Whether a file is media (and not executable). */
-export function isMediaFile(entry: Pick<TreeEntry, "path" | "executable">): boolean {
-  return !entry.executable && MEDIA_EXTENSIONS.has(extensionOf(entry.path));
-}
 
 function extensionOf(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
@@ -197,15 +181,28 @@ function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet
   return [...out];
 }
 
-/** Whether a manifest has a field of what runs. */
-function hasRunFields(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): boolean {
-  if (!m) return false;
-  if (m.host || m.client || m.helper) return true;
-  const c = m.contributes ?? {};
-  if (Object.values(c.mcpServers ?? {}).some((x) => x.type === "stdio")) return true;
-  if ((c.hooks ?? []).some((h) => h.command !== undefined)) return true;
-  if ((c.agentBackends ?? []).some((b) => b.command !== undefined)) return true;
-  return Object.keys(c).some((point) => point.includes(".") && (codeFieldsOf(point)?.length ?? 1) > 0);
+/** The folders of a manifest's `host`, `client` and `helper` parts (each path's folder; the plugin's own folder for
+ *  an entry at its top), lower-cased: everything under them counts as code. */
+function partDirs(m: Manifest | undefined, base: string): string[] {
+  if (!m) return [];
+  const out = new Set<string>();
+  const paths: string[] = [];
+  const deep = (v: unknown) => {
+    if (typeof v === "string") paths.push(v);
+    else if (Array.isArray(v)) v.forEach(deep);
+    else if (v !== null && typeof v === "object") Object.values(v).forEach(deep);
+  };
+  deep(m.host);
+  deep(m.client);
+  deep(m.helper);
+  for (const raw of paths) {
+    if (!raw.includes("/") && !raw.includes(".")) continue; // a word such as a runtime's name, not a path
+    const p = posix.normalize(`${base}${raw.replace(/\\/g, "/").replace(/^\.\//, "")}`).toLowerCase();
+    if (p.startsWith("..") || p.startsWith("/")) continue;
+    const dir = posix.dirname(p);
+    out.add(dir === "." ? (base === "" ? "" : base.slice(0, -1).toLowerCase()) : dir);
+  }
+  return [...out];
 }
 
 export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf): PluginFingerprint {
@@ -248,8 +245,9 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
   const folders = new Set(files.flatMap((f) => f.path.toLowerCase().split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
   const codePaths = new Set(pathsNamed(runStrings(tree.top.manifest, codeFieldsOf), "", fileSet, folders));
   for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
-  const runFields = hasRunFields(tree.top.manifest, codeFieldsOf) || tree.children.some((c) => hasRunFields(c.report.manifest, codeFieldsOf));
-  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort(), runFields };
+  for (const p of partDirs(tree.top.manifest, "")) codePaths.add(p);
+  for (const c of tree.children) for (const p of partDirs(c.report.manifest, `plugins/${c.folder}/`)) codePaths.add(p);
+  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
 }
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
@@ -286,15 +284,16 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   }
   for (const [path, f] of was) if (!is.has(path)) touched.push(f);
   // A file that isn't data, changed, added or removed, is a code change wherever it is (§5.6); so is one a field of
-  // what runs names, whatever its extension (#197's review); and in a tree with run fields, every file but media
-  // (#197's check 2, fail-closed: a run field can reach a file by more spellings than can be read off it).
+  // what runs names, whatever its extension, or one inside a folder it names or a `host`, `client` or `helper` part's
+  // folder (#197's review). Other data edits apply at once, as §5.6 promises. That is safe because the plugins folder
+  // is fenced (the `plugins` kind, #197's check 2): sessions, agents and plugin code can't write a plugin's files, so a
+  // data file there changes only by the user's own hand or an install's OK, never by a bot slipping code past the OK.
   const code = [...(ok.codePaths ?? []), ...now.codePaths];
   const named = (path: string) => {
     const p = path.toLowerCase();
     return code.some((c) => c === "" || p === c || p.startsWith(`${c}/`));
   };
-  const strict = (ok.runFields ?? true) || now.runFields;
-  if (touched.some((f) => !isDataFile(f) || named(f.path) || (strict && !isMediaFile(f)))) return "asks-again";
+  if (touched.some((f) => !isDataFile(f) || named(f.path))) return "asks-again";
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";

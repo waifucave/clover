@@ -39,9 +39,70 @@ export function runFenceConformance(make: FenceFactory): void {
     test("a write inside any fenced item is refused, with its kind", () => {
       const f = fence("linux", [`${HOME}/dev/luna`]);
       for (const item of f.fencedSet()) {
+        if (item.deny === "bash-write") continue; // the runners' alone: below
         const verdict = f.check({ op: "write", path: `${item.path}/x` });
         expect(verdict).toEqual({ allowed: false, reason: item.kind as FencedKind, path: item.path });
       }
+    });
+
+    test("bot-memory: write-denied to every runner; a bot's session reaches only its own bot's folder (#197's check 2)", () => {
+      const f = fence("macos");
+      const BOTS = `${CLOVER}/bots`;
+      expect(f.fencedSet().find((i) => i.kind === "bot-memory")).toEqual({ kind: "bot-memory", path: BOTS, deny: "bash-write" });
+      // Every session's Bash and agent sandbox: no writes under bots/; a bot's runner also can't read the others.
+      const p = f.policy({ bot: "luna", bots: ["luna", "alpha", "pack--tarot"] });
+      expect(p.denyWrite).toContain(BOTS);
+      expect(p.denyRead).toEqual(expect.arrayContaining([`${BOTS}/alpha`, `${BOTS}/pack--tarot`]));
+      expect(p.denyRead).not.toContain(`${BOTS}/luna`);
+      // File tools: its own bot's folder, read and write; another bot's, neither; the folder itself never goes away.
+      expect(f.check({ op: "write", path: `${BOTS}/luna/memory/MEMORY.md` }, { bot: "luna" })).toEqual({ allowed: true });
+      expect(f.check({ op: "read", path: `${BOTS}/luna/memory/MEMORY.md` }, { bot: "luna" })).toEqual({ allowed: true });
+      expect(f.check({ op: "read", path: `${BOTS}/alpha/memory/MEMORY.md` }, { bot: "luna" })).toEqual({ allowed: false, reason: "bot-memory", path: `${BOTS}/alpha` });
+      expect(f.check({ op: "write", path: `${BOTS}/ALPHA/memory/x.md` }, { bot: "luna" })).toMatchObject({ allowed: false, reason: "bot-memory" });
+      expect(f.check({ op: "move", path: `${BOTS}/luna/a.md`, to: `${BOTS}/alpha/a.md` }, { bot: "luna" })).toMatchObject({ allowed: false, reason: "bot-memory" });
+      expect(f.check({ op: "delete", path: BOTS }, { bot: "luna" })).toMatchObject({ allowed: false, reason: "bot-memory" });
+      expect(f.check({ op: "move", path: CLOVER, to: "/tmp/x" })).toMatchObject({ allowed: false });
+    });
+
+    test("an agent's root is never inside the Clover home, nor inside or holding a fenced item (#197's check 3)", () => {
+      for (const os of ["macos", "windows", "linux"] as const) {
+        const f = fence(os);
+        for (const root of [`${CLOVER}/plugins/tarot`, `${CLOVER}/plugins`, `${CLOVER}/settings`, `${CLOVER}/plugin-data`]) {
+          expect([os, root, f.checkAgentRoot(root).allowed]).toEqual([os, root, false]);
+        }
+        expect(f.checkAgentRoot(`${HOME}/projects/site`)).toEqual({ allowed: true });
+      }
+      const f = fence("macos");
+      expect(f.checkAgentRoot(AGENT)).toMatchObject({ allowed: false, reason: "agent-installs" });
+      expect(f.checkAgentRoot(`${HOME}/Library/LaunchAgents`)).toMatchObject({ allowed: false, reason: "login-start" });
+      expect(f.checkAgentRoot(`${HOME}/Library`).allowed).toBe(false); // it holds fenced items
+    });
+
+    test("forCaller: a bot's sessions and its agents reach only their bot's folder; the user's coding sessions read all", () => {
+      const f = fence("macos");
+      const BOTS = `${CLOVER}/bots`;
+      const read = (caller: Parameters<typeof f.forCaller>[0], bot: string) => f.forCaller(caller).check({ op: "read", path: `${BOTS}/${bot}/memory/MEMORY.md` }).allowed;
+      const luna = { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" } as const;
+      const lunaAgent = { kind: "session", sessionId: "s_agent", sessionKind: "agent", bot: "luna" } as const;
+      const coding = { kind: "session", sessionId: "s_code", sessionKind: "coding" } as const;
+      expect([read(luna, "luna"), read(luna, "alpha")]).toEqual([true, false]);
+      expect([read(lunaAgent, "luna"), read(lunaAgent, "alpha")]).toEqual([true, false]);
+      expect([read(coding, "luna"), read(coding, "alpha")]).toEqual([true, true]);
+      expect([read({ kind: "user", client: "app" }, "alpha"), read({ kind: "core" }, "alpha")]).toEqual([true, true]);
+      expect(read({ kind: "plugin", pluginId: "tarot" }, "alpha")).toBe(false);
+      expect(read({ kind: "peer", device: "desk0000000000000001", sessionId: "s_r" }, "alpha")).toBe(false);
+      expect(read({ kind: "peer", device: "desk0000000000000001", sessionId: "s_r", bot: "alpha" }, "alpha")).toBe(true);
+      const p = f.forCaller(luna).policy({ bots: ["luna", "alpha"] });
+      expect(p.denyRead).toContain(`${BOTS}/alpha`);
+      expect(p.denyRead).not.toContain(`${BOTS}/luna`);
+      expect(f.forCaller(coding).policy({ bots: ["luna", "alpha"] }).denyRead).not.toContain(`${BOTS}/alpha`);
+      expect(f.forCaller(luna).context).toEqual({ bot: "luna" });
+    });
+
+    test("sessions-runtime is write-denied, reads allowed", () => {
+      const f = fence("macos");
+      expect(f.check({ op: "write", path: `${CLOVER}/sessions-runtime/s_1.json` })).toEqual({ allowed: false, reason: "sessions-runtime", path: `${CLOVER}/sessions-runtime` });
+      expect(f.check({ op: "read", path: `${CLOVER}/sessions-runtime/s_1.json` }).allowed).toBe(true);
     });
 
     test("reads are free except in the run folder (and the secrets files off macOS)", () => {

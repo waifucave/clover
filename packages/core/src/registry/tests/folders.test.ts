@@ -223,8 +223,8 @@ describe("#197's review", () => {
     expect(signed().load().order).toEqual(["a", "b"]);
     writeFileSync(file, older);
     expect(signed().load().order).toEqual([]);
-    signed().saveOk("tarot", { okHash: "x", files: [], plugins: {}, cards: "", codePaths: [], runFields: false });
-    signed().saveOk("luna", { okHash: "y", files: [], plugins: {}, cards: "", codePaths: [], runFields: false });
+    signed().saveOk("tarot", { okHash: "x", files: [], plugins: {}, cards: "", codePaths: [] });
+    signed().saveOk("luna", { okHash: "y", files: [], plugins: {}, cards: "", codePaths: [] });
     expect(signed().loadOk("luna")?.okHash).toBe("y");
     writeFileSync(join(dir, "oks", "luna.json"), readFileSync(join(dir, "oks", "tarot.json")));
     expect(signed().loadOk("luna")).toBeUndefined();
@@ -241,5 +241,34 @@ describe("#197's review", () => {
     const a = await registryMacKey(secrets);
     expect(a.length).toBe(32);
     expect([...(await registryMacKey(secrets))]).toEqual([...a]);
+  });
+});
+
+describe("the registry opens unsigned only in tests (#197's check 3)", () => {
+  test("no source outside a test passes `unsigned`", () => {
+    const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+    const repo = join(import.meta.dir, "..", "..", "..", "..", "..");
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        if (name === "node_modules" || name === ".git" || name === "dist" || name === "generated" || name === "tests" || name === "test" || name.startsWith(".")) continue;
+        const abs = join(dir, name);
+        const st = statSync(abs);
+        if (st.isDirectory()) walk(abs);
+        else if (/\.(ts|tsx|js|mjs)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name)) {
+          const text = readFileSync(abs, "utf8");
+          // A file that opens the registry and says `unsigned:` (only open.ts may, documenting it).
+          if (/openPluginRegistry|registry\.open/.test(text) && /\bunsigned\s*:/.test(text)) hits.push(abs.slice(repo.length + 1));
+        }
+      }
+    };
+    for (const top of ["packages", "plugins", "apps"]) {
+      try {
+        walk(join(repo, top));
+      } catch {
+        // a top folder this checkout doesn't have
+      }
+    }
+    expect(hits).toEqual(["packages/core/src/registry/open.ts"]);
   });
 });

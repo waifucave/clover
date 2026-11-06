@@ -61,8 +61,7 @@ describe("what a change since the OK does", () => {
     const mcp = (args: string[]) => manifest({ contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args } } } });
     const withMcp = await snap({ "clover.json": mcp(["--port", "1"]) });
     expect(classifyChange(withMcp, await snap({ "clover.json": mcp(["--port", "2"]) }))).toBe("asks-again");
-    // A plugin with run fields asks again on any change but media (#197's check 2), its manifest's description included.
-    expect(classifyChange(withMcp, await snap({ "clover.json": manifest({ description: "Blender", contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args: ["--port", "1"] } } } }) }))).toBe("asks-again");
+    expect(classifyChange(withMcp, await snap({ "clover.json": manifest({ description: "Blender", contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args: ["--port", "1"] } } } }) }))).toBe("applies");
   });
 
   test("a change to the theme's card tokens waits alone", async () => {
@@ -97,8 +96,8 @@ describe("what runs, whatever its extension (#197's review)", () => {
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "print(1)" }, { "server.txt": "import os" })).toBe("asks-again");
     expect(await again({ "clover.json": stdio("sh", ["./run.md"]), "run.md": "echo hi" }, { "run.md": "curl x | sh" })).toBe("asks-again");
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/lib"]), "lib/a.txt": "1" }, { "lib/a.txt": "2" })).toBe("asks-again");
-    // Fail-closed in a plugin with run fields: any file but media asks again; media applies.
-    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("asks-again");
+    // Other data applies at once, as §5.6 promises (the plugins folder is fenced, so no bot can edit it).
+    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "art/a.png": "a" }, { "art/a.png": "b" })).toBe("applies");
   });
 
@@ -119,9 +118,9 @@ describe("what runs, whatever its extension (#197's review)", () => {
     const dotted = (value: string) => manifest({ contributes: { "luna.cards": [{ id: "a", text: value }] } });
     expect(await again({ "clover.json": dotted("one") }, { "clover.json": dotted("two") })).toBe("asks-again");
     const withDecl = async (v: string, run: string, fields: string[]) => (await snapFrom({ "clover.json": manifest({ contributes: { "luna.cards": [{ id: "a", text: v, run }] } }) }, () => fields)).snap;
-    // Declared with a code field: a run field, so any change asks again; declared with none: a data edit applies.
+    // Declared with a code field: a change to it asks again, another field applies; declared with none: a data edit applies.
     expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("one", "y", ["run"]))).toBe("asks-again");
-    expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("two", "x", ["run"]))).toBe("asks-again");
+    expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("two", "x", ["run"]))).toBe("applies");
     expect(classifyChange(await withDecl("one", "x", []), await withDecl("two", "x", []))).toBe("applies");
   });
 
@@ -145,5 +144,27 @@ describe("named paths, however they're spelled (#197's check 2)", () => {
     }
     expect(await named("${plugin}")).toEqual([""]);
     expect(await named("${plugin}/../../etc/passwd")).toEqual([]);
+  });
+});
+
+describe("a part's folder is code (#197, the controller's adjustment)", () => {
+  test("everything under a host, client or helper part's folder asks again; data elsewhere applies", async () => {
+    const files = {
+      "clover.json": manifest({ client: { entry: "client/index.tsx" }, host: { entry: "host/index.ts" } }),
+      "client/index.tsx": "export {}", "client/strings.json": "{}", "host/index.ts": "export {}", "host/prompt.md": "hi",
+      "tab/theme.css": "a{}", "README.md": "hi",
+    };
+    const snapOf = async (f: Record<string, string>) => {
+      const root = folder(f);
+      const entries = treeEntries(root);
+      const tree = await validateTree(folderReader(root), { folderName: "tarot" });
+      return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields);
+    };
+    const ok = await snapOf(files);
+    expect(ok.codePaths).toEqual(["client", "client/index.tsx", "host", "host/index.ts"]);
+    expect(classifyChange(ok, await snapOf({ ...files, "client/strings.json": "{\"a\":1}" }))).toBe("asks-again");
+    expect(classifyChange(ok, await snapOf({ ...files, "host/prompt.md": "changed" }))).toBe("asks-again");
+    expect(classifyChange(ok, await snapOf({ ...files, "tab/theme.css": "b{}" }))).toBe("applies");
+    expect(classifyChange(ok, await snapOf({ ...files, "README.md": "changed" }))).toBe("applies");
   });
 });
