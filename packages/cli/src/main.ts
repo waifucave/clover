@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
-import { resolveCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity } from "@waifucave/clover-core";
+import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -240,58 +240,49 @@ async function getToken(): Promise<string> {
   return t;
 }
 
+/** The daemon's endpoint: `<home>/run/core.sock`, or the home's named pipe on Windows. */
 function socketPath(): string {
-  return join(resolveCloverHome(), "run", "core.sock");
+  return resolveEndpoint(join(resolveCloverHome(), "run")).path;
 }
 
 const AUTOLAUNCH_POLL_MS = 200;
 const AUTOLAUNCH_TIMEOUT_MS = 8000;
 
-// Lifecycle Task 5: the pure core behind "clover auto-launches Clover.app when the daemon is down."
-// fs/exec/clock/env are all seams (deps) so the 3 outcomes are unit-testable with zero real process
-// launches — connect() below wires the real ones. Dev is unaffected: my bun daemon already has the
-// socket live → "already-up" before anything else runs; without it and without an installed app
-// bundle in the dev tree → "no-app", and the caller preserves today's getToken() dev-hint error.
+// Lifecycle Task 5, C-M1: the pure core behind "clover starts the daemon when it is down". The CLI
+// starts the daemon through the OS (`startDaemonThroughOs`: launchctl, systemctl --user, schtasks), and
+// on a desktop the daemon starts the app itself (the pair, spec §3.1). The OS, the clock and the env
+// are seams, so the outcomes are unit-testable with no real process launches — connect() below wires
+// the real ones. Dev is unaffected: a running dev daemon answers → "already-up"; with none and no
+// login unit installed for this profile → "no-app", and the caller keeps getToken()'s dev hint.
 export async function ensureDaemonReachable(deps: {
-  socketExists: () => boolean;
-  appBundlePresent: () => boolean; // `open -Ra "Clover"` / bundle-id lookup succeeds
-  launchApp: () => void; // `open -g -b com.waifucave.clover` — comes up as the menu-bar agent, no window
+  endpointUp: () => boolean | Promise<boolean>;
+  /** Start the daemon through the OS; "not-installed" when this profile has no daemon unit. */
+  startThroughOs: () => Promise<DaemonStartResult>;
   sleepMs: (ms: number) => Promise<void>;
   now: () => number;
   noAutoLaunch: boolean; // CLOVER_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
 }): Promise<"already-up" | "launched" | "no-app"> {
-  if (deps.socketExists()) return "already-up";
-  if (deps.noAutoLaunch || !deps.appBundlePresent()) return "no-app";
-  deps.launchApp();
+  if (await deps.endpointUp()) return "already-up";
+  if (deps.noAutoLaunch) return "no-app";
+  if ((await deps.startThroughOs()) === "not-installed") return "no-app";
   const deadline = deps.now() + AUTOLAUNCH_TIMEOUT_MS;
   while (deps.now() < deadline) {
-    // A real scheduler handoff before each check: the socket is created by a separate OS process
-    // (the app finishing its launch), not by anything on our own microtask chain. Production's
-    // sleepMs (Bun.sleep) already yields for real, but relying on that alone starves this check
-    // when a poll cycle's delay resolves synchronously (e.g. an instantly-resolving test stub) —
-    // a chain of already-resolved-promise awaits never lets a pending macrotask (here, the daemon
-    // actually coming up) run. Confirmed empirically: without this line, the second unit test
-    // below (socket appears via a mocked setTimeout) times out and throws instead of returning
-    // "launched", even though nothing else about the loop's logic changes.
+    // A real scheduler handoff before each check: the endpoint is created by a separate OS process
+    // (the daemon the OS just started), not by anything on our own microtask chain. Without it a
+    // poll cycle whose delay resolves synchronously (an instantly-resolving test stub) never lets a
+    // pending macrotask (here, the daemon coming up) run.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    if (deps.socketExists()) return "launched";
+    if (await deps.endpointUp()) return "launched";
     await deps.sleepMs(AUTOLAUNCH_POLL_MS);
   }
-  if (deps.socketExists()) return "launched";
-  throw new Error("Clover isn't responding — open Clover.app manually, or run: clover daemon run");
-}
-
-function appBundlePresent(): boolean {
-  // Only a REAL install counts — never a Debug build. mdfind/`open -Ra` also match Xcode
-  // DerivedData Debug builds (Spotlight-indexed), which would auto-launch a dev build and
-  // break the "dev is unaffected" invariant. DerivedData is never under /Applications.
-  return existsSync("/Applications/Clover.app") || existsSync(join(homedir(), "Applications", "Clover.app"));
+  if (await deps.endpointUp()) return "launched";
+  throw new Error("Clover isn't responding — start Clover, or run: clover daemon run");
 }
 
 /**
  * WS-19 (fix round 4): the daemon door the credential verbs use WHEN ONE IS ALREADY LISTENING.
  *
- * Deliberately NOT `connect()` above: that one AUTO-LAUNCHES Clover.app when the socket is missing,
+ * Deliberately NOT `connect()` above: that one STARTS the daemon (and with it Clover.app) when the endpoint is missing,
  * which is exactly wrong here — `clover login` has always worked with no daemon, and launching the
  * user's menu-bar app because they typed a credential command would be a surprise, not a service.
  * So this probes the socket file first and answers `undefined` for every failure: no socket, no
@@ -299,7 +290,7 @@ function appBundlePresent(): boolean {
  * and says so.
  */
 async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined> {
-  if (!existsSync(socketPath())) return undefined;
+  if (!(await endpointPresent(socketPath()))) return undefined;
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
@@ -320,7 +311,7 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
  * `PluginDoor` interface structurally, with no adapter shim.
  */
 async function openPluginDaemonDoor(): Promise<CloverClient | undefined> {
-  if (!existsSync(socketPath())) return undefined;
+  if (!(await endpointPresent(socketPath()))) return undefined;
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
@@ -332,9 +323,13 @@ async function openPluginDaemonDoor(): Promise<CloverClient | undefined> {
 
 async function connect(name: string, onEvent: (e: any) => void = () => {}): Promise<CloverClient> {
   await ensureDaemonReachable({
-    socketExists: () => existsSync(socketPath()),
-    appBundlePresent,
-    launchApp: () => { Bun.spawnSync(["open", "-g", "-b", "com.waifucave.clover"]); },
+    endpointUp: () => endpointPresent(socketPath()),
+    // The login unit serves the profile's default home; a CLI on any other home (a test's temp home)
+    // never starts it.
+    startThroughOs: async () => {
+      const spec = currentLoginSpec();
+      return isDefaultCloverHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
+    },
     sleepMs: (ms) => Bun.sleep(ms),
     now: () => Date.now(),
     noAutoLaunch: !!process.env.CLOVER_NO_AUTOLAUNCH,
@@ -1465,6 +1460,226 @@ export async function runLogoutOpenAiRoute(
 
 // Guarded so `main.ts` can be imported (e.g. by tests, for INIT_PROMPT/runTurnSession) without
 // executing the CLI — import.meta.main is true only when this file is the entry point.
+
+// --- Login start and supervision (lane C, C-M1; spec §3.1) ---------------------------------------
+function currentDaemonPlatform(): "darwin" | "linux" | "win32" {
+  return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
+}
+
+/** This computer's login spec for the running binary and the current home and profile. `app` is the
+ *  app's executable (macOS: its bundle), which the installer passes with `--app`. */
+function currentLoginSpec(app?: string): LoginSpec {
+  const home = resolveCloverHome();
+  return {
+    os: currentDaemonPlatform(), bin: process.execPath, home, logsDir: join(home, "logs"), profile: resolveCloverProfile(),
+    ...(app ? { app: { bin: resolve(app) } } : {}),
+  };
+}
+
+const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path to the app>]";
+
+/** Whether a process's executable is the daemon's binary (`bin`, or this CLI's own when they're one binary). */
+function isDaemonImage(image: string | null, bin: string): boolean {
+  if (image === null) return false;
+  const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+  return [bin, process.execPath].some((b) => real(b) === real(image));
+}
+
+/** Stop the running daemon for an uninstaller (`disable --stop`, `remove`): the pair's quit first
+ *  (`pair.quit` as the CLI, so the daemon tells the app and exits 0, and `supervise` ends), else
+ *  SIGTERM to the lock holder on macOS and Linux (the same clean stop), then the OS's own stop if it
+ *  is still there after 10 s. */
+async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
+  const lockFile = join(spec.home, "run", spec.os === "win32" ? "core.pid" : "core.lock");
+  let pid = -1;
+  try { pid = Number(JSON.parse(readFileSync(lockFile, "utf8")).pid); } catch { /* no holder recorded */ }
+  const alive = () => { if (!(pid > 0)) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
+  const r = await stopDaemonCleanly({
+    answers: () => endpointAnswers(socketPath()),
+    stillRunning: alive,
+    async requestQuit() {
+      try {
+        const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
+        if (token) { await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-autostart" }, "pair.quit", { handOver: false }); return true; }
+      } catch { /* an older daemon, or a token it won't take: fall back */ }
+      if (spec.os === "win32" || !(pid > 0)) return false;
+      // Only a process running the daemon's binary is signalled (review M5): a pid in the lock file may have
+      // been reused since.
+      if (!isDaemonImage(processImage(pid), spec.bin)) return false;
+      try { process.kill(pid, "SIGTERM"); return true; } catch { return false; }
+    },
+    sleep: (ms) => Bun.sleep(ms),
+    now: () => Date.now(),
+  });
+  if (r !== "timed-out") return r;
+  await stopThroughOs(spec, bunRunner);
+  return "stopped through the OS";
+}
+
+/** `clover autostart enable|disable|stop|remove|start|status [--json] [--app <path>]`: login start on this OS. The
+ *  definitions run `clover-core supervise` on the running binary (`process.execPath`); lane M's
+ *  installer invokes the installed binary, and passes the app's path with `--app` so the daemon can
+ *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
+ *  running and either side can still start the other. `remove` is for an uninstaller. */
+async function runAutostartCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  // `start` is `clover daemon start` under the name the app calls (E-M1): through the OS, never as
+  // the caller's child.
+  if (sub === "start") { await runDaemonStart(); return; }
+  const appAt = rest.indexOf("--app");
+  const app = appAt >= 0 ? rest[appAt + 1] : undefined;
+  if (appAt >= 0 && !app) { console.error(AUTOSTART_USAGE); process.exitCode = 1; return; }
+  const base = currentLoginSpec(app);
+  // Windows: the task and its logon trigger name this user by SID.
+  const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+  const spec: LoginSpec = winUser ? { ...base, winUser } : base;
+  // One login unit per profile, serving the profile's default home: a unit for another home would
+  // take over the profile's label.
+  if (sub !== "status" && sub !== undefined && !isDefaultCloverHome(spec.home, spec.profile)) {
+    console.error(`autostart serves the ${spec.profile} profile's default home; CLOVER_HOME is ${spec.home}`);
+    process.exitCode = 1;
+    return;
+  }
+  mkdirSync(spec.logsDir, { recursive: true });
+  const os = liveLoginOsDeps();
+  switch (sub ?? "status") {
+    case "enable": {
+      // The unit must run a real `clover-core` binary; under `bun src/main.ts` the executable is bun.
+      if (/[\\/]bun(\.exe)?$/.test(process.execPath)) {
+        console.error("autostart enable needs the compiled clover-core binary; in dev, run the daemon with: clover daemon run");
+        process.exitCode = 1;
+        return;
+      }
+      const st = await loginEnable(spec, os);
+      console.log(st.registered ? `autostart enabled (${st.label})` : `autostart: wrote the unit but the OS did not register it (${st.label})`);
+      if (!st.registered) process.exitCode = 1;
+      break;
+    }
+    case "disable": {
+      // Login start off. The running pair keeps running unless `--stop` (an uninstaller, which needs the
+      // daemon's files free); `remove` stops it too and takes everything away.
+      const stopped = rest.includes("--stop") ? await stopRunningDaemon(spec) : null;
+      await loginDisable(spec, os);
+      console.log(stopped === null
+        ? `autostart disabled (${spec.profile}); Clover can still be started, and keeps running`
+        : `autostart disabled (${spec.profile}); the daemon: ${stopped}`);
+      break;
+    }
+    case "stop": {
+      // An upgrade (lane M, #174): the running pair stopped cleanly, the login entry kept as it is, so the new
+      // version starts at the next login or `autostart start`. Succeeds when nothing is running.
+      const stopped = await stopRunningDaemon(spec);
+      console.log(`the daemon: ${stopped}; autostart unchanged (${spec.profile})`);
+      break;
+    }
+    case "remove": {
+      const stopped = await stopRunningDaemon(spec);
+      await loginRemove(spec, os);
+      console.log(`autostart removed (${spec.profile}); the daemon: ${stopped}`);
+      break;
+    }
+    case "status": {
+      // "registered": the daemon's definition is installed, so it can be started (`autostart start`),
+      // whether or not login start is on. An app enables only when it isn't: "disabled" is the user's
+      // choice and stays.
+      const st = await loginStatus(spec, os);
+      const installed = st.state !== "not-installed";
+      if (rest.includes("--json")) {
+        console.log(JSON.stringify({ state: st.state, registered: installed, loginStart: st.state === "enabled", running: await endpointAnswers(socketPath()), label: st.label, ...(st.unitPath ? { unit: st.unitPath } : {}) }));
+      } else {
+        console.log(`autostart: ${st.state}${st.unitPath ? ` (${st.unitPath})` : ""}${installed ? " [registered]" : ""}`);
+      }
+      break;
+    }
+    default:
+      console.error(AUTOSTART_USAGE);
+      process.exitCode = 1;
+  }
+}
+
+/** `clover daemon start`: start the daemon through the OS (never as this process's child) and wait
+ *  until it answers. The app's side runs this when no daemon answers (spec §3.1). */
+async function runDaemonStart(): Promise<void> {
+  const path = socketPath();
+  if (await endpointAnswers(path)) { console.log("clover-core is already running"); return; }
+  const spec = currentLoginSpec();
+  if (!isDefaultCloverHome(spec.home, spec.profile)) {
+    console.error(`the login unit serves the ${spec.profile} profile's default home; for CLOVER_HOME ${spec.home} run: clover daemon run`);
+    process.exitCode = 1;
+    return;
+  }
+  const r = await startDaemonThroughOs(spec, bunRunner);
+  if (r === "not-installed") {
+    console.error("clover-core has no login unit for this profile; run: clover autostart enable (or, in dev: clover daemon run)");
+    process.exitCode = 1;
+    return;
+  }
+  const deadline = Date.now() + AUTOLAUNCH_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (await endpointAnswers(path)) { console.log("clover-core started"); return; }
+    await Bun.sleep(AUTOLAUNCH_POLL_MS);
+  }
+  console.error(r === "failed" ? "the OS refused to start clover-core" : "clover-core did not answer in time");
+  process.exitCode = 1;
+}
+
+/** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
+async function runSupervise(): Promise<void> {
+  const bin = process.execPath;
+  let alive = true;
+  let stopChild: (() => void) | null = null;
+  let wake: (() => void) | null = null;
+  let childExited: Promise<unknown> | null = null;
+  // On Windows a kill is TerminateProcess, with no handler: the pair's quit first, so the daemon tells the app
+  // and removes its token (review M2), and the kill only if it hasn't gone within 5 s. Elsewhere the kill is a
+  // SIGTERM, which the daemon's handler turns into the same clean stop.
+  const stopAll = () => {
+    alive = false;
+    void (async () => {
+      if (process.platform === "win32" && childExited) {
+        try {
+          const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
+          if (token) {
+            await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-supervise" }, "pair.quit", { handOver: false });
+            if (await Promise.race([childExited.then(() => true), Bun.sleep(5_000).then(() => false)])) { wake?.(); return; }
+          }
+        } catch { /* no token, or no answer: the kill below */ }
+      }
+      stopChild?.();
+      wake?.();
+    })();
+  };
+  process.on("SIGTERM", stopAll);
+  process.on("SIGINT", stopAll);
+  const result = await superviseLoop({
+    spawnDaemon(): DaemonRun {
+      // macOS: the daemon starts with responsibility disclaimed, so it is its own responsible process and a
+      // double fork of anything it starts still names it (the caller check, review B1).
+      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([bin, "daemon", "run"]) : null;
+      if (disclaimed) {
+        childExited = disclaimed.exited;
+        const stopIt = () => { try { process.kill(disclaimed.pid, "SIGTERM"); } catch { /* already gone */ } };
+        stopChild = stopIt;
+        return { exited: disclaimed.exited, stop: stopIt };
+      }
+      const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      childExited = child.exited;
+      const kill = () => { try { child.kill(); } catch { /* already gone */ } };
+      stopChild = kill;
+      return { exited: child.exited, stop: kill };
+    },
+    async wait(ms: number): Promise<boolean> {
+      if (!alive) return false;
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(() => { wake = null; resolve(); }, ms);
+        wake = () => { clearTimeout(t); wake = null; resolve(); };
+      });
+      return alive;
+    },
+    shouldContinue: () => alive,
+  });
+  console.error(`[supervise] loop ended: ${result.ended} (starts=${result.starts}, crashes=${result.crashes})`);
+}
+
 if (import.meta.main) {
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
   // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
@@ -1473,6 +1688,12 @@ if (import.meta.main) {
   // `__workflow-worker` below, with a different bridge.
   if (process.argv[2] === RUNTIME_WORKFLOW_WORKER_ARG) {
     await runRuntimeWorkflowWorker();
+  }
+  // K-M1: the agents' MCP bridge, which an ACP agent starts as `<clover-core> bridge` (`bridgeCommand()`). POSITIONAL,
+  // like the workers here, and checked before anything else: it speaks MCP on stdio and exits when the agent closes it.
+  if (process.argv[2] === "bridge") {
+    const { bridgeMain } = await import("./bridge-entry");
+    await bridgeMain();
   }
   // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<clover-core> __workflow-worker`
   // already wrapped in sandbox-exec; THIS process is the sandboxed worker. Route straight to the entry
@@ -1559,6 +1780,15 @@ if (import.meta.main) {
   // through a real daemon on a temp CLOVER_HOME with a FileSecretStore, the session in a Bun Worker
   // built from the second compile entrypoint. Same argv[2] shape and the same CLOVER_HOME rule as
   // `__runtime-state-probe` (it refuses without one; it never touches a real home or the Keychain).
+  // M1: bun:ffi in the compiled binary on every OS (./ffi-probe.ts), and the bridge's peer-pid check through it;
+  // `build:daemon --smoke` runs both.
+  if (process.argv[2] === "__ffi-probe") {
+    const { runFfiProbe, runPeerPidProbe } = await import("./ffi-probe");
+    const r = runFfiProbe();
+    const peer = r.ok ? await runPeerPidProbe() : { ok: false, line: "peer-pid: not run" };
+    process.stdout.write(`${r.line}\n${peer.line}\n`);
+    process.exit(r.ok && peer.ok ? 0 : 1);
+  }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
     const result = await runChannelReceiverProbe();
@@ -1639,6 +1869,23 @@ if (import.meta.main) {
     console.log(`clover ${CORE_VERSION}`);
     process.exit(0);
   }
+  case "autostart": {
+    // `clover-core autostart enable|disable|remove|start|status` — login start on this OS (spec §3.1).
+    // Lane M's install hooks run `enable` and `disable`, the app runs `status --json` and `start`;
+    // `enable` writes the launchd agent, systemd user unit or Task Scheduler task that runs
+    // `clover-core supervise`, and with `--app` the app's own unit, task or XDG entry. The exit code
+    // is the command's (the app and the installers read it).
+    await runAutostartCommand(sub, process.argv.slice(4));
+    process.exit(process.exitCode ?? 0);
+    break;
+  }
+  case "supervise": {
+    // The restart loop the login unit runs: starts the daemon and restarts it after a crash; a
+    // clean stop (a Quit) ends the loop so the crash-only OS unit does not bring it back.
+    await runSupervise();
+    process.exit(0);
+    break;
+  }
   case "daemon run": {
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
     // SIGTERM/SIGINT handlers live under `if (import.meta.main)`, which is FALSE for the compiled
@@ -1679,6 +1926,10 @@ if (import.meta.main) {
     // hands back is what releases the lock (→ unlinks the socket). `process.exit(0)` on the same
     // line would kill the process mid-drain and leave the stale socket this handler exists to avoid.
     const shutdown = async () => { await daemon.stop(); process.exit(0); };
+    // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
+    // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app
+    // `app.quit` first, with no wait of the daemon's own.
+    void daemon.pairStopped.then(shutdown);
     process.on("SIGTERM", shutdown);
     process.on("SIGINT", shutdown);
     break; // keeps running; the open listening socket keeps the event loop alive
@@ -2525,27 +2776,33 @@ if (import.meta.main) {
     await new Promise(() => {}); // run until interrupted
     break; // unreachable, but keeps the switch uniform
   }
+  // C-M1: the old LaunchAgent installer is retired; these spellings forward to `clover autostart`.
   case "daemon install": {
-    const { installDaemon } = await import("./launchd");
-    // process.execPath = the bun binary in dev, the compiled `winter` binary in production.
-    const binary = process.execPath;
-    if (binary.endsWith("/bun")) {
-      console.error("daemon install requires the compiled winter binary (Task 16); in dev use: clover daemon run");
-      process.exit(1);
-    }
-    await installDaemon(binary, resolveCloverHome());
-    console.log(`${AQUA}installed launchd agent${RESET} — daemon starts at login and stays alive`);
+    await runAutostartCommand("enable");
     break;
   }
   case "daemon uninstall": {
-    const { uninstallDaemon } = await import("./launchd");
-    await uninstallDaemon();
-    console.log("launchd agent removed");
+    await runAutostartCommand("disable");
     break;
   }
   case "daemon status": {
-    const { daemonStatus } = await import("./launchd");
-    console.log(await daemonStatus());
+    await runAutostartCommand("status");
+    break;
+  }
+  case "daemon start": {
+    await runDaemonStart();
+    break;
+  }
+  case "daemon check-server": {
+    // Before a client sends its token: is this home's endpoint served by this user's daemon (and,
+    // with --image, by that binary)? The app runs it before its hello (E-M1's review). Exit 0 when ok.
+    const rest = process.argv.slice(4);
+    const at = rest.indexOf("--image");
+    const image = at >= 0 ? rest[at + 1] : undefined;
+    if (!image) { console.error("usage: clover-core daemon check-server --image <the daemon's binary> [--json]"); process.exitCode = 2; break; }
+    const r = await checkDaemonServer(socketPath(), { image });
+    console.log(rest.includes("--json") ? JSON.stringify(r) : r.ok ? "ok" : `not ok: ${r.reason}`);
+    process.exitCode = r.ok ? 0 : 1;
     break;
   }
   case "login": {
@@ -3045,7 +3302,7 @@ if (import.meta.main) {
       // creates a session the same way `run` does below; wrapped in try/catch because the
       // file-direct saved list above already answered the primary ask — a down/flaked daemon must
       // never turn a successful `list` into a failed one.
-      if (existsSync(socketPath())) {
+      if (await endpointPresent(socketPath())) {
         try {
           const c = await connect("cli-workflow-list");
           try {
@@ -3206,7 +3463,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon install | daemon uninstall | daemon status
+  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)
