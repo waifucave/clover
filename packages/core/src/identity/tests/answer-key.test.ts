@@ -16,7 +16,9 @@ describe("answer key", () => {
   test("held by the Keychain on macOS, Hello or the TPM on Windows, and marked none elsewhere", () => {
     expect(answerKeyHolder("macos", { appKeychain: true })).toBe("app-keychain");
     expect(answerKeyHolder("macos", {})).toBe("none");
-    expect(answerKeyHolder("windows", { hello: true, tpm: true })).toBe("hello");
+    // Never Windows Hello, which prompts: the TPM, or nothing.
+    expect(answerKeyHolder("windows", { tpm: true })).toBe("tpm");
+    expect(answerKeyHolder("windows", { hello: true, tpm: false } as never)).toBe("none");
     expect(answerKeyHolder("windows", { tpm: true })).toBe("tpm");
     expect(answerKeyHolder("windows", {})).toBe("none");
     expect(answerKeyHolder("linux", { tpm: true })).toBe("none");
