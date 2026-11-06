@@ -11,6 +11,7 @@ Every daemon tees stdout/stderr into `<WINTER_HOME>/logs/daemon.log` (`packages/
 ## Running tests
 
 - `pnpm test` (every workspace, serially); `cd packages/core && bun test`; `bun test path/to/file.test.ts` (substring); `bun test -t "name"`.
+- **The pinned Bun**: CI runs `.bun-version`'s Bun. `scripts/pinned-bun <args>` runs that one beside any other on the machine (fetched on first use into the user cache, `~/Library/Caches/clover-bun/<version>/bun`, its zip checked against the release's SHA-256), with its folder first on PATH; `scripts/heavy` puts it first on PATH for every job. A run on another Bun prints one warning line from the preloads (`packages/core/test/bun-pin-warning.ts`); `build:daemon`, `dev:daemon` and the release refuse to run on one.
 - **Built-binary e2e** (`packages/core/test/e2e/winter-{chat,code,dispatch}-e2e.test.ts`, `legacy-claude-agent-adoption-e2e.test.ts`) use `test/helpers/winter-binary.ts`'s `describeWithWinterBinary`: `WINTER_RUNTIME_EXECUTABLE="$PWD/dist/winter"` (`bun run build:winter`, from a sibling `../winter-agent-sdk` or `$WINTER_SDK_CHECKOUT`) names the binary; unset → the version-matched npm platform package if installed, else SKIP; a missing path → warn and skip; `WINTER_RUNTIME_REQUIRE_BINARY=1` (CI) makes either a failure.
 - **Login-shell PATH**: every daemon boot merges the user's login-shell PATH into its own (`packages/core/src/login-shell-path.ts`); `WINTER_LOGIN_SHELL_PATH=off` (or `0`/`false`) skips it. The core and cli `test/preload.ts` set it — no test runs your real shell.
 - **Keychain**: the same preloads set `WINTER_KEYCHAIN_SERVICE=com.winter.core.test-isolated` (honoured only for a non-default home, `profile.ts`'s `keychainService()`).
@@ -19,7 +20,7 @@ Every daemon tees stdout/stderr into `<WINTER_HOME>/logs/daemon.log` (`packages/
 
 `packages/core/test/per-process-tmp.ts` is the FIRST import of every package's preload (core/cli `preload.ts`; protocol/plugin-sdk via `bunfig.toml`): one `<real tmpdir>/winter-test-XXXXXX` per test process, `$TMPDIR` pointed at it, the tree removed by a detached watcher once the process is gone, whatever the end (SIGKILL included). Never in-process: `bun test` exits natively (`process.on("exit")` never fires) and an `afterAll` rm blocks ~6 s into bun's 5 s hook timeout.
 
-- A child gets the root only when the spawn passes `env: {...process.env}` — Bun 1.3.14 hands a spawn with NO `env` the STARTING environment; a bare spawn that leaks is a bug.
+- A child gets the root only when the spawn passes `env: {...process.env}` — `Bun.spawn`/`Bun.spawnSync` with NO `env` hand the child the STARTING environment (measured on 1.3.14 and 1.4.4; 1.3.14's sync `child_process` calls did too, 1.4.4's re-read it); a bare spawn that leaks is a bug.
 - `confstr`/macOS `mktemp` still answer the real per-user temp dir BY DESIGN (`agent/sandbox.ts` depends on it).
 - Never leave temp dirs outside the root. Swift: `addTeardownBlock`/`defer` (WinterKit: `removeAtTeardown`); `RealDaemon` runs its daemon on its own `$TMPDIR`, removed by `stop()`. SwiftPM itself leaves `TemporaryDirectory.*` + `.lock` files in `$TMPDIR` on every `swift build/test/package` — for a bulk Swift run point `TMPDIR` at a scratch dir you delete.
 
@@ -37,7 +38,7 @@ Each builds a real binary; none runs under `bun test`: `verify:workflow` (sandbo
 
 ## Idle wakeups
 
-`bun run check:idle-wakeups` boots an isolated daemon, fails over 50 wakeups/s; `--pid N` measures a running one read-only. `top`'s IDLEW is the SINCE-LAUNCH count unless `-c d` (3,962 on an 8 h daemon is ~0.14/s).
+`bun run check:idle-wakeups` boots an isolated daemon, fails over 50 interrupt wakeups/s; `--pid N` measures a running one read-only. It reads the process's own counters (`proc_pid_rusage`) and prints `top`'s IDLEW (package-idle wakeups) beside them: on macOS 26 under load IDLEW read 0 for every process, a 5 ms timer included (2026-11-05), so it no longer gates. Measured then: an idle daemon wakes about once a second on Bun 1.4.4 and ten times on 1.3.14. (`top`'s IDLEW is the SINCE-LAUNCH count unless `-c d`.)
 
 ## The live computer-use suite
 

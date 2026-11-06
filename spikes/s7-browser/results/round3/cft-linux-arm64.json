@@ -1,0 +1,270 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "linux",
+    "arch": "arm64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "seconds": 191.5
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: Runtime.evaluate timed out",
+        "screenshots: Target.createTarget timed out"
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64/chrome-headless-shell-linux-arm64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 126679292,
+        "unpackedBytes": 290184932,
+        "files": 287,
+        "symlinks": 0,
+        "downloadMs": 539,
+        "extractMs": 965,
+        "sha256": "5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "fdpipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/012426.829740:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/012427.060267:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGTRAP); stderr: [1105/012427.217513:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "fdpipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 1390
+        }
+      ],
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 1390,
+        "warmMs": 42,
+        "portMs": 46
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 174.69,
+            "memKind": "pss",
+            "rssMiB": 463.42,
+            "procs": 6,
+            "cpuPct": 0.25
+          },
+          {
+            "tabs": 1,
+            "memMiB": 210.35,
+            "memKind": "pss",
+            "rssMiB": 590.23,
+            "procs": 7,
+            "cpuPct": 1.5
+          },
+          {
+            "tabs": 2,
+            "memMiB": 233.8,
+            "memKind": "pss",
+            "rssMiB": 710.57,
+            "procs": 8,
+            "cpuPct": 3.74
+          },
+          {
+            "tabs": 4,
+            "memMiB": 276.34,
+            "memKind": "pss",
+            "rssMiB": 946.66,
+            "procs": 10,
+            "cpuPct": 7.48
+          },
+          {
+            "tabs": 8,
+            "memMiB": 361.26,
+            "memKind": "pss",
+            "rssMiB": 1419.68,
+            "procs": 14,
+            "cpuPct": 12.94
+          }
+        ],
+        "perIdleTabMiB": 23.32,
+        "browserBaseMiB": 174.69,
+        "fourContextsMiB": 95.09,
+        "animatedTabCpuPct": 50.11,
+        "secondBrowserBaseMiB": 112.79,
+        "secondBrowserProcs": 6,
+        "firstBrowserMiBAtThatMoment": 648.63
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "tabs: Page.navigate timed out",
+        "screenshots: Target.createTarget timed out"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome",
+        "reused": false,
+        "zipBytes": 200722708,
+        "unpackedBytes": 420273649,
+        "files": 301,
+        "symlinks": 0,
+        "downloadMs": 737,
+        "extractMs": 1351,
+        "sha256": "1f496a826c9ba4d6a5f5bf2de686145fe718528c2cc3dbeb96b5893b89653724",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "fdpipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #10 0xab4bfff39138 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0xa869137) | #11 0xab4bfccc2288 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f2287) | #12 0xab4bfccc0060 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f005f) | #13 0xab4c003d2030 (/home/runner/work/_temp/clover-s7-home/browsers/cft/"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #10 0xab1a1fbf9138 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0xa869137) | #11 0xab1a1c982288 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f2287) | #12 0xab1a1c980060 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f005f) | #13 0xab1a20092030 (/home/runner/work/_temp/clover-s7-home/browsers/cft/15"
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGABRT); stderr: #10 0xaaaff48d9138 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0xa869137) | #11 0xaaaff1662288 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f2287) | #12 0xaaaff1660060 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f005f) | #13 0xaaaff4d72030 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-"
+        },
+        {
+          "transport": "fdpipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 305
+        }
+      ],
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 305,
+        "warmMs": 197,
+        "portMs": 251
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 450.68,
+            "memKind": "pss",
+            "rssMiB": 1379.51,
+            "procs": 12,
+            "cpuPct": 1.24
+          },
+          {
+            "tabs": 1,
+            "memMiB": 519.85,
+            "memKind": "pss",
+            "rssMiB": 1577.38,
+            "procs": 13,
+            "cpuPct": 1.74
+          },
+          {
+            "tabs": 2,
+            "memMiB": 593.38,
+            "memKind": "pss",
+            "rssMiB": 1781.16,
+            "procs": 14,
+            "cpuPct": 4.22
+          },
+          {
+            "tabs": 4,
+            "memMiB": 656.56,
+            "memKind": "pss",
+            "rssMiB": 2107.01,
+            "procs": 16,
+            "cpuPct": 8.44
+          },
+          {
+            "tabs": 8,
+            "memMiB": 835.73,
+            "memKind": "pss",
+            "rssMiB": 2621.44,
+            "procs": 18,
+            "cpuPct": 14.87
+          }
+        ],
+        "perIdleTabMiB": 48.13,
+        "browserBaseMiB": 450.68,
+        "fourContextsMiB": 312.67,
+        "animatedTabCpuPct": 54.14,
+        "secondBrowserBaseMiB": 283.01,
+        "secondBrowserProcs": 11,
+        "firstBrowserMiBAtThatMoment": 3308.61
+      }
+    }
+  }
+}

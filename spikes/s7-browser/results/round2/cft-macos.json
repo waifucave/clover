@@ -1,0 +1,234 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.6.0",
+    "cpus": 3,
+    "memGiB": 7,
+    "bun": "1.3.14",
+    "seconds": 172.25
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: browser gone (Runtime.evaluate) — the browser exited (0); stderr: [1105/010255.660267:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010255.796917:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010255.873329:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010255.947592:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010256.129188:INFO:CONSOLE:303] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (303) | [1105/010256.129336:INFO:CONSOLE:305] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (305) | [1105/010258.158983:INFO:CONSOLE:303] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (303) | [1105/010258.159050:INFO:CONSOLE:305] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (305) | [1105/010301.934080:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe | [1105/010301.964618:WARNING:services/audio/sync_reader.cc:154] ASR: No room in socket buffer.: Broken pipe (32)",
+        "screenshots: browser gone (Target.createTarget) — the browser exited (0); stderr: [1105/010255.660267:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010255.796917:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010255.873329:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010255.947592:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [1105/010256.129188:INFO:CONSOLE:303] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (303) | [1105/010256.129336:INFO:CONSOLE:305] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (305) | [1105/010258.158983:INFO:CONSOLE:303] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (303) | [1105/010258.159050:INFO:CONSOLE:305] \"The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio\", source: http://127.0.0.1:49263/pages/probe.js (305) | [1105/010301.934080:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe | [1105/010301.964618:WARNING:services/audio/sync_reader.cc:154] ASR: No room in socket buffer.: Broken pipe (32)"
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "mac-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-mac-arm64",
+        "bin": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 103982159,
+        "unpackedBytes": 213410127,
+        "files": 16,
+        "symlinks": 0,
+        "downloadMs": 1663,
+        "extractMs": 1686,
+        "sha256": "ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": true,
+          "ms": 349
+        }
+      ],
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "on",
+      "transport": "pipe",
+      "start": {
+        "transport": "pipe",
+        "coldMs": 349,
+        "warmMs": 147,
+        "portMs": 173
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 44.32,
+            "memKind": "footprint",
+            "rssMiB": 240.27,
+            "procs": 4,
+            "cpuPct": 0.99
+          },
+          {
+            "tabs": 1,
+            "memMiB": 78.45,
+            "memKind": "footprint",
+            "rssMiB": 354.08,
+            "procs": 5,
+            "cpuPct": 2.21
+          },
+          {
+            "tabs": 2,
+            "memMiB": 111.19,
+            "memKind": "footprint",
+            "rssMiB": 457.88,
+            "procs": 6,
+            "cpuPct": 4.96
+          },
+          {
+            "tabs": 4,
+            "memMiB": 177.71,
+            "memKind": "footprint",
+            "rssMiB": 666.36,
+            "procs": 8,
+            "cpuPct": 12.81
+          },
+          {
+            "tabs": 8,
+            "memMiB": 310.21,
+            "memKind": "footprint",
+            "rssMiB": 1081.55,
+            "procs": 12,
+            "cpuPct": 24.24
+          }
+        ],
+        "perIdleTabMiB": 33.24,
+        "browserBaseMiB": 44.32,
+        "fourContextsMiB": 131.7,
+        "animatedTabCpuPct": 38.06,
+        "secondBrowserBaseMiB": 44.18,
+        "secondBrowserProcs": 4,
+        "firstBrowserMiBAtThatMoment": 418.94
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "tabs: browser gone (Runtime.evaluate) — the browser exited (0); stderr: [3966:17720:1105/010419.789896:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.799189:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.800593:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.805640:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.810662:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.813592:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.814396:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.815454:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.816651:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3959:17723:1105/010425.454605:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe",
+        "screenshots: browser gone (Target.createTarget) — the browser exited (0); stderr: [3966:17720:1105/010419.789896:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.799189:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.800593:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.805640:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.810662:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.813592:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.814396:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17722:1105/010419.815454:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3966:17720:1105/010419.816651:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670 | [3959:17723:1105/010425.454605:ERROR:content/browser/devtools/devtools_pipe_handler.cc:188] Connection terminated while reading from pipe"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "mac-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-mac-arm64",
+        "bin": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-mac-arm64/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "reused": false,
+        "zipBytes": 195027080,
+        "unpackedBytes": 383704858,
+        "files": 344,
+        "symlinks": 5,
+        "downloadMs": 1949,
+        "extractMs": 2475,
+        "sha256": "8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": true,
+          "ms": 2521
+        }
+      ],
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "on",
+      "transport": "pipe",
+      "start": {
+        "transport": "pipe",
+        "coldMs": 2521,
+        "warmMs": 861,
+        "portMs": 880
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 264.59,
+            "memKind": "footprint",
+            "rssMiB": 958.14,
+            "procs": 10,
+            "cpuPct": 3.71
+          },
+          {
+            "tabs": 1,
+            "memMiB": 311.78,
+            "memKind": "footprint",
+            "rssMiB": 1079.11,
+            "procs": 11,
+            "cpuPct": 5.19
+          },
+          {
+            "tabs": 2,
+            "memMiB": 338.9,
+            "memKind": "footprint",
+            "rssMiB": 1186.06,
+            "procs": 12,
+            "cpuPct": 5.65
+          },
+          {
+            "tabs": 4,
+            "memMiB": 395.2,
+            "memKind": "footprint",
+            "rssMiB": 1399.45,
+            "procs": 14,
+            "cpuPct": 5.89
+          },
+          {
+            "tabs": 8,
+            "memMiB": 457.36,
+            "memKind": "footprint",
+            "rssMiB": 1648.13,
+            "procs": 16,
+            "cpuPct": 3.93
+          }
+        ],
+        "perIdleTabMiB": 24.1,
+        "browserBaseMiB": 264.59,
+        "fourContextsMiB": 514.15,
+        "animatedTabCpuPct": 10.87,
+        "secondBrowserBaseMiB": 257.59,
+        "secondBrowserProcs": 9,
+        "firstBrowserMiBAtThatMoment": 727.08
+      }
+    }
+  }
+}
