@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { DeviceId } from "@waifucave/clover-protocol";
 import { isContractError } from "../common";
-import { deviceIdFor, type DeviceChange } from "../device-registry";
+import { deviceIdFor, verifyKeySignature, type DeviceChange } from "../device-registry";
 import { FakeClock } from "../fakes/clock";
 import { type FakeDeviceRegistry, type FakeDevice, fromBase64, makeFakeDevice } from "../fakes/device-registry";
 
@@ -66,6 +66,27 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory): void 
       expect(await registry.verify(laptop.id, data, await laptop.sign(data))).toBe(false);
       expect(isContractError(await registry.add({ id: laptop.id, name: "Laptop1", kind: "desktop", runsCore: true, publicKey: laptop.publicKey }, { via: "terminal" }).catch((e: unknown) => e), "refused")).toBe(true);
       expect(isContractError(await registry.revoke(self.id).catch((e: unknown) => e), "refused")).toBe(true);
+    });
+
+    test("an answer key verifies with its own algorithm: Ed25519 by default, P-256 when the record says so", async () => {
+      const { registry } = await make({ clock: new FakeClock() });
+      const b64 = (b: ArrayBuffer) => Buffer.from(b).toString("base64");
+      const ec = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
+      const ecPublic = b64(await crypto.subtle.exportKey("raw", ec.publicKey));
+      const ecSig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, ec.privateKey, data));
+      const enclave = await makeFakeDevice();
+      await registry.add({ id: enclave.id, name: "Laptop2", kind: "desktop", runsCore: true, computer: "Laptop2", publicKey: enclave.publicKey, answerKey: { publicKey: ecPublic, held: "secure-enclave", alg: "p256" } }, { via: "terminal" });
+      expect(await registry.verifyAnswer(enclave.id, data, ecSig)).toBe(true);
+      expect(await registry.verifyAnswer(enclave.id, new TextEncoder().encode("other"), ecSig)).toBe(false);
+      // The same key under no `alg` (Ed25519) doesn't verify, and neither does an Ed25519 signature under `p256`.
+      const relabelled = await makeFakeDevice();
+      await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKey, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
+      expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
+      const phone = await makeFakeDevice();
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: phone.publicKey }, { via: "code", card: "card_pair02" });
+      expect(registry.get(phone.id)?.os).toBe("ios");
+      expect(await registry.verifyAnswer(phone.id, data, await phone.sign(data))).toBe(true);
+      expect(await verifyKeySignature("p256", fromBase64(phone.publicKey), data, await phone.sign(data))).toBe(false);
     });
 
     test("rename", async () => {

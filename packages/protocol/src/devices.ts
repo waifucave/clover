@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  BotId, Caller, ChangeResult, ComputerName, DeviceId, Empty, FencingToken, Ok, Os, SessionId, Text, Timestamp,
+  BotId, Caller, ChangeResult, ComputerName, DeviceId, DeviceOs, Empty, FencingToken, Ok, SessionId, Text, Timestamp,
 } from "./common";
 import { SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -42,11 +42,17 @@ export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain",
 export const AnswerKeyHolder = z.enum(ANSWER_KEY_HOLDERS);
 export type AnswerKeyHolder = z.infer<typeof AnswerKeyHolder>;
 
+/** The answer key's algorithm (lanes H and I): `p256` for a key the Secure Enclave, Windows Hello or a TPM holds (raw
+ *  uncompressed point, 65 bytes; signatures are ECDSA over SHA-256, `r‖s`, 64 bytes), `ed25519` for one in software.
+ *  Verification picks it from the record; the registration statement covers it. Absent is `ed25519`. */
+export const AnswerKeyAlg = z.enum(["ed25519", "p256"]);
+export type AnswerKeyAlg = z.infer<typeof AnswerKeyAlg>;
+
 export const DeviceView = z.object({
   id: DeviceId,
   name: utf16(63, 1),
   kind: DeviceKind,
-  os: Os.optional(),
+  os: DeviceOs.optional(),
   /** Runs clover-core, so it is a computer in the tree (§9.1) and can take over (§6.4). */
   runsCore: z.boolean(),
   /** Its folder-tree name, for a device that runs clover-core. */
@@ -59,7 +65,7 @@ export const DeviceView = z.object({
   addedAt: Timestamp,
   lastSeenAt: Timestamp.optional(),
   /** How its app's answer key is held, for a device that may answer cards; absent for one that can't. */
-  answers: z.object({ held: AnswerKeyHolder }).optional(),
+  answers: z.object({ held: AnswerKeyHolder, alg: AnswerKeyAlg.optional() }).optional(),
 });
 export type DeviceView = z.infer<typeof DeviceView>;
 
@@ -224,7 +230,7 @@ export const DEVICES_METHODS = {
     /** The first key applies at once. Replacing one is a sensitive change (#179's review, check 2): other computers
      *  trust that key with their cards, so it ends in a sealed card (`{ applied: false, card }`). */
     name: "device.answerKey.set", owner: "H", roles: ["app"], userOnly: true,
-    params: z.object({ publicKey: Base64Key, held: AnswerKeyHolder, signature: Base64Key }),
+    params: z.object({ publicKey: Base64Key, held: AnswerKeyHolder, alg: AnswerKeyAlg.optional(), signature: Base64Key }),
     result: ChangeResult,
     doc: "Registers this desktop's app-held answer key, proved by the app's own signature.",
   }),

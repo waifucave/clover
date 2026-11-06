@@ -51,7 +51,8 @@
                   "enum": [
                     "macos",
                     "windows",
-                    "linux"
+                    "linux",
+                    "ios"
                   ]
                 },
                 "runsCore": {
@@ -135,6 +136,13 @@
                         "tpm",
                         "hello",
                         "none"
+                      ]
+                    },
+                    "alg": {
+                      "type": "string",
+                      "enum": [
+                        "ed25519",
+                        "p256"
                       ]
                     }
                   },
@@ -987,6 +995,13 @@
               "tpm",
               "hello",
               "none"
+            ]
+          },
+          "alg": {
+            "type": "string",
+            "enum": [
+              "ed25519",
+              "p256"
             ]
           },
           "signature": {
@@ -2366,7 +2381,8 @@
                 "enum": [
                   "macos",
                   "windows",
-                  "linux"
+                  "linux",
+                  "ios"
                 ]
               },
               "runsCore": {
@@ -2449,6 +2465,13 @@
                       "tpm",
                       "hello",
                       "none"
+                    ]
+                  },
+                  "alg": {
+                    "type": "string",
+                    "enum": [
+                      "ed25519",
+                      "p256"
                     ]
                   }
                 },

@@ -7,8 +7,8 @@ import {
   PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
 import { CloverSessionEvent, SENT_AT_WINDOW_MS, SessionView, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
-import { Caller as CallerSchema } from "../src/common";
-import { PEER_STREAM_GRANTS } from "../src/devices";
+import { Caller as CallerSchema, DeviceOs, Os, isComputerOs } from "../src/common";
+import { DeviceView, PEER_STREAM_GRANTS } from "../src/devices";
 import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
 import { paramsFor } from "../src/rpc";
@@ -566,6 +566,20 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(deliver.params.safeParse({ id: "s_luna", computer: "Studio", input: { from: "task-notification", agent: "a_1", backend: "claude-code", stopReason: "end_turn", text: "done", transcript: "home/Studio/.clover/agents/a_1.jsonl" } }).success).toBe(true);
     expect(deliver.params.safeParse({ id: "s_luna", computer: "Studio", input: { from: "note", label: "x", text: "x", by: { kind: "core" } } }).success).toBe(false);
     expect(CLOVER_METHODS.get("device.answerKey.set")!.result.safeParse({ applied: false, card: "card_key000001" }).success).toBe(true);
+  });
+
+  test("H and I: the answer key's algorithm, and a phone's ios", () => {
+    const set = CLOVER_METHODS.get("device.answerKey.set")!;
+    const key = { publicKey: "B" + "A".repeat(86) + "=", held: "secure-enclave", signature: "B".repeat(86) + "==" };
+    expect(set.params.safeParse({ ...key, alg: "p256" }).success).toBe(true);
+    expect(set.params.safeParse({ ...key, alg: "ed25519" }).success).toBe(true);
+    expect(set.params.safeParse(key).success).toBe(true);
+    expect(set.params.safeParse({ ...key, alg: "rsa" }).success).toBe(false);
+    expect(DeviceOs.options).toEqual(["macos", "windows", "linux", "ios"]);
+    expect(Os.options).toEqual(["macos", "windows", "linux"]);
+    expect([isComputerOs("ios"), isComputerOs("linux")]).toEqual([false, true]);
+    expect(DeviceView.shape.os.safeParse("ios").success).toBe(true);
+    expect(DeviceView.shape.answers.safeParse({ held: "tpm", alg: "p256" }).success).toBe(true);
   });
 
   test("H-M2's review: a fencing token on acts between computers, and a stale one is refused", () => {

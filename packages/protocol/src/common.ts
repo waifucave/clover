@@ -131,6 +131,14 @@ export const SecretStoreView = z.object({
 });
 export type SecretStoreView = z.infer<typeof SecretStoreView>;
 export type Os = z.infer<typeof Os>;
+
+/** A device's OS (lane H's ask): a computer's, or a phone's `ios`. `Os` stays the computers' alone, since the fence,
+ *  the platforms and the tree are kept per computer OS. */
+export const DeviceOs = z.enum([...Os.options, "ios"]);
+export type DeviceOs = z.infer<typeof DeviceOs>;
+
+/** Whether a device's OS is one a computer runs (a phone's `ios` never is). */
+export const isComputerOs = (os: DeviceOs): os is Os => os !== "ios";
 /** The daemon's four targets; no darwin-x64, since macOS 27 is Apple silicon only (§3.1, §4). */
 export const Platform = z.enum(["darwin-arm64", "windows-x64", "linux-x64", "linux-arm64"]);
 export type Platform = z.infer<typeof Platform>;
