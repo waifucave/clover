@@ -22,7 +22,7 @@ export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> =
   "user-app": "You added it in the app.",
   "user-terminal": "You added it in your terminal.",
   bot: "A bot added it with its tools.",
-  migration: "It came over from Winter.",
+  migration: "It came over in the migration from the old app.",
   found: "It was found on disk.",
   bundled: "It ships with Clover.",
 };
