@@ -24,6 +24,8 @@ import {
   type StreamChunk, type StreamCodec, type TabOwner, type TabPlace, type TabView, type Viewport,
 } from "../contract";
 import { policyFor as defaultPolicyFor, type AddressPolicy, type NetworkFilter } from "../network";
+import { checkProxySetting, proxyRoutes, readSystemProxy, type RunCommand } from "../proxy";
+import type { BrowserNetworkConfig } from "../contract";
 import { BrowserError, checkCdpMethod, checkViewport, partitionFor } from "../policy";
 import type { AppTabPort } from "../service";
 import { CdpError, type CdpConnection, type CdpEvent } from "./cdp";
@@ -44,8 +46,11 @@ export interface HeadlessBrowserOptions {
   streamData?(stream: string, chunk: StreamChunk): void;
   /** The filter every profile's traffic goes through (R13). */
   network: NetworkFilter;
-  /** Which addresses an owner's tabs may reach (default: the network filter's `policyFor`). */
-  policyFor?(owner: TabOwner): AddressPolicy;
+  /** Which addresses an owner's tabs may reach (default: the network filter's `policyFor`, with the bots whose LAN
+   *  setting is on from `configure`). */
+  policyFor?(owner: TabOwner, lanBots: ReadonlySet<string>): AddressPolicy;
+  /** Runs the OS's tools for the system's proxy setting (`proxy.ts`); default `Bun.spawn` (S7's Linux rule). */
+  run?: RunCommand;
   /** The pinned build (default `pins.json`). */
   pin?: HeadlessPin;
   /** For the install's download (default: `fetch`). */
@@ -205,6 +210,26 @@ export class HeadlessBrowser implements AppTabPort {
   /** The owners' address policies may have changed (a per-bot setting, R13): a running profile whose proxy would now
    *  differ is started again with the new one, and its tabs reopen at their addresses (reported as `changed`; a tab
    *  that can't reopen as `closed` by `crash`). Returns the ids reopened. */
+  /** `app.browser.configure`'s counterpart (R13's per-bot LAN, R14's proxy): the proxy takes effect for each new
+   *  connection at once; a bot whose LAN setting changed has its browser started again on its new policy. A server
+   *  has no PAC evaluator, so a system setting that names a PAC file refuses connections rather than go round it. */
+  async configure(config: BrowserNetworkConfig): Promise<void> {
+    const proxy = checkProxySetting(config.proxy);
+    const run = this.opts.run ?? bunRun;
+    this.opts.network.setUpstream(proxyRoutes(proxy, {
+      readSystem: () => readSystemProxy({ platform: process.platform, run, env: process.env }),
+      log: (line) => this.log(line),
+    }));
+    this.lanBots = new Set(config.lanBots);
+    await this.refreshPolicies();
+  }
+
+  /** The browsers' own process ids, for the network filter's check of who connects (`peer-owner.ts`, with their
+   *  children: the network process is a child of each). */
+  browserPids(): number[] {
+    return [...this.profiles.values()].filter((p) => !p.conn.closed).flatMap((p) => (p.conn.pid !== undefined ? [p.conn.pid] : []));
+  }
+
   async refreshPolicies(): Promise<string[]> {
     const reopened: string[] = [];
     for (const profile of [...this.profiles.values()]) {
@@ -264,8 +289,10 @@ export class HeadlessBrowser implements AppTabPort {
   // Profiles: one browser process each
   // -----------------------------------------------------------------------------------------------
 
+  private lanBots: ReadonlySet<string> = new Set();
+
   private policyFor(owner: TabOwner): AddressPolicy {
-    return this.opts.policyFor?.(owner) ?? defaultPolicyFor(owner);
+    return this.opts.policyFor?.(owner, this.lanBots) ?? defaultPolicyFor(owner, this.lanBots);
   }
 
   private async profile(owner: TabOwner): Promise<Profile> {
@@ -814,3 +841,18 @@ function isAllowedEvent(method: string): boolean {
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+/** The OS's proxy tools, through `Bun.spawn` (never `node:child_process` on Linux, S7). */
+const bunRun: RunCommand = async (cmd, args) => {
+  const proc = Bun.spawn([cmd, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  const timer = setTimeout(() => proc.kill(), 5_000);
+  try {
+    const out = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    if (code !== 0) throw Object.assign(new Error(`${cmd} exited ${code}`), { stdout: out });
+    return out;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+export { bunRun };

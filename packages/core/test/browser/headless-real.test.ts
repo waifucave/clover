@@ -13,6 +13,7 @@ import { BOT_POLICY, NetworkFilter, policyFor, type AddressPolicy } from "../../
 import { BrowserError, partitionFor } from "../../src/browser/policy";
 import type { AppTabEvent, StreamChunk, TabOwner, TabView } from "../../src/browser/contract";
 import { HeadlessBrowser, imageSize } from "../../src/browser/headless";
+import { startBrowser } from "../../src/browser/daemon";
 
 const RUN = process.env.CLOVER_HEADLESS_TESTS === "1";
 const T = 120_000;
@@ -215,6 +216,44 @@ describe.skipIf(!RUN)("the headless shell, for real", () => {
     await browser.command("t1", { kind: "close" });
     await waitFor("t1's close", () => events.find((e) => e.kind === "closed" && e.id === "t1" && e.by === "user"));
     expect((await browser.list()).map((t) => t.id)).not.toContain("t1");
+  }, T);
+});
+
+describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => {
+  test("startBrowser: the headless shell drives tabs through the service, and its filter takes only the shell's own connections", async () => {
+    const dir = process.env.CLOVER_HEADLESS_DIR;
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-browser-"));
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => html(`<title>Daemon</title><p>DAEMON-MARKER</p>`) });
+    const logs: string[] = [];
+    const browser = startBrowser({
+      computer: "Server", home, headless: true, log: (l) => logs.push(l),
+      // A reused install from the test above's cache; and a bot allowed loopback, for the fixture.
+      headlessOptions: { ...(dir !== undefined ? { dir } : {}), policyFor: (owner, lan) => (owner.kind === "bot" && owner.bot === "lab" ? { loopback: true, privateNetworks: false, linkLocal: false } : policyFor(owner, lan)) },
+    });
+    try {
+      const tab = await browser.service.open({ kind: "user" }, { owner: lab, url: `http://127.0.0.1:${server.port}/` });
+      let text = "";
+      for (let i = 0; i < 100 && !text.includes("DAEMON-MARKER"); i++) {
+        await Bun.sleep(200);
+        const r = (await browser.service.cdp({ kind: "user" }, tab.id, "Runtime.evaluate", { expression: "document.body ? document.body.innerText : ''", returnByValue: true })) as { result?: { value?: string } };
+        text = r.result?.value ?? "";
+      }
+      expect(text).toContain("DAEMON-MARKER");
+      // This test's own process is not the shell's: its connection to the filter is closed unanswered.
+      const ports = browser.filterPorts();
+      expect(ports.length).toBeGreaterThanOrEqual(3);
+      const answer = await new Promise<string>((resolve) => {
+        const s = require("node:net").connect(ports[0], "127.0.0.1", () => s.write(Buffer.from([5, 1, 0])));
+        const t = setTimeout(() => { s.destroy(); resolve("no answer"); }, 5000);
+        s.on("data", () => { clearTimeout(t); s.destroy(); resolve("answered"); });
+        s.on("close", () => { clearTimeout(t); resolve("closed"); });
+        s.on("error", () => { clearTimeout(t); resolve("closed"); });
+      });
+      expect(`${answer} ${logs.join(" | ")}`).toStartWith("closed");
+    } finally {
+      await browser.shutdown();
+      server.stop(true);
+    }
   }, T);
 });
 

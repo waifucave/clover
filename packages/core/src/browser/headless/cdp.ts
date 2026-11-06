@@ -46,6 +46,8 @@ export interface CdpConnection {
   readonly closed: boolean;
   /** `Browser.close`, then a kill if it hasn't gone in a few seconds. */
   close(): Promise<void>;
+  /** The browser's process id, where there is one (the network filter checks who connects, `peer-owner.ts`). */
+  readonly pid?: number;
 }
 
 /** Splits NUL-framed messages out of the bytes so far. Pure. */
@@ -99,6 +101,10 @@ export class PipeConnection implements CdpConnection {
   private why: string | undefined;
 
   private readonly pingMs: number;
+
+  get pid(): number {
+    return this.proc.pid;
+  }
 
   constructor(readonly proc: BrowserProcess, private readonly pipe: PipeTransport, opts: { pingMs?: number } = {}) {
     this.pingMs = opts.pingMs ?? PING_MS;

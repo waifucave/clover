@@ -157,6 +157,8 @@ export class BrowserService {
   private readonly newId: () => string;
   private network: BrowserNetworkConfig;
   private readonly listeners = new Set<(event: BrowserEvent) => void>();
+  /** Tabs being opened now: the app may report them before `open` answers. */
+  private readonly opening = new Set<string>();
   private readonly remote: RemoteBrowsers | undefined;
 
   constructor(private readonly opts: BrowserServiceOptions) {
@@ -238,7 +240,9 @@ export class BrowserService {
     const app = this.app();
     const id = this.newId();
     // Opened at the agent's size, drawing for a bot; a browser view that wants it calls `show` with its own size.
-    const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" }).catch((e) => { throw appFailed(e); });
+    // While it opens, the app's own reports about it are the open's to settle, never a stranger's tab to adopt.
+    this.opening.add(id);
+    const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" }).catch((e) => { throw appFailed(e); }).finally(() => this.opening.delete(id));
     const entry: Entry = { view: { ...view, id, owner: args.owner, partition, computer: this.opts.computer, heldByUser: false }, listeners: new Set() };
     this.entries.set(id, entry);
     this.emit({ type: "tab_changed", tab: { ...entry.view } });
@@ -346,7 +350,7 @@ export class BrowserService {
           // The core owns who holds a tab and whose it is; the app owns where it is and what it shows.
           const entry = this.entries.get(event.tab.id);
           if (entry === undefined) {
-            this.adopt(event.tab);
+            if (!this.opening.has(event.tab.id)) this.adopt(event.tab);
             break;
           }
           entry.view = { ...event.tab, computer: this.opts.computer, owner: entry.view.owner, partition: entry.view.partition, heldByUser: entry.view.heldByUser };

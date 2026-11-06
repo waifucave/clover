@@ -83,6 +83,21 @@ describe("the app's reports (the second review's minor)", () => {
     service.report([{ kind: "closed", id: tab.id, by: "page" }, { kind: "changed", tab: { ...tab, title: "Late" } }]);
     expect(service.tabs(person)).toEqual([]);
   });
+
+  test("a report about a tab still opening never closes it as a stranger's (the headless shell reports before open answers)", async () => {
+    const app = new FakeApp();
+    let service!: BrowserService;
+    const open = app.open.bind(app);
+    app.open = async (args) => {
+      const view = await open(args);
+      service.report([{ kind: "changed", tab: { ...view, title: "Early" } }]);
+      return view;
+    };
+    service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1" });
+    const tab = await service.open(person, { owner: alpha, url: "https://example.com/" });
+    expect(app.commands.filter((c) => c.command.kind === "close")).toEqual([]);
+    expect(service.tabs(person).map((t) => t.id)).toEqual([tab.id]);
+  });
 });
 
 describe("lane D's grants behind the person's own browser (R10)", () => {
