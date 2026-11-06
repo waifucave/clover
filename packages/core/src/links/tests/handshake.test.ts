@@ -183,6 +183,7 @@ describe("handshake directory", () => {
     close();
     // Revoking ends the pair at the service and removes the member from the group.
     const group = a.registry.group()!.id;
+    await waitFor(() => hs.groups.get(group)?.members.size === 2);
     const out = await revokeDevice({ registry: a.registry, store: a.store, handshake: a.client }, b.key.id);
     expect(out.steps.map((s) => `${s.step}:${s.ok}`).sort()).toEqual(["handshake-group:true", "handshake-pair:true"]);
     expect(hs.ended.size).toBe(1);
@@ -214,6 +215,8 @@ describe("a revocation the service didn't hear (S5 of H-M1's review)", () => {
     await waitFor(() => a.registry.pairWith(b.key.id)?.registeredAt !== undefined);
     const pairId = a.registry.pairWith(b.key.id)!.pairId;
     const group = a.registry.group()!.id;
+    // The laptop's join is in at the service before the network goes.
+    await waitFor(() => hs.groups.get(group)?.members.size === 2);
     down = true;
     const { pairKeyRef, pairSecretRef } = await import("../handshake");
     const { retryRevokes } = await import("../../devices/account-devices");

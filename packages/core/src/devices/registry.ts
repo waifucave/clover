@@ -455,17 +455,14 @@ export class FileDeviceRegistry implements DeviceRegistry {
     this.#save();
   }
 
-  /** What the service's read of the group says: who votes from when, and how many members it has. Members it no
-   *  longer names are dropped. */
+  /** What the service's read of the group says: who votes from when, and how many members it has. A member the read
+   *  doesn't name is kept (a read can cross a join in flight); a revoke drops it. */
   groupRead(group: string, read: { size: number; self?: number | null; members: Record<string, number | null | undefined> }): void {
     const g = this.#state.group;
     if (!g || g.id !== group) return;
     g.size = read.size;
     if (read.self !== undefined) g.votesFrom = read.self;
-    for (const [device, m] of Object.entries(g.members)) {
-      if (!(device in read.members)) delete g.members[device];
-      else m.votesFrom = read.members[device] ?? null;
-    }
+    for (const [device, m] of Object.entries(g.members)) if (device in read.members) m.votesFrom = read.members[device] ?? null;
     this.#save();
   }
 

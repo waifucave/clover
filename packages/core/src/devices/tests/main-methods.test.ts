@@ -95,6 +95,7 @@ describe("the main computer's methods", () => {
 
     // Hand over and quit, from the laptop: the studio takes the bots at once.
     expect(await b.call("main.handOver", {}, app)).toEqual({ to: a.links.key.id });
-    await waitFor(() => a.links.main!.lease.canAct());
-  }, 30_000);
+    // The studio may be mid-step (waiting on a nudge or a takeover delay) when the "take" arrives; it acts on it next.
+    await waitFor(() => a.links.main!.lease.canAct(), 20_000);
+  }, 45_000);
 });
