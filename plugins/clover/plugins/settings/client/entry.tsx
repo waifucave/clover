@@ -6,16 +6,25 @@
 // plugins, `plugin.setEnabled`, `plugin.logs`, `ui.settings` and `ui.set` for the theme and language, `account.status`.
 // The computers, devices and bots come through the plugin API. A sensitive change (a computer's level, removing a
 // device) comes back as a sealed card, and the window closes Settings while it waits (the shell's `cardPending`).
-// Light, dark or system and the text size have no place in B's `UiSettings` yet, so they are this plugin's own
-// settings until B says where they live.
+// Light, dark or system and the text size are the user's UI choices, through `ui.settings` and `ui.set` with the theme
+// and the language (`UiAppearance` below: fields asked of lane B for `UiSettings`, which lane E's runtime applies).
+// Notifications are each notifier plugin's own declared settings, as every plugin's are (`plugin.settings.get` and
+// `plugin.settings.set`, §5.1): the plugin reads them, so no switch here is one nothing reads.
 import { useEffect, useState } from "react";
-import type { CoreClient, PairingChanged, PluginDetail, PluginSummary } from "../../shell/runtime/types";
+import type { CoreClient, CoreMethods, PairingChanged, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { deviceKind, plain } from "../../shell/runtime/views";
 import { LanguageChooser } from "./LanguageChooser";
 import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
 import { SettingsModal } from "./SettingsModal";
 import { S } from "./strings";
-import type { ExtraSection, Language, SettingsSection, SettingsValues } from "./types";
+import type { ExtraSection, Language, PluginSettingsGroup, SettingField, SettingsSection, SettingsValues } from "./types";
+
+/** The UI choices `ui.settings` carries beside the theme and language: light, dark or the system's, and the text size
+ *  (asked of lane B for `UiSettings`; lane E's runtime applies them to every window). */
+interface UiAppearance {
+  appearance?: "light" | "dark" | "system";
+  textSize?: "small" | "default" | "large";
+}
 
 export interface SettingsEntryProps {
   route?: string;
@@ -53,6 +62,12 @@ const languageOf = (lang: string): Language => ({ id: lang, ...(LANGUAGE_NAMES[l
 
 interface Loaded {
   plugins: PluginSummary[];
+  /** Each plugin's declared settings, by its id (those that declare any). */
+  settings: Record<string, SettingField[]>;
+  /** The plugins that notify (`notifiers`). */
+  notifiers: string[];
+  appearance: NonNullable<UiAppearance["appearance"]>;
+  textSize: NonNullable<UiAppearance["textSize"]>;
   details: Record<string, PluginDetail>;
   account?: string;
   language: string;
@@ -75,6 +90,33 @@ async function load(core: CoreClient): Promise<Loaded> {
     const d = await quiet(core.call("plugin.get", { id: p.id }));
     if (d) details[p.id] = d.plugin;
   }));
+  // Each plugin's declared settings: the core's values (`plugin.settings.get`), with the manifest's choices and limits.
+  const declared = (d: PluginDetail | undefined) => ((d?.manifest as { settings?: Record<string, { options?: unknown; min?: unknown; max?: unknown }> } | undefined)?.settings ?? {});
+  const notifiers = plugins.filter((p) => {
+    const c = (details[p.id]?.manifest as { contributes?: { notifiers?: unknown } } | undefined)?.contributes?.notifiers;
+    return Array.isArray(c) && c.length > 0;
+  }).map((p) => p.id);
+  const settings: Record<string, SettingField[]> = {};
+  await Promise.all(plugins.filter((p) => Object.keys(declared(details[p.id])).length > 0 || notifiers.includes(p.id)).map(async (p) => {
+    const got = await quiet(core.call("plugin.settings.get", { id: p.id }));
+    const manifest = declared(details[p.id]);
+    settings[p.id] = (got?.settings ?? []).filter((v) => v.scope !== "bot").map((v) => {
+      const m = manifest[v.key];
+      const options = Array.isArray(m?.options)
+        ? (m.options as unknown[]).flatMap((o) => (typeof o === "string" ? [{ value: o, title: o }] : o && typeof o === "object" && typeof (o as { value?: unknown }).value === "string" ? [{ value: (o as { value: string }).value, title: plain((o as { title?: unknown }).title as never) || (o as { value: string }).value }] : []))
+        : undefined;
+      return {
+        key: v.key, type: v.type, title: plain(v.title), set: v.set, required: v.required,
+        ...(v.description !== undefined ? { description: plain(v.description) } : {}),
+        ...(v.value !== undefined ? { value: v.value } : {}),
+        ...(v.defaultPending ? { defaultPending: true } : {}),
+        ...(options ? { options } : {}),
+        ...(typeof m?.min === "number" ? { min: m.min } : {}),
+        ...(typeof m?.max === "number" ? { max: m.max } : {}),
+      };
+    });
+  }));
+  const look = (ui ?? {}) as UiAppearance;
   // The base theme is the plain one (spec, open question 14).
   const name = (id: string) => (id === "clover/base-theme" ? "Plain" : plain(plugins.find((p) => p.id === id)?.name) || id);
   const themes = (pluginUi?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
@@ -83,6 +125,10 @@ async function load(core: CoreClient): Promise<Loaded> {
   return {
     plugins,
     details,
+    settings,
+    notifiers,
+    appearance: look.appearance ?? "system",
+    textSize: look.textSize ?? "default",
     ...(account?.user ? { account: account.user.name ?? account.user.email ?? "" } : {}),
     language: ui?.language ?? "en-US",
     ...(ui?.globalTheme ? { globalTheme: ui.globalTheme } : {}),
@@ -111,7 +157,6 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [computers, setComputers] = useState<Awaited<ReturnType<NonNullable<NonNullable<typeof api.computers>["list"]>>>>([]);
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
-  const [own, setOwn] = useState<{ appearance?: SettingsValues["appearance"]; notifications?: SettingsValues["notifications"] }>({});
   const [pairing, setPairing] = useState<{ id: string; code?: string; words?: string[]; confirming?: boolean; ended?: string } | undefined>(undefined);
 
   // The pairing moves on through lane H's `pairing_changed`: the side that showed the code hears the four words once
@@ -135,10 +180,6 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     api.computers?.list?.().then((c) => live && setComputers(c), () => undefined);
     api.devices?.list().then((d) => live && setDevices(d), () => undefined);
     api.bots?.list().then((b) => live && setBots(b.map((x) => ({ id: x.id, name: plain(x.name) }))), () => undefined);
-    void Promise.all([api.settings.get<SettingsValues["appearance"]>("appearance"), api.settings.get<SettingsValues["notifications"]>("notifications")]).then(
-      ([appearance, notifications]) => live && setOwn({ ...(appearance ? { appearance } : {}), ...(notifications ? { notifications } : {}) }),
-      () => undefined,
-    );
     return () => {
       live = false;
     };
@@ -152,9 +193,9 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const main = computers.find((c) => c.isMain)?.name ?? "";
   const values: SettingsValues = {
     account: { name: loaded?.account ?? "", main },
-    appearance: own.appearance ?? { theme: "system", textSize: "default" },
+    appearance: { theme: loaded?.appearance ?? "system", textSize: loaded?.textSize ?? "default" },
     language: { id: loaded?.language ?? "en-US", name: languageOf(loaded?.language ?? "en-US").native },
-    notifications: own.notifications ?? { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
+    notifiers: (loaded?.notifiers ?? []).map((id): PluginSettingsGroup => ({ pluginId: id, name: plain(loaded?.plugins.find((p) => p.id === id)?.name) || id, fields: loaded?.settings[id] ?? [] })),
     plugins: (loaded?.plugins ?? []).map((p) => ({
       id: p.id,
       name: plain(p.name),
@@ -163,6 +204,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       enabled: p.enabled,
       ...(p.reason ? { reason: p.reason } : {}),
       oks: loaded?.details[p.id] ? okWords(loaded.details[p.id]!) : [],
+      ...(loaded?.settings[p.id]?.length ? { settings: loaded.settings[p.id] } : {}),
     })),
     themes: loaded?.themes ?? [],
     theme: loaded?.globalTheme ?? loaded?.themes[0]?.id ?? "",
@@ -174,14 +216,11 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
 
   const onChange = (path: string, value: unknown) => {
     const [head, key, field] = path.split(".");
-    if (head === "appearance" && key) {
-      const next = { ...values.appearance, [key]: value } as SettingsValues["appearance"];
-      setOwn((o) => ({ ...o, appearance: next }));
-      void api.settings.set("appearance", next);
-    } else if (head === "notifications" && key) {
-      const next = { ...values.notifications, [key]: value } as SettingsValues["notifications"];
-      setOwn((o) => ({ ...o, notifications: next }));
-      void api.settings.set("notifications", next);
+    if (head === "appearance" && key && core) {
+      // Light, dark or the system's (`theme` here) and the text size: the user's UI choices, which every window follows.
+      const patch: UiAppearance = key === "theme" ? { appearance: value as UiAppearance["appearance"] } : key === "textSize" ? { textSize: value as UiAppearance["textSize"] } : {};
+      setLoaded((l) => (l ? { ...l, ...(patch.appearance ? { appearance: patch.appearance } : {}), ...(patch.textSize ? { textSize: patch.textSize } : {}) } : l));
+      void core.call("ui.set", { patch: patch as unknown as CoreMethods["ui.set"]["params"]["patch"] }).then(() => setRevision((r) => r + 1), () => setRevision((r) => r + 1));
     } else if (head === "theme" && typeof value === "string" && core) {
       // A theme is `<plugin-id>#<theme-id>` (B's `ThemeRef`).
       if (value.includes("#")) void core.call("ui.set", { patch: { globalTheme: value } }).then(() => setRevision((r) => r + 1));
@@ -207,6 +246,12 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   return (
     <SettingsModal
       section={section}
+      {...(core
+        ? {
+            onPluginSetting: (id: string, key: string, value: unknown) =>
+              void core.call("plugin.settings.set", { id, key, value: value as never }).then(() => setRevision((r) => r + 1), () => setRevision((r) => r + 1)),
+          }
+        : {})}
       onSection={(s) => {
         setLogs(undefined);
         setSection(s);

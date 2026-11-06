@@ -26,6 +26,34 @@ export interface SettingsPlugin {
   reason?: string;
   /** What it may do, each an OK the user gave it, in plain words. */
   oks: string[];
+  /** The settings its manifest declares (§5.1 "Settings"), with their values. */
+  settings?: SettingField[];
+}
+
+/** One setting a plugin's manifest declares (lane B's `PluginSettingView`, with the manifest's options and limits). A
+ *  `secret` field never carries its value: only whether one is stored. */
+export interface SettingField {
+  key: string;
+  type: "string" | "number" | "boolean" | "enum" | "color" | "secret";
+  title: string;
+  description?: string;
+  /** The value in effect: the user's, else the default. */
+  value?: unknown;
+  /** The user set it; for a secret, a value is stored. */
+  set: boolean;
+  required: boolean;
+  /** A changed default waits for the user's OK. */
+  defaultPending?: boolean;
+  options?: { value: string; title: string }[];
+  min?: number;
+  max?: number;
+}
+
+/** A plugin's settings, under its name. */
+export interface PluginSettingsGroup {
+  pluginId: string;
+  name: string;
+  fields: SettingField[];
 }
 
 export interface SettingsDevice {
@@ -49,9 +77,12 @@ export interface SettingsComputerLevel {
 
 export interface SettingsValues {
   account: { name: string; main: string };
+  /** Light, dark or the system's, and the text size: the user's UI choices (`ui.settings`). */
   appearance: { theme: "light" | "dark" | "system"; textSize: "small" | "default" | "large" };
   language: { id: string; name: string };
-  notifications: { needsYou: boolean; agentDone: boolean; routineFailed: boolean; sounds: boolean };
+  /** The plugins that notify (`notifiers`: desktop notifications, the phone's push), each with the settings it
+   *  declares: when to notify, and with sound. A notifier's choices are its own settings, which it reads. */
+  notifiers: PluginSettingsGroup[];
   plugins: SettingsPlugin[];
   /** The installed themes (spec §5.5: a theme is a plugin). */
   themes: { id: string; name: string }[];
@@ -86,6 +117,8 @@ export interface SettingsModalProps {
   onOpenPluginManager?: () => void;
   /** A found plugin's OK, reviewed on a sealed card (§5.1, §5.5): loading it is a sensitive change. */
   onReviewOk?: (id: string) => void;
+  /** Change one of a plugin's declared settings (`plugin.settings.set`); `null` goes back to the default. */
+  onPluginSetting?: (pluginId: string, key: string, value: unknown) => void;
   /** A plugin's logs (spec §5.8). */
   onOpenPluginLogs?: (id: string) => void;
   /** Ask to change a computer's level: always a sealed card (spec §5.5). */

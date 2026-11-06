@@ -5,6 +5,7 @@
 // with its own sections; a plugin adds one there.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
+import { PluginSettings } from "./PluginSettings";
 import { S } from "./strings";
 import type { SettingsModalProps, SettingsPlugin as SettingsPluginRow, SettingsSection } from "./types";
 
@@ -66,6 +67,24 @@ function PluginSwitch({ plugin: p, props }: { plugin: SettingsPluginRow; props: 
 
 const CLOVER_ID = "clover";
 const NO_SWITCH: ReadonlySet<SettingsPluginRow["state"]> = new Set(["blocked", "refused", "invalid"]);
+
+/** A plugin's declared settings under its row, opened from a button. */
+function PluginSettingsDisclosure({ plugin, props }: { plugin: SettingsPluginRow; props: SettingsModalProps }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="cl-settings__plugin-more">
+      <button type="button" className="cl-settings__button" aria-expanded={open} aria-controls={id} aria-label={S.settingsOf(plugin.name)} onClick={() => setOpen((o) => !o)}>
+        {S.pluginSettings}
+      </button>
+      {open && (
+        <div id={id}>
+          <PluginSettings group={{ pluginId: plugin.id, name: plugin.name, fields: plugin.settings ?? [] }} heading={false} {...(props.onPluginSetting ? { onSet: props.onPluginSetting } : {})} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
   return (
@@ -216,20 +235,22 @@ function Page({ props }: { props: SettingsModalProps }) {
         </>
       );
     case "notifications":
+      // Each plugin that notifies (desktop notifications, the phone's push) and the settings it declares: when to
+      // notify and with sound are its own, which it reads (§5.1). Clover keeps no switch of its own that nothing reads.
+      if (values.notifiers.length === 0) return <p className="cl-settings__note">{S.noNotifiers}</p>;
       return (
         <>
-          <Row label={S.notifyNeedsYou} detail={S.notifyNeedsYouDetail}>
-            <Toggle label={S.notifyNeedsYou} on={values.notifications.needsYou} onChange={(v) => onChange("notifications.needsYou", v)} />
-          </Row>
-          <Row label={S.notifyAgentDone}>
-            <Toggle label={S.notifyAgentDone} on={values.notifications.agentDone} onChange={(v) => onChange("notifications.agentDone", v)} />
-          </Row>
-          <Row label={S.notifyRoutineFailed}>
-            <Toggle label={S.notifyRoutineFailed} on={values.notifications.routineFailed} onChange={(v) => onChange("notifications.routineFailed", v)} />
-          </Row>
-          <Row label={S.notifySounds}>
-            <Toggle label={S.notifySounds} on={values.notifications.sounds} onChange={(v) => onChange("notifications.sounds", v)} />
-          </Row>
+          <p className="cl-settings__note">{S.notifiersDetail}</p>
+          {values.notifiers.map((g) =>
+            g.fields.length > 0 ? (
+              <PluginSettings key={g.pluginId} group={g} {...(props.onPluginSetting ? { onSet: props.onPluginSetting } : {})} />
+            ) : (
+              <div key={g.pluginId} className="cl-settings__plugin-settings">
+                <h4 className="cl-settings__minorhead">{g.name}</h4>
+                <p className="cl-settings__note">{S.notifierNoSettings}</p>
+              </div>
+            ),
+          )}
         </>
       );
     case "plugins":
@@ -258,6 +279,7 @@ function Page({ props }: { props: SettingsModalProps }) {
                 )}
                 <PluginSwitch plugin={p} props={props} />
               </div>
+              {p.settings && p.settings.length > 0 && <PluginSettingsDisclosure plugin={p} props={props} />}
             </div>
           ))}
           {props.onOpenPluginManager && (

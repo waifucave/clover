@@ -16,6 +16,7 @@ function setup(props: Partial<SettingsModalProps> = {}) {
     onRemoveDevice: mock((_id: string) => undefined),
     onRequestLevel: mock((_c: string, _l: string) => undefined),
     onOpenPluginLogs: mock((_id: string) => undefined),
+    onPluginSetting: mock((_p: string, _k: string, _v: unknown) => undefined),
   };
   const all: SettingsModalProps = { section: "appearance", values: VALUES, ...h, ...props };
   const { rerender } = render(<SettingsModal {...all} />);
@@ -59,7 +60,9 @@ describe("the settings window", () => {
     cleanup();
     const n = setup({ section: "notifications" });
     fireEvent.click(screen.getByRole("switch", { name: "Sounds" }));
-    expect(n.onChange).toHaveBeenLastCalledWith("notifications.sounds", true);
+    expect(n.onPluginSetting).toHaveBeenLastCalledWith("clover/notifications", "sounds", true);
+    // A notifier with no settings of its own says so.
+    expect(screen.getByText("It has no settings of its own.")).toBeTruthy();
   });
 
   test("plugins show their state, their OKs and their logs (spec §5.8)", () => {

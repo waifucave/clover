@@ -180,7 +180,46 @@ export const S = {
   get change() {
     return t("clover.settings.change");
   },
-  // Notifications.
+  // Notifications: each notifier plugin's own settings.
+  get noNotifiers() {
+    return t("clover.settings.noNotifiers");
+  },
+  get notifiersDetail() {
+    return t("clover.settings.notifiersDetail");
+  },
+  get notifierNoSettings() {
+    return t("clover.settings.notifierNoSettings");
+  },
+  // A plugin's declared settings.
+  get pluginSettings() {
+    return t("clover.settings.pluginSettings");
+  },
+  settingsOf: (name: string) => t("clover.settings.settingsOf", { name }),
+  get settingNumber() {
+    return t("clover.settings.settingNumber");
+  },
+  settingMin: (min: number) => t("clover.settings.settingMin", { min }),
+  settingMax: (max: number) => t("clover.settings.settingMax", { max }),
+  get settingChoose() {
+    return t("clover.settings.settingChoose");
+  },
+  get settingRequired() {
+    return t("clover.settings.settingRequired");
+  },
+  get defaultPending() {
+    return t("clover.settings.defaultPending");
+  },
+  get secretStored() {
+    return t("clover.settings.secretStored");
+  },
+  get secretNone() {
+    return t("clover.settings.secretNone");
+  },
+  secretRemove: (name: string) => t("clover.settings.secretRemove", { name }),
+  get save() {
+    return t("clover.settings.save");
+  },
+  // Notifications (what the section is about, for the search box).
   get notifyNeedsYou() {
     return t("clover.settings.notifyNeedsYou");
   },

@@ -121,6 +121,21 @@
     "clover.settings.level.accept-edits": "Accept edits",
     "clover.settings.level.automatic": "Fully automatic",
     "clover.settings.okCall": "Runs {plugin}'s commands",
-    "clover.settings.okHost": "Reaches {host}"
+    "clover.settings.okHost": "Reaches {host}",
+    "clover.settings.noNotifiers": "No plugin sends notifications on this computer.",
+    "clover.settings.notifiersDetail": "Each of these sends you notifications. When it does, and with sound or not, is its own setting.",
+    "clover.settings.notifierNoSettings": "It has no settings of its own.",
+    "clover.settings.pluginSettings": "Settings",
+    "clover.settings.settingsOf": "{name}'s settings",
+    "clover.settings.settingNumber": "This needs a number.",
+    "clover.settings.settingMin": "At least {min}.",
+    "clover.settings.settingMax": "At most {max}.",
+    "clover.settings.settingChoose": "Choose…",
+    "clover.settings.settingRequired": "Needed before the plugin starts.",
+    "clover.settings.defaultPending": "Its default changed, and waits for your OK.",
+    "clover.settings.secretStored": "Stored",
+    "clover.settings.secretNone": "Not set",
+    "clover.settings.secretRemove": "Remove {name}",
+    "clover.settings.save": "Save"
   }
 }

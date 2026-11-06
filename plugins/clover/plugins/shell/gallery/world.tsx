@@ -192,7 +192,15 @@ const PLUGINS: PluginSummary[] = [
   dataPlugin("chibi-pack", "Chibi pack", "index"),
   dataPlugin("paper-dolls", "Paper dolls", "index"),
   dataPlugin("midnight", "Midnight", "index"),
+  // The plugins that notify, whose settings the Notifications section shows.
+  ...SETTINGS.notifiers.map((n) => pluginSummary(n.pluginId, n.name, { source: "bundled" })),
 ];
+
+/** Each plugin's declared settings, as the core answers `plugin.settings.get` (from the settings part's fixtures). */
+const DECLARED: Record<string, (typeof SETTINGS.notifiers)[number]["fields"]> = Object.fromEntries([
+  ...SETTINGS.plugins.filter((p) => p.settings).map((p) => [p.id, p.settings!] as const),
+  ...SETTINGS.notifiers.map((n) => [n.pluginId, n.fields] as const),
+]);
 const CAPABILITIES: Record<string, { capabilities: string[]; networkHosts: string[] }> = {
   clover: { capabilities: ["conversation.read", "bots.read", "approvals", "files", "terminal"], networkHosts: [] },
   "tarot-panel": { capabilities: ["conversation.read"], networkHosts: [] },
@@ -279,8 +287,17 @@ const coreHandlers: Handlers = {
   "plugin.get": ({ id }) => {
     const p = PLUGINS.find((x) => x.id === id);
     if (!p) throw new Error("not installed");
-    return { plugin: pluginDetail(p, { provenance: { by: "user-app", at: NOW }, ...(CAPABILITIES[id] ?? {}) }) };
+    const fields = DECLARED[id] ?? [];
+    const manifest = {
+      ...(SETTINGS.notifiers.some((n) => n.pluginId === id) ? { contributes: { notifiers: [{ id: "notify" }] } } : {}),
+      ...(fields.length ? { settings: Object.fromEntries(fields.map((f) => [f.key, { type: f.type, title: f.title, ...(f.options ? { options: f.options } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}) }])) } : {}),
+    };
+    return { plugin: pluginDetail(p, { provenance: { by: "user-app", at: NOW }, manifest, ...(CAPABILITIES[id] ?? {}) }) };
   },
+  "plugin.settings.get": ({ id }) => ({
+    settings: (DECLARED[id] ?? []).map((f) => ({ key: f.key, type: f.type, title: f.title, scope: "account" as const, required: f.required, set: f.set, ...(f.description ? { description: f.description } : {}), ...(f.type !== "secret" && f.value !== undefined ? { value: f.value } : {}) })),
+  }),
+  "plugin.settings.set": () => ({ applied: true }),
   "plugin.setEnabled": () => ({ applied: true }),
   "plugin.logs": () => ({ lines: LOG_LINES }),
   "plugin.ui": () => ({

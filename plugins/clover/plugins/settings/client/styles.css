@@ -198,6 +198,31 @@
   font-weight: var(--clover-font-weight-medium);
 }
 
+.cl-settings__minorhead {
+  margin: var(--clover-space-m) 0 var(--clover-space-xs);
+  font-size: var(--clover-font-size-control);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+/* A plugin's declared settings: under the Notifications heading, or opened under its row on Plugins. */
+.cl-settings__plugin:has(> .cl-settings__plugin-more) {
+  flex-wrap: wrap;
+}
+
+.cl-settings__plugin-more {
+  flex-basis: 100%;
+}
+
+.cl-settings__plugin-settings {
+  margin-top: var(--clover-space-xs);
+}
+
+.cl-settings__secret {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+}
+
 .cl-settings__note {
   margin: 0 0 var(--clover-space-xs);
   color: var(--clover-color-text-muted);

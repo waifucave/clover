@@ -12,6 +12,7 @@ afterEach(cleanup);
 const summary = (id: string, name: string, extra: Partial<PluginSummary> = {}): PluginSummary => pluginSummary(id, name, extra);
 const PLUGINS = [
   summary("clover", "Clover"),
+  summary("clover/notifications", "Desktop notifications"),
   summary("weather-routine", "Weather routine", { state: "found", enabled: false, source: "index" }),
   summary("story-mode", "Story mode", { state: "stopped", reason: "Stopped after three crashes in two minutes", source: "local" }),
 ];
@@ -20,7 +21,24 @@ const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[]
 async function mount(params: { section?: string; item?: string } = {}, extra: { component?: EntryComponent } = {}) {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: PLUGINS }),
-    "plugin.get": ({ id }) => ({ plugin: detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []) }),
+    "plugin.get": ({ id }) => {
+      const d = detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []);
+      if (id === "clover/notifications") d.manifest = { contributes: { notifiers: [{ id: "desktop" }] }, settings: { sounds: { type: "boolean", title: "Sounds" } } };
+      if (id === "weather-routine") d.manifest = { settings: { units: { type: "enum", title: "Units", options: [{ value: "metric", title: "Celsius" }, "imperial"] }, hour: { type: "number", title: "Hour", min: 0, max: 23 }, apiKey: { type: "secret", title: "API key" } } };
+      return { plugin: d };
+    },
+    "plugin.settings.get": ({ id }) => ({
+      settings:
+        id === "clover/notifications"
+          ? [{ key: "sounds", type: "boolean" as const, title: "Sounds", scope: "account" as const, required: false, value: false, set: false }]
+          : [
+              { key: "units", type: "enum" as const, title: "Units", scope: "account" as const, required: false, value: "metric", set: false },
+              { key: "hour", type: "number" as const, title: "Hour", scope: "account" as const, required: false, value: 7, set: false },
+              { key: "apiKey", type: "secret" as const, title: "API key", scope: "account" as const, required: true, set: true },
+              { key: "perBot", type: "string" as const, title: "Per bot", scope: "bot" as const, required: false, set: false },
+            ],
+    }),
+    "plugin.settings.set": () => ({ applied: true }),
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("midnight", [{ id: "night", file: "night.css" }], [{ lang: "de", file: "de.json" }])] }),
@@ -109,22 +127,55 @@ describe("settings on the runtime", () => {
     expect(core.calls.filter((c) => c.method === "device.revoke").map((c) => c.params)).toEqual([{ id: "d3" }]);
   });
 
-  test("appearance: the theme plugin through `ui.set`; light or dark and the text size as this plugin's settings; the language", async () => {
-    const { core, api } = await mount({ section: "appearance" });
+  test("appearance: the theme plugin, light or dark and the text size through `ui.set` (the user's UI choices); the language", async () => {
+    const { core } = await mount({ section: "appearance" });
     const theme = screen.getByRole("combobox", { name: /theme/i }) as HTMLSelectElement;
     expect([...theme.options].map((o) => o.textContent)).toEqual(["Plain", "midnight"]);
     expect(theme.value).toBe("midnight#night");
     fireEvent.change(theme, { target: { value: "clover/base-theme#base" } });
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Large" }));
     await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }]);
-    expect(api.stored.get("appearance")).toEqual({ theme: "dark", textSize: "default" });
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }, { patch: { appearance: "dark" } }, { patch: { textSize: "large" } }]);
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const chooser = screen.getByRole("dialog", { name: "Language" });
     fireEvent.click(within(chooser).getByRole("radio", { name: /Deutsch/ }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toContainEqual({ patch: { language: "de" } });
+  });
+
+  test("notifications are each notifier plugin's own declared settings; a change goes through `plugin.settings.set`", async () => {
+    const { core } = await mount({ section: "notifications" });
+    const group = screen.getByRole("group", { name: "Desktop notifications's settings" });
+    fireEvent.click(within(group).getByRole("switch", { name: "Sounds" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.settings.set").map((c) => c.params)).toEqual([{ id: "clover/notifications", key: "sounds", value: true }]);
+  });
+
+  test("a plugin's declared settings open under its row: choices and limits from its manifest, a secret never read back, a bot's own left to the bot", async () => {
+    const { core } = await mount({ section: "plugins" });
+    fireEvent.click(screen.getByRole("button", { name: "Weather routine's settings" }));
+    const units = screen.getByRole("combobox", { name: "Units" }) as HTMLSelectElement;
+    expect([...units.options].map((o) => [o.value, o.textContent])).toEqual([["metric", "Celsius"], ["imperial", "imperial"]]);
+    fireEvent.change(units, { target: { value: "imperial" } });
+    const hour = screen.getByRole("spinbutton", { name: "Hour" });
+    fireEvent.change(hour, { target: { value: "30" } });
+    fireEvent.blur(hour);
+    expect(screen.getByRole("alert").textContent).toBe("At most 23.");
+    fireEvent.change(hour, { target: { value: "6" } });
+    fireEvent.blur(hour);
+    const key = screen.getByRole("group", { name: "API key" }).querySelector("input")!;
+    expect([key.type, key.value, key.placeholder]).toEqual(["password", "", "Stored"]);
+    fireEvent.change(key, { target: { value: "sk-new" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.queryByText("Per bot")).toBeNull();
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.settings.set").map((c) => c.params)).toEqual([
+      { id: "weather-routine", key: "units", value: "imperial" },
+      { id: "weather-routine", key: "hour", value: 6 },
+      { id: "weather-routine", key: "apiKey", value: "sk-new" },
+    ]);
   });
 
   test("devices: choosing the main computer and pairing go through the core", async () => {
