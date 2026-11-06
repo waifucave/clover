@@ -4,7 +4,7 @@
 //
 // Each field says what it stands for in lane B's contracts (`packages/plugin-sdk/src/api/*.ts` on `lane/b-m0`).
 
-import { createContext, useContext, type ReactElement } from "react";
+import { createContext, useContext, useMemo, type ReactElement } from "react";
 import type { IslandCard, QuestionCard } from "../model/cards";
 import type { SurfaceEnvironment } from "../model/placement";
 import { DevicesTab, type DevicesSource } from "./DevicesTab";
@@ -24,6 +24,8 @@ export interface IslandHost {
   working?: number;
   /** The `island.tab` entries after Needs you, in their order: `<Spot name="island.tab">`, one entry at a time. */
   tabs?: readonly IslandTabEntry[];
+  /** `bots.read`: the bots, so another plugin named as one gets no tab. */
+  bots?: readonly { id: string; name: string }[];
   /** `devices.read` (`DevicesApi.list` and `watch`). */
   devices?: DevicesSource;
   /** Opens Settings → Devices (lane F's page, ruling R3), at a device when one is named: lane E's route. */
@@ -48,6 +50,8 @@ export interface IslandEntryProps<P> {
 /** The `app.surface` entry: the island, placed for this display and OS. */
 export function IslandApp(_: IslandEntryProps<{ surface: string }>): ReactElement | null {
   const host = useIslandHost();
+  const bots = host?.bots;
+  const botNames = useMemo(() => bots?.flatMap((b) => [b.name, b.id]), [bots]);
   if (!host) return null;
   return (
     <IslandSurface
@@ -55,6 +59,7 @@ export function IslandApp(_: IslandEntryProps<{ surface: string }>): ReactElemen
       cards={host.cards}
       working={host.working}
       tabs={host.tabs}
+      botNames={botNames}
       host={host.window}
       onAnswerQuestion={host.onAnswerQuestion}
       reducedMotion={host.reducedMotion}

@@ -34,7 +34,7 @@ export * from "../src/model/geometry";
 export { IslandQueue } from "../src/model/queue";
 export { fluidFrame, fluidSeconds, FLUID, type FluidFrame } from "../src/model/fluid";
 export { morphFrame, edgeShapePath, MORPH, type MorphFrame } from "../src/model/morph";
-export { NEEDS_YOU, OWN_PLUGIN, guestTabs, isReservedTab, isReservedPluginName, tabState, swipe, select, selectedTab, showsDots, type IslandTab, type GuestTab, type TabState } from "../src/model/tabs";
+export { NEEDS_YOU, OWN_PLUGIN, isOwnPlugin, guestTabs, isReservedTab, isReservedPluginName, tabState, swipe, select, selectedTab, showsDots, type IslandTab, type GuestTab, type TabState } from "../src/model/tabs";
 export { nameSkeleton, readsAs, shownName } from "../src/model/names";
 export { hoverScale, isOver, grownFromTop } from "../src/model/hover";
 export * from "../src/model/placement";

@@ -3,7 +3,7 @@
   "name": "Island",
   "description": "What needs you, at the top of the screen: requests grow from the top centre, and an island with tabs for what waits, your usage and your devices.",
   "engines": { "clover": "^1.0.0" },
-  "capabilities": ["approvals", "devices.read"],
+  "capabilities": ["approvals", "bots.read", "devices.read"],
   "client": { "entry": "client/index.tsx" },
   "contributes": {
     "ui": [

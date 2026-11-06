@@ -14,6 +14,12 @@ export const NEEDS_YOU: IslandTab = { id: "needs-you", title: t("clover.island.n
 /** The plugin the island and its own children belong to: their tabs are the island's own. */
 export const OWN_PLUGIN = "clover";
 
+/** Whether a plugin id is the bundled `clover` tree's: `clover` itself, or a child, which lane B ids
+ *  `clover/<folder>` (`clover/usage`, `clover/island`). */
+export function isOwnPlugin(pluginId: string | undefined): boolean {
+  return pluginId === OWN_PLUGIN || (pluginId?.startsWith(`${OWN_PLUGIN}/`) ?? false);
+}
+
 /** An `island.tab` entry, as the spot hands it over. */
 export interface GuestTab extends IslandTab {
   /** The plugin the entry comes from; absent counts as another plugin's. */
@@ -41,20 +47,21 @@ export function isReservedPluginName(name: string): boolean {
 
 /**
  * The tabs beside Needs you, as the island shows them: an entry claiming Needs you's id or title is left out, and so
- * is another plugin's tab whose plugin is named as Needs you or as Clover; another plugin's tab is titled with its
+ * is another plugin's tab whose plugin is named as Needs you, as Clover or as one of the bots ("Servers · Alpha" would
+ * read as Alpha's); another plugin's tab is titled with its
  * plugin's name ("Servers · Homelab", bidi controls out), never raises attention, and is keyed by its plugin so two
  * plugins' `servers` stay two tabs.
  */
-export function guestTabs<T extends GuestTab>(entries: readonly T[]): T[] {
+export function guestTabs<T extends GuestTab>(entries: readonly T[], botNames: readonly string[] = []): T[] {
   const out: T[] = [];
   const seen = new Set<string>();
   for (const e of entries) {
     if (isReservedTab(e)) continue;
-    const own = e.pluginId === OWN_PLUGIN;
+    const own = isOwnPlugin(e.pluginId);
     let tab: T = e;
     if (!own) {
       const plugin = shownName(e.pluginName ?? e.pluginId ?? "");
-      if (plugin && isReservedPluginName(plugin)) continue;
+      if (plugin && (isReservedPluginName(plugin) || botNames.some((b) => readsAs(plugin, b)))) continue;
       const title = shownName(e.title);
       tab = { ...e, id: `${e.pluginId ?? "plugin"}#${e.id}`, title: t("clover.island.pluginTab", { title, plugin: plugin || t("clover.island.aPlugin") }), attention: "never" };
     }
