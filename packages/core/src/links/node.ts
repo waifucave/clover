@@ -311,8 +311,9 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     if (driver) await driver.networkChanged();
     else await refresh();
   };
-  // A restarted sidecar (§8.3) binds afresh, maybe on another port: read the net report again and tell the pairs.
-  if (sidecar) offs.push(sidecar.onRestart(() => void refresh()));
+  // A restarted sidecar (§8.3) binds afresh, maybe on another port: as after a network change, read the net report
+  // again, publish to the pairs and the account, and re-dial.
+  if (sidecar) offs.push(sidecar.onRestart(() => void networkChanged().catch(() => undefined)));
   return {
     key, boxKey, registry, wire, transport, pairing, ...(directory ? { directory } : {}),
     ...(accountDirectory ? { accountDirectory } : {}), ...(driver ? { driver } : {}), ...(main ? { main } : {}), clock: sharedClock,
