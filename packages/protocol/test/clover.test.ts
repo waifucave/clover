@@ -18,7 +18,7 @@ import {
 } from "../src/common";
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
 import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION, HOST_PROCESSES } from "../src/common";
-import { METHODS, STAGE_IMAGE_B64_MAX_LENGTH, SessionEvent } from "../src/index";
+import { METHODS, SessionEvent } from "../src/index";
 import { CARD_ANSWER_SKEW_MS, SealedValue, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardContentInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
 import { isBrowserUrlAllowed, isCdpMethodAllowed } from "../src/browser";
@@ -94,7 +94,7 @@ describe("the method table", () => {
     expect(reused).toEqual([
       "plugin.install", "plugin.list", "plugin.restart", "plugin.update", "protocol.hello",
       "session.attach", "session.compact", "session.history", "session.interrupt", "session.list",
-      "session.send", "session.setModel", "session.stageImage", "sync.heads", "sync.pull", "sync.push", "usage.summary",
+      "session.send", "session.setModel", "sync.heads", "sync.pull", "sync.push", "usage.summary",
       "memory.list", "memory.read",
     ].sort());
   });
@@ -582,16 +582,11 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(DeviceView.shape.answers.safeParse({ held: "tpm", alg: "p256" }).success).toBe(true);
   });
 
-  test("lane I's phone: models.list and session.stageImage for the remote role, and no session.create", () => {
+  test("lane I's phone: models.list for the remote role, and no session.create", () => {
     const remote = calls("remote");
-    for (const m of ["models.list", "session.stageImage", "session.setModel"]) expect([m, remote.has(m)]).toEqual([m, true]);
+    for (const m of ["models.list", "session.setModel"]) expect([m, remote.has(m)]).toEqual([m, true]);
     expect(remote.has("session.create")).toBe(false);
     expect(CLOVER_METHODS.get("models.list")!.userOnly).toBeFalsy();
-    expect(CLOVER_METHODS.get("session.stageImage")!.userOnly).toBe(true);
-    const stage = CLOVER_METHODS.get("session.stageImage")!;
-    expect(stage.params.safeParse({ id: "s_luna", mediaType: "image/heic", dataBase64: "AAAA" }).success).toBe(true);
-    expect(stage.params.safeParse({ id: "s_luna", mediaType: "image/svg+xml", dataBase64: "AAAA" }).success).toBe(false);
-    expect(stage.params.safeParse({ id: "s_luna", mediaType: "image/png", dataBase64: "A".repeat(STAGE_IMAGE_B64_MAX_LENGTH + 4) }).success).toBe(false);
     const model = { id: "fireworks/kimi-k3", name: "Kimi K3", provider: "fireworks", plugin: "clover/model-fireworks", efforts: ["low", "medium", "high"], images: true, signedIn: true };
     expect(CLOVER_METHODS.get("models.list")!.result.safeParse({ models: [model], default: "fireworks/kimi-k3" }).success).toBe(true);
     expect(CLOVER_METHODS.get("models.list")!.params.safeParse({}).success).toBe(true);

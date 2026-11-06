@@ -13,7 +13,6 @@ import {
   Timestamp, TreePath,
 } from "./common";
 import { canonicalJson } from "./approvals";
-import { STAGE_IMAGE_B64_MAX_LENGTH, STAGE_IMAGE_MEDIA_TYPES } from "./methods";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 // -------------------------------------------------------------------------------------------------
@@ -302,17 +301,6 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: SessionId, model: utf16(200, 1), effort: utf16(32).optional() }),
     result: Ok,
     doc: "Switches an agent's or coding session's model mid-session; a bot's model is its user layer (§6.3).",
-  }),
-  sessionStageImage: defineMethod({
-    name: "session.stageImage", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,
-    params: z.object({
-      id: SessionId,
-      mediaType: z.enum(STAGE_IMAGE_MEDIA_TYPES),
-      /** Strict base64, at most `STAGE_IMAGE_B64_MAX_LENGTH` (the app's cap: one request line's worth). */
-      dataBase64: z.string().min(1).max(STAGE_IMAGE_B64_MAX_LENGTH),
-    }),
-    result: z.object({ path: utf16(4096, 1) }),
-    doc: "Stages an image for a session's next message, on the computer that holds it, with the app's caps (§6.6 \"attachments\"): the media types the bytes must sniff as, and the size. `session.send` names it by the path given back; a client off this computer (a phone, lane I) names only images staged so, never a file of its own.",
   }),
   modelsList: defineMethod({
     name: "models.list", owner: "A", roles: ["app", "cli", "remote"],
