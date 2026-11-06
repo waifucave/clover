@@ -2,7 +2,7 @@
 // holder's reviewer and the user's answer from the calling computer; the direct path for copies and for `mv` and
 // `cp` in Bash; levels per computer; the terminal panel's PTYs; MCP tools with `computer`, `saveTo` and Mirror.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { isContractError } from "../../src/contracts/common";
@@ -104,6 +104,32 @@ describe("the direct path: copies, and mv and cp in Bash (item 89)", () => {
     expect(phone.shown.map((n) => `${n.computer} ${n.method}`)).toEqual(["Laptop1 tree.transfer"]);
     expect(readFileSync(join(laptop.home, "proj", "a.txt"), "utf8")).toBe("a");
     expect(existsSync(join(studio.home, "proj"))).toBe(false);
+  });
+
+  test("a read-only destination refuses a move into it before the user is asked, and nothing is left there", async () => {
+    const { studio, laptop, phone } = await two({ levels: { Laptop1: "read-only" } });
+    mkdirSync(join(studio.home, "proj"));
+    writeFileSync(join(studio.home, "proj", "a.txt"), "a");
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }))).toBe("refused");
+    expect(phone.shown).toEqual([]);
+    expect(existsSync(join(laptop.home, "proj"))).toBe(false);
+    expect(readdirSync(laptop.home).filter((n) => n.startsWith(".clover-receiving-"))).toEqual([]);
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
+  });
+
+  test("an answer spent already sends the card back to the user rather than dead-ending", async () => {
+    const { studio, laptop, phone } = await two();
+    writeFileSync(join(studio.home, "a.txt"), "a");
+    const whole = { op: "move", from: "home/Studio/a.txt", to: "home/Laptop1/a.txt", source: "Studio", destination: "Laptop1" };
+    const answer = await phone.approve("Laptop1", "tree.transfer", whole);
+    await studio.node.tree.move("home/Studio/a.txt", "home/Laptop1/a.txt", { as: BOT, answer });
+    expect(phone.shown).toEqual([]);
+    // The same move again, with the answer both holders spent: the user is asked once more, and it goes through.
+    writeFileSync(join(studio.home, "a.txt"), "a2");
+    rmSync(join(laptop.home, "a.txt"));
+    await studio.node.tree.move("home/Studio/a.txt", "home/Laptop1/a.txt", { as: BOT, answer });
+    expect(phone.shown.map((n) => n.method)).toEqual(["tree.transfer"]);
+    expect(readFileSync(join(laptop.home, "a.txt"), "utf8")).toBe("a2");
   });
 
   test("a holder whose own rule is stricter refuses the move whatever the answer, before the user is asked", async () => {
@@ -256,6 +282,29 @@ describe("the terminal panel (R4)", () => {
     const plugin: Caller = { kind: "plugin", pluginId: "panel-terminal" };
     expect(await code(studio.node.terminals.open({ computer: "Studio", cols: 80, rows: 24 }, plugin))).toBe("refused");
     void laptop;
+  });
+
+  test("one computer keeps at most 8 terminals at another; a session's end closes its terminals everywhere", async () => {
+    if (!posix || typeof Bun.Terminal !== "function") return;
+    const { studio, laptop } = await two({ levels: { Laptop1: "automatic" }, extra: { terminals: sh } });
+    const ids: string[] = [];
+    for (let i = 0; i < 8; i++) ids.push((await studio.node.terminals.open({ computer: "Laptop1", cols: 80, rows: 24, session: i < 4 ? "s_alpha" : "s_beta" })).terminalId);
+    expect(laptop.node.terminalCount()).toBe(8);
+    expect(await code(studio.node.terminals.open({ computer: "Laptop1", cols: 80, rows: 24 }))).toBe("refused");
+    const here = await studio.node.terminals.open({ computer: "Studio", cols: 80, rows: 24, session: "s_alpha" });
+    expect(await studio.node.terminals.closeSession("s_alpha")).toBe(5);
+    await until(() => laptop.node.terminalCount() === 4, 3000, "s_alpha's terminals on Laptop1 to close");
+    expect(studio.node.terminalCount()).toBe(0);
+    void here;
+    // Output that isn't a terminal's shape is dropped, not passed to the app.
+    const seen: unknown[] = [];
+    studio.node.terminals.onOutput((o) => seen.push(o));
+    cluster.net.endpoint(laptop.device).connect(studio.device).then((l) => l.notify("terminal_output", { terminalId: ids[5], data: 42 }));
+    await Bun.sleep(30);
+    expect(seen.filter((o) => (o as { data: unknown }).data === 42)).toEqual([]);
+    // Disposing the router closes what it opened elsewhere.
+    studio.node.terminals.dispose();
+    await until(() => laptop.node.terminalCount() === 0, 3000, "the rest to close on Laptop1");
   });
 
   test("a paste of several lines waits for the user's OK, and goes bracketed when the program asked", async () => {

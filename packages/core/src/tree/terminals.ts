@@ -150,6 +150,24 @@ export class LocalTerminals {
     t.close();
   }
 
+  /** How many terminals `device` (null: this computer's app) has open here. */
+  countFor(device: string | null): number {
+    let n = 0;
+    for (const t of this.#open.values()) if (t.device === device) n++;
+    return n;
+  }
+
+  /** Closes a session's terminals here (its end; lanes A and D call `TerminalRouter.closeSession`). */
+  closeSession(session: string, device?: string | null): number {
+    let n = 0;
+    for (const t of [...this.#open.values()]) {
+      if (t.session !== session || (device !== undefined && t.device !== device)) continue;
+      t.close();
+      n++;
+    }
+    return n;
+  }
+
   /** Closes every terminal a device opened (its link went down). */
   closeDevice(device: string): void {
     for (const t of [...this.#open.values()]) if (t.device === device) t.close();
@@ -174,6 +192,78 @@ const PeerOpen = z.object({ cwd: TreePath, cols: z.number().int().min(2).max(100
 const PeerWrite = z.object({ terminalId: TerminalId, data: z.string().max(TERMINAL_WRITE_MAX), paste: z.boolean().optional(), session: SessionId.optional() });
 const PeerResize = z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional() });
 const PeerClose = z.object({ terminalId: TerminalId, session: SessionId.optional() });
+
+/** The most terminals one other computer keeps open here. */
+export const TERMINALS_PER_DEVICE = 8;
+/** What one terminal sends another computer at most, per second; the rest waits, and past `OUTPUT_BACKLOG_MAX` it is
+ *  dropped with a note (#177's review). */
+export const OUTPUT_BYTES_PER_SECOND = 2 * 1024 * 1024;
+const OUTPUT_BACKLOG_MAX = 8 * 1024 * 1024;
+const OUTPUT_TICK_MS = 50;
+const OUTPUT_CHUNK_MAX = 1_000_000;
+
+/** What another computer's `terminal_output` must look like to be taken. */
+const PeerOutput = z.object({
+  terminalId: TerminalId,
+  data: z.string().max(OUTPUT_CHUNK_MAX),
+  exited: z.object({ code: z.number().int().nullable() }).optional(),
+});
+
+/** Paces one terminal's output to another computer at `OUTPUT_BYTES_PER_SECOND`, in order, with its exit last. */
+function outputPacer(send: (o: TerminalOutput) => void): (o: TerminalOutput) => void {
+  let queue: string[] = [];
+  let queued = 0;
+  let dropped = false;
+  let exited: TerminalOutput["exited"];
+  let id = "";
+  let timer: ReturnType<typeof setInterval> | null = null;
+  const perTick = Math.max(1, Math.floor((OUTPUT_BYTES_PER_SECOND * OUTPUT_TICK_MS) / 1000));
+  const tick = () => {
+    let budget = perTick;
+    let out = "";
+    while (queue.length && budget > 0) {
+      const head = queue[0]!;
+      if (head.length <= budget && out.length + head.length <= OUTPUT_CHUNK_MAX) {
+        out += head;
+        budget -= head.length;
+        queue.shift();
+      } else {
+        const take = Math.min(budget, OUTPUT_CHUNK_MAX - out.length);
+        if (take <= 0) break;
+        out += head.slice(0, take);
+        queue[0] = head.slice(take);
+        budget -= take;
+      }
+    }
+    queued -= out.length;
+    if (dropped && queue.length === 0) {
+      out += "\r\n[clover: some output was dropped; the terminal printed faster than it could be sent]\r\n";
+      dropped = false;
+    }
+    if (out) send({ terminalId: id, data: out });
+    if (queue.length === 0) {
+      if (exited !== undefined) send({ terminalId: id, data: "", exited });
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+  };
+  return (o) => {
+    id = o.terminalId;
+    if (o.exited) exited = o.exited;
+    if (o.data) {
+      if (queued + o.data.length > OUTPUT_BACKLOG_MAX) dropped = true;
+      else {
+        queue.push(o.data);
+        queued += o.data.length;
+      }
+    }
+    if (!timer) {
+      timer = setInterval(tick, OUTPUT_TICK_MS);
+      (timer as { unref?: () => void }).unref?.();
+      tick();
+    }
+  };
+}
 
 function parse<T>(schema: z.ZodType<T>, raw: unknown, method: string): T {
   const r = schema.safeParse(raw);
@@ -202,6 +292,8 @@ export function serveTerminals(o: {
     const p = parse(PeerOpen, raw, "terminal.open");
     // Stamped as tool.run is (review N2): a peer, for the session it names, fenced at the folder.
     const as: Caller = { kind: "peer", device: from, ...(p.session ? { sessionId: p.session } : {}) };
+    // At most `TERMINALS_PER_DEVICE` open for one computer here (#177's review).
+    if (o.terminals.countFor(from) >= TERMINALS_PER_DEVICE) throw new ContractError("refused", `your computer already has ${TERMINALS_PER_DEVICE} terminals open here`);
     const real = await o.holder.realFolder(p.cwd, { as });
     // An interactive shell has nothing for a reviewer to read: below `automatic` it takes the user's answer.
     await judgePeer({
@@ -209,9 +301,10 @@ export function serveTerminals(o: {
       method: "terminal.open", params: { cwd: p.cwd }, as, now: o.clock.now(),
       ...(p.answer ? { answer: p.answer } : {}), ...(o.answers ? { answers: o.answers } : {}),
     });
-    const id = o.terminals.open(real, { cols: p.cols, rows: p.rows }, { device: from, session: p.session }, (out) => {
+    const forward = outputPacer((out) => {
       void t.connect(from).then((l) => l.notify("terminal_output", out, { priority: "tokens" }), () => {});
     });
+    const id = o.terminals.open(real, { cols: p.cols, rows: p.rows }, { device: from, session: p.session }, forward);
     return { terminalId: id };
   }));
   offs.push(t.handle("terminal.write", async (raw, from) => {
@@ -231,6 +324,11 @@ export function serveTerminals(o: {
     const p = parse(PeerClose, raw, "terminal.close");
     o.terminals.close(p.terminalId, { device: from, session: p.session });
     return { ok: true };
+  }));
+  offs.push(t.handle("terminal.closeSession", (raw, from) => {
+    guard(from);
+    const p = parse(z.object({ session: SessionId }), raw, "terminal.closeSession");
+    return { closed: o.terminals.closeSession(p.session, from) };
   }));
   offs.push(t.watch((view) => { if (!view.up) o.terminals.closeDevice(view.peer); }));
   return () => { for (const off of offs) off(); };
@@ -258,7 +356,9 @@ export class TerminalRouter {
   constructor(o: TerminalRouterOptions) {
     this.#o = o;
     this.#off = o.transport.onNotify("terminal_output", (params, from) => {
-      const out = params as TerminalOutput;
+      const parsed = PeerOutput.safeParse(params);
+      if (!parsed.success) return;
+      const out = parsed.data as TerminalOutput;
       const r = this.#remote.get(out.terminalId);
       if (!r || r.device !== from) return;
       if (out.exited) this.#remote.delete(out.terminalId);
@@ -319,7 +419,30 @@ export class TerminalRouter {
     await this.#request(r, "terminal.close", { terminalId, ...(r.session ? { session: r.session } : {}) }).catch(() => {});
   }
 
+  /** A session ended (lanes A and D): its terminals close here and on every computer that holds one. */
+  async closeSession(session: string): Promise<number> {
+    let n = this.#o.local.terminals.closeSession(session, null);
+    const devices = new Map<string, { device: string; computer: string }>();
+    for (const [id, r] of [...this.#remote]) {
+      if (r.session !== session) continue;
+      this.#remote.delete(id);
+      devices.set(r.device, r);
+    }
+    for (const r of devices.values()) {
+      try {
+        const link = await this.#o.transport.connect(r.device);
+        n += (await link.request<{ closed: number }>("terminal.closeSession", { session })).closed;
+      } catch {
+        // offline: that computer closed them when the link dropped
+      }
+    }
+    return n;
+  }
+
+  /** Closes every terminal it opened elsewhere, then stops listening. */
   dispose(): void {
+    for (const [id, r] of [...this.#remote]) void this.#request(r, "terminal.close", { terminalId: id, ...(r.session ? { session: r.session } : {}) }).catch(() => {});
+    this.#remote.clear();
     this.#off();
     this.#listeners.clear();
   }

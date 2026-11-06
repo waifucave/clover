@@ -16,6 +16,19 @@ const TakeParams = z.object({ target: HoldTarget, pluginId: z.string().min(1).ma
 const ReleaseParams = z.object({ id: z.string().min(1).max(128) });
 const SessionParams = z.object({ session: SessionId });
 
+/** Who asks to release a hold: the plugin, and the session the router says made the call. */
+export interface HoldOwner {
+  pluginId: string;
+  session?: string | undefined;
+}
+
+/** A session's hold is released only by that session; a hold with no session only by the plugin that took it. A
+ *  plugin is installed on every computer (Mirror), so the plugin alone never speaks for a session (#177's review). */
+export function mayRelease(h: { session?: string | undefined; pluginId: string }, by: HoldOwner): boolean {
+  if (h.session !== undefined) return by.session === h.session && by.pluginId === h.pluginId;
+  return by.pluginId === h.pluginId;
+}
+
 /** This computer's side: holds that other computers take on its screen. */
 export function serveHolds(o: { transport: LinkTransport; registry: CoreComputerRegistry; mayCall: (device: string) => boolean }): Unsubscribe {
   const t = o.transport;
@@ -93,16 +106,17 @@ export class HoldRouter {
     return r.hold;
   }
 
-  /** A hold by id, here or where it was taken; `pluginId` must be the one that took it. */
-  async releaseHold(id: string, pluginId?: string): Promise<void> {
+  /** A hold by id, here or where it was taken, by whoever owns it (`mayRelease`). */
+  async releaseHold(id: string, by: HoldOwner): Promise<void> {
     const r = this.#remote.get(id);
     if (!r) {
       const h = this.#registry.holds().find((x) => x.id === id);
-      if (h && pluginId !== undefined && h.pluginId !== pluginId) throw new ContractError("refused", "a plugin releases only the holds it took");
-      if (h) this.#registry.releaseHold(id);
+      if (!h) return;
+      if (!mayRelease(h, by)) throw new ContractError("refused", "only the session that took a hold, or for a hold with no session the plugin that took it, releases it");
+      this.#registry.releaseHold(id);
       return;
     }
-    if (pluginId !== undefined && r.pluginId !== pluginId) throw new ContractError("refused", "a plugin releases only the holds it took");
+    if (!mayRelease(r, by)) throw new ContractError("refused", "only the session that took a hold, or for a hold with no session the plugin that took it, releases it");
     this.#remote.delete(id);
     await this.#request(r.computer, r.device, "computer.releaseHold", { id }).catch(() => {});
   }

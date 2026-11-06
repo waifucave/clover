@@ -194,7 +194,9 @@ async function send(stream: LinkStream, root: string, entries: readonly Sent[], 
 }
 
 /** Removes what was sent, and only what is unchanged since: files and links, then the folders left empty, deepest
- *  first. Returns how many entries stay. */
+ *  first. Returns how many entries stay. An entry replaced in the instant between its check and its removal is
+ *  removed too (no `unlinkat` takes an inode); the folders below are the source's own, and only a writer on the
+ *  source computer could make that swap. */
 async function removeSent(root: string, entries: readonly Sent[]): Promise<number> {
   let kept = 0;
   for (const e of entries) {
@@ -555,6 +557,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
   }));
 
   offs.push(t.handle("tree.sent", async (raw, from) => {
+    if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
     const id = String((raw as { sendId?: unknown } | null)?.sendId ?? "");
     const s = pending.get(id);
     if (!s || s.device !== from) return { kept: 0 };

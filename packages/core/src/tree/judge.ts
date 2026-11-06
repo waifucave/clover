@@ -84,7 +84,12 @@ export async function judgePeer(o: {
   }
   if (!o.answers) throw new ContractError("refused", `${o.computer} takes no signed answers`);
   const verdict = await verifySignedAnswer(o.answer, { self: o.boundTo ?? o.computer, method: o.method, params: o.params, now: o.now, sha256, ...o.answers });
-  if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this call (${verdict})`);
+  // An answer spent already, or too old, is the user's real answer to an earlier try: the card goes back to them
+  // (#177's review), and the caller asks again. Anything else is refused outright.
+  if (verdict === "used" || verdict === "bad-time") {
+    throw needsAnswer(o.boundTo ?? o.computer, o.method, o.params, o.answers.render, `that answer was ${verdict === "used" ? "used already" : "too old"}; ${o.computer} needs a new one`);
+  }
+  if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this call (${verdict})`, { verdict });
 }
 
 /** The calling computer's side (R1, "the card on the caller"): shows the user the holder's own card, on any of their

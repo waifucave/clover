@@ -425,7 +425,9 @@ describe("moves between computers take the direct path (review S1)", () => {
     const whole = { op: "move", from: "home/Studio/proj", to: "home/Laptop1/proj", source: "Studio", destination: "Laptop1" };
     // An answer for another operation, or for one holder's own call, doesn't carry it.
     const elsewhere = await phone.approve("Laptop1", "tree.transfer", { ...whole, to: "home/Laptop1/elsewhere" });
-    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: elsewhere }))).toBe("refused");
+    const wrongTo = await rejection(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: elsewhere }));
+    expect(isContractError(wrongTo, "refused")).toBe(true);
+    expect((wrongTo as { detail?: { verdict?: string } }).detail?.verdict).toBe("unbound");
     const perHolder = await phone.approve("Laptop1", "tree.move", { from: whole.from, to: whole.to });
     expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: perHolder }))).toBe("refused");
     expect(existsSync(join(laptop.home, "proj"))).toBe(false);
