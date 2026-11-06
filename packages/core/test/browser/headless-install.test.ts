@@ -51,10 +51,12 @@ function makeZip(entries: { name: string; data?: string; mode?: number }[]): Uin
   return new Uint8Array(Buffer.concat([...locals, cd, end]));
 }
 
-const PLAT = "linux64";
+/** This machine's platform, so the unpacked tree reads back as the archive says (Windows keeps no modes). */
+const PLAT = cftPlatform() ?? "linux64";
+const EXE = `chrome-headless-shell${PLAT.startsWith("win") ? ".exe" : ""}`;
 const ZIP = makeZip([
   { name: `chrome-headless-shell-${PLAT}/` },
-  { name: `chrome-headless-shell-${PLAT}/chrome-headless-shell`, data: "#!/bin/sh\necho browser\n", mode: 0o100755 },
+  { name: `chrome-headless-shell-${PLAT}/${EXE}`, data: "#!/bin/sh\necho browser\n", mode: 0o100755 },
   { name: `chrome-headless-shell-${PLAT}/resources.pak`, data: "resources" },
 ]);
 
@@ -147,7 +149,7 @@ describe("the install, failing closed", () => {
   test("no pin for the platform: nothing is fetched or installed", async () => {
     const dir = home();
     const s = server(ZIP);
-    expect(await code(installHeadlessShell({ dir, pin: pinFor(ZIP), platform: "mac-arm64", fetch: s.fetch }))).toBe("no_pin");
+    expect(await code(installHeadlessShell({ dir, pin: pinFor(ZIP), platform: "no-such-platform", fetch: s.fetch }))).toBe("no_pin");
     expect(await code(installHeadlessShell({ dir, pin: pinFor(ZIP, { sha256: "" }), platform: PLAT, fetch: s.fetch }))).toBe("no_pin");
     expect(await code(installHeadlessShell({ dir, pin: pinFor(ZIP, { tree: "nope" }), platform: PLAT, fetch: s.fetch }))).toBe("no_pin");
     expect(s.urls).toEqual([]);
@@ -165,7 +167,7 @@ describe("the install, failing closed", () => {
     expect(await code(installHeadlessShell({ dir, pin, platform: PLAT, fetch: server(ZIP.subarray(0, ZIP.length - 1), { length: null }).fetch }))).toBe("size");
     // Same size, other bytes.
     const other = makeZip([
-      { name: `chrome-headless-shell-${PLAT}/chrome-headless-shell`, data: "#!/bin/sh\necho evil!!!\n", mode: 0o100755 },
+      { name: `chrome-headless-shell-${PLAT}/${EXE}`, data: "#!/bin/sh\necho evil!!!\n", mode: 0o100755 },
       { name: `chrome-headless-shell-${PLAT}/resources.pak`, data: "resources" },
       { name: `chrome-headless-shell-${PLAT}/` },
     ]);
