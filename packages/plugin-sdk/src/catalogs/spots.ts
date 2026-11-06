@@ -10,7 +10,8 @@
 // `needs` and `keep` come from the spec; the props are the least each spot obviously hands over, for E and F to settle
 // at E-M1 and F-M2 through the controller.
 import { z } from "zod";
-import { Path, Text } from "../manifest/fields";
+import { utf16 } from "@waifucave/clover-protocol";
+import { HandlerName, Path, Text } from "../manifest/fields";
 
 export interface SpotInfo {
   readonly name: string;
@@ -27,6 +28,9 @@ export interface SpotInfo {
   /** For a keyed spot: a key no plugin fills shows the declaring part's placeholder, which offers to find a plugin
    *  for it (lane F's request): the plugins page, searched for that spot and key. */
   readonly placeholder?: true;
+  /** Entry ids and titles only the bundled `clover` tree may use here (lane G's review: a third-party island tab can't
+   *  pose as Needs you). Titles compare folded (`foldTitle`). */
+  readonly reserved?: { readonly ids: readonly string[]; readonly titles: readonly string[] };
   /** The spot's own entry fields (title, icon, opens…), beyond the `ui` entry's. */
   readonly fields: z.ZodType;
   /** What the spot hands each component (provisional, see above). */
@@ -67,13 +71,13 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef, selected: z.boolean(), state: z.string(), needsYou: z.object({ cards: z.number().int(), questions: z.number().int() }) }),
     doc: "A bot's row in the sidebar, keyed by bot: its state and what waits for the user." },
   { name: "sidebar.app", shape: "list", declaredBy: "shell", inBotTab: false,
-    fields: z.object({ title: Text, icon: Path, opens: z.string().min(1).max(128) }), props: none,
+    fields: z.object({ title: Text, icon: Path, opens: utf16(128, 1) }), props: none,
     doc: "App buttons in the sidebar; `opens` names the `main` and `panel` key it shows." },
   { name: "main", shape: "keyed", declaredBy: "shell", inBotTab: false, keys: MAIN_ROUTES, fields: none,
     props: z.object({ route: z.string(), params: z.record(z.string(), z.string()) }),
     doc: "The main area, keyed by route: bot, agent, settings, plugins, app." },
   { name: "panel", shape: "keyed", declaredBy: "shell", inBotTab: false, context: ["session"], placeholder: true, fields: titledOpt,
-    props: z.object({ app: z.string(), session: z.string().optional() }),
+    props: z.object({ app: z.string(), session: z.string().optional(), bot: z.string().optional() }),
     doc: "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder." },
   { name: "panel.view", shape: "keyed", declaredBy: "shell", inBotTab: false, fields: titled,
     props: z.object({ view: z.string(), session: z.string().optional() }),
@@ -118,14 +122,43 @@ export const SPOTS: readonly SpotInfo[] = [
   // Surfaces.
   { name: "island.tab", shape: "list", declaredBy: "island", inBotTab: false, context: ["surface"],
     fields: z.object({ title: Text, icon: Path.optional(), size: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(), idle: z.boolean().optional(), attention: z.enum(["never", "badge", "expand"]).optional() }),
-    props: z.object({ expanded: z.boolean() }), doc: "A tab of the island, such as Needs you, Devices or Usage." },
-  { name: "pill.target", shape: "list", declaredBy: "pill", inBotTab: false, context: ["surface"], fields: titled, props: none,
-    doc: "Something the Dispatch pill can message besides the bots." },
+    props: z.object({ expanded: z.boolean() }), reserved: { ids: ["needs-you"], titles: ["Needs you"] },
+    doc: "A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `clover` tree's tabs raise the strip's attention." },
+  { name: "pill.target", shape: "list", declaredBy: "pill", inBotTab: false, context: ["surface"], fields: titled.extend({ handler: HandlerName }), props: none,
+    doc: "Something the Dispatch pill can message besides the bots: `handler` (a `PillTargetHandler`) gets the user's words. The pill names it with its plugin's name, and leaves out one titled as a bot." },
 ];
 
 export const SPOT_NAMES: ReadonlySet<string> = new Set(SPOTS.map((s) => s.name));
 export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
+}
+
+/** Letters from other scripts that read as Latin ones (a short table after Unicode's confusables, UTS #39), and the
+ *  digits and strokes that read as letters. */
+const CONFUSABLES: Readonly<Record<string, string>> = Object.fromEntries([
+  // Cyrillic
+  ..."АaВbЕeКkМmНhОoРpСcТtХxУyІiЈjЅsҮyҺhӀlԚqԜwаaеeоoрpсcуyхxіiјjѕsԁdһhӏlԛqԝwүyёeїi".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Greek
+  ..."ΑaΒbΕeΖzΗhΙiΚkΜmΝnΟoΡpΤtΥyΧxαaβbεeιiκkνvοoρpτtυuχxγyωw".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Latin lookalikes, Armenian, digits and strokes
+  ..."ıiɩiɑaɡgʏyℓlǀlօoսuցgհhոn0o1l|l".match(/../gu)!.map((p) => [...p] as [string, string]),
+]);
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
+
+/** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review): NFKC
+ *  (width folded), invisible characters dropped (zero-width spaces and joiners, bidi marks, variation selectors), each
+ *  letter's confusable skeleton (a Cyrillic "о" is "o"), accents dropped, case folded, and every run of anything but
+ *  letters and digits one space. Folding too much only reserves more. */
+export function foldTitle(title: string): string {
+  const visible = title.normalize("NFKC").replace(INVISIBLE, "");
+  const skeleton = [...visible].map((ch) => CONFUSABLES[ch] ?? ch).join("");
+  return skeleton.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/** Every title some spot reserves for the `clover` tree, folded. */
+export function reservedTitles(): ReadonlySet<string> {
+  return new Set(SPOTS.flatMap((s) => s.reserved?.titles ?? []).map(foldTitle));
 }
 
 /** Whether a keyed spot's entry key covers a key: exact, or a `*` pattern after the exact ones (§5.5). */

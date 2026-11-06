@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Kilo Code (AI Gateway)",
+  "description": "Kilo Code (AI Gateway)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "kilocode",
+        "name": "Kilo Code (AI Gateway)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Kilo Code (AI Gateway) API key. Clover keeps it in your credential store and adds it to Kilo Code (AI Gateway)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.kilo.ai/api/gateway"
+        }
+      }
+    ]
+  }
+}

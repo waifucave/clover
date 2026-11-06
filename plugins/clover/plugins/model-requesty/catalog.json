@@ -1,0 +1,35 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.requesty.ai/quickstart — the vendor's own documentation, retrieved 2026-09-06: the quickstart documents base `https://router.requesty.ai/v1` with `Authorization: Bearer $REQUESTY_API_KEY`, as a drop-in OpenAI replacement.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

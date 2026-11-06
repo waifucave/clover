@@ -1,0 +1,1126 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/doubao/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://doubao.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://ark.cn-beijing.volces.com/api/v3. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "doubao/doubao-1-5-pro-32k-250115",
+      "providerId": "doubao",
+      "upstreamId": "doubao-1-5-pro-32k-250115",
+      "displayName": "Doubao 1.5 Pro 32K",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-1-5-pro-32k-250115",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-1-5-pro-32k-250115",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-1-5-pro-32k-250115 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-1-5-pro-32k-250115",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-1-5-pro-32k-250115",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "doubao-1.5-pro-32k-250115",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-pro-32k",
+      "providerId": "doubao",
+      "upstreamId": "doubao-pro-32k",
+      "displayName": "Doubao Pro 32K",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-pro-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-pro-32k — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-pro-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-pro-32k",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "doubao-pro-32k",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-1-6-251015",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-1-6-251015",
+      "displayName": "Doubao Seed 1.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-251015",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-251015",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-251015 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-251015",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-251015",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "doubao-seed-1.6-251015",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-1-6-flash-250828",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-1-6-flash-250828",
+      "displayName": "Doubao Seed 1.6 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-flash-250828",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-flash-250828",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-flash-250828 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-flash-250828",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-6-flash-250828",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "doubao-seed-1.6-flash-250828",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-1-8-251228",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-1-8-251228",
+      "displayName": "Doubao Seed 1.8",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-8-251228",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-8-251228",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-1-8-251228 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/2123228 (read 2026-09-27): \"函数调用 Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/2123228 (read 2026-09-27): \"函数调用 Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/2123228 (read 2026-09-27): \"最大输出长度：64k\" — stated as \"64k\"; excludes chain-of-thought tokens (max CoT is separately 32k)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/2123228 (read 2026-09-27): \"默认开启思考：通过 thinking 参数控制模型是否开启深度思考模式。默认开启 medium 模式：支持 minimal、low、medium、high 四种模式调节思考长度。\" — this page names the field only as 'thinking' without spelling the exact sub-key; the newer sibling doc (深度思考, https://www.volcengine.com/docs/82379/1956279) documents a 7-tier reasoning_effort/reasoning.effort scheme for 2.0/2.1-generation models but does not list doubao-seed-1-8-251228 among its... — effort values ['minimal', 'low', 'medium', 'high'] ride `thinking`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.298,
+          "cacheReadPerMTokUsd": 0.02384
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/2123228 (read 2026-09-27): \"输入长度 [0, 32] 且输出长度 [0, 0.2] 0.80 0.16 2.00 0.017\" — CNY 0.8 input / 2.0 output / 0.16 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: tiered by input length: [0,32k]+output[0,0.2k]=in 0.80/out 2.00; [0,32k]+output>0.2k=in0.80/out8.00; (32,128]=in1.20/out16.00; (128,256]=in2.40/out24.00 (all CNY/1M tokens); cacheWrite is CNY/1M tokens/hour (the smallest-context standard tier is stored) — reporting the smallest tier per instructions — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-1.8-251228",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-0-code-preview-260215",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-0-code-preview-260215",
+      "displayName": "Doubao Seed 2.0 Code",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-code-preview-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-code-preview-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-code-preview-260215 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"工具调用能力 table: doubao-seed-2-0-code-preview-260215 … 函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"工具调用能力 table: doubao-seed-2-0-code-preview-260215 … 函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"doubao-seed-2-0-code-preview-260215 即将下线 … 最大回答(默认 4k): 128k\" — stated as \"128k\"; model is flagged 即将下线 (retiring soon) — see retirements",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-0-code-preview-260215 … 默认取值 medium … 提供字段 reasoning_effort（Chat API）、reasoning.effort（Responses API）\" — also supports a separate binary thinking.type=enabled(default)/disabled/auto toggle documented on the same page",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "doubao/doubao-seed-2-0-code-preview-260215"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.4768,
+          "outputPerMTokUsd": 2.384,
+          "cacheReadPerMTokUsd": 0.09536
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.0-code 输入长度 [0, 32] 3.2 - 0.017 0.64 - 16.0\" — CNY 3.2 input / 16.0 output / 0.64 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: doubao-seed-2.0-code, tiered by input length: [0,32k]=in3.2/out16.0; (32,128]=in4.8/out24.0; (128,256]=in9.6/out48.0 CNY/1M tokens (the smallest-context standard tier is stored) — pricing table uses the undated generic name 'doubao-seed-2.0-code'; this is the only 2.0-generation code model documented, so I map it to -260215 — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.0-code-preview-260215",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-0-lite-260215",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-0-lite-260215",
+      "displayName": "Doubao Seed 2.0 Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-lite-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-lite-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-lite-260215 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"doubao-seed-2-0-lite-260215 即将下线 … 最大回答(默认 4k): 128k\" — 即将下线 = retiring soon, see retirements",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-0-lite-260215 … 默认取值 medium\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "doubao/doubao-seed-2-0-lite-260215"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0894,
+          "outputPerMTokUsd": 0.5364,
+          "cacheReadPerMTokUsd": 0.01788
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.0-lite 输入长度 [0, 32] 0.6 9.0 0.017 0.12 1.8 3.6\" — CNY 0.6 input / 3.6 output / 0.12 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: doubao-seed-2.0-lite, tiered by input length: [0,32k]=in0.6(audio9.0)/out3.6; (32,128]=in0.9/out5.4; (128,256]=in1.8/out10.8 CNY/1M (the smallest-context standard tier is stored) — two dated lite variants exist (-260215 retiring and -260428 current); pricing table gives one undated 'doubao-seed-2.0-lite' row, applying to both — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.0-lite-260215",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-0-mini-260215",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-0-mini-260215",
+      "displayName": "Doubao Seed 2.0 Mini",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-mini-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-mini-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-mini-260215 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"doubao-seed-2-0-mini-260215 即将下线 … 最大回答(默认 4k): 128k\" — retiring soon",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-0-mini-260215 … 默认取值 medium\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "doubao/doubao-seed-2-0-mini-260215"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0298,
+          "outputPerMTokUsd": 0.298,
+          "cacheReadPerMTokUsd": 0.00596
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.0-mini 输入长度 [0, 32] 0.2 3.0 0.017 0.04 0.6 2.0\" — CNY 0.2 input / 2.0 output / 0.04 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: doubao-seed-2.0-mini, tiered by input length: [0,32k]=in0.2(audio3.0)/out2.0; (32,128]=in0.4/out4.0; (128,256]=in0.8/out8.0 CNY/1M (the smallest-context standard tier is stored) — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.0-mini-260215",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-0-pro-260215",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-0-pro-260215",
+      "displayName": "Doubao Seed 2.0 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-pro-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-pro-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/doubao/index.ts#doubao-seed-2-0-pro-260215 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"doubao-seed-2-0-pro-260215 即将下线 … 最大回答(默认 4k): 128k\" — retiring soon",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-0-pro-260215 … 默认取值 medium\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "doubao/doubao-seed-2-0-pro-260215"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.4768,
+          "outputPerMTokUsd": 2.384,
+          "cacheReadPerMTokUsd": 0.09536
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.0-pro 输入长度 [0, 32] 3.2 - 0.017 0.64 - 16.0\" — CNY 3.2 input / 16.0 output / 0.64 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: doubao-seed-2.0-pro, tiered by input length: [0,32k]=in3.2/out16.0; (32,128]=in4.8/out24.0; (128,256]=in9.6/out48.0 CNY/1M (the smallest-context standard tier is stored) — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.0-pro-260215",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-1-pro-260628",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-1-pro-260628",
+      "displayName": "Doubao Seed 2.1 Pro (260628)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"上下文窗口: 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"listed under 视觉理解能力 (image/video understanding) recommended models\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-1-pro-260628 … 默认取值 high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 4.47,
+          "cacheReadPerMTokUsd": 0.1788
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.1-pro 输入长度 [0, 1024] 6.00 - 0.017 1.20 - 30.00\" — CNY 6.0 input / 30.0 output / 1.2 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: doubao-seed-2.1-pro, tier [0,1024k]: in6.00/out30.00 CNY/1M (the smallest-context standard tier is stored) — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28) — the dated id `doubao-seed-2-1-pro-260628` is listed under the 往期模型 (previous models) section of https://www.volcengine.com/docs/82379/1330310; the price row quoted is the undated `doubao-seed-2.1-pro` entry, which covers it",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.1-pro-260628",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-1-pro-260915",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-1-pro-260915",
+      "displayName": "Doubao Seed 2.1 Pro (260915)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1024000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"上下文窗口: 1024k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"recommended under 视觉理解能力\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-1-pro-260915 … 默认取值 high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 4.47,
+          "cacheReadPerMTokUsd": 0.1788
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.1-pro 输入长度 [0, 1024] 6.00 - 0.017 1.20 - 30.00\" — CNY 6.0 input / 30.0 output / 1.2 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: same 'doubao-seed-2.1-pro' pricing row applies, tier [0,1024k] (the smallest-context standard tier is stored) — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.1-pro-260915",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-2-1-turbo-260628",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-2-1-turbo-260628",
+      "displayName": "Doubao Seed 2.1 Turbo",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"上下文窗口: 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"recommended under 视觉理解能力\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-2-1-turbo-260628 … 默认取值 high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.447,
+          "outputPerMTokUsd": 2.235,
+          "cacheReadPerMTokUsd": 0.0894
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-2.1-turbo 输入长度 [0, 256] 3.00 - 0.017 0.60 - 15.00\" — CNY 3.0 input / 15.0 output / 0.6 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: doubao-seed-2.1-turbo, tier [0,256k]: in3.00/out15.00 CNY/1M (the smallest-context standard tier is stored) — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.1-turbo-260628",
+      "modelFamily": "other"
+    },
+    {
+      "key": "doubao/doubao-seed-evolving",
+      "providerId": "doubao",
+      "upstreamId": "doubao-seed-evolving",
+      "displayName": "Doubao Seed Evolving",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1024000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"上下文窗口: 1024k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"recommended under 视觉理解能力 / GUI 任务处理能力\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"函数调用 ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1956279 (read 2026-09-27): \"doubao-seed-evolving … 默认取值 high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 4.47,
+          "cacheReadPerMTokUsd": 0.1788
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1099320 (read 2026-09-27): \"doubao-seed-evolving 输入长度 [0, 1024] 6.00 - 0.017 1.20 - 30.00\" — CNY 6.0 input / 30.0 output / 1.2 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: tier [0,1024k]: in6.00/out30.00 CNY/1M (the smallest-context standard tier is stored) — the page's other cache column is cache STORAGE (元/百万token/小时, per 1M tokens per HOUR), not a cache-write price, so no cache-write price is recorded (controller review, 2026-09-28)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-evolving",
+      "modelFamily": "other"
+    }
+  ]
+}

@@ -26,6 +26,7 @@
 // them waits for its own OK while the rest of the change applies at once. Until the user OKs it, the core passes the
 // layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
+import { utf16 } from "@waifucave/clover-protocol";
 import {
   AUTO_INK, AUTO_INKS, CARD_TOKENS, LABEL_INK, SYSTEM_ACCENT, SYSTEM_LABEL_FILLS, TOKENS, fillForWhiteLabel, isTokenValue, isValueForToken,
   resolveAutoInk, type TokenValue,
@@ -34,12 +35,12 @@ import { Path, Text } from "../manifest/fields";
 
 /** A token's value: a string, or a plain number for `number` and `fontWeight` tokens. The catalog
  *  (`catalogs/tokens.ts`) checks each value against its token's type. */
-export const ThemeTokenValueSchema = z.union([z.string().max(300), z.number().finite()]);
+export const ThemeTokenValueSchema = z.union([utf16(300), z.number().finite()]);
 /** Token name → value: the catalog's tokens, and the plugin's own (`<top-level plugin id>.<name>`). */
-export const ThemeTokensSchema = z.record(z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9.-]*$/), ThemeTokenValueSchema);
+export const ThemeTokensSchema = z.record(utf16(128, 1).regex(/^[a-z0-9][a-z0-9.-]*$/), ThemeTokenValueSchema);
 
 export const ThemeSchema = z.strictObject({
-  $schema: z.string().max(2048).optional(),
+  $schema: utf16(2048).optional(),
   theme: z.literal(1),
   name: Text,
   appearance: z.enum(["light", "dark", "both"]).optional(),
@@ -49,12 +50,12 @@ export const ThemeSchema = z.strictObject({
   /** Cleaned CSS: no `@import`, `url()` only for files inside the folder, no remote fonts or images (§5.5). */
   css: Path.optional(),
   fonts: z.array(z.strictObject({
-    family: z.string().min(1).max(100).regex(/^[A-Za-z0-9 _-]+$/),
+    family: utf16(100, 1).regex(/^[A-Za-z0-9 _-]+$/),
     src: Path,
-    weight: z.string().max(16).optional(),
+    weight: utf16(16).optional(),
     style: z.enum(["normal", "italic"]).optional(),
   })).max(64).optional(),
-  icons: z.record(z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9.-]*$/), Path).optional(),
+  icons: z.record(utf16(64, 1).regex(/^[a-z0-9][a-z0-9.-]*$/), Path).optional(),
 });
 export type Theme = z.infer<typeof ThemeSchema>;
 

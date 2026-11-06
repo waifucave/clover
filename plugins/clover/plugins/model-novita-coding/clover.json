@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Novita Coding Plan",
+  "description": "Novita Coding Plan's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "novita-coding",
+        "name": "Novita Coding Plan",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Novita Coding Plan API key. Clover keeps it in your credential store and adds it to Novita Coding Plan's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.novita.ai/openai/v1"
+        }
+      }
+    ]
+  }
+}

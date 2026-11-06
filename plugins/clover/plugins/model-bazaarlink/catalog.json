@@ -1,0 +1,2158 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://bazaarlink.ai/api/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/bazaarlink/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://bazaarlink.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://bazaarlink.ai/api/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "bazaarlink/auto:free",
+      "providerId": "bazaarlink",
+      "upstreamId": "auto:free",
+      "displayName": "Auto Free (Zero Cost)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#auto:free",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#auto:free — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#auto:free",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#auto:free",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0,
+          "outputPerMTokUsd": 0
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `auto:free` (read 2026-09-27): pricing.prompt 0 / pricing.completion 0 USD per token (= $0.0 / $0.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "auto:free",
+      "modelFamily": "other"
+    },
+    {
+      "key": "bazaarlink/claude-haiku-4.5",
+      "providerId": "bazaarlink",
+      "upstreamId": "claude-haiku-4.5",
+      "displayName": "Claude Haiku 4.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-haiku-4.5` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'file']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-haiku-4.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-haiku-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-haiku-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-haiku-4.5` (read 2026-09-27): context_length 200000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-haiku-4.5` (read 2026-09-27): pricing.prompt 0.000001 / pricing.completion 0.000005 USD per token (= $1.0 / $5.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-haiku-4.5` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled None) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-haiku-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bazaarlink/claude-opus-4.7",
+      "providerId": "bazaarlink",
+      "upstreamId": "claude-opus-4.7",
+      "displayName": "Claude Opus 4.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-opus-4.7` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'file']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-opus-4.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-opus-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-opus-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-opus-4.7` (read 2026-09-27): context_length 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-opus-4.7` (read 2026-09-27): pricing.prompt 0.000005 / pricing.completion 0.000025 USD per token (= $5.0 / $25.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-opus-4.7` (read 2026-09-27): reasoning.supported_efforts ['max', 'xhigh', 'high', 'medium', 'low'], default_effort high, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "max",
+          "xhigh",
+          "high",
+          "medium",
+          "low"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-opus-4.7",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bazaarlink/claude-sonnet-4.6",
+      "providerId": "bazaarlink",
+      "upstreamId": "claude-sonnet-4.6",
+      "displayName": "Claude Sonnet 4.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-sonnet-4.6` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'file']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-sonnet-4.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-sonnet-4.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#claude-sonnet-4.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-sonnet-4.6` (read 2026-09-27): context_length 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-sonnet-4.6` (read 2026-09-27): pricing.prompt 0.000003 / pricing.completion 0.000015 USD per token (= $3.0 / $15.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `claude-sonnet-4.6` (read 2026-09-27): reasoning.supported_efforts ['max', 'high', 'medium', 'low'], default_effort medium, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "max",
+          "high",
+          "medium",
+          "low"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-sonnet-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bazaarlink/deepseek-v3.2",
+      "providerId": "bazaarlink",
+      "upstreamId": "deepseek-v3.2",
+      "displayName": "DeepSeek V3.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#deepseek-v3.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#deepseek-v3.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#deepseek-v3.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#deepseek-v3.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 163840,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `deepseek-v3.2` (read 2026-09-27): context_length 163840",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.28,
+          "outputPerMTokUsd": 0.42
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `deepseek-v3.2` (read 2026-09-27): pricing.prompt 2.8e-7 / pricing.completion 4.2e-7 USD per token (= $0.28 / $0.42 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `deepseek-v3.2` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled False) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v3.2",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "bazaarlink/gemini-3-flash-preview",
+      "providerId": "bazaarlink",
+      "upstreamId": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3-flash-preview` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'audio', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3-flash-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3-flash-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3-flash-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3-flash-preview` (read 2026-09-27): context_length 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3-flash-preview` (read 2026-09-27): pricing.prompt 5e-7 / pricing.completion 0.000003 USD per token (= $0.5 / $3.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3-flash-preview` (read 2026-09-27): reasoning.supported_efforts ['high', 'medium', 'low', 'minimal'], default_effort medium, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "high",
+          "medium",
+          "low",
+          "minimal"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemini-3-flash-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "bazaarlink/gemini-3.1-flash-lite-preview",
+      "providerId": "bazaarlink",
+      "upstreamId": "gemini-3.1-flash-lite-preview",
+      "displayName": "Gemini 3.1 Flash Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-flash-lite-preview` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'video', 'audio']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3.1-flash-lite-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3.1-flash-lite-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3.1-flash-lite-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-flash-lite-preview` (read 2026-09-27): context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.25,
+          "outputPerMTokUsd": 1.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-flash-lite-preview` (read 2026-09-27): pricing.prompt 2.5e-7 / pricing.completion 0.0000015 USD per token (= $0.25 / $1.5 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-flash-lite-preview` (read 2026-09-27): reasoning.supported_efforts ['high', 'medium', 'low', 'minimal'], default_effort minimal, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "high",
+          "medium",
+          "low",
+          "minimal"
+        ],
+        "defaultEffort": "minimal",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemini-3.1-flash-lite-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "bazaarlink/gemini-3.1-pro-preview",
+      "providerId": "bazaarlink",
+      "upstreamId": "gemini-3.1-pro-preview",
+      "displayName": "Gemini 3.1 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-pro-preview` (read 2026-09-27): architecture.input_modalities ['audio', 'image', 'text', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3.1-pro-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3.1-pro-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemini-3.1-pro-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-pro-preview` (read 2026-09-27): context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 12
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-pro-preview` (read 2026-09-27): pricing.prompt 0.000002 / pricing.completion 0.000012 USD per token (= $2.0 / $12.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemini-3.1-pro-preview` (read 2026-09-27): reasoning.supported_efforts ['high', 'medium', 'low'], default_effort medium, mandatory True",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemini-3.1-pro-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "bazaarlink/gemma-4-26b-a4b-it",
+      "providerId": "bazaarlink",
+      "upstreamId": "gemma-4-26b-a4b-it",
+      "displayName": "Gemma 4 26B A4B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-26b-a4b-it` (read 2026-09-27): architecture.input_modalities ['image', 'text', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemma-4-26b-a4b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemma-4-26b-a4b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemma-4-26b-a4b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-26b-a4b-it` (read 2026-09-27): context_length 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.09,
+          "outputPerMTokUsd": 0.34
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-26b-a4b-it` (read 2026-09-27): pricing.prompt 9e-8 / pricing.completion 3.4000000000000003e-7 USD per token (= $0.09 / $0.34 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-26b-a4b-it` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled False) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemma-4-26b-a4b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "bazaarlink/gemma-4-31b-it",
+      "providerId": "bazaarlink",
+      "upstreamId": "gemma-4-31b-it",
+      "displayName": "Gemma 4 31B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-31b-it` (read 2026-09-27): architecture.input_modalities ['image', 'text', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemma-4-31b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemma-4-31b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gemma-4-31b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-31b-it` (read 2026-09-27): context_length 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.09,
+          "outputPerMTokUsd": 0.34
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-31b-it` (read 2026-09-27): pricing.prompt 9e-8 / pricing.completion 3.4000000000000003e-7 USD per token (= $0.09 / $0.34 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gemma-4-31b-it` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled False) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemma-4-31b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "bazaarlink/glm-5",
+      "providerId": "bazaarlink",
+      "upstreamId": "glm-5",
+      "displayName": "GLM 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "bazaarlink/glm-5.1",
+      "providerId": "bazaarlink",
+      "upstreamId": "glm-5.1",
+      "displayName": "GLM 5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "bazaarlink/gpt-5.4",
+      "providerId": "bazaarlink",
+      "upstreamId": "gpt-5.4",
+      "displayName": "GPT-5.4",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4` (read 2026-09-27): architecture.input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4` (read 2026-09-27): context_length 1050000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2.5,
+          "outputPerMTokUsd": 15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4` (read 2026-09-27): pricing.prompt 0.0000025 / pricing.completion 0.000015 USD per token (= $2.5 / $15.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4` (read 2026-09-27): reasoning.supported_efforts ['xhigh', 'high', 'medium', 'low', 'none'], default_effort medium, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "xhigh",
+          "high",
+          "medium",
+          "low",
+          "none"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-5.4",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bazaarlink/gpt-5.4-mini",
+      "providerId": "bazaarlink",
+      "upstreamId": "gpt-5.4-mini",
+      "displayName": "GPT-5.4 Mini",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4-mini` (read 2026-09-27): architecture.input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-mini — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-mini",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4-mini` (read 2026-09-27): context_length 400000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 4.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4-mini` (read 2026-09-27): pricing.prompt 7.5e-7 / pricing.completion 0.0000045 USD per token (= $0.75 / $4.5 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.4-mini` (read 2026-09-27): reasoning.supported_efforts ['xhigh', 'high', 'medium', 'low', 'none'], default_effort medium, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "xhigh",
+          "high",
+          "medium",
+          "low",
+          "none"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-5.4-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bazaarlink/gpt-5.4-nano",
+      "providerId": "bazaarlink",
+      "upstreamId": "gpt-5.4-nano",
+      "displayName": "GPT-5.4 Nano",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-nano",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-nano — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-nano",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.4-nano",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gpt-5.4-nano",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bazaarlink/gpt-5.5",
+      "providerId": "bazaarlink",
+      "upstreamId": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.5` (read 2026-09-27): architecture.input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#gpt-5.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.5` (read 2026-09-27): context_length 1050000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 30
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.5` (read 2026-09-27): pricing.prompt 0.000005 / pricing.completion 0.00003 USD per token (= $5.0 / $30.0 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `gpt-5.5` (read 2026-09-27): reasoning.supported_efforts ['xhigh', 'high', 'medium', 'low', 'none'], default_effort medium, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "xhigh",
+          "high",
+          "medium",
+          "low",
+          "none"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-5.5",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "bazaarlink/grok-4.20",
+      "providerId": "bazaarlink",
+      "upstreamId": "grok-4.20",
+      "displayName": "Grok 4.20",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.20` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'file']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#grok-4.20 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#grok-4.20",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#grok-4.20",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 2000000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.20` (read 2026-09-27): context_length 2000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.20` (read 2026-09-27): pricing.prompt 0.00000125 / pricing.completion 0.0000025 USD per token (= $1.25 / $2.5 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.20` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled False) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "grok-4.20",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "bazaarlink/grok-4.3",
+      "providerId": "bazaarlink",
+      "upstreamId": "grok-4.3",
+      "displayName": "Grok 4.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.3` (read 2026-09-27): architecture.input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#grok-4.3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#grok-4.3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#grok-4.3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.3` (read 2026-09-27): context_length 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.3` (read 2026-09-27): pricing.prompt 0.00000125 / pricing.completion 0.0000025 USD per token (= $1.25 / $2.5 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `grok-4.3` (read 2026-09-27): reasoning.supported_efforts ['high', 'medium', 'low', 'none'], default_effort low, mandatory False",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "high",
+          "medium",
+          "low",
+          "none"
+        ],
+        "defaultEffort": "low",
+        "continuation": "none"
+      },
+      "canonicalModelId": "grok-4.3",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "bazaarlink/kimi-k2.5",
+      "providerId": "bazaarlink",
+      "upstreamId": "kimi-k2.5",
+      "displayName": "Kimi K2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.5",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "bazaarlink/kimi-k2.6",
+      "providerId": "bazaarlink",
+      "upstreamId": "kimi-k2.6",
+      "displayName": "Kimi K2.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "bazaarlink/llama-3.3-70b-instruct",
+      "providerId": "bazaarlink",
+      "upstreamId": "llama-3.3-70b-instruct",
+      "displayName": "Llama 3.3 70B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-3.3-70b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-3.3-70b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-3.3-70b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-3.3-70b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-3.3-70b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "bazaarlink/llama-4-maverick",
+      "providerId": "bazaarlink",
+      "upstreamId": "llama-4-maverick",
+      "displayName": "Llama 4 Maverick",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-maverick",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-maverick — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-maverick",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-maverick",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-4-maverick",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "bazaarlink/llama-4-scout",
+      "providerId": "bazaarlink",
+      "upstreamId": "llama-4-scout",
+      "displayName": "Llama 4 Scout",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-scout",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-scout — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-scout",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#llama-4-scout",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-4-scout",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "bazaarlink/mimo-v2.5",
+      "providerId": "bazaarlink",
+      "upstreamId": "mimo-v2.5",
+      "displayName": "MiMo-V2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5` (read 2026-09-27): architecture.input_modalities ['text', 'audio', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5` (read 2026-09-27): context_length 1050000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.28
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5` (read 2026-09-27): pricing.prompt 1.4e-7 / pricing.completion 2.8e-7 USD per token (= $0.14 / $0.28 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled None) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "mimo-v2.5",
+      "modelFamily": "mimo"
+    },
+    {
+      "key": "bazaarlink/mimo-v2.5-pro",
+      "providerId": "bazaarlink",
+      "upstreamId": "mimo-v2.5-pro",
+      "displayName": "MiMo-V2.5-Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mimo-v2.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5-pro` (read 2026-09-27): context_length 1050000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.435,
+          "outputPerMTokUsd": 0.87
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5-pro` (read 2026-09-27): pricing.prompt 4.35e-7 / pricing.completion 8.7e-7 USD per token (= $0.435 / $0.87 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `mimo-v2.5-pro` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled None) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "mimo-v2.5-pro",
+      "modelFamily": "mimo"
+    },
+    {
+      "key": "bazaarlink/minimax-m2.5",
+      "providerId": "bazaarlink",
+      "upstreamId": "minimax-m2.5",
+      "displayName": "MiniMax M2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "bazaarlink/minimax-m2.7",
+      "providerId": "bazaarlink",
+      "upstreamId": "minimax-m2.7",
+      "displayName": "MiniMax M2.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "bazaarlink/minimax-m3",
+      "providerId": "bazaarlink",
+      "upstreamId": "minimax-m3",
+      "displayName": "MiniMax M3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `minimax-m3` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `minimax-m3` (read 2026-09-27): pricing.prompt 3e-7 / pricing.completion 0.0000012 USD per token (= $0.3 / $1.2 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `minimax-m3` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled None) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "bazaarlink/mistral-large-2512",
+      "providerId": "bazaarlink",
+      "upstreamId": "mistral-large-2512",
+      "displayName": "Mistral Large 3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-large-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-large-2512 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-large-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-large-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-large-2512",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "bazaarlink/mistral-medium-3.1",
+      "providerId": "bazaarlink",
+      "upstreamId": "mistral-medium-3.1",
+      "displayName": "Mistral Medium 3.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-medium-3.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-medium-3.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-medium-3.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-medium-3.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-medium-3.1",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "bazaarlink/mistral-small-2603",
+      "providerId": "bazaarlink",
+      "upstreamId": "mistral-small-2603",
+      "displayName": "Mistral Small 4",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-small-2603",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-small-2603 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-small-2603",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#mistral-small-2603",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-small-2603",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "bazaarlink/nemotron-3-super-120b-a12b",
+      "providerId": "bazaarlink",
+      "upstreamId": "nemotron-3-super-120b-a12b",
+      "displayName": "Nemotron 3 Super",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#nemotron-3-super-120b-a12b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#nemotron-3-super-120b-a12b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#nemotron-3-super-120b-a12b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#nemotron-3-super-120b-a12b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "nemotron-3-super-120b-a12b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "bazaarlink/qwen3.6-plus",
+      "providerId": "bazaarlink",
+      "upstreamId": "qwen3.6-plus",
+      "displayName": "Qwen 3.6 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `qwen3.6-plus` (read 2026-09-27): architecture.input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#qwen3.6-plus — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#qwen3.6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bazaarlink/index.ts#qwen3.6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `qwen3.6-plus` (read 2026-09-27): context_length 1000000",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.325,
+          "outputPerMTokUsd": 1.95
+        },
+        "source": "official-doc",
+        "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `qwen3.6-plus` (read 2026-09-27): pricing.prompt 3.25e-7 / pricing.completion 0.00000195 USD per token (= $0.325 / $1.95 per 1M); no cache rate published",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://bazaarlink.ai/api/v1/models — BazaarLink's own public model entry `qwen3.6-plus` (read 2026-09-27): the entry carries a `reasoning` object (mandatory False, default_enabled None) -- read as a reasoning-capable model -- but lists no supported_efforts, so no effort vocabulary is stated",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3.6-plus",
+      "modelFamily": "qwen"
+    }
+  ]
+}

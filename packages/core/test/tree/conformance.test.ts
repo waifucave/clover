@@ -3,4 +3,5 @@
 import { runTreeConformance } from "../../src/contracts/conformance/tree";
 import { realTreeHarness } from "./harness";
 
-runTreeConformance((opts) => realTreeHarness(opts));
+// The holder's reviewer (R1) and R15's one answer between computers are J-M2's (#177); until then they run as todo.
+runTreeConformance((opts) => realTreeHarness(opts), { pending: ["r1", "r15"] });

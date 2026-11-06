@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "nScale",
+  "description": "nScale's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nscale",
+        "name": "nScale",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your nScale API key. Clover keeps it in your credential store and adds it to nScale's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://inference.api.nscale.com/v1"
+        }
+      }
+    ]
+  }
+}

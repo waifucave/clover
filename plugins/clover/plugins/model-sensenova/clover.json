@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "SenseNova",
+  "description": "SenseNova's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "sensenova",
+        "name": "SenseNova",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your SenseNova API key. Clover keeps it in your credential store and adds it to SenseNova's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://token.sensenova.cn/v1"
+        }
+      }
+    ]
+  }
+}

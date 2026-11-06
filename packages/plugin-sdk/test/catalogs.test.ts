@@ -8,14 +8,14 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, CLIENT_BARE_IMPORTS,
 } from "../src/index";
 
 describe("capabilities", () => {
-  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16) and terminal for the terminal panel", () => {
+  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel and plugins.install for the index browser", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "browser", "terminal", "usage.read", "logs.read", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "browser", "terminal", "plugins.install", "usage.read", "logs.read", "notify", "audio",
       "call:<plugin-id>", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
@@ -201,6 +201,41 @@ describe("points and spots", () => {
     expect(panel({ session: "code" }).issues.map((i) => [i.refuses, i.path])).toEqual([["entry", "/contributes/ui/0/when/session"]]);
   });
 
+  test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the clover tree's rules", () => {
+    const entry = (ui: Record<string, unknown>, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },
+      parent ? { parent, folderName: "home", bundled: true } : { folderName: "home" },
+    ).issues.map((i) => `${i.code}:${i.path}`);
+    const CLOVER = { id: "clover", namespace: "clover" };
+    // A third-party island tab can't pose as Needs you, by id or by title in any case or width.
+    expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Lights" })).toEqual(["ui_reserved:/contributes/ui/0/id"]);
+    expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "ＮＥＥＤＳ  you" })).toEqual(["ui_reserved:/contributes/ui/0/title"]);
+    expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "Lights" })).toEqual([]);
+    expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Needs you" }, CLOVER)).toEqual([]);
+    // Invisible characters, lookalike letters, accents and punctuation don't make it another title (#179's review).
+    for (const title of ["Needs\u200B you", "Needs y\u043Eu", "N\u0435eds you", "Ne\u0301eds you!", "needs_you", "NEEDS\u2060 YOU"]) {
+      expect([title, entry({ spot: "island.tab", id: "lights", component: "Tab", title })]).toEqual([title, ["ui_reserved:/contributes/ui/0/title"]]);
+    }
+    expect(entry({ spot: "island.tab", id: "needs_you", component: "Tab", title: "Lights" })).toEqual(["ui_reserved:/contributes/ui/0/id"]);
+    // Nor may a plugin be named so: the island labels a tab with its plugin's name.
+    const named = (name: string, bundled = false) => validateManifest({ manifest: 1, ...(bundled ? {} : { id: "home" }), name }, bundled ? { parent: CLOVER, folderName: "home", bundled: true } : { folderName: "home" })
+      .issues.map((i) => `${i.code}:${i.path}`);
+    expect(named("Needs\u200B y\u043Eu")).toEqual(["name_reserved:/name"]);
+    expect(named("Needs you", true)).toEqual([]);
+    expect(named("Lights")).toEqual([]);
+    // Always-on-top surfaces are the clover tree's in 1.111.1 (R12).
+    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } })).toEqual(["ui_always_on_top:/contributes/ui/0/window/alwaysOnTop"]);
+    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } }, CLOVER)).toEqual([]);
+    // A pill target names the handler that gets the user's words.
+    expect(entry({ spot: "pill.target", component: "Target", title: "Lights" }).some((i) => i.endsWith("/handler"))).toBe(true);
+    expect(entry({ spot: "pill.target", component: "Target", title: "Lights", handler: "lights" })).toEqual([]);
+    expect(foldTitle(" Needs\u3000YOU ")).toBe("needs you");
+    // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
+    expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
+    expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");
+    expect(API_CALLS["files.watch"]).toEqual({ capability: "files", where: "both" });
+  });
+
   test("a keyed spot's entry with no key fills every key; a key ending in * fills what it matches", () => {
     expect(keyMatches(undefined, "alpha")).toBe(true);
     expect(keyMatches("image/*", "image/png")).toBe(true);
@@ -367,7 +402,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(18);
+    expect(c.capabilities.length).toBe(19);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

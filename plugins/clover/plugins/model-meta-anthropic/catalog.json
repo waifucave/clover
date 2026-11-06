@@ -1,0 +1,379 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "The vendor's OpenAI-dialect reasoning replay contract must not be assumed for Anthropic Messages without a dialect-specific document or probe."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://dev.meta.ai/docs/protocols/messages — Meta Model API Messages protocol, retrieved 2026-09-25: Anthropic SDK `base_url=\"https://api.meta.ai\"`, POST `/v1/messages` (and `/v1/messages/count_tokens`) with the same Model API key; per-token billing.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "meta-anthropic/muse-spark-1.1",
+      "providerId": "meta-anthropic",
+      "upstreamId": "muse-spark-1.1",
+      "displayName": "Muse Spark 1.1 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.1 table lists 1,048,576 token context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.1 table lists text, image, video, audio, PDF inputs; 1.3 audio has degraded quality caveat",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.1 table lists text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — Muse Spark docs link model family to tool calling; both Chat and Responses served",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/tool-calling — Muse Spark tool-calling examples use tools and tool_calls",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/protocols/messages — disable_parallel_tool_use true prevents parallel calls, implying parallel tool use normally available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/protocols/messages — output_config.format json_schema constrains output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/pricing-rate-limits — Muse Spark cached input has a separate price and prompt-prefix cache hits are documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://dev.meta.ai/docs/protocols/messages — Muse Spark always reasons; output_config.effort low/medium/high/xhigh; redacted_thinking encrypted blob can be replayed",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:38:08Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "meta-anthropic/muse-spark-1.1"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://dev.meta.ai/docs/protocols/messages (read 2026-10-29): assistant replay accepts \"thinking / redacted_thinking: prior reasoning. `redacted_thinking` carries the encrypted blob; replay it to preserve chain of thought\"; response \"reasoning maps to `thinking` (`encrypted_content` maps to `redacted_thinking`)\". The Anthropic adapter replays both block types verbatim on the producing model's next request. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 4.25,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/pricing-rate-limits — Standard tier muse-spark-1.1: input $1.25, cached input $0.15, output $4.25 per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "unsupportedParameters": [
+        "stop_sequences",
+        "top_k",
+        "container",
+        "inference_geo"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "muse-spark-1.1",
+      "modelFamily": "muse"
+    },
+    {
+      "key": "meta-anthropic/muse-spark-1.2",
+      "providerId": "meta-anthropic",
+      "upstreamId": "muse-spark-1.2",
+      "displayName": "Muse Spark 1.2 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.2 table lists 1,048,576 token context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.2 table lists text, image, video, audio, PDF inputs; 1.3 audio has degraded quality caveat",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.2 table lists text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — Muse Spark docs link model family to tool calling; both Chat and Responses served",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/tool-calling — Muse Spark tool-calling examples use tools and tool_calls",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/protocols/messages — disable_parallel_tool_use true prevents parallel calls, implying parallel tool use normally available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/protocols/messages — output_config.format json_schema constrains output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/pricing-rate-limits — Muse Spark cached input has a separate price and prompt-prefix cache hits are documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://dev.meta.ai/docs/protocols/messages — Muse Spark always reasons; output_config.effort low/medium/high/xhigh; redacted_thinking encrypted blob can be replayed",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:38:08Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "meta-anthropic/muse-spark-1.2"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://dev.meta.ai/docs/protocols/messages (read 2026-10-29): assistant replay accepts \"thinking / redacted_thinking: prior reasoning. `redacted_thinking` carries the encrypted blob; replay it to preserve chain of thought\"; response \"reasoning maps to `thinking` (`encrypted_content` maps to `redacted_thinking`)\". The Anthropic adapter replays both block types verbatim on the producing model's next request. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 4.25,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/pricing-rate-limits — Standard tier muse-spark-1.2: input $1.25, cached input $0.15, output $4.25 per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "unsupportedParameters": [
+        "stop_sequences",
+        "top_k",
+        "container",
+        "inference_geo"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "muse-spark-1.2",
+      "modelFamily": "muse"
+    },
+    {
+      "key": "meta-anthropic/muse-spark-1.3",
+      "providerId": "meta-anthropic",
+      "upstreamId": "muse-spark-1.3",
+      "displayName": "Muse Spark 1.3 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.3 table lists 1,048,576 token context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.3 table lists text, image, video, audio, PDF inputs; 1.3 audio has degraded quality caveat",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — muse-spark-1.3 table lists text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/models — Muse Spark docs link model family to tool calling; both Chat and Responses served",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/tool-calling — Muse Spark tool-calling examples use tools and tool_calls",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/protocols/messages — disable_parallel_tool_use true prevents parallel calls, implying parallel tool use normally available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/protocols/messages — output_config.format json_schema constrains output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/pricing-rate-limits — Muse Spark cached input has a separate price and prompt-prefix cache hits are documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://dev.meta.ai/docs/protocols/messages — Muse Spark always reasons; output_config.effort low/medium/high/xhigh; redacted_thinking encrypted blob can be replayed",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:38:08Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "meta-anthropic/muse-spark-1.3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://dev.meta.ai/docs/protocols/messages (read 2026-10-29): assistant replay accepts \"thinking / redacted_thinking: prior reasoning. `redacted_thinking` carries the encrypted blob; replay it to preserve chain of thought\"; response \"reasoning maps to `thinking` (`encrypted_content` maps to `redacted_thinking`)\". The Anthropic adapter replays both block types verbatim on the producing model's next request. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 4.25,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://dev.meta.ai/docs/pricing-rate-limits — Standard tier muse-spark-1.3: input $1.25, cached input $0.15, output $4.25 per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:38:08Z"
+      },
+      "unsupportedParameters": [
+        "stop_sequences",
+        "top_k",
+        "container",
+        "inference_geo"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "muse-spark-1.3",
+      "modelFamily": "muse"
+    }
+  ]
+}

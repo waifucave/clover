@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "LiteRouter",
+  "description": "LiteRouter's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "literouter",
+        "name": "LiteRouter",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your LiteRouter API key. Clover keeps it in your credential store and adds it to LiteRouter's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.literouter.com/v1"
+        }
+      }
+    ]
+  }
+}

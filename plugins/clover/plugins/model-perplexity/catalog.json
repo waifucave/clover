@@ -1,0 +1,373 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/perplexity/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.perplexity.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.perplexity.ai. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "perplexity/sonar",
+      "providerId": "perplexity",
+      "upstreamId": "sonar",
+      "displayName": "Sonar",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/getting-started/pricing — Sonar API token-price table, per million tokens (retrieved 2026-09-19). Sonar requests also incur documented search-context request fees; Deep Research additionally bills citation, search-query, and reasoning tokens. Those charge dimensions are not representable in ModelPricing and are deliberately not folded into the base token rate.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar (read 2026-09-27): \"128K context length\" — stated as \"128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/api-reference/sonar-post (read 2026-09-27): \"max_tokens: type integer, \"maximum: 128000\", description \"Maximum number of completion tokens to generate\"\" — From the shared Chat Completions/Sonar API request schema, which serves all 4 of these model ids on one endpoint (model enum: sonar, sonar-pro, sonar-deep-research, sonar-reasoning-pro).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar (read 2026-09-27): \"Non-reasoning model\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "sonar",
+      "modelFamily": "other"
+    },
+    {
+      "key": "perplexity/sonar-deep-research",
+      "providerId": "perplexity",
+      "upstreamId": "sonar-deep-research",
+      "displayName": "Sonar Deep Research",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-deep-research",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-deep-research — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-deep-research",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-deep-research",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 8
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/getting-started/pricing — Sonar API token-price table, per million tokens (retrieved 2026-09-19). Sonar requests also incur documented search-context request fees; Deep Research additionally bills citation, search-query, and reasoning tokens. Those charge dimensions are not representable in ModelPricing and are deliberately not folded into the base token rate.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar-deep-research (read 2026-09-27): \"128K context length\" — stated as \"128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/api-reference/sonar-post (read 2026-09-27): \"max_tokens: type integer, \"maximum: 128000\", description \"Maximum number of completion tokens to generate\"\" — From the shared Chat Completions/Sonar API request schema, which serves all 4 of these model ids on one endpoint (model enum: sonar, sonar-pro, sonar-deep-research, sonar-reasoning-pro).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar-deep-research (read 2026-09-27): \"Options: \"low\": Faster, simpler answers with reduced token usage / \"medium\": Balanced approach (default) / \"high\": Deeper, more thorough responses with increased token usage\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "sonar-deep-research",
+      "modelFamily": "other"
+    },
+    {
+      "key": "perplexity/sonar-pro",
+      "providerId": "perplexity",
+      "upstreamId": "sonar-pro",
+      "displayName": "Sonar Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/getting-started/pricing — Sonar API token-price table, per million tokens (retrieved 2026-09-19). Sonar requests also incur documented search-context request fees; Deep Research additionally bills citation, search-query, and reasoning tokens. Those charge dimensions are not representable in ModelPricing and are deliberately not folded into the base token rate.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar-pro (read 2026-09-27): \"200K context length\" — stated as \"200K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/api-reference/sonar-post (read 2026-09-27): \"max_tokens: type integer, \"maximum: 128000\", description \"Maximum number of completion tokens to generate\"\" — From the shared Chat Completions/Sonar API request schema, which serves all 4 of these model ids on one endpoint (model enum: sonar, sonar-pro, sonar-deep-research, sonar-reasoning-pro).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar-pro (read 2026-09-27): \"Non-reasoning model\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "sonar-pro",
+      "modelFamily": "other"
+    },
+    {
+      "key": "perplexity/sonar-reasoning-pro",
+      "providerId": "perplexity",
+      "upstreamId": "sonar-reasoning-pro",
+      "displayName": "Sonar Reasoning Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-reasoning-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-reasoning-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-reasoning-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/perplexity/index.ts#sonar-reasoning-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 8
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/getting-started/pricing — Sonar API token-price table, per million tokens (retrieved 2026-09-19). Sonar requests also incur documented search-context request fees; Deep Research additionally bills citation, search-query, and reasoning tokens. Those charge dimensions are not representable in ModelPricing and are deliberately not folded into the base token rate.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/docs/sonar/models/sonar-reasoning-pro (read 2026-09-27): \"128K context length\" — stated as \"128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.perplexity.ai/api-reference/sonar-post (read 2026-09-27): \"max_tokens: type integer, \"maximum: 128000\", description \"Maximum number of completion tokens to generate\"\" — From the shared Chat Completions/Sonar API request schema, which serves all 4 of these model ids on one endpoint (model enum: sonar, sonar-pro, sonar-deep-research, sonar-reasoning-pro).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.perplexity.ai/api-reference/sonar-post (read 2026-09-27): \"reasoning_effort: enum [minimal, low, medium, high], description \"Controls how much effort the model spends on reasoning\"\" — This model's own page (sonar-reasoning-pro) describes it as an 'Advanced reasoning model' using Chain-of-Thought but does not itself document the reasoning_effort parameter or a default; efforts list and parameter name are sourced from the shared endpoint schema (api-reference/sonar-post), which ...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "canonicalModelId": "sonar-reasoning-pro",
+      "modelFamily": "other"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Speka AI",
+  "description": "Speka AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "speka",
+        "name": "Speka AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Speka AI API key. Clover keeps it in your credential store and adds it to Speka AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://speka.me/v1"
+        }
+      }
+    ]
+  }
+}
