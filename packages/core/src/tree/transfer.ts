@@ -67,7 +67,7 @@ export { transferChange };
  *  holder whose own rule is stricter (read-only) refuses whatever the answer. */
 async function judgeEnd(holder: LocalHolder, call: HolderCall, role: "source" | "destination", move: boolean, from: string, to: string, source: string, destination: string): Promise<void> {
   if (role === "source" && !move) return;
-  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit", destination);
+  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit");
 }
 
 interface Entry {
