@@ -1,7 +1,7 @@
 // Session door D3: the host ports the APPROVALS projection reads for one source-located conversation, and the real
 // approval bridge deciding with them.
 import { afterEach, expect, test } from "bun:test";
-import type { CanUseTool, PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, PermissionResult } from "@waifucave/clover-agent-sdk";
 import type { ApprovalPolicy, NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";

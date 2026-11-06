@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { mkdirSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { repoRootFor, sanitizeProjectKey, _clearRepoRootCacheForTests } from "../../src/agent/memory-dir";

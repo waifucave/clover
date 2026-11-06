@@ -13,7 +13,7 @@ import type {
   Options,
   SpawnClaudeCodeProcess,
   SpawnRuntimeOptions,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import {
   HostCodeExecutionService,
@@ -1035,7 +1035,7 @@ test("projected host tool names preserve the raw SDK identity rather than guessi
 test("host-code-broker has no static import of the agent runtime, and its lazy require is a literal the bundler can resolve", () => {
   const source = readFileSync(join(import.meta.dir, "../../src/runtime-sdk/host-code-broker.ts"), "utf8");
   expect(source).not.toMatch(/^import[^;]*["']@yanlinglabs\/winter-agent-runtime["']/m);
-  expect(source).toContain('require("@yanlinglabs/winter-agent-runtime")');
+  expect(source).toContain('require("@waifucave/clover-agent-runtime")');
 });
 
 test("the first probe resolves the runtime (no module-not-found) and constructing the service does not probe", () => {

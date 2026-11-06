@@ -2,7 +2,7 @@
 // ordered MCP content, concurrency-safe with no lane), and the fail-closed wiring around it: the gate class, the
 // host-name pair, disallowedTools/toolSurfaceViolations, the explicit PreToolUse allow.
 import { describe, expect, test } from "bun:test";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { PermissionGate, isGateClassified, type SessionApprovalPolicy } from "../../src/agent/gate";
 import { computerV2Capability, visionFor, type CapabilitySession } from "../../src/capabilities";
 import type { ScriptResult } from "../../src/computer-use/service";

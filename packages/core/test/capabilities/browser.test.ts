@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { ToolRegistry, type ToolContext } from "../../src/agent/tools/registry";
 import { registerBrowserTool, type BrowserToolDeps } from "../../src/agent/tools/browser";
 import type { PanelCommandOutcome } from "../../src/panel/commands";

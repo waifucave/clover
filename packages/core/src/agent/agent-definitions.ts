@@ -1,7 +1,7 @@
 // Daemon settings surface (2026-09-17 plan, item 3): the daemon becomes the SINGLE SOURCE for
 // `<home>/agents/*.md` subagent definitions. Agent SDK 0.0.16's Clover runtime already parses this
 // exact directory itself (`packages/runtime/src/subagents/definitions.ts` in the clover-sdk
-// repo — NOT exported from the published `@yanlinglabs/winter-agent-sdk` package, so it cannot be
+// repo — NOT exported from the published `@waifucave/clover-agent-sdk` package, so it cannot be
 // imported here). So the daemon reads and parses the directory ITSELF (mirroring the Clover runtime's
 // own field-for-field rules, verbatim where they're stated) and passes the result as
 // `Options.agents` — see `runtime-sdk/mode-options.ts`'s `buildCloverOptions`. (Until WS-23 the same
@@ -30,7 +30,7 @@
 // `TrustStore` itself, so it stays testable with a plain temp directory and no daemon wiring.
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentDefinition } from "@yanlinglabs/winter-agent-sdk";
+import type { AgentDefinition } from "@waifucave/clover-agent-sdk";
 import { storeHomeFor } from "./paths";
 
 /** One rejected `<home>/agents/*.md` file — never silently skipped (measured against the SDK's own

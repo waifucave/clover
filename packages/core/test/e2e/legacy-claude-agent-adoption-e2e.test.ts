@@ -18,8 +18,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
-import { anthropicFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
+import { anthropicFake, startFake, type FakeServer } from "@waifucave/clover-provider-conformance";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { writeCredentialMaterial } from "../../src/auth/credential-material";
@@ -28,7 +28,7 @@ import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain
 import { storeProjectsDir } from "../../src/agent/paths";
 import { openRuntimeStateDb, RuntimeSessionRecords } from "../../src/runtime-state";
 import { SessionStore } from "../../src/sessions/store";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -80,7 +80,7 @@ const PRIOR_ASSISTANT = "Noted: PAPAYA.";
 const TOOL_USE_ID = "toolu_legacy_ls_1";
 const THINKING_SIGNATURE = "sig-legacy-claude-1";
 
-describeWithWinterBinary("WS-23: a legacy claude-agent session resumes on the Clover runtime with claude's history", (winterBin) => {
+describeWithEmbeddedRuntime("WS-23: a legacy claude-agent session resumes on the Clover runtime with claude's history", () => {
   let home: string;
   let cwd: string;
   let sessionId: string;
@@ -104,7 +104,7 @@ describeWithWinterBinary("WS-23: a legacy claude-agent session resumes on the Cl
       schemaVersion: 3,
       provider: { model: MODEL },
       providers: { anthropic: { baseUrl: fake.url } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME, { kind: "api-key", key: "sk-ant-test-ws23-adopt" });

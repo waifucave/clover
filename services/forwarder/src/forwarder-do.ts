@@ -35,9 +35,9 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-import { b64u, equalBytes, fromB64u, own, randomBytes, type Bytes } from "../../../plugins/clover/forwarder/src/wire/bytes";
-import { keyId, sealEnvelope, ROUTINE_ID_RE } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { encap } from "../../../plugins/clover/forwarder/src/wire/hpke";
+import { b64u, equalBytes, fromB64u, own, randomBytes, type Bytes } from "../../../plugins/clover/plugins/forwarder/src/wire/bytes";
+import { keyId, sealEnvelope, ROUTINE_ID_RE } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
+import { encap } from "../../../plugins/clover/plugins/forwarder/src/wire/hpke";
 import {
   CLOSE_PROTOCOL,
   CLOSE_REAUTH,
@@ -54,7 +54,7 @@ import {
   type DropReport,
   type RoutineInfo,
   type ServiceFrame,
-} from "../../../plugins/clover/forwarder/src/wire/protocol";
+} from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 import { limitsFrom, type Env, type Limits } from "./env";
 
 /** Who is calling, as the Worker established it from a verified account token. */

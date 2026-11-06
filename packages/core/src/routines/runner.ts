@@ -11,7 +11,7 @@ import type { RoutineRunner } from "./scheduler";
 // agent_error emit sites — "no cwd" / context cap — which have no provider code to carry).
 // Phase 8d task 2.4: the message-prefix producer this fallback was originally paired with
 // (`providers/openai-compatible.ts`'s `mapHttpError`) is gone — Clover's internal model calls now
-// run over `@yanlinglabs/winter-provider-runtime` adapters (`providers/runtime-provider.ts`), whose
+// run over `@waifucave/clover-provider-runtime` adapters (`providers/runtime-provider.ts`), whose
 // own error messages are NOT guaranteed to start with "HTTP 429". This fallback is therefore a
 // carry of unverified reach on today's provider layer, not a tripwire with a live producer to
 // watch — recorded here rather than silently left implying one still exists.

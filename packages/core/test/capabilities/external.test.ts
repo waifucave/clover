@@ -2,7 +2,7 @@
 // to the owning plugin over a fake stand-in for `PluginSupervisor.invoke`.
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { capabilityServerName, capabilityToolName } from "../../src/capabilities/names";
 import { externalCapability, externalToolNames, type ExternalCapabilityDeps, type ExternalToolSource } from "../../src/capabilities/external";
 import type { CapabilitySession } from "../../src/capabilities/server";

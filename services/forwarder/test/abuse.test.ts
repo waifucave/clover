@@ -6,16 +6,15 @@ import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
-import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
-import { decodeRequestRecord, keyId, openEnvelope } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { generateX25519 } from "../../../plugins/clover/forwarder/src/wire/hpke";
-import { decodeWebhookFrame, hookKeyHash, type RoutineInfo } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { b64u, fromUtf8 } from "../../../plugins/clover/plugins/forwarder/src/wire/bytes";
+import { decodeRequestRecord, keyId, openEnvelope } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
+import { generateX25519 } from "../../../plugins/clover/plugins/forwarder/src/wire/hpke";
+import { decodeWebhookFrame, hookKeyHash, type RoutineInfo } from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 import { REVOCATION_KEEP_MS, type ForwarderDO } from "../src/forwarder-do";
 import { limitsFrom } from "../src/env";
 import {
   accountToken,
   apiCall,
-  clearOfMinuteBoundary,
   objectOf,
   openSocket,
   postHook,
@@ -23,7 +22,9 @@ import {
   registeredRoutine,
   routineKey,
   uniqueAccount,
+  withLimiters,
 } from "./helpers";
+import { StepLimiter } from "../../shared/testing/step-limiter";
 
 const limits = limitsFrom(env);
 
@@ -35,14 +36,19 @@ describe("senders without the key", () => {
   it("spend only their own address's check limit; the routine's real sender is unaffected", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "guarded");
-    await clearOfMinuteBoundary();
+    const check = new StepLimiter(4);
+    const via = withLimiters({ CHECK_RATE: check, HOOK_RATE: new StepLimiter(100), TAG_RATE: new StepLimiter(100) });
     const statuses: number[] = [];
-    for (let i = 0; i < 130; i++) statuses.push((await postHook(url, routineKey(), "guess", from("198.51.100.9"))).status);
-    expect(statuses.slice(0, 120).every((s) => s === 401)).toBe(true);
-    expect(statuses.slice(120).every((s) => s === 429)).toBe(true);
+    for (let i = 0; i < 6; i++) statuses.push((await postHook(url, routineKey(), "guess", { ...from("198.51.100.9"), via })).status);
+    expect(statuses).toEqual([401, 401, 401, 401, 429, 429]);
     // No key at all costs nothing but a 401, and does not count either.
-    expect((await postHook(url, null, "no key", from("198.51.100.9"))).status).toBe(401);
-    for (let i = 0; i < 5; i++) expect((await postHook(url, key, `real ${i}`, from("192.0.2.1"))).status).toBe(202);
+    const counted = check.keys().map((k) => check.count(k));
+    expect((await postHook(url, null, "no key", { ...from("198.51.100.9"), via })).status).toBe(401);
+    expect(check.keys().map((k) => check.count(k))).toEqual(counted);
+    for (let i = 0; i < 5; i++) expect((await postHook(url, key, `real ${i}`, { ...from("192.0.2.1"), via })).status).toBe(202);
+    // The guesser's next window starts over.
+    check.nextWindow();
+    expect((await postHook(url, routineKey(), "guess", { ...from("198.51.100.9"), via })).status).toBe(401);
   });
 
   it("never get a body read: a wrong key with an oversized body is refused for the key", async () => {
@@ -59,11 +65,28 @@ describe("a noisy routine", () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const noisy = await registeredRoutine(pc, "noisy");
     const quiet = await registeredRoutine(pc, "quiet");
-    await clearOfMinuteBoundary();
+    const hook = new StepLimiter(3);
+    const via = withLimiters({ HOOK_RATE: hook, TAG_RATE: new StepLimiter(100), CHECK_RATE: new StepLimiter(100) });
     const statuses: number[] = [];
-    for (let i = 0; i < 125; i++) statuses.push((await postHook(noisy.url, noisy.key, `n${i}`)).status);
-    expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
-    expect((await postHook(quiet.url, quiet.key, "still here")).status).toBe(202);
+    for (let i = 0; i < 5; i++) statuses.push((await postHook(noisy.url, noisy.key, `n${i}`, { via })).status);
+    expect(statuses).toEqual([202, 202, 202, 429, 429]);
+    expect((await postHook(quiet.url, quiet.key, "still here", { via })).status).toBe(202);
+    hook.nextWindow();
+    expect((await postHook(noisy.url, noisy.key, "next minute", { via })).status).toBe(202);
+  });
+
+  it("is limited across the account too: every routine together", async () => {
+    const pc = await registerComputer(uniqueAccount(), "pc");
+    const a = await registeredRoutine(pc, "a");
+    const b = await registeredRoutine(pc, "b");
+    const via = withLimiters({ HOOK_RATE: new StepLimiter(100), TAG_RATE: new StepLimiter(3), CHECK_RATE: new StepLimiter(100) });
+    const statuses = [
+      (await postHook(a.url, a.key, "1", { via })).status,
+      (await postHook(b.url, b.key, "2", { via })).status,
+      (await postHook(a.url, a.key, "3", { via })).status,
+      (await postHook(b.url, b.key, "4", { via })).status,
+    ];
+    expect(statuses).toEqual([202, 202, 202, 429]);
   });
 
   it("pays for the cap itself: its oldest webhooks are dropped, not another routine's", async () => {

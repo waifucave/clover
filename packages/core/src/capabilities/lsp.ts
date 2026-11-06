@@ -30,7 +30,7 @@
 // shape for it — but whether a spawned child invokes host hooks is unmeasured, and hooks are the
 // plugin-hooks carry (review row 6). Recorded in the fix-wave report; `lsp/auto-diagnostics.ts`
 // stays deleted until that measurement.
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { LspManager } from "../agent/lsp/manager";
 import { lspToolDefs } from "../agent/tools/lsp";
 import { capabilityServer, type CapabilitySession } from "./server";

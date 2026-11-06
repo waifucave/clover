@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import type { PermissionResult } from "@waifucave/clover-agent-sdk";
 import { QUESTION_PLACEHOLDER_MAX, utf16, type NewSessionEvent, type Question } from "@waifucave/clover-protocol";
 import type { QuestionBroker } from "../agent/questions";
 import { NO_PARK_TIMEOUT_MS, type BridgeLogger } from "./bridge-common";

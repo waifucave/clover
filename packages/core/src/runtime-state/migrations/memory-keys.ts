@@ -82,7 +82,7 @@
 //     PROJECT and no other — the run continues — and because the manifest carries a row per entry,
 //     a rollback puts back exactly the entries this migration moved and never the SDK's files
 //     sitting beside them.
-import { compatibilityKeys } from "@yanlinglabs/winter-agent-sdk";
+import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { repoRootFor, sanitizeProjectKey } from "../../agent/memory-dir";
