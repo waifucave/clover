@@ -295,6 +295,9 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
 
   // The bots' memories (H-M3): versions signed with this device's link key, mail opened with its box key, stamped
   // with the shared clock.
+  // TODO(B-M2, lane B's plugin host): the daemon passes the relay plugin's mail here, as
+  // `memory: { mailbox: relayMailbox(<the relay plugin's putMail/takeMail/ackMail handlers>) }` (sync/mailbox.ts).
+  // Until it does, memory reaches a computer that is off only over its link once it is back.
   const memory = o.memory === false ? undefined : await MemorySync.start({
     home: o.home, self: key.id, key, boxKey, store: o.store, transport, registry, now: () => sharedClock.now(),
     ...(o.memory ?? {}), ...(o.log ? { log: o.log } : {}),
