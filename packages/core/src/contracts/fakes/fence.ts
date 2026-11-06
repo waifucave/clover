@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownMemoryOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -145,17 +145,18 @@ export class FakeFence implements Fence {
 
   policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
-    const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
+    // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), patterns[0]!],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
+      denyWrite: [...set.map((i) => i.path), this.#cloverHome],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
-      ...(ownMemoryOf(ctx, this.#cloverHome) !== undefined ? { ownMemory: ownMemoryOf(ctx, this.#cloverHome)! } : {}),
+      ...ownFoldersOf(ctx, this.#cloverHome),
     };
   }
+
 
   forCaller(caller: Caller): CallerFence {
     const context = fenceContextFor(caller);

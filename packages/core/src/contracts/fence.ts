@@ -103,24 +103,31 @@ export type FenceVerdict =
 export interface SandboxPolicy {
   /** Commands may write here: the home and temp folders (§9.1), less `denyWrite`. */
   allowWrite: string[];
-  /** Paths, and the pattern items' globs, in which a `*` segment is any one name (`<home>/bots/` then `*` then
-   *  `/memory`): every bot's memory,
-   *  known or not, and every session's runtime state, are denied to every runner (#197's check 4); the one exception is
-   *  `ownMemory`. */
+  /** Paths, and globs whose `*` segment is any one name. The whole Clover home is in both lists for every runner
+   *  (the home default-deny, the controller's ruling on #197's follow-up); the `own…` folders below are the only ways
+   *  back in. */
   denyWrite: string[];
   denyRead: string[];
-  /** The runner's own bot's memory (`<home>/bots/<x>/memory`), for a runner whose caller is that bot's main
-   *  conversation or a side thread (J's ruling on #197), its id a valid bot id. Absent for every other runner (coding
-   *  sessions, agents, the bot's own included, plugins).
+  /** The runner's own session's outputs, `<home>/outputs/<session>`: read and write inside. */
+  ownOutputs?: string;
+  /** The runner's own bot's scratch folder, `<home>/scratch/<bot>`, for that bot's main conversation and side threads:
+   *  read and write inside. */
+  ownScratch?: string;
+  /** The runner's own bot's folder, `<home>/bots/<x>`, for the same runners: read only. */
+  ownBot?: string;
+  /** The runner's own bot's memory (`<home>/bots/<x>/memory`), for the same runners (J's ruling on #197), its id a valid
+   *  bot id: read and write inside. Absent for every other runner (coding sessions, agents, the bot's own included,
+   *  plugins).
    *
-   *  The order a sandbox applies it in is fixed (#197's check 5), and `policyAllows` is its reference:
+   *  The order a sandbox applies these in is fixed (#197's check 5), and `policyAllows` is its reference:
    *  1. paths compare as resolved real paths, folded, a subpath only at a `/` boundary (never a bare prefix:
    *     `memory-x` is not inside `memory`), a glob's `*` one whole name;
-   *  2. `denyWrite` and `denyRead`, the `bots` memory glob included, deny;
-   *  3. then only the descendants of `ownMemory` are allowed again, to read and write;
-   *  4. unlinking or renaming `ownMemory` itself, or any folder that holds it, stays denied.
+   *  2. unlinking or renaming an `own…` folder itself, or any folder that holds one, is denied;
+   *  3. inside `ownMemory`, `ownOutputs` and `ownScratch`, reading and writing pass; `ownBot` and the `own…` folders
+   *     themselves, reading;
+   *  4. otherwise `denyWrite` and `denyRead` deny, the Clover home included.
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
-   *  (for example: grant the runner's own memory and leave the other bots' memory folders out of its rules). */
+   *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
   ownMemory?: string;
   /** Programs that would hand work to an unfenced process: `open`, `launchctl` and `osascript` on macOS,
    *  `systemd-run --user` on Linux, the Task Scheduler on Windows (§3.1). */
@@ -162,6 +169,21 @@ export function ownMemoryOf(ctx: FenceContext | undefined, cloverHome: string): 
   return `${cloverHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
 }
 
+/** The `own…` folders of a runner's policy for a context (the home default-deny's allows). */
+export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string): Pick<SandboxPolicy, "ownOutputs" | "ownScratch" | "ownBot" | "ownMemory"> {
+  const home = cloverHome.replace(/[\\/]+$/, "");
+  const out: Pick<SandboxPolicy, "ownOutputs" | "ownScratch" | "ownBot" | "ownMemory"> = {};
+  if (folderName(ctx?.sessionId)) out.ownOutputs = `${home}/outputs/${ctx!.sessionId}`;
+  const memory = ownMemoryOf(ctx, cloverHome);
+  if (memory !== undefined) {
+    const bot = ctx!.memoryOf!.replace("/", "--");
+    out.ownScratch = `${home}/scratch/${bot}`;
+    out.ownBot = `${home}/bots/${bot}`;
+    out.ownMemory = memory;
+  }
+  return out;
+}
+
 /** The reference for how a runner's sandbox applies a policy (`SandboxPolicy.ownMemory`'s order, #197's check 5), over
  *  a resolved real path: whether `op` on `realPath` passes. A real sandbox must agree with it. */
 export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unlink" | "rename", realPath: string, os?: Os): boolean {
@@ -172,12 +194,14 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
     if (a.length < b.length || (strict && a.length === b.length)) return false;
     return b.every((n, i) => n === "*" || n === a[i]);
   };
-  const own = policy.ownMemory;
-  // 4. The folder itself, and every folder that holds it, is never unlinked or renamed.
-  if (own !== undefined && (op === "unlink" || op === "rename") && under(own, realPath)) return false;
-  // 3. Inside it (strictly), reading and writing pass after the denies.
-  if (own !== undefined && under(realPath, own, true)) return true;
-  // 2. The denies, the memory glob included.
+  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch].filter((p): p is string => p !== undefined);
+  const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
+  // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
+  if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
+  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading.
+  if (rw.some((own) => under(realPath, own, true))) return true;
+  if (op === "read" && ro.some((own) => under(realPath, own))) return true;
+  // 4. The denies, the Clover home included.
   if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
   if (policy.denyWrite.some((d) => under(realPath, d))) return false;
   return policy.allowWrite.some((a) => under(realPath, a));
@@ -224,6 +248,31 @@ export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: Fence
   if (item.deny !== "caller") return true;
   if (ctx?.user) return true;
   return item.bot !== undefined && reachesMemoryFolder(item.bot.replace("/", "--"), ctx, os);
+}
+
+/** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). */
+const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
+
+/** Whether a tool or runner may reach a path inside the Clover home (the home default-deny): only the three per-caller
+ *  allows, by pattern. A path outside the home is the other rules' to judge. */
+export function homeAllows(path: string, writes: boolean, ctx: FenceContext | undefined, cloverHome: string, os?: Os): boolean {
+  const home = segmentsOf(cloverHome);
+  const segs = segmentsOf(path);
+  const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
+  if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
+  const [area, x, sub, ...deeper] = segs.slice(home.length);
+  if (area === undefined || x === undefined) return false; // the home itself, or a top folder in it
+  const inside = sub !== undefined; // strictly inside `<area>/<x>`
+  // 1. A session's own outputs.
+  if (same(area, "outputs") && folderName(ctx?.sessionId) && same(x, ctx!.sessionId!)) return inside || !writes;
+  const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
+  if (bot === undefined || !same(x, bot)) return false;
+  // 2. A bot's own scratch, for its main conversation and side threads.
+  if (same(area, "scratch")) return inside || !writes;
+  if (!same(area, "bots")) return false;
+  // 3. Its own folder, read only; its memory, read and write inside, never the memory folder itself written over.
+  if (sub !== undefined && same(sub, "memory")) return deeper.length > 0 || !writes;
+  return !writes;
 }
 
 /** A fence bound to one caller: the same rules, with its `bot-memory` reach. */
@@ -354,10 +403,8 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
         if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
-    } else if (pattern?.kind === "sessions-runtime") {
-      const own = pattern.name !== undefined && o.caller?.sessionId !== undefined
-        && foldName(pattern.name.replace(/\.[^.]*$/, ""), o.os) === foldName(o.caller.sessionId, o.os);
-      if (writes || !(o.caller?.user || own)) return { allowed: false, reason: "sessions-runtime", path: pattern.root };
+    } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {
+      return { allowed: false, reason: "sessions-runtime", path: pattern.root };
     }
     for (const item of set) {
       if (item.deny === "caller") continue; // judged by its pattern above
@@ -365,6 +412,17 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
         if (inside(path, item.path) || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
       } else if (item.deny === "read-write" && inside(path, item.path)) {
         return { allowed: false, reason: item.kind, path: item.path };
+      }
+    }
+  }
+  // Last, above what's fenced by kind: the Clover home is default-deny for every tool and runner (the controller's ruling on #197's follow-up): only its
+  // own session's outputs, its bot's scratch, and its bot's own folder (read) and memory (read and write) let it in.
+  if (o.cloverHome !== undefined && !o.caller?.user) {
+    for (const path of paths) {
+      if (!homeAllows(path, writes, o.caller, o.cloverHome, o.os)) {
+        const at = patternItemAt(path, o.cloverHome, o.os);
+        if (at !== undefined) return { allowed: false, reason: at.kind, path: at.root };
+        return { allowed: false, reason: "clover-home", path: o.cloverHome };
       }
     }
   }

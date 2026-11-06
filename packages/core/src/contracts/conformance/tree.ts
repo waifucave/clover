@@ -171,9 +171,10 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect((err as { detail: unknown }).detail).toEqual({ computer: "Laptop1", reason: "settings" });
       expect(isContractError(await rejection(tree.read("home/Laptop1/.clover/secrets.enc", { as: BOT })), "fenced")).toBe(true);
       await tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: USER });
-      // The installed plugins folder is fenced too (#197's check 2); a routine's files aren't.
+      // The installed plugins folder is fenced too (#197's check 2), and the rest of the Clover home with it (the home
+      // default-deny): a routine's files included.
       expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/plugins/luna/clover.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
-      await tree.write("home/Laptop1/.clover/routines/alpha/morning.md", utf8("# Morning\n"), { as: BOT });
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/routines/alpha/morning.md", utf8("# Morning\n"), { as: BOT })), "fenced")).toBe(true);
       await tree.write("bots/alpha/memory/MEMORY.md", utf8("# Memory\n"), { as: BOT });
     });
 
