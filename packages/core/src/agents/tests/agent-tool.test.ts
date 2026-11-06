@@ -143,6 +143,16 @@ describe("the bot keeps control", () => {
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("stopped");
   });
 
+  test("the token is revoked when the agent's process exits, not only at TaskStop", async () => {
+    const w = make({ script: [[{ wait: true }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    expect(w.tokens.has(r.sessionId)).toBe(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGKILL");
+    await waitFor(() => !w.tokens.has(r.sessionId), "the token to be revoked");
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("crashed");
+  });
+
   test("the bot's tools: Agent, ListAgents, TaskStop", async () => {
     const w = make({ script: [[{ wait: true }]] });
     const [agent, taskStop, listAgents] = agentToolDefs(w.manager, { bot: "alpha", session: "s_alpha", origin: "user" }, { backends: () => ["fake"] });

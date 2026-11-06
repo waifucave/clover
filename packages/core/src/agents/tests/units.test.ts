@@ -209,6 +209,15 @@ describe("the bridge's tokens", () => {
     expect(await unbound.accept(tok2, "s9", 501)).toEqual({ ok: false, reason: "agent-not-started" });
   });
 
+  test("a token expires after its life, live agent or not", async () => {
+    let now = 1_000;
+    const t = new BridgeTokens({ table: table(tree), ttlMs: 60_000, now: () => now });
+    const token = t.mint("s1");
+    t.bind("s1", 500);
+    now += 60_001;
+    expect(await t.accept(token, "s1", 501)).toEqual({ ok: false, reason: "expired" });
+  });
+
   test("minting again revokes the earlier token (a reattach)", async () => {
     const t = new BridgeTokens({ table: table(tree) });
     const a = t.mint("s1");

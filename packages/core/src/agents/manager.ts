@@ -116,6 +116,8 @@ export class AgentManager {
       tap: (dir, msg, replay) => e.transcript.wire(dir, msg, replay, this.#o.clock.now()),
       stderr: (chunk) => e.transcript.stderr(chunk),
       launched: (pid) => this.#o.tokens.bind(sessionId, pid),
+      // A leaked copy of the token is useless once the agent is gone (S5 edit 4).
+      exited: () => this.#o.tokens.revoke(sessionId),
     };
   }
 

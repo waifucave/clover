@@ -51,6 +51,8 @@ export interface AgentWire {
   tap?: WireTap;
   stderr?: (chunk: Uint8Array) => void;
   launched?: (pid: number) => void;
+  /** The agent's process exited, for whatever reason. */
+  exited?: () => void;
 }
 
 export function currentOs(): Os {
@@ -125,6 +127,7 @@ export class AcpAgentBackend implements AgentBackend {
       ...(wire.stderr ? { onStderr: wire.stderr } : {}),
     }, this.#opts.table ? { table: this.#opts.table } : {});
     if (proc.pid) wire.launched?.(proc.pid);
+    void proc.exited.then(() => wire.exited?.());
     return AcpAgentSession.open({
       quirks: this.quirks,
       clock: this.#opts.clock,
