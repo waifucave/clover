@@ -16,7 +16,18 @@ export interface BotEditorEntryProps {
   navigate?: (route: { route: string; params: Record<string, string> }) => void;
 }
 
+/** A file of a plugin's folder as the app serves it (review item 8): the pack's own asset, and nothing else. A portrait
+ *  is a path in the plugin (lane B's type), so a URL of any scheme (`https:`, `data:`), an absolute path or one that
+ *  climbs out (`..`) gives none: a pack can never make the `clover` layer fetch a remote image (review N7). */
+export function assetUrl(pluginId: string, path: string): string | undefined {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith("/") || path.startsWith("\\")) return undefined;
+  const parts = path.replace(/^\.\//, "").split(/[\\/]/);
+  if (parts.some((p) => p === "" || p === "." || p === "..")) return undefined;
+  return `clover-asset://${pluginId}/${parts.map(encodeURIComponent).join("/")}`;
+}
+
 /** The catalog's models, read defensively (its Clover shape is lanes A's and B's). */
+
 export function modelsOf(catalog: unknown): BotEditorModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
@@ -71,7 +82,8 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
         pack: names[e.pluginId] ?? e.pluginId,
         file: e.value.file,
         format: e.value.format,
-        ...(e.value.portrait ? { portraitUrl: e.value.portrait } : {}),
+        ...(e.value.portrait ? { portrait: e.value.portrait } : {}),
+        ...(e.value.portrait && assetUrl(e.pluginId, e.value.portrait) ? { portraitUrl: assetUrl(e.pluginId, e.value.portrait)! } : {}),
       }));
     void Promise.all([api.points.entries<AvatarPackEntry>("avatar.packs").catch(() => []), core?.call("plugin.list", {}).catch(() => undefined)]).then(([entries, list]) => {
       if (!live) return;

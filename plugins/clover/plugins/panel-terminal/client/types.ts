@@ -4,6 +4,7 @@
 // (lane J) and hands the view its output as text with styles. Until B pins it, the host passes the
 // output it has (`chunks`) and gets the user's keys (`onInput`) and pastes (`onPaste`) apart. The terminal
 // is a code session's only: a bot's tab never shows it.
+import type { Run } from "./ansi";
 import type { Platform } from "./keys";
 
 /** A run of output in one style. ANSI colours arrive already parsed into these. */
@@ -24,6 +25,8 @@ export interface TerminalPanelProps {
   active: string;
   /** The active terminal's output so far. */
   chunks: TerminalChunk[];
+  /** The PTY's output as a terminal shows it (`ansi.ts`): lines of runs with their look. Given, it replaces `chunks`. */
+  lines?: Run[][];
   /** What the user typed, key by key, as the bytes a terminal sends (`\r` for Enter, `\x03` for Ctrl+C). */
   onInput?: (data: string) => void;
   /** What the user pasted, whole: the host brackets it for the shell, and asks before a paste of several

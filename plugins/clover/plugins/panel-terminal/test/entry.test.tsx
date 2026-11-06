@@ -57,4 +57,36 @@ describe("the terminal entry", () => {
     expect(screen.getByRole("log").textContent).toContain("Exited with code 0");
     header.remove();
   });
+
+  test("its output is read as a terminal does (colours, no escape codes), and closing the panel ends its shells", async () => {
+    const closed: string[] = [];
+    const feeds = new Map<string, (data: string) => void>();
+    let n = 0;
+    const api = fakeApi({
+      conversation: { get: async () => CODE },
+      terminal: {
+        open: async () => ({ terminalId: `t${++n}` }),
+        input: async () => undefined,
+        onData: (id, fn) => {
+          feeds.set(id, fn);
+          return () => feeds.delete(id);
+        },
+        resize: async () => undefined,
+        close: async (id) => void closed.push(id),
+      },
+    });
+    const { unmount } = render(
+      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+        <TerminalEntry props={{ session: "code-1" }} />
+      </UiRuntimeProvider>,
+    );
+    await act(() => settle());
+    act(() => feeds.get("t1")!("\x1b]0;title\x07\x1b[32m3 pass\x1b[0m\r\n\x1b[31m0 fail\x1b[0m"));
+    const log = screen.getByRole("log");
+    expect(log.textContent).not.toContain("\x1b");
+    expect(log.textContent).not.toContain("title");
+    expect([...log.querySelectorAll(".cl-term__run[data-fg]")].map((r) => [r.textContent, r.getAttribute("data-fg")])).toEqual([["3 pass", "green"], ["0 fail", "red"]]);
+    unmount();
+    expect(closed).toEqual(["t1"]);
+  });
 });

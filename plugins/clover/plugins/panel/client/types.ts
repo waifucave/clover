@@ -35,7 +35,7 @@ export interface SessionViewProps {
   connectors?: { total: number; needSignIn: number; onOpen?: () => void };
   outputs?: {
     /** A page (HTML or Markdown the bot made to be read), a file, or an image. */
-    items: { id: string; name: string; kind: "page" | "file" | "image" }[];
+    items: { id: string; name: string; kind: "page" | "file" | "image" | "link" }[];
     onOpen: (id: string) => void;
     /** More than these. */
     more?: number;
@@ -49,8 +49,5 @@ export interface SessionViewProps {
     removed: number;
     files: number;
     onOpenDiff?: () => void;
-    onCreatePr?: () => void;
-    prs: { id: string; title: string; repo: string; number: number; state: "open" | "draft" | "merged" }[];
-    onOpenPr?: (id: string) => void;
   };
 }

@@ -1,15 +1,52 @@
-// Every string the archive shows, for the move to `clover.` keys (plan, F-M3).
+// Every string the archive shows.
+import en from "../locales/en.json" with { type: "json" };
+import { translator } from "../../shell/runtime/strings";
+
+/** This part's words: `clover.archive.` keys, English in `locales/en.json`, the user's language through the app's tables. */
+const t = translator(en.strings);
+
 export const S = {
-  title: "Archive",
-  intro: "Sessions from before Clover, kept to read. They aren't part of any bot's history.",
-  search: "Search old sessions",
-  sessions: "Old sessions",
-  loading: "Loading…",
-  none: (query: string) => (query ? `No old session matches “${query}”.` : "There are no sessions from before Clover on this computer."),
-  more: "Show older",
-  mode: { code: "Code", chat: "Chat", dispatch: "Dispatch" } as const,
-  messages: (n: number) => (n === 1 ? "1 message" : `${n} messages`),
-  untitled: "Untitled session",
-  pick: "Pick a session to read it.",
-  readOnly: "Read only. Start something new with a bot.",
+  get speaker() {
+    return t("clover.archive.speaker");
+  },
+  get title() {
+    return t("clover.archive.title");
+  },
+  get intro() {
+    return t("clover.archive.intro");
+  },
+  get search() {
+    return t("clover.archive.search");
+  },
+  get sessions() {
+    return t("clover.archive.sessions");
+  },
+  get loading() {
+    return t("clover.archive.loading");
+  },
+  none: (query: string) => (query ? t("clover.archive.noneMatching", { query }) : t("clover.archive.none")),
+  get more() {
+    return t("clover.archive.more");
+  },
+  mode: {
+    get code() {
+      return t("clover.archive.mode.code");
+    },
+    get chat() {
+      return t("clover.archive.mode.chat");
+    },
+    get dispatch() {
+      return t("clover.archive.mode.dispatch");
+    },
+  } as const,
+  messages: (n: number) => t("clover.archive.messages", { count: n }),
+  get untitled() {
+    return t("clover.archive.untitled");
+  },
+  get pick() {
+    return t("clover.archive.pick");
+  },
+  get readOnly() {
+    return t("clover.archive.readOnly");
+  },
 };

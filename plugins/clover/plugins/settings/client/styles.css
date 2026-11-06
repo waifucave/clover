@@ -198,6 +198,31 @@
   font-weight: var(--clover-font-weight-medium);
 }
 
+.cl-settings__minorhead {
+  margin: var(--clover-space-m) 0 var(--clover-space-xs);
+  font-size: var(--clover-font-size-control);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+/* A plugin's declared settings: under the Notifications heading, or opened under its row on Plugins. */
+.cl-settings__plugin:has(> .cl-settings__plugin-more) {
+  flex-wrap: wrap;
+}
+
+.cl-settings__plugin-more {
+  flex-basis: 100%;
+}
+
+.cl-settings__plugin-settings {
+  margin-top: var(--clover-space-xs);
+}
+
+.cl-settings__secret {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+}
+
 .cl-settings__note {
   margin: 0 0 var(--clover-space-xs);
   color: var(--clover-color-text-muted);
@@ -321,6 +346,13 @@
 
 .cl-settings__button:hover {
   background: var(--clover-color-hover);
+}
+
+/* A primary action (reviewing a plugin's OK): the filled accent, its label in the accent's contrast colour. */
+.cl-settings__button--primary,
+.cl-settings__button--primary:hover {
+  background: var(--clover-color-accent-fill);
+  color: var(--clover-color-accent-contrast);
 }
 
 .cl-settings__button--wide {
@@ -487,6 +519,27 @@
   font-size: var(--clover-font-size-label);
   line-height: var(--clover-plugin-clover-line-code);
   white-space: pre-wrap;
+}
+
+/* The 18+ gate, in place of the plugin list. */
+.cl-settings__gate {
+  max-width: 480px;
+  margin: var(--clover-space-l) auto 0;
+  padding: var(--clover-space-xl);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-surface);
+}
+
+.cl-settings__gate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-l);
+}
+
+.cl-settings__state[data-tone="adult"] {
+  color: var(--clover-color-danger);
 }
 
 .cl-settings__reason {

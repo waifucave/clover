@@ -8,14 +8,20 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
 import { IconEdit } from "./icons";
+import { WaitingCards } from "./Cards";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, usePluginApi, useSpotEntries } from "./sdk";
+import { Palette, paletteCommand, fieldsOf, type PaletteCommand } from "./Palette";
+import { noArgs, runsBare } from "./args";
+import { directlyIn, outputsFolder } from "../runtime/files";
+import { Spot, useApprovals, useCore, useLayerMessage, usePluginApi, useSpotEntries, useT } from "./sdk";
+import { bindings, chordOf, commandFor, currentPlatform, parseChord, PALETTE_KEY, sameChord } from "./shortcuts";
+import { setTranslator } from "../runtime/strings";
 import { S } from "./strings";
 import { plain } from "../runtime/views";
 import { Window } from "./Window";
@@ -35,6 +41,10 @@ export interface ShellStart {
   panels?: string[];
   /** A bot's coding agent open in the panel. */
   agent?: string;
+  /** One of the tab's outputs open in the panel: its tree path, in its session's outputs folder. */
+  output?: { path: string; folder: string };
+  /** The command palette open. */
+  palette?: boolean;
 }
 
 export interface ShellProps {
@@ -55,6 +65,9 @@ function NothingHere({ title }: { title: string }) {
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {
+  // Every part under the shell reads its `clover.` keys through the app's table for the `clover` layer (lane E's
+  // `useT()`), in the user's language; what it lacks reads in the part's own English.
+  setTranslator(useT());
   const api = usePluginApi();
   const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
   const [route, setRoute] = useState<ShellRoute | undefined>(props.start?.route);
@@ -86,10 +99,108 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     setRoute(next);
   };
   const closeDialog = () => setRoute(under);
+
+  // The app's commands to this window (lane E's `useLayerMessage`): Settings from ⌘, or the menu, or a place that opens
+  // it at a section and an item, over the tab that was showing; a bot's tab; or a session, from a notification or
+  // `app.show`. A bot's main conversation is its tab; any other session opens as an agent's tab.
+  useLayerMessage((m) => {
+    if (m.type !== "command") return;
+    const args = m.args ?? {};
+    if (m.name === "open-settings") {
+      navigate({ route: "settings", params: { ...(args.section !== undefined ? { section: args.section } : {}), ...(args.item !== undefined ? { item: args.item } : {}) } });
+    } else if (m.name === "open-bot" && args.bot !== undefined) {
+      navigate({ route: "bot", params: { bot: args.bot } });
+    } else if (m.name === "open-session" && args.session !== undefined) {
+      const main = (bots ?? []).find((b) => b.mainSession === args.session) ?? (/^([a-z0-9-]+):main$/.exec(args.session) ? { id: args.session.slice(0, -5) } : undefined);
+      navigate(main ? { route: "bot", params: { bot: main.id } } : { route: "agent", params: { session: args.session } });
+    }
+  });
+  // The command palette (Search opens it, and ⌘K / Ctrl+K), and the plugin commands' shortcuts while this window has
+  // the focus: the user's own bindings (synced) win over a command's default key, and a core shortcut over both.
+  const core = useCore();
+  const [palette, setPalette] = useState<{ start?: string } | undefined>(props.start?.palette ? {} : undefined);
+  const [commands, setCommands] = useState<PaletteCommand[]>([]);
+  const [userKeys, setUserKeys] = useState<Record<string, string | null>>({});
+  const [defaults, setDefaults] = useState<{ name: string; key?: string }[]>([]);
+  const platform = useMemo(currentPlatform, []);
+  useEffect(() => {
+    if (!core) return;
+    const load = () =>
+      void core.call("command.list", {}).then(
+        (r) => {
+          setCommands(r.commands.map(paletteCommand));
+          setDefaults(r.commands.map((c) => ({ name: c.name, ...(c.key ? { key: c.key } : {}) })));
+        },
+        () => undefined,
+      );
+    load();
+    return core.on("commands_changed", load);
+  }, [core]);
+  useEffect(() => {
+    const store = api.storage?.synced;
+    if (!store) return;
+    const read = () => void store.get<Record<string, string | null>>("shortcuts").then((v) => setUserKeys(v ?? {}), () => undefined);
+    read();
+    return store.watch((k) => k === "shortcuts" && read());
+  }, [api]);
+  const bound = useMemo(() => bindings(defaults, userKeys, platform), [defaults, userKeys, platform]);
+  const runCommand = (name: string, args: Record<string, unknown> | undefined) =>
+    core ? core.call("command.run", { name, ...(args !== undefined ? { args } : {}) }).then(() => undefined) : Promise.reject(new Error(S.noCore));
+  const rebind = (name: string, keyText: string | null) => {
+    const next = { ...userKeys, [name]: keyText };
+    setUserKeys(next);
+    void api.storage?.synced.set("shortcuts", next).catch(() => undefined);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const chord = chordOf(e);
+      if (sameChord(parseChord(PALETTE_KEY)!, chord, platform)) {
+        e.preventDefault();
+        setPalette((p) => (p ? undefined : {}));
+        return;
+      }
+      if (palette || route?.route === "settings") return;
+      // A key with no modifier never fires while the user types.
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+      if (typing && !chord.ctrl && !chord.meta && !chord.alt) return;
+      const name = commandFor(chord, bound, platform);
+      if (!name) return;
+      e.preventDefault();
+      const c = commands.find((x) => x.name === name);
+      if (c && (fieldsOf(c.args).length > 0 || !runsBare(c.args))) setPalette({ start: name });
+      else void runCommand(name, noArgs(c?.args)).catch(() => undefined);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
   const setOpen = (next: string[]) => setPanels((p) => ({ ...p, [key]: next }));
   const openAgent = (id: string) => {
     setAgents((a) => ({ ...a, [key]: id }));
     if (!open.includes("agent")) setOpen(toggleView(open, "agent"));
+  };
+  // One of the tab's outputs, opened from its column into the right panel (`panel` keyed `output`).
+  const [outputs, setOutputs] = useState<Record<string, { path: string; folder: string } | undefined>>(() => (startTab && props.start?.output ? { [tabKey(startTab)]: props.start.output } : {}));
+  const output = outputs[key];
+  const openOutput = (path: string, folder: string) => {
+    setOutputs((o) => ({ ...o, [key]: { path, folder } }));
+    if (!open.includes("output")) setOpen(toggleView(open, "output"));
+  };
+
+  // A file the conversation names (a tool's path, an attachment), opened where the tab shows files: in a coding session,
+  // the Files panel, at that file, when it is in the session's folder; in any tab, the output view, when it is one of
+  // the session's outputs. Anything else isn't offered.
+  const tabView = sessions?.find((s) => s.id === tabSession);
+  const [reveals, setReveals] = useState<Record<string, string | undefined>>({});
+  const inRoot = (root: string, path: string) => !path.split("/").some((p) => p === ".." || p === ".") && path.startsWith(`${root.replace(/\/+$/, "")}/`);
+  const openFile = (path: string) => {
+    if (kind === "coding" && tabView?.root && inRoot(tabView.root, path)) {
+      setReveals((r) => ({ ...r, [key]: path }));
+      if (!open.includes("files")) setOpen(toggleView(open, "files"));
+      return;
+    }
+    if (tabView && directlyIn(path, outputsFolder(tabView))) openOutput(path, outputsFolder(tabView));
   };
 
   // Any card this window will draw: one in a session it shows (the tab's, the agent's in the panel), or one raised
@@ -111,15 +222,22 @@ export function Shell({ props }: EntryProps<ShellProps>) {
 
   // A bot's tab says whose it is (`bot`, its id: the browser shows that bot's tabs, a code session the person's own).
   const panelProps = (id: string): Record<string, unknown> =>
-    id === "agent" && agentSession
+    id === "output"
+      ? { app: id, session: tabSession, sessionKind: kind, ...(output ? { path: output.path, folder: output.folder } : {}) }
+      : id === "agent" && agentSession
       ? { app: id, session: agentSession.id, sessionKind: agentSession.kind, ...(botRef ? { bot: botRef.id } : {}) }
+      : id === "files"
+      ? { app: id, session: tabSession, sessionKind: kind, ...(reveals[key] ? { reveal: reveals[key] } : {}) }
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   const views: PanelView[] = kind
     ? open
         .filter((id) => id !== "session")
         .map((id) => ({
           id,
-          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id),
+          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : id === "output" ? (output?.path.split("/").pop() ?? S.output) : (S.views[id] ?? id),
+          // A plugin's controls for this view only (`panel.view`, keyed by the view's id: a toolbar button in Files),
+          // in the view's header row.
+          actions: <Spot name="panel.view" spotKey={id} props={{ view: id, ...(tabSession ? { session: tabSession } : {}) }} />,
           content: (header: HTMLElement | null, usedLast: boolean) => (
             <Spot
               name="panel"
@@ -135,8 +253,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const side: ReactNode =
     kind && open.includes("session")
       ? kind === "bot" && botRef
-        ? <Spot name="bot.side" props={{ bot: botRef, session: tabSession, sessionKind: "bot", openAgent: agent, onOpenAgent: openAgent, navigate }} />
-        : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate }} />
+        ? <Spot name="bot.side" props={{ bot: botRef, session: tabSession, sessionKind: "bot", openAgent: agent, onOpenAgent: openAgent, onOpenOutput: openOutput, navigate }} />
+        : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate, onOpenOutput: openOutput }} />
       : undefined;
 
   const toggles = kind ? (
@@ -157,22 +275,42 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const main = !shown ? (
     <NothingHere title={S.loading} />
   ) : shown.route === "bot" ? (
-    botRef ? <Spot name="bot.tab" spotKey={botRef.id} props={{ bot: botRef, onOpenAgent: openAgent }} fallback={<NothingHere title={S.nothingHere} />} /> : <NothingHere title={S.loading} />
+    botRef ? <Spot name="bot.tab" spotKey={botRef.id} props={{ bot: botRef, onOpenAgent: openAgent, onOpenFile: openFile }} fallback={<NothingHere title={S.nothingHere} />} /> : <NothingHere title={S.loading} />
   ) : (
-    <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate }} fallback={<NothingHere title={S.nothingHere} />} />
+    <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate, ...(shown.route === "agent" ? { onOpenFile: openFile } : {}) }} fallback={<NothingHere title={S.nothingHere} />} />
   );
 
   return (
     <Window
       translucent={props.translucent}
-      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate }} />}
+      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, onSearch: () => setPalette({}) }} />}
       title={title}
+      {...(shown?.route === "bot" && botRef ? { heading: <Spot name="bot.header" props={{ bot: botRef }} fallback={title} /> } : {})}
       toggles={toggles}
       side={side}
       panel={views.length > 0 && kind ? <PanelHost kind={kind} views={views} onClose={(id) => setOpen(open.filter((v) => v !== id))} onExpand={() => undefined} /> : undefined}
-      dialog={dialog ? <Spot name="main" spotKey="settings" props={{ route: "settings", params: dialog.params, navigate, close: closeDialog }} /> : undefined}
+      dialog={
+        palette ? (
+          <Palette
+            commands={commands}
+            places={[
+              ...(bots ?? []).map((b) => ({ id: `bot:${b.id}`, title: plain(b.name), detail: S.paletteBot, go: () => navigate({ route: "bot", params: { bot: b.id } }) })),
+              ...(sessions ?? []).filter((s) => s.kind !== "bot").map((s) => ({ id: `session:${s.id}`, title: s.title ?? s.id, detail: S.paletteSession, go: () => navigate({ route: "agent", params: { session: s.id } }) })),
+            ]}
+            bound={bound}
+            platform={platform}
+            onRun={runCommand}
+            onRebind={rebind}
+            onClose={() => setPalette(undefined)}
+            {...(palette.start ? { start: palette.start } : {})}
+          />
+        ) : dialog ? (
+          <Spot name="main" spotKey="settings" props={{ route: "settings", params: dialog.params, navigate, close: closeDialog }} />
+        ) : undefined
+      }
       cardPending={cardPending}
-      onCloseDialog={closeDialog}
+      cards={<WaitingCards cards={cards.filter((c) => c.session === undefined)} />}
+      onCloseDialog={() => (palette ? setPalette(undefined) : closeDialog())}
       status={status}
     >
       {main}

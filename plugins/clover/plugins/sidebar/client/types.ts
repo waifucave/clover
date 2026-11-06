@@ -126,11 +126,8 @@ export interface SidebarProps {
   /** New: a chat with a bot on the bots side, a coding session on the code side. */
   onNew?: () => void;
   onSearch?: () => void;
-  /** The files the bots made. */
-  onOutputs?: () => void;
   /** Plugins and themes. */
   onPlugins?: () => void;
-  onMore?: () => void;
   /** A new session in one project. */
   onNewSession?: (projectId: string) => void;
   /** Close a finished agent's or session's tab. */

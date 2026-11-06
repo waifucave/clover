@@ -192,7 +192,15 @@ const PLUGINS: PluginSummary[] = [
   dataPlugin("chibi-pack", "Chibi pack", "index"),
   dataPlugin("paper-dolls", "Paper dolls", "index"),
   dataPlugin("midnight", "Midnight", "index"),
+  // The plugins that notify, whose settings the Notifications section shows.
+  ...SETTINGS.notifiers.map((n) => pluginSummary(n.pluginId, n.name, { source: "bundled" })),
 ];
+
+/** Each plugin's declared settings, as the core answers `plugin.settings.get` (from the settings part's fixtures). */
+const DECLARED: Record<string, (typeof SETTINGS.notifiers)[number]["fields"]> = Object.fromEntries([
+  ...SETTINGS.plugins.filter((p) => p.settings).map((p) => [p.id, p.settings!] as const),
+  ...SETTINGS.notifiers.map((n) => [n.pluginId, n.fields] as const),
+]);
 const CAPABILITIES: Record<string, { capabilities: string[]; networkHosts: string[] }> = {
   clover: { capabilities: ["conversation.read", "bots.read", "approvals", "files", "terminal"], networkHosts: [] },
   "tarot-panel": { capabilities: ["conversation.read"], networkHosts: [] },
@@ -279,8 +287,17 @@ const coreHandlers: Handlers = {
   "plugin.get": ({ id }) => {
     const p = PLUGINS.find((x) => x.id === id);
     if (!p) throw new Error("not installed");
-    return { plugin: pluginDetail(p, { provenance: { by: "user-app", at: NOW }, ...(CAPABILITIES[id] ?? {}) }) };
+    const fields = DECLARED[id] ?? [];
+    const manifest = {
+      ...(SETTINGS.notifiers.some((n) => n.pluginId === id) ? { contributes: { notifiers: [{ id: "notify" }] } } : {}),
+      ...(fields.length ? { settings: Object.fromEntries(fields.map((f) => [f.key, { type: f.type, title: f.title, ...(f.options ? { options: f.options } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}) }])) } : {}),
+    };
+    return { plugin: pluginDetail(p, { provenance: { by: "user-app", at: NOW }, manifest, ...(CAPABILITIES[id] ?? {}) }) };
   },
+  "plugin.settings.get": ({ id }) => ({
+    settings: (DECLARED[id] ?? []).map((f) => ({ key: f.key, type: f.type, title: f.title, scope: "account" as const, required: f.required, set: f.set, ...(f.description ? { description: f.description } : {}), ...(f.type !== "secret" && f.value !== undefined ? { value: f.value } : {}) })),
+  }),
+  "plugin.settings.set": () => ({ applied: true }),
   "plugin.setEnabled": () => ({ applied: true }),
   "plugin.logs": () => ({ lines: LOG_LINES }),
   "plugin.ui": () => ({
@@ -308,13 +325,16 @@ const coreHandlers: Handlers = {
   "session.interrupt": () => ({ ok: true }),
   "session.stop": () => ({ ok: true }),
   "session.setModel": () => ({ ok: true }),
-  "session.changes": ({ id }) => (SESSIONS.find((s) => s.id === id)?.kind === "coding" && SESSION_COLUMN.changes ? { label: SESSION_COLUMN.changes.label, added: SESSION_COLUMN.changes.added, removed: SESSION_COLUMN.changes.removed, files: SESSION_COLUMN.changes.files, prs: SESSION_COLUMN.changes.prs ?? [] } : null),
+  "session.changes": ({ id }) => (SESSIONS.find((s) => s.id === id)?.kind === "coding" && SESSION_COLUMN.changes ? { label: SESSION_COLUMN.changes.label, added: SESSION_COLUMN.changes.added, removed: SESSION_COLUMN.changes.removed, files: SESSION_COLUMN.changes.files } : null),
   "session.diff": () => ({ base: "main", target: "working tree", targets: ["last commit"], files: FILES, notice: "Large files start folded. Open one to see it whole." }),
-  "session.createPr": () => ({ ok: true }),
-  "session.outputs": ({ id }) =>
-    id === "s_alpha"
-      ? { items: [{ id: "b1", name: "This week in the clover repo", kind: "page" }, { id: "b2", name: "garden-beds.csv", kind: "file" }], more: 0 }
-      : { items: SESSION_COLUMN.outputs?.items ?? [], more: SESSION_COLUMN.outputs?.more ?? 0 },
+  "command.list": () => ({
+    commands: [
+      { name: "tarot.draw", pluginId: "tarot", description: "Draws today's card", key: "Mod+Shift+D" },
+      { name: "tarot.spread", pluginId: "tarot", description: "Lays out a spread", args: { type: "object", properties: { cards: { type: "integer", title: "Cards" } }, required: ["cards"] } },
+      { name: "weather.now", pluginId: "weather-routine", description: { en: "Says the weather where you are" } },
+    ],
+  }),
+  "command.run": () => ({ result: null }),
   "session.context": ({ id }) => (id === "s_alpha" ? { used: 0.31, tokens: 62_000, window: 200_000 } : { used: 0.14, tokens: 28_000, window: 200_000 }),
   "session.connectors": () => ({ total: 7, needSignIn: 2 }),
   "models.catalog": () => ({ models: MODELS.models.map((m) => ({ id: m.id, label: m.label, ...(m.detail ? { provider: m.detail } : {}), efforts: MODELS.efforts ?? [] })) as never }),
@@ -327,6 +347,18 @@ const coreHandlers: Handlers = {
 
 /** A world's runtime: the bundled parts plus any extra plugins, over the mock core and API. */
 const TOKENS = {};
+
+/** A session's outputs folder (`home/<computer>/.clover/outputs/<session>`): the bot's two, the coding session's from
+ *  the panel's fixtures, newest first. */
+function OUTPUTS(path: string): { path: string; type: "file"; size: number; modifiedAt: number; executable: boolean }[] | undefined {
+  const m = /\/\.clover\/outputs\/([^/]+)$/.exec(path);
+  if (!m) return undefined;
+  const names = m[1] === "s_alpha" ? ["this-week-in-clover.md", "garden-beds.csv"] : (SESSION_COLUMN.outputs?.items ?? []).map((i) => (i.kind === "page" ? `${i.name}.md` : i.kind === "image" ? (/\.\w+$/.test(i.name) ? i.name : `${i.name}.png`) : i.name));
+  return names.map((n, i) => ({ path: `${path}/${n}`, type: "file", size: 1, modifiedAt: NOW - i * 60_000, executable: false }));
+}
+
+/** The bot's weekly page, as its outputs folder holds it. */
+const OUTPUT_TEXT = "# This week in the clover repo\n\n- 14 pull requests merged\n- The shell runs on the app's own runtime\n- Settings opens at a device\n";
 
 export function world(options: WorldOptions = {}): UiRuntime {
   const transcripts = options.transcripts ?? {};
@@ -412,10 +444,10 @@ export function world(options: WorldOptions = {}): UiRuntime {
       ...(has("files")
         ? {
             files: {
-              list: (path: string) => later((LISTING[path] ?? []).map((e) => ({ path: e.path, type: e.type, size: 1, modifiedAt: NOW, executable: false }))),
-              readText: (path: string) => later(path === OPEN_FILE.path ? OPEN_FILE.text : ""),
+              list: (path: string) => later(OUTPUTS(path) ?? (LISTING[path] ?? []).map((e) => ({ path: e.path, type: e.type, size: 1, modifiedAt: NOW, executable: false }))),
+              readText: (path: string) => later(path === OPEN_FILE.path ? OPEN_FILE.text : path.endsWith("/this-week-in-clover.md") ? OUTPUT_TEXT : ""),
               grep: () => later({ matches: [], truncated: false }),
-              stat: () => later(null),
+              stat: (path: string) => later(/\/\.clover\/outputs\/[^/]+\/[^/]+$/.test(path) ? { path, type: "file" as const, size: 1, modifiedAt: NOW, executable: false } : null),
               readBytes: () => fail("the gallery reads text only"),
               write: () => fail("the gallery's folder is read only"),
               remove: () => fail("the gallery's folder is read only"),

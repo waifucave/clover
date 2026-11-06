@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import type { UiEntry } from "../runtime/resolve";
 import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testkit";
 import type { BotView, EntryComponent, SessionView } from "../runtime/types";
-import { runtimeWith } from "../runtime/ui";
+import { runtimeWith, type LayerCommand } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
 import { AgentTab, DefaultBotTab } from "../client/Tabs";
 import { Shell, type ShellStart } from "../client/Shell";
@@ -51,13 +51,30 @@ const COMPONENTS: Record<string, EntryComponent> = {
   DefaultBotTab: DefaultBotTab as EntryComponent,
   AgentTab: AgentTab as EntryComponent,
   Sidebar: SidebarStub,
-  Conversation: stub("conversation"),
+  Conversation: (p) => (
+    <>
+      {stub("conversation")(p)}
+      {typeof p.props.onOpenFile === "function" && (
+        <>
+          <button type="button" onClick={() => (p.props.onOpenFile as (path: string) => void)("home/Studio/projects/clover/src/a.ts")}>
+            open a file
+          </button>
+          <button type="button" onClick={() => (p.props.onOpenFile as (path: string) => void)(`home/Studio/.clover/outputs/${String(p.props.session)}/report.md`)}>
+            open an output
+          </button>
+        </>
+      )}
+    </>
+  ),
+  Files: stub("panel:files"),
+  Output: stub("panel:output"),
   Composer: stub("composer"),
   Side: SideStub,
   Column: stub("panel:session"),
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
   Browser: stub("panel:browser"),
+  TerminalTool: ({ props }) => <button type="button" data-stub="panel.view">{`clear ${String(props.view)} ${String(props.session)}`}</button>,
   Status: stub("status"),
 };
 
@@ -74,11 +91,19 @@ const ENTRIES: UiEntry[] = [
   entry("clover/panel", "bot.side", "Side"),
   entry("clover/panel", "panel", "Column", { key: "session", when: { session: ["coding", "agent"] } }),
   entry("clover/panel-terminal", "panel", "Terminal", { key: "terminal", when: { session: "coding" } }),
+  entry("clover/panel-files", "panel", "Files", { key: "files", when: { session: "coding" } }),
+  entry("clover/panel", "panel", "Output", { key: "output" }),
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
 async function mount(start?: ShellStart, extra: UiEntry[] = []) {
-  const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
+  const heard = new Set<(m: LayerCommand) => void>();
+  const core = fakeCore({
+    "session.interrupt": () => ({ ok: true }),
+    "session.stop": () => ({ ok: true }),
+    "command.list": () => ({ commands: [{ name: "tarot.draw", pluginId: "tarot", description: "Draws a card", key: "Mod+Shift+D" }] }),
+    "command.run": () => ({ result: null }),
+  });
   const approvals = fakeApprovals();
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
@@ -91,7 +116,21 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     api: () => api,
     core: () => core,
     approvals,
+    // Sealed frames, as plain marks: what the core would draw.
+    sealed: {
+      Card: ({ id, children }) => <div data-sealed-card={id}>{children}</div>,
+      CardField: ({ name }) => <span data-sealed-field={name} />,
+      CardApprove: ({ option }) => <button type="button" data-sealed-button="approve">{option ?? "approve"}</button>,
+      CardDeny: ({ option }) => <button type="button" data-sealed-button="deny">{option ?? "deny"}</button>,
+      AppView: () => null,
+    },
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
+    messages: {
+      subscribe: (l) => {
+        heard.add(l);
+        return () => heard.delete(l);
+      },
+    },
   });
   render(
     <UiRuntimeProvider runtime={runtime}>
@@ -99,7 +138,14 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     </UiRuntimeProvider>,
   );
   await act(() => settle(6));
-  return { core, approvals };
+  /** The app sends this window a command (lane E's `open-settings`, `open-bot`, `open-session`). */
+  const command = async (name: string, args: Record<string, string>) => {
+    act(() => {
+      for (const l of heard) l({ type: "command", name, args });
+    });
+    await act(() => settle());
+  };
+  return { core, approvals, command };
 }
 
 const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
@@ -152,11 +198,34 @@ describe("the shell", () => {
     expect(document.querySelector('.cl-panel__view[data-view="agent"]')!.hasAttribute("data-used-last")).toBe(true);
   });
 
+  test("a plugin's controls for one panel view (`panel.view`, keyed by its id) sit in that view's header row only", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal", "browser"] }, [entry("tools", "panel.view", "TerminalTool", { key: "terminal", fields: { title: "Clear" } })]);
+    const head = (view: string) => document.querySelector(`.cl-panel__view[data-view="${view}"] .cl-panel__head`)!;
+    expect(head("terminal").querySelector('[data-stub="panel.view"]')?.textContent).toBe("clear terminal code-1");
+    expect(head("browser").querySelector('[data-stub="panel.view"]')).toBeNull();
+    expect(document.querySelectorAll('[data-stub="panel.view"]').length).toBe(1);
+    // Not in the view's body: the host draws it beside expand and close.
+    expect(document.querySelector('.cl-panel__view[data-view="terminal"] .cl-panel__body [data-stub="panel.view"]')).toBeNull();
+  });
+
+  test("a file the conversation names opens in the Files panel (a coding session's folder) or the output view (the session's outputs)", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session"] });
+    fireEvent.click(screen.getByRole("button", { name: "open a file" }));
+    await act(() => settle());
+    expect(stubText("panel:files")).toContain('"reveal":"home/Studio/projects/clover/src/a.ts"');
+    cleanup();
+    await mount();
+    expect(stubText("panel:output")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "open an output" }));
+    await act(() => settle());
+    expect(stubText("panel:output")).toContain('"path":"home/Studio/.clover/outputs/s_alpha/report.md","folder":"home/Studio/.clover/outputs/s_alpha"');
+  });
+
   test("the agent tab interrupts and stops through the core", async () => {
     const { core } = await mount({ route: { route: "agent", params: { session: "agent-1" } } });
     fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(core.calls.map((c) => [c.method, c.params])).toEqual([["session.interrupt", { id: "agent-1" }], ["session.stop", { id: "agent-1" }]]);
+    expect(core.calls.filter((c) => c.method.startsWith("session.")).map((c) => [c.method, c.params])).toEqual([["session.interrupt", { id: "agent-1" }], ["session.stop", { id: "agent-1" }]]);
     expect(toggles()).toEqual(["Session", "Browser"]);
   });
 
@@ -170,6 +239,41 @@ describe("the shell", () => {
     await act(() => settle());
     expect(document.querySelector(".cl-window__dialog")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Answer the waiting card first, then open it again.");
+    // The card itself waits in the strip under the bar, in the flow above the tab: its sealed title, fields and one
+    // button per option, the deny first.
+    const strip = screen.getByRole("region", { name: "Waiting for your answer" });
+    expect(strip.parentElement?.className).toBe("cl-window__main");
+    expect(strip.querySelector('[data-sealed-card="card-level"] [data-sealed-field="title"]')).not.toBeNull();
+    expect([...strip.querySelectorAll("[data-sealed-button]")].map((b) => b.getAttribute("data-sealed-button"))).toEqual(["deny", "approve"]);
+    // A card in a session goes to that session's conversation, never here.
+    act(() => approvals.set([card("card-tool", { session: "s_alpha" })]));
+    await act(() => settle());
+    expect(screen.queryByRole("region", { name: "Waiting for your answer" })).toBeNull();
+  });
+
+  test("the app's commands: Settings at a section and an item over the tab, a bot's tab, a session", async () => {
+    const { command } = await mount();
+    await command("open-settings", { section: "devices", item: "d2" });
+    expect(stubText("main:settings")).toContain('"params":{"section":"devices","item":"d2"}');
+    expect(stubText("conversation")).toContain('"session":"s_alpha"');
+    await command("open-bot", { bot: "luna" });
+    expect(document.querySelector(".cl-window__dialog")).toBeNull();
+    expect(stubText("conversation")).toContain('"session":"s_luna"');
+    await command("open-session", { session: "s_alpha" });
+    expect(stubText("conversation")).toContain('"session":"s_alpha"');
+  });
+
+  test("⌘K / Ctrl+K opens the command palette; a command's default key runs it while the window has the focus", async () => {
+    const { core } = await mount();
+    const mod = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+    fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ...mod });
+    expect(screen.getByRole("dialog", { name: "Commands" })).toBeTruthy();
+    expect(screen.getByText("tarot.draw")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Commands" })).toBeNull();
+    fireEvent.keyDown(document.body, { key: "D", code: "KeyD", shiftKey: true, ...mod });
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "command.run").map((c) => c.params)).toEqual([{ name: "tarot.draw" }]);
   });
 
   test("a card in a session this window doesn't show holds nothing", async () => {

@@ -4,4 +4,4 @@
 import * as React from "react";
 import { uiFor } from "../runtime/ui";
 
-export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries, UiRuntimeProvider } = uiFor(React);
+export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries, useLayerMessage, UiRuntimeProvider } = uiFor(React);

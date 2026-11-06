@@ -27,6 +27,7 @@ export interface ReactLike {
   useContext<T>(context: any): T;
   useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
   useState<S>(initial: S): [S, (next: S | ((prev: S) => S)) => void];
+  useRef<T>(initial: T): { current: T };
 }
 
 /** Every sealed field a card may have, in B's order (`CARD_FIELD_NAMES`; the stand-in keeps no runtime import). */
@@ -65,6 +66,27 @@ export interface UiRuntime {
   sealed?: SealedRenderers;
   /** The host's OS, for `when.os`. */
   os?: string;
+  /** A menu the app draws for a part, natively (lane E's `useMenu`): resolves with the id picked, or null. */
+  menu?(items: readonly MenuItem[], at: { x: number; y: number }): Promise<string | null>;
+  /** The app's messages to this document (lane E's `useLayerMessage`): its commands, such as `open-settings`. */
+  messages?: { subscribe(listener: (m: LayerCommand) => void): Unsubscribe };
+}
+
+/** An item of a menu the app draws for a part (lane E's `MenuItem`): data only. */
+export interface MenuItem {
+  id?: string;
+  label?: string;
+  enabled?: boolean;
+  checked?: boolean;
+  type?: "normal" | "separator" | "checkbox";
+  submenu?: MenuItem[];
+}
+
+/** One of the app's commands to a window (lane E's `LayerMessage` of type `command`). */
+export interface LayerCommand {
+  type: string;
+  name?: string;
+  args?: Record<string, string | undefined>;
 }
 
 /** A runtime with only some members, the rest empty: a test that needs only sealed frames, say. */
@@ -104,6 +126,9 @@ export interface Ui {
   UiRuntimeProvider(props: { runtime: UiRuntime; children?: ReactNode }): ReactNode;
   /** Which entries a spot would show here, for a part that lays them out itself (a list spot's buttons). */
   useSpotEntries(name: string, spotKey?: string, props?: Record<string, unknown>): Resolved;
+  useLayerMessage(listener: (m: LayerCommand) => void): void;
+  /** Shows a menu the app draws (lane E's `useMenu`); with no app around it, nothing is picked. */
+  useMenu(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null>;
 }
 
 const built = new WeakMap<object, Ui>();
@@ -112,7 +137,7 @@ const built = new WeakMap<object, Ui>();
 export function uiFor(react: ReactLike): Ui {
   const cached = built.get(react);
   if (cached) return cached;
-  const { createContext, createElement, Fragment, useContext, useEffect, useState } = react;
+  const { createContext, createElement, useContext, useEffect, useRef, useState } = react;
 
   const RuntimeContext = createContext<UiRuntime | null>(null);
   const EntryContext = createContext<{ entry: EntryRef; ctx: SpotContext } | null>(null);
@@ -141,6 +166,8 @@ export function uiFor(react: ReactLike): Ui {
     return resolveSpot(name, decl, runtime.entries, ctx, spotKey, runtime.uiSettings?.());
   }
 
+  const CONTENTS = { display: "contents" } as const;
+
   function Spot({ name, spotKey, props = {}, fallback, only }: SpotElementProps): ReactNode {
     const runtime = useRuntime();
     const parent = useScope();
@@ -154,14 +181,19 @@ export function uiFor(react: ReactLike): Ui {
       const entry: EntryRef = { pluginId: e.pluginId, id: e.id, spot: name, ...(spotKey !== undefined ? { key: spotKey } : {}) };
       return [
         createElement(
-          EntryContext.Provider,
-          { key: entryRef(e), value: { entry, ctx } },
-          createElement(component, { props, tokens: runtime.tokens?.() ?? {}, entry }),
+          "div",
+          // A plugin outside the `clover` tree draws in its own sealed frame in the app (lane E's `LayerFrame`), never in
+          // the declaring part's document: marked here so a part's tests can see where it would.
+          { key: entryRef(e), "data-clover-entry": entryRef(e), ...(isCloverTree(e.pluginId) ? {} : { "data-clover-frame": "" }), style: CONTENTS },
+          createElement(EntryContext.Provider, { value: { entry, ctx } }, createElement(component, { props, tokens: runtime.tokens?.() ?? {}, entry })),
         ),
       ];
     });
-    if (mounted.length === 0) return fallback ?? null;
-    return createElement(Fragment, null, ...mounted);
+    // The same elements lane E's `<Spot>` wraps a spot and each entry in (`display: contents`), so the parts' CSS is
+    // proven here against the DOM it meets in the app (review S5).
+    const at = { "data-clover-spot": name, ...(spotKey !== undefined ? { "data-clover-key": spotKey } : {}), style: CONTENTS };
+    if (mounted.length === 0) return fallback === undefined ? null : createElement("div", { ...at, "data-clover-empty": "" }, fallback);
+    return createElement("div", at, ...mounted);
   }
 
   function useSpotEntries(name: string, spotKey?: string, props: Record<string, unknown> = {}): Resolved {
@@ -226,7 +258,20 @@ export function uiFor(react: ReactLike): Ui {
     return createElement(RuntimeContext.Provider, { value: runtime }, children);
   }
 
-  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
+  /** Hears the app's messages to this document (`messages`), as lane E's hook does in the app. */
+  function useLayerMessage(listener: (m: LayerCommand) => void): void {
+    const runtime = useRuntime();
+    const ref = useRef(listener);
+    ref.current = listener;
+    useEffect(() => runtime?.messages?.subscribe((m) => ref.current(m)), [runtime]);
+  }
+
+  function useMenu() {
+    const runtime = useRuntime();
+    return (items: readonly MenuItem[], at: { x: number; y: number }) => runtime?.menu?.(items, at) ?? Promise.resolve(null);
+  }
+
+  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries, useLayerMessage, useMenu };
   built.set(react, ui);
   return ui;
 }

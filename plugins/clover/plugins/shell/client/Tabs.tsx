@@ -9,7 +9,7 @@ import { S } from "./strings";
 import { BotTab } from "./Window";
 
 /** A bot's tab: its main conversation, the composer, and the stage when an avatar plugin stands there. */
-export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?: (session: string) => void }>) {
+export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?: (session: string) => void; onOpenFile?: (path: string) => void }>) {
   const api = usePluginApi();
   const bot = useLoad(() => api.bots?.get(props.bot.id) ?? Promise.reject(new Error("no bots.read")), [api, props.bot.id]);
   const stage = useSpotEntries("bot.stage", undefined, { bot: props.bot }).entries.length > 0;
@@ -18,7 +18,7 @@ export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?:
   return (
     <BotTab
       stage={stage ? <Spot name="bot.stage" props={{ bot: props.bot }} /> : undefined}
-      conversation={<Spot name="conversation" props={{ ...at, onOpenAgent: props.onOpenAgent }} />}
+      conversation={<Spot name="conversation" props={{ ...at, onOpenAgent: props.onOpenAgent, ...(props.onOpenFile ? { onOpenFile: props.onOpenFile } : {}) }} />}
       composer={<Spot name="composer" props={at} />}
     />
   );
@@ -29,7 +29,7 @@ const speaker = (s: SessionView): BotRef => ({ id: s.bot && s.kind === "side-thr
 
 /** An agent's live tab: watch it, type to it, interrupt it and stop it (spec §9.3). In `main` for an agent or a coding
  *  session; in the panel for a bot's coding agent, without a column or code panels of its own (item 90). */
-export function AgentTab({ props }: EntryProps<{ route?: string; params?: { session?: string }; app?: string; session?: string }>) {
+export function AgentTab({ props }: EntryProps<{ route?: string; params?: { session?: string }; app?: string; session?: string; onOpenFile?: (path: string) => void }>) {
   const id = props.params?.session ?? props.session;
   const api = usePluginApi();
   const core = useCore();
@@ -58,7 +58,7 @@ export function AgentTab({ props }: EntryProps<{ route?: string; params?: { sess
   return (
     <div className="cl-agent-tab" data-place={props.app === "agent" ? "panel" : "main"} data-status={session.status}>
       <BotTab
-        conversation={<Spot name="conversation" props={at} />}
+        conversation={<Spot name="conversation" props={{ ...at, ...(props.onOpenFile ? { onOpenFile: props.onOpenFile } : {}) }} />}
         composer={
           <>
             {status}

@@ -1,57 +1,146 @@
-// Every string the panel shows, in one place, for the move to `clover.` keys (plan, F-M3).
-const n = (count: number, one: string, many: string) => (count === 1 ? one : many.replace("#", String(count)));
+// Every string the panel shows, in one place.
+
+import en from "../locales/en.json" with { type: "json" };
+import { translator } from "../../shell/runtime/strings";
+
+/** This part's words: `clover.panel.` keys, English in `locales/en.json`, the user's language through the app's tables. */
+const t = translator(en.strings);
 
 export const S = {
+  get opening() {
+    return t("clover.panel.opening");
+  },
+  get previewLink() {
+    return t("clover.panel.previewLink");
+  },
+  get previewFailed() {
+    return t("clover.panel.previewFailed");
+  },
+  get hiddenWarning() {
+    return t("clover.panel.hiddenWarning");
+  },
+  viewer: (path: string) => t("clover.panel.viewer", { path }),
+  hiddenMark: (code: string, name: string) => t("clover.panel.hiddenMark", { code, name }),
+  get outputLink() {
+    return t("clover.panel.outputLink");
+  },
+  get outputOutside() {
+    return t("clover.panel.outputOutside");
+  },
+  get outputFailed() {
+    return t("clover.panel.outputFailed");
+  },
+  get outputLinkDetail() {
+    return t("clover.panel.outputLinkDetail");
+  },
+  levelName: (level: string) => t(`clover.panel.level.${level}`),
   views: {
-    session: "Session",
-    terminal: "Terminal",
-    diff: "Changes",
-    browser: "Browser",
-    files: "Files",
+    get session() {
+      return t("clover.panel.views.session");
+    },
+    get terminal() {
+      return t("clover.panel.views.terminal");
+    },
+    get diff() {
+      return t("clover.panel.views.diff");
+    },
+    get browser() {
+      return t("clover.panel.views.browser");
+    },
+    get files() {
+      return t("clover.panel.views.files");
+    },
   } as const,
   /** A bot's tab's slim column. */
-  botColumn: "Details",
-  toggle: (label: string, open: boolean) => (open ? `Hide ${label}` : `Show ${label}`),
-  more: "More panels",
-  close: (title: string) => `Close ${title}`,
-  expand: (title: string) => `Expand ${title}`,
-  panel: "Panel",
-  empty: (title: string) => `No plugin shows the ${title.toLowerCase()} here yet`,
-  emptyDetail: "Each panel comes from a plugin of its own. Install one that fills this panel, and it opens here.",
-  findPlugin: "Find a plugin",
+  get botColumn() {
+    return t("clover.panel.botColumn");
+  },
+  toggle: (label: string, open: boolean) => t(open ? "clover.panel.hide" : "clover.panel.show", { label }),
+  get more() {
+    return t("clover.panel.more");
+  },
+  close: (title: string) => t("clover.panel.close", { title }),
+  expand: (title: string) => t("clover.panel.expand", { title }),
+  get panel() {
+    return t("clover.panel.panel");
+  },
+  empty: (title: string) => t("clover.panel.empty", { title: title.toLocaleLowerCase() }),
+  get emptyDetail() {
+    return t("clover.panel.emptyDetail");
+  },
+  get findPlugin() {
+    return t("clover.panel.findPlugin");
+  },
   // The session column.
-  agents: "Agents and tasks",
-  environment: "Where it runs",
-  here: "This computer",
-  level: (label: string) => `Level: ${label}`,
-  levelRequested: (label: string) => `${label} asked for`,
-  levelRequestedTitle: (label: string) => `Waiting for your answer on the card to change the level to ${label}`,
-  changeLevel: "Change",
-  changeLevelTitle: (computer: string) => `Change ${computer}'s level`,
-  context: "Context",
-  contextUsed: (pct: number) => `${pct}%`,
-  contextLabel: (pct: number) => `${pct}% of the context used`,
-  connectors: "Connectors",
+  get agents() {
+    return t("clover.panel.agents");
+  },
+  get environment() {
+    return t("clover.panel.environment");
+  },
+  get here() {
+    return t("clover.panel.here");
+  },
+  level: (label: string) => t("clover.panel.level", { label }),
+  levelRequested: (label: string) => t("clover.panel.levelRequested", { label }),
+  levelRequestedTitle: (label: string) => t("clover.panel.levelRequestedTitle", { label }),
+  get changeLevel() {
+    return t("clover.panel.changeLevel");
+  },
+  changeLevelTitle: (computer: string) => t("clover.panel.changeLevelTitle", { computer }),
+  get context() {
+    return t("clover.panel.context");
+  },
+  contextUsed: (pct: number) => t("clover.panel.contextUsed", { count: pct }),
+  contextLabel: (pct: number) => t("clover.panel.contextLabel", { count: pct }),
+  get connectors() {
+    return t("clover.panel.connectors");
+  },
   connectorsState: (total: number, needSignIn: number) =>
-    needSignIn > 0 ? n(needSignIn, "1 to sign in again", "# to sign in again") : n(total, "1 connected", "# connected"),
-  outputs: "Outputs",
-  outputKind: { page: "Page", file: "File", image: "Image" } as const,
-  showMore: (count: number) => n(count, "Show 1 more", "Show # more"),
-  changes: "Changes",
-  diffStat: (added: number, removed: number) => `+${added} −${removed}`,
-  diffStatLabel: (files: number, added: number, removed: number) =>
-    `${n(files, "1 file", "# files")}, ${added} added, ${removed} removed`,
-  createPr: "Create PR",
-  prState: { open: "Open", draft: "Draft", merged: "Merged" } as const,
-  pr: (repo: string, number: number) => `${repo} #${number}`,
-  agentStatus: {
-    running: "Running",
-    "needs-you": "Needs you",
-    completed: "Done",
-    failed: "Failed",
-    stopped: "Stopped",
-    stalled: "Stalled",
+    needSignIn > 0 ? t("clover.panel.connectorsSignIn", { count: needSignIn }) : t("clover.panel.connectorsConnected", { count: total }),
+  get outputs() {
+    return t("clover.panel.outputs");
+  },
+  outputKind: {
+    get link() {
+      return t("clover.panel.outputKind.link");
+    },
+    get page() {
+      return t("clover.panel.outputKind.page");
+    },
+    get file() {
+      return t("clover.panel.outputKind.file");
+    },
+    get image() {
+      return t("clover.panel.outputKind.image");
+    },
   } as const,
-  fold: (title: string) => `Fold ${title}`,
-  unfold: (title: string) => `Unfold ${title}`,
+  showMore: (count: number) => t("clover.panel.showMore", { count: count }),
+  get changes() {
+    return t("clover.panel.changes");
+  },
+  diffStat: (added: number, removed: number) => t("clover.panel.diffStat", { added, removed }),
+  diffStatLabel: (files: number, added: number, removed: number) => t("clover.panel.diffStatLabel", { files: t("clover.panel.files", { count: files }), added, removed }),
+  agentStatus: {
+    get running() {
+      return t("clover.panel.agentStatus.running");
+    },
+    get "needs-you"() {
+      return t("clover.panel.agentStatus.needs-you");
+    },
+    get completed() {
+      return t("clover.panel.agentStatus.completed");
+    },
+    get failed() {
+      return t("clover.panel.agentStatus.failed");
+    },
+    get stopped() {
+      return t("clover.panel.agentStatus.stopped");
+    },
+    get stalled() {
+      return t("clover.panel.agentStatus.stalled");
+    },
+  } as const,
+  fold: (title: string) => t("clover.panel.fold", { title }),
+  unfold: (title: string) => t("clover.panel.unfold", { title }),
 };

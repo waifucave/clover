@@ -116,6 +116,8 @@ type FromB<S extends { params: { _zod: { input: unknown } }; result: { _zod: { o
 export interface CoreMethods {
   "bot.setUserLayer": FromB<typeof Proto.SESSIONS_METHODS.botSetUserLayer>;
   "session.send": FromB<typeof Proto.SESSIONS_METHODS.sessionSend>;
+  "agent.backends": FromB<typeof Proto.AGENTS_METHODS.agentBackends>;
+  "agent.start": FromB<typeof Proto.AGENTS_METHODS.agentStart>;
   "session.interrupt": FromB<typeof Proto.SESSIONS_METHODS.sessionInterrupt>;
   "session.stop": FromB<typeof Proto.SESSIONS_METHODS.sessionStop>;
   "session.setModel": FromB<typeof Proto.SESSIONS_METHODS.sessionSetModel>;
@@ -130,10 +132,15 @@ export interface CoreMethods {
   "plugin.list": FromB<typeof Proto.PLUGINS_METHODS.pluginList>;
   "plugin.ui": FromB<typeof Proto.PLUGINS_METHODS.pluginUi>;
   "plugin.get": FromB<typeof Proto.PLUGINS_METHODS.pluginGet>;
+  "plugin.settings.get": FromB<typeof Proto.PLUGINS_METHODS.pluginSettingsGet>;
+  "plugin.settings.set": FromB<typeof Proto.PLUGINS_METHODS.pluginSettingsSet>;
   "plugin.setEnabled": FromB<typeof Proto.PLUGINS_METHODS.pluginSetEnabled>;
   "plugin.restart": FromB<typeof Proto.PLUGINS_METHODS.pluginRestart>;
   "plugin.logs": FromB<typeof Proto.PLUGINS_METHODS.pluginLogs>;
   "plugin.install": FromB<typeof Proto.PLUGINS_METHODS.pluginInstall>;
+  "plugin.confirmAdult": FromB<typeof Proto.PLUGINS_METHODS.pluginConfirmAdult>;
+  "command.list": FromB<typeof Proto.PLUGINS_METHODS.commandList>;
+  "command.run": FromB<typeof Proto.PLUGINS_METHODS.commandRun>;
   "plugin.index.list": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexList>;
   "plugin.index.search": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexSearch>;
   "ui.settings": FromB<typeof Proto.APP_METHODS.uiSettings>;
@@ -141,14 +148,10 @@ export interface CoreMethods {
   "archive.list": FromB<typeof Proto.SESSIONS_METHODS.archiveList>;
   "archive.history": FromB<typeof Proto.SESSIONS_METHODS.archiveHistory>;
   // Provisional: what a session's column shows that B's API has no call for yet. The owners named settle them.
-  /** A coding session's changes against their base, and the pull requests they became (lane D). */
-  "session.changes": { params: { id: string }; result: { label: string; added: number; removed: number; files: number; prs: { id: string; title: string; repo: string; number: number; state: "open" | "draft" | "merged" }[] } | null };
+  /** A coding session's changes against their base (lane D). */
+  "session.changes": { params: { id: string }; result: { label: string; added: number; removed: number; files: number } | null };
   /** A coding session's diff against a base, per file with its hunks (lane D; the panel's `DiffFile` shape). */
   "session.diff": { params: { id: string; target?: string }; result: { base: string; target: string; targets: string[]; files: unknown[]; notice?: string } };
-  /** Opens a pull request for a coding session's changes (lane D). */
-  "session.createPr": { params: { id: string }; result: { ok: true } };
-  /** What a session made for the user to read: pages, files, images (lane D). */
-  "session.outputs": { params: { id: string; limit?: number }; result: { items: { id: string; name: string; kind: "page" | "file" | "image" }[]; more: number } };
   /** How much of the model's context a session uses (lanes A and D). */
   "session.context": { params: { id: string }; result: { used: number; tokens?: number; window?: number } | null };
   /** The MCP connectors a session has, and how many need signing in again (lane A). */

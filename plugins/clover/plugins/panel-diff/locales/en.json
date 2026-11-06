@@ -1,0 +1,36 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.diff.workingTree": "working tree",
+    "clover.diff.layout": "Layout",
+    "clover.diff.unified": "Unified",
+    "clover.diff.split": "Split",
+    "clover.diff.files": "Changed files",
+    "clover.diff.open": "Open {path}",
+    "clover.diff.fold": "Fold {path}",
+    "clover.diff.unfold": "Unfold {path}",
+    "clover.diff.tooLarge": "Too big to draw here",
+    "clover.diff.hiddenWarning": "Has hidden characters",
+    "clover.diff.binary": "Binary file",
+    "clover.diff.renamed": "from {from}",
+    "clover.diff.status.added": "Added",
+    "clover.diff.status.modified": "Changed",
+    "clover.diff.status.deleted": "Deleted",
+    "clover.diff.status.renamed": "Renamed",
+    "clover.diff.base": "Base",
+    "clover.diff.target": "Compare with",
+    "clover.diff.none": "No changes",
+    "clover.diff.compare": "Comparing {base} with {target}",
+    "clover.diff.hiddenMark": "Hidden character {code}, {name}",
+    "clover.diff.stat": "{added}, {removed}",
+    "clover.diff.linesAdded": {
+      "one": "{count} line added",
+      "other": "{count} lines added"
+    },
+    "clover.diff.linesRemoved": {
+      "one": "{count} removed",
+      "other": "{count} removed"
+    }
+  }
+}

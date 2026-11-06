@@ -4,7 +4,7 @@ import { card, fakeApi, fakeApprovals, fakeCore, settle, uiPluginView } from "..
 import type { BotView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { BotEditor } from "../client/BotEditor";
-import { BotEditorEntry } from "../client/entry";
+import { assetUrl, BotEditorEntry } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
 import { ALPHA, AVATARS, MODELS, THEMES } from "../gallery/fixtures";
 
@@ -86,6 +86,8 @@ describe("the bot editor on the runtime", () => {
     fireEvent.click(screen.getAllByRole("radio")[0]!);
     fireEvent.click(screen.getByRole("button", { name: "Reset the theme" }));
     await act(() => settle());
+    // A pack's portrait shows from the pack's own asset URL (review item 8); the user layer keeps the pack's path.
+    expect(document.querySelector('img[src="clover-asset://chibi-pack/assets/mint.png"]')).toBeTruthy();
     const patches = core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params);
     expect(patches).toEqual([
       { id: "alpha", patch: { name: "Alpha Prime" } },
@@ -110,5 +112,15 @@ describe("the bot editor on the runtime", () => {
     const { routes } = await mount();
     fireEvent.click(screen.getByRole("button", { name: "Back to the bot" }));
     expect(routes).toEqual([{ route: "bot", params: { bot: "alpha" } }]);
+  });
+});
+
+describe("a portrait's address (review N7)", () => {
+  test("only a path inside the pack becomes its asset; a URL, an absolute path or a climb out gives none", () => {
+    expect(assetUrl("chibi-pack", "assets/mint.png")).toBe("clover-asset://chibi-pack/assets/mint.png");
+    expect(assetUrl("chibi-pack", "./a b.png")).toBe("clover-asset://chibi-pack/a%20b.png");
+    for (const bad of ["https://x.example/a.png", "http://x/a.png", "data:image/png;base64,AA", "blob:x", "clover-asset://other/a.png", "/etc/a.png", "../a.png", "a/../../b.png", "C:\\a.png"]) {
+      expect([bad, assetUrl("chibi-pack", bad)]).toEqual([bad, undefined]);
+    }
   });
 });

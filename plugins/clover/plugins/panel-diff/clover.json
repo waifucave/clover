@@ -13,6 +13,12 @@
   },
   "capabilities": [],
   "contributes": {
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
     "ui": [
       {
         "spot": "panel",

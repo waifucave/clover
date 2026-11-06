@@ -9,6 +9,7 @@
 // - the cards (`approvals.ts`): card_pending and card_resolved, for this session's cards. A card carries no text; the
 //   view places its sealed frames.
 // Events the view doesn't know are skipped, as the inherited clients do.
+import { S } from "./strings";
 import type {
   ApprovalItem, ApprovalState, ConversationItem, NoteItem, Question, QuestionItem, ReasoningKind, ThinkingItem, ToolCall, ToolItem, TurnState,
 } from "./types";
@@ -175,7 +176,15 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
       case "approval_resolved": {
         // Only an old session from the app Clover replaces holds these (the archive): no sealed card exists for them, so they read as notes.
         const tool = str(e.toolName);
-        const text = type === "approval_requested" ? `Asked to use ${tool ?? "a tool"}${str(e.summary) ? `: ${str(e.summary)}` : ""}` : e.approved === true ? "Allowed" : "Denied";
+        const summary = str(e.summary);
+        const text =
+          type === "approval_requested"
+            ? summary
+              ? S.askedToUseWhat(tool ?? S.aTool, summary)
+              : S.askedToUse(tool ?? S.aTool)
+            : e.approved === true
+              ? S.allowed
+              : S.denied;
         add<NoteItem>({ id: `n${key}`, kind: "note", at, text, tone: "info" });
         break;
       }
@@ -215,7 +224,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         }
         streaming = undefined;
         for (const it of items) if (it.kind === "tool" && (it.call.status === "running" || it.call.status === "waiting")) it.call.status = "interrupted";
-        if (e.stopReason === "error") add<NoteItem>({ id: `n${key}`, kind: "note", at, text: "The turn ended with an error.", tone: "error" });
+        if (e.stopReason === "error") add<NoteItem>({ id: `n${key}`, kind: "note", at, text: S.turnError, tone: "error" });
         turn = { running: false };
         break;
       }

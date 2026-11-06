@@ -1,35 +1,116 @@
-// Every string the bot editor shows, for the move to `clover.` keys (plan, F-M3).
+// Every string the bot editor shows.
+import en from "../locales/en.json" with { type: "json" };
+import { translator } from "../../shell/runtime/strings";
+
+/** This part's words: `clover.botEditor.` keys, English in `locales/en.json`, the user's language through the app's tables. */
+const t = translator(en.strings);
+
 export const S = {
-  back: "Back to the bot",
-  title: (name: string) => `Edit ${name}`,
-  intro: (name: string) => `What you set here is yours, kept over what ${name}'s plugin says. Reset puts a field back.`,
-  reset: "Reset",
-  resetField: (field: string) => `Reset the ${field}`,
-  save: "Save",
-  waiting: "Waiting for your answer on the card.",
-  name: "Name",
-  nameDetail: "What the bot is called everywhere.",
-  instructions: "Your instructions",
-  instructionsDetail: (name: string) => `Added after ${name}'s own instructions, which stay as its plugin wrote them.`,
-  instructionsSet: "You've set instructions. Type new ones to replace them, or reset.",
-  instructionsPlaceholder: "Talk less about the weather.",
-  model: "Model",
-  modelDetail: "The model the bot thinks with.",
-  effort: "Effort",
-  avatar: "Avatar",
-  avatarDetail: "Avatar packs are plugins. Each adds avatar files with their portraits.",
-  noAvatars: "No avatar packs are installed yet. Find one in the plugin index.",
-  avatarFrom: (pack: string) => `From ${pack}`,
-  voice: "Voice",
-  voiceDetail: "Voices come with voice plugins.",
-  noVoice: "None",
-  voiceOf: (provider: string, voice: string) => `${voice} · ${provider}`,
-  theme: "Theme",
-  themeDetail: "What the bot's tab wears.",
-  themeOwn: "The bot's own",
-  layout: "Layout",
-  layoutDetail: "How the bot's tab is arranged.",
-  layoutOwn: "The bot's own",
-  layoutYours: "Your layout",
-  fields: { name: "name", instructions: "instructions", model: "model", effort: "effort", voice: "voice", avatar: "avatar", theme: "theme", layout: "layout" },
+  get back() {
+    return t("clover.botEditor.back");
+  },
+  title: (name: string) => t("clover.botEditor.title", { name }),
+  intro: (name: string) => t("clover.botEditor.intro", { name }),
+  get reset() {
+    return t("clover.botEditor.reset");
+  },
+  resetField: (field: string) => t("clover.botEditor.resetField", { field }),
+  get save() {
+    return t("clover.botEditor.save");
+  },
+  get waiting() {
+    return t("clover.botEditor.waiting");
+  },
+  get name() {
+    return t("clover.botEditor.name");
+  },
+  get nameDetail() {
+    return t("clover.botEditor.nameDetail");
+  },
+  get instructions() {
+    return t("clover.botEditor.instructions");
+  },
+  instructionsDetail: (name: string) => t("clover.botEditor.instructionsDetail", { name }),
+  get instructionsSet() {
+    return t("clover.botEditor.instructionsSet");
+  },
+  get instructionsPlaceholder() {
+    return t("clover.botEditor.instructionsPlaceholder");
+  },
+  get model() {
+    return t("clover.botEditor.model");
+  },
+  get modelDetail() {
+    return t("clover.botEditor.modelDetail");
+  },
+  get effort() {
+    return t("clover.botEditor.effort");
+  },
+  get avatar() {
+    return t("clover.botEditor.avatar");
+  },
+  get avatarDetail() {
+    return t("clover.botEditor.avatarDetail");
+  },
+  get noAvatars() {
+    return t("clover.botEditor.noAvatars");
+  },
+  avatarFrom: (pack: string) => t("clover.botEditor.avatarFrom", { pack }),
+  get voice() {
+    return t("clover.botEditor.voice");
+  },
+  get voiceDetail() {
+    return t("clover.botEditor.voiceDetail");
+  },
+  get noVoice() {
+    return t("clover.botEditor.noVoice");
+  },
+  voiceOf: (provider: string, voice: string) => t("clover.botEditor.voiceOf", { provider, voice }),
+  get theme() {
+    return t("clover.botEditor.theme");
+  },
+  get themeDetail() {
+    return t("clover.botEditor.themeDetail");
+  },
+  get themeOwn() {
+    return t("clover.botEditor.themeOwn");
+  },
+  get layout() {
+    return t("clover.botEditor.layout");
+  },
+  get layoutDetail() {
+    return t("clover.botEditor.layoutDetail");
+  },
+  get layoutOwn() {
+    return t("clover.botEditor.layoutOwn");
+  },
+  get layoutYours() {
+    return t("clover.botEditor.layoutYours");
+  },
+  fields: {
+    get name() {
+      return t("clover.botEditor.fields.name");
+    },
+    get instructions() {
+      return t("clover.botEditor.fields.instructions");
+    },
+    get model() {
+      return t("clover.botEditor.fields.model");
+    },
+    get effort() {
+      return t("clover.botEditor.fields.effort");
+    },
+    get voice() {
+      return t("clover.botEditor.fields.voice");
+    },
+    get avatar() {
+      return t("clover.botEditor.fields.avatar");
+    },
+    get theme() {
+      return t("clover.botEditor.fields.theme");
+    },
+    get layout() {
+      return t("clover.botEditor.fields.layout");
+    },
+  },
 };

@@ -7,19 +7,13 @@
 // The session, its agents and the computers come through the plugin API. Changes, outputs, context use and connectors
 // have no plugin-API call yet: the `clover` layer reads them from the core (provisional methods, `session.changes`
 // and the rest, for lanes A and D to settle).
+import { outputsFolder } from "../../shell/runtime/files";
 import { useEffect, useState } from "react";
 import type { ComputerView, CoreClient, PluginApi, SessionView as Session } from "../../shell/runtime/types";
 import { SessionView } from "./SessionView";
 import { useCore, usePluginApi } from "./sdk";
+import { S } from "./strings";
 import type { SessionAgentStatus, SessionKind, SessionViewProps } from "./types";
-
-const LEVEL_LABELS: Record<string, string> = {
-  "read-only": "Read only",
-  ask: "Ask first",
-  "ask-risky": "Ask when risky",
-  "accept-edits": "Accept edits",
-  automatic: "Fully automatic",
-};
 
 function agentState(s: Session): SessionAgentStatus {
   if (s.needsYou && s.needsYou.cards + s.needsYou.questions > 0) return "needs-you";
@@ -43,9 +37,60 @@ interface Loaded {
   agents: Session[];
   computers: ComputerView[];
   changes?: SessionViewProps["changes"];
-  outputs?: { items: { id: string; name: string; kind: "page" | "file" | "image" }[]; more: number };
   context?: { used: number; tokens?: number; window?: number } | null;
   connectors?: { total: number; needSignIn: number };
+}
+
+/** Where a session's outputs live (`shell/runtime/files.ts`: the tree's name for its computer's Clover home). */
+export { outputsFolder };
+
+const PAGE = /\.(html?|md|markdown)$/i;
+const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
+const SHOWN = 4;
+
+/** A session's outputs, newest first, kept current while the folder changes. */
+function useOutputs(api: PluginApi, session: Session | undefined): { items: { id: string; name: string; kind: "page" | "file" | "image" | "link" }[]; folder: string } | undefined {
+  const [items, setItems] = useState<{ id: string; name: string; kind: "page" | "file" | "image" | "link" }[] | undefined>(undefined);
+  const files = api.files;
+  const folder = session ? outputsFolder(session) : undefined;
+  useEffect(() => {
+    if (!files || !folder) return;
+    let live = true;
+    const read = () =>
+      void files.list(folder).then(
+        (list) => {
+          if (!live) return;
+          setItems(
+            // A link is listed as a link and never followed (the controller's note: a runner can leave one pointing
+            // at another bot's data); only plain files open. The tree (lane J's) judges every real path.
+            list
+              .filter((f) => f.type === "file" || f.type === "symlink")
+              .sort((a, b) => b.modifiedAt - a.modifiedAt)
+              .map((f) => {
+                const name = f.path.split("/").pop() ?? f.path;
+                return { id: f.path, name, kind: f.type === "symlink" ? "link" : PAGE.test(name) ? "page" : IMAGE.test(name) ? "image" : "file" };
+              }),
+          );
+        },
+        () => live && setItems([]),
+      );
+    read();
+    let stop: (() => void) | undefined;
+    void files.watch?.(folder, () => read()).then((s) => (live ? (stop = s) : s()), () => undefined);
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, [files, folder]);
+  return items && folder ? { items, folder } : undefined;
+}
+
+/** The outputs section's props: the newest few, Show more for the rest, each opening in the right panel. */
+function outputsProps(outputs: ReturnType<typeof useOutputs>, all: boolean, showAll: () => void, onOpen: ((path: string, folder: string) => void) | undefined): Partial<SessionViewProps> {
+  if (!outputs || outputs.items.length === 0) return {};
+  const items = all ? outputs.items : outputs.items.slice(0, SHOWN);
+  const more = outputs.items.length - items.length;
+  return { outputs: { items, onOpen: (id: string) => onOpen?.(id, outputs.folder), ...(more > 0 ? { more, onShowMore: showAll } : {}) } };
 }
 
 function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | undefined, withChanges: boolean): Loaded {
@@ -59,17 +104,15 @@ function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | un
       quiet(api.conversation?.list?.()),
       quiet(api.computers?.list?.()),
       withChanges ? quiet(core?.call("session.changes", { id })) : Promise.resolve(undefined),
-      quiet(core?.call("session.outputs", { id, limit: 4 })),
       quiet(core?.call("session.context", { id })),
       quiet(core?.call("session.connectors", { id })),
-    ]).then(([session, sessions, computers, changes, outputs, context, connectors]) => {
+    ]).then(([session, sessions, computers, changes, context, connectors]) => {
       if (!live) return;
       setLoaded({
         ...(session ? { session } : {}),
         agents: (sessions ?? []).filter((s) => s.parent === id && (s.kind === "agent" || s.kind === "side-thread")),
         computers: computers ?? [],
         ...(changes ? { changes: { ...changes } } : {}),
-        ...(outputs ? { outputs } : {}),
         ...(context !== undefined ? { context } : {}),
         ...(connectors ? { connectors } : {}),
       });
@@ -90,6 +133,8 @@ export interface ColumnProps {
   /** The agent open in the panel now, and a way to open one there. */
   openAgent?: string;
   onOpenAgent?: (session: string) => void;
+  /** Opens one of the session's outputs (a tree path) in the right panel. */
+  onOpenOutput?: (path: string, folder: string) => void;
   /** Where `main` goes: the shell's (a question for B, as for the sidebar). */
   navigate?: (route: { route: string; params: Record<string, string> }) => void;
 }
@@ -100,6 +145,8 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
   const core = useCore();
   const kind = props.sessionKind ?? "coding";
   const data = useColumn(api, core, props.session, kind === "coding");
+  const outputs = useOutputs(api, data.session);
+  const [allOutputs, setAllOutputs] = useState(false);
   const s = data.session;
   if (!s) return null;
   const computer = data.computers.find((c) => c.name === s.computer);
@@ -109,7 +156,7 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
     // A level change is a sealed card from every layer (§5.5); Change opens Settings' Levels page, where the pick
     // raises it.
     ...(computer
-      ? { level: { label: LEVEL_LABELS[computer.level] ?? computer.level, ...(props.navigate ? { onChange: () => props.navigate!({ route: "settings", params: { section: "levels" } }) } : {}) } }
+      ? { level: { label: S.levelName(computer.level), ...(props.navigate ? { onChange: () => props.navigate!({ route: "settings", params: { section: "levels" } }) } : {}) } }
       : {}),
     folders: s.root ? [folder(s.root)] : [],
   };
@@ -121,8 +168,8 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
       environment={environment}
       {...(data.context ? { context: contextOf(data.context)! } : {})}
       {...(data.connectors ? { connectors: data.connectors } : {})}
-      {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined, ...(data.outputs.more ? { more: data.outputs.more, onShowMore: () => undefined } : {}) } } : {})}
-      {...(data.changes ? { changes: { ...data.changes, ...(core ? { onCreatePr: () => void core.call("session.createPr", { id: s.id }) } : {}) } } : {})}
+      {...outputsProps(outputs, allOutputs, () => setAllOutputs(true), props.onOpenOutput)}
+      {...(data.changes ? { changes: data.changes } : {})}
     />
   );
 }
@@ -132,6 +179,8 @@ export function BotColumn({ props }: { props: ColumnProps & { bot?: { id: string
   const api = usePluginApi();
   const core = useCore();
   const data = useColumn(api, core, props.session, false);
+  const outputs = useOutputs(api, data.session);
+  const [allOutputs, setAllOutputs] = useState(false);
   if (!props.session) return null;
   return (
     <SessionView
@@ -140,7 +189,7 @@ export function BotColumn({ props }: { props: ColumnProps & { bot?: { id: string
       {...(props.onOpenAgent ? { onOpenAgent: props.onOpenAgent } : {})}
       {...(props.openAgent ? { openAgent: props.openAgent } : {})}
       {...(data.context ? { context: contextOf(data.context)! } : {})}
-      {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined } } : {})}
+      {...outputsProps(outputs, allOutputs, () => setAllOutputs(true), props.onOpenOutput)}
     />
   );
 }

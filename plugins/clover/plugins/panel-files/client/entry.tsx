@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FilesPanel, FilesTitle } from "./FilesPanel";
+import { FilePreview, previews, usePreviewPlugin } from "./preview";
 import type { FilesWithWatch } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
 import type { FileEntry } from "./types";
@@ -14,6 +15,8 @@ import type { FileEntry } from "./types";
 export interface FilesEntryProps {
   session?: string;
   header?: HTMLElement | null;
+  /** A file to open, named in the conversation (the shell's `onOpenFile`): it opens when it is in the folder. */
+  reveal?: string;
 }
 
 function Header({ slot, children }: { slot: HTMLElement | null | undefined; children: ReactNode }) {
@@ -22,8 +25,10 @@ function Header({ slot, children }: { slot: HTMLElement | null | undefined; chil
 
 const nameOf = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
 
-/** Whether `path` is `root` or inside it: nothing outside the session's folder is listed or read. */
-export const inside = (root: string, path: string) => path === root || path.startsWith(`${root.replace(/\/+$/, "")}/`);
+/** Whether `path` is `root` or inside it: nothing outside the session's folder is listed or read. A `..` or `.`
+ *  segment is never inside (review item 7), whatever it would resolve to. */
+export const inside = (root: string, path: string) =>
+  !path.split(/[\\/]/).some((s) => s === ".." || s === ".") && (path === root || path.startsWith(`${root.replace(/\/+$/, "")}/`));
 
 export function FilesEntry({ props }: { props: FilesEntryProps }) {
   const api = usePluginApi();
@@ -31,6 +36,10 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
   const [where, setWhere] = useState<{ root: string; computer: string } | undefined>(undefined);
   const [listing, setListing] = useState<Record<string, FileEntry[]>>({});
   const [open, setOpen] = useState<{ path: string; text: string } | undefined>(undefined);
+  // A file the host or a plugin previews (an image; a type a plugin fills `file.preview` for) shows as that, through the
+  // no-follow check, in place of its text.
+  const byPlugin = usePreviewPlugin(open?.path);
+  const previewed = open !== undefined && previews(open.path, byPlugin);
   const [matches, setMatches] = useState<{ query: string; items: { path: string; line: number; text: string }[]; truncated?: boolean } | undefined>(undefined);
 
   const list = (path: string) => {
@@ -40,6 +49,19 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
       () => undefined,
     );
   };
+
+  const openPath = (path: string) => {
+    if (!files || !where || !inside(where.root, path)) return;
+    // An image is never read as text: its preview reads it.
+    if (previews(path, false)) return setOpen({ path, text: "" });
+    files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
+  };
+
+  // A file the conversation named opens here, once the folder is known.
+  useEffect(() => {
+    if (props.reveal && where) openPath(props.reveal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.reveal, where?.root]);
 
   useEffect(() => {
     if (!props.session || !api.conversation?.get) return;
@@ -60,7 +82,8 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
 
   // What the agent and the user change shows as it happens.
   const shown = useRef<{ listed: string[]; open?: string }>({ listed: [] });
-  shown.current = { listed: Object.keys(listing), ...(open ? { open: open.path } : {}) };
+  // A previewed file reads itself (`FilePreview`); only a text file is read again here.
+  shown.current = { listed: Object.keys(listing), ...(open && !previewed ? { open: open.path } : {}) };
   useEffect(() => {
     if (!files?.watch || !where) return;
     let stop: (() => void) | undefined;
@@ -90,11 +113,9 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
         root={where.root}
         listing={listing}
         onList={list}
-        onOpen={(path) => {
-          if (!files || !inside(where.root, path)) return;
-          files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
-        }}
+        onOpen={openPath}
         {...(open ? { open } : {})}
+        {...(open && previewed ? { preview: <FilePreview key={open.path} path={open.path} /> } : {})}
         onSearch={(query) =>
           void files?.grep(query, { cwd: where.root, limit: 200 }).then(
             (r) => setMatches({ query, items: r.matches.filter((m) => inside(where.root, m.path)), ...(r.truncated ? { truncated: true } : {}) }),

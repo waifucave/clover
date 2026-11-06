@@ -38,12 +38,6 @@ export const SESSION: SessionViewProps = {
     removed: 365,
     files: 41,
     onOpenDiff: noop,
-    onCreatePr: noop,
-    prs: [
-      { id: "pr155", title: "F-M1: the conversation parts", repo: "clover", number: 155, state: "open" },
-      { id: "pr152", title: "C0: rename to Clover", repo: "clover", number: 152, state: "merged" },
-    ],
-    onOpenPr: noop,
   },
 };
 

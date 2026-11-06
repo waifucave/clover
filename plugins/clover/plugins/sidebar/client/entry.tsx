@@ -22,6 +22,8 @@ export interface ShellRoute {
 export interface SidebarEntryProps {
   route: ShellRoute;
   navigate: (route: ShellRoute) => void;
+  /** Search: the shell's command palette, when it has one. */
+  onSearch?: () => void;
 }
 
 /** The shell's route as the sidebar's, and back. */
@@ -135,10 +137,16 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
   });
 
   const projects: SidebarProject[] = [];
+  const where = new Map<string, { computer: string; root: string }>();
   for (const s of sessions.filter((x) => x.kind === "coding")) {
     const path = s.root ?? `home/${s.computer}`;
     let project = projects.find((p) => p.path === path);
-    if (!project) projects.push((project = { id: path, name: folderName(path), path, sessions: [] }));
+    if (!project) {
+      projects.push((project = { id: path, name: folderName(path), path, sessions: [] }));
+      where.set(path, { computer: s.computer, root: path });
+    }
+    // The branch and how many files it changed, once lane B's session view carries them (asked).
+    const git = s as typeof s & { branch?: string; changes?: number };
     project.sessions.push({
       id: s.id,
       title: s.title ?? s.id,
@@ -146,8 +154,22 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       ...(s.needsYou ? { needsYou: s.needsYou } : {}),
       ...(s.backend ? { backend: s.backend } : {}),
       computer: s.computer,
+      ...(typeof git.branch === "string" ? { branch: git.branch } : {}),
+      ...(typeof git.changes === "number" ? { changes: git.changes } : {}),
     });
   }
+
+  // A new coding session in a project: lane K's `agent.start`, on the project's computer and folder, with the first
+  // backend installed there; it opens as the agent's live tab.
+  const startIn = (projectId: string) => {
+    const at = where.get(projectId);
+    if (!core || !at) return;
+    void core.call("agent.backends", {}).then(({ backends }) => {
+      const backend = backends.find((b) => b.computers.some((c) => c.computer === at.computer && c.installed));
+      if (!backend) return;
+      return core.call("agent.start", { backend: backend.id, computer: at.computer, root: at.root }).then(({ session }) => props.navigate({ route: "agent", params: { session } }));
+    }, () => undefined);
+  };
 
   const apps: SidebarApp[] = useSpotEntries("sidebar.app").entries.flatMap((e) => {
     const opens = e.fields?.opens;
@@ -173,6 +195,9 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       account={account}
       onOpenSettings={() => go({ kind: "settings" })}
       onPlugins={() => go({ kind: "plugins" })}
+      {...(core && projects.length > 0 ? { onNewSession: startIn } : {})}
+      {...(core && side === "code" && projects[0] ? { onNew: () => startIn(projects[0]!.id) } : {})}
+      {...(props.onSearch ? { onSearch: props.onSearch } : {})}
       collapsed={collapsed}
       onToggleCollapsed={() => setCollapsed((c) => !c)}
       renderBot={(bot, standard: ReactNode) => {

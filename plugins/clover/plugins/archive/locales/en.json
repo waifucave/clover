@@ -1,0 +1,25 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.archive.title": "Archive",
+    "clover.archive.intro": "Sessions from before Clover, kept to read. They aren't part of any bot's history.",
+    "clover.archive.search": "Search old sessions",
+    "clover.archive.sessions": "Old sessions",
+    "clover.archive.loading": "Loading…",
+    "clover.archive.more": "Show older",
+    "clover.archive.mode.code": "Code",
+    "clover.archive.mode.chat": "Chat",
+    "clover.archive.mode.dispatch": "Dispatch",
+    "clover.archive.messages": {
+      "one": "{count} message",
+      "other": "{count} messages"
+    },
+    "clover.archive.untitled": "Untitled session",
+    "clover.archive.pick": "Pick a session to read it.",
+    "clover.archive.readOnly": "Read only. Start something new with a bot.",
+    "clover.archive.none": "There are no sessions from before Clover on this computer.",
+    "clover.archive.noneMatching": "No old session matches “{query}”.",
+    "clover.archive.speaker": "Assistant"
+  }
+}

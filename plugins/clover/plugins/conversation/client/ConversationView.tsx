@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "./context";
 import { afterContentChange, isAtBottom } from "./follow";
-import { IconArrowDown, IconClover } from "./icons";
+import { IconArrowDown, IconClover, IconDots } from "./icons";
 import { AgentReport } from "./messages/AgentReport";
 import { ApprovalMessage } from "./messages/ApprovalMessage";
 import { BotMessage } from "./messages/BotMessage";
@@ -92,6 +92,11 @@ export interface ConversationViewProps extends ConversationActions {
   /** The `tool.result` spot: a replacement for a call's result, or `undefined` for the default (`standard`). */
   renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
   renderMessageExtra?: (item: MessageItem) => ReactNode;
+  /** The `file.preview` spot: an attachment's preview, or `standard` (the view's own thumbnail). */
+  renderFilePreview?: (path: string, standard: ReactNode) => ReactNode;
+  /** A user's or the bot's message's menu (`menu.message`): its right-click, the context-menu key, or its ⋯ button,
+   *  at the point to show it. */
+  onMessageMenu?: (item: Extract<MessageItem, { kind: "user" | "bot" }>, at: { x: number; y: number }) => void;
   /** Start at the bottom, following new output (the default), or at the top. */
   initialFollow?: boolean;
   /** Tool items whose runs start open, by item id. */
@@ -192,6 +197,8 @@ export function ConversationView(props: ConversationViewProps) {
     onLoadEarlier,
     renderToolResult,
     renderMessageExtra,
+    renderFilePreview,
+    onMessageMenu,
     initialFollow = true,
     initialExpanded,
     onAnswerQuestion,
@@ -213,8 +220,8 @@ export function ConversationView(props: ConversationViewProps) {
     [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy],
   );
   const ctx = useMemo<MessageContext>(
-    () => ({ botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
-    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions],
+    () => ({ botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions, ...(renderFilePreview ? { preview: renderFilePreview } : {}) }),
+    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, renderFilePreview],
   );
 
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set((initialExpanded ?? []).map((id) => `tools:${id}`)));
@@ -314,6 +321,14 @@ export function ConversationView(props: ConversationViewProps) {
                 data-unit={unit.type === "message" ? unit.item.kind : unit.type}
                 data-key={unit.key}
                 data-pending={unit.type === "message" && unit.item.kind === "approval" && unit.item.state === "pending" ? "" : undefined}
+                onContextMenu={
+                  onMessageMenu && unit.type === "message" && (unit.item.kind === "user" || unit.item.kind === "bot")
+                    ? (e) => {
+                        e.preventDefault();
+                        onMessageMenu(unit.item as Extract<MessageItem, { kind: "user" | "bot" }>, { x: e.clientX, y: e.clientY });
+                      }
+                    : undefined
+                }
               >
                 <MessageUnit
                   unit={unit}
@@ -324,6 +339,21 @@ export function ConversationView(props: ConversationViewProps) {
                   renderToolResult={renderToolResult}
                 />
                 {unit.type === "message" && renderMessageExtra && <div className="cl-conv__extra">{renderMessageExtra(unit.item)}</div>}
+                {onMessageMenu && unit.type === "message" && (unit.item.kind === "user" || unit.item.kind === "bot") && !(unit.item.kind === "bot" && unit.item.streaming) && (
+                  <button
+                    type="button"
+                    className="cl-conv__menu"
+                    aria-label={S.messageMenu}
+                    aria-haspopup="menu"
+                    title={S.messageMenu}
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      onMessageMenu(unit.item as Extract<MessageItem, { kind: "user" | "bot" }>, { x: r.left, y: r.bottom });
+                    }}
+                  >
+                    <IconDots />
+                  </button>
+                )}
               </div>
             ),
           )}

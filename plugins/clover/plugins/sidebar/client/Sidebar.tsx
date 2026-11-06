@@ -22,8 +22,6 @@ import {
   IconGlobe,
   IconGrid,
   IconLink,
-  IconMore,
-  IconOutputs,
   IconPause,
   IconPlugins,
   IconPlus,
@@ -341,9 +339,7 @@ export function Sidebar(props: SidebarProps) {
       <ul className="cl-sidebar__actions">
         {action("new", <IconPlus />, side === "bots" ? S.newChat : S.newSession, props.onNew)}
         {action("search", <IconSearch />, S.search, props.onSearch)}
-        {action("outputs", <IconOutputs />, S.outputs, props.onOutputs)}
         {action("plugins", <IconPlugins />, S.plugins, props.onPlugins)}
-        {action("more", <IconMore />, S.more, props.onMore)}
       </ul>
 
       <div className="cl-sidebar__scroll">

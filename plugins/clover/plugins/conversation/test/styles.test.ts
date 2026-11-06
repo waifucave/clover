@@ -12,6 +12,8 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 const LEAVES = [
   ".cl-conv-icon", ".cl-conv-chevron", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph",
   ".cl-conv-working__text", ".cl-conv-copy__label", "::after",
+  // A message's menu button: it holds only its icon, in its own grid column beside the message.
+  ".cl-conv__menu",
 ];
 
 /** The only out-of-flow elements, each a leaf inside its own box: a copied label over its button,
