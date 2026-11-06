@@ -16,6 +16,7 @@ import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
 import { Palette, paletteCommand, fieldsOf, type PaletteCommand } from "./Palette";
+import { noArgs, runsBare } from "./args";
 import { Spot, useApprovals, useCore, useLayerMessage, usePluginApi, useSpotEntries, useT } from "./sdk";
 import { bindings, chordOf, commandFor, currentPlatform, parseChord, PALETTE_KEY, sameChord } from "./shortcuts";
 import { setTranslator } from "../runtime/strings";
@@ -165,8 +166,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       if (!name) return;
       e.preventDefault();
       const c = commands.find((x) => x.name === name);
-      if (c && fieldsOf(c.args).length > 0) setPalette({ start: name });
-      else void runCommand(name, undefined).catch(() => undefined);
+      if (c && (fieldsOf(c.args).length > 0 || !runsBare(c.args))) setPalette({ start: name });
+      else void runCommand(name, noArgs(c?.args)).catch(() => undefined);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

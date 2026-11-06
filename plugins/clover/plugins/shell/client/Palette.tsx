@@ -5,7 +5,8 @@
 // binding, which wins over the plugin's default (or Remove for none).
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { plain } from "../runtime/views";
-import { chordOf, isModifierOnly, showChord, writeChord, type Platform } from "./shortcuts";
+import { checkArgs, noArgs, runsBare, type ArgsIssue } from "./args";
+import { chordOf, isModifierOnly, reserved, showChord, writeChord, type Platform } from "./shortcuts";
 import { S } from "./strings";
 
 export interface PaletteCommand {
@@ -41,6 +42,8 @@ interface Field {
   title: string;
   type: "string" | "number" | "boolean" | "enum" | "json";
   options?: string[];
+  /** The enum's own values, by the option's index (a number stays a number). */
+  values?: unknown[];
   required: boolean;
   description?: string;
 }
@@ -56,11 +59,21 @@ export function fieldsOf(schema: Record<string, unknown> | undefined): Field[] {
       name,
       title: typeof p.title === "string" ? p.title : name,
       type,
-      ...(Array.isArray(p.enum) ? { options: (p.enum as unknown[]).map(String) } : {}),
+      ...(Array.isArray(p.enum) ? { options: (p.enum as unknown[]).map((v) => (typeof v === "string" ? v : JSON.stringify(v))), values: p.enum as unknown[] } : {}),
       required: required.includes(name),
       ...(typeof p.description === "string" ? { description: p.description } : {}),
     };
   });
+}
+
+/** One issue with the args, in words, naming the field by its title. */
+function issueText(issue: ArgsIssue, fields: readonly Field[]): string {
+  const title = fields.find((f) => f.name === issue.field)?.title ?? issue.field;
+  if (issue.kind === "missing") return S.paletteRequired(title);
+  if (issue.kind === "too-small" && issue.limit !== undefined) return issue.of ? S.paletteTooFew(title, issue.limit, issue.of) : S.paletteTooSmall(title, issue.limit);
+  if (issue.kind === "too-big" && issue.limit !== undefined) return issue.of ? S.paletteTooMany(title, issue.limit, issue.of) : S.paletteTooBig(title, issue.limit);
+  if (issue.kind === "unknown-key") return S.paletteUnknownField(title);
+  return title ? S.paletteInvalid(title) : S.paletteArgsInvalid;
 }
 
 function ArgsForm({ command, onRun, onBack }: { command: PaletteCommand; onRun: (args: Record<string, unknown>) => void; onBack: () => void }) {
@@ -87,12 +100,16 @@ function ArgsForm({ command, onRun, onBack }: { command: PaletteCommand; onRun: 
         } catch {
           return setError(S.paletteJson(f.title));
         }
-      } else args[f.name] = v;
+      } else if (f.type === "enum") args[f.name] = f.values![f.options!.indexOf(String(v))];
+      else args[f.name] = v;
     }
+    // Then the whole against the command's schema, as the core checks it (N4).
+    const checked = checkArgs(command.args, args);
+    if (!checked.ok) return setError(checked.unreadable ? S.paletteSchemaUnreadable : issueText(checked.issues[0]!, fields));
     onRun(args);
   };
   return (
-    <form className="cl-palette__form" onSubmit={submit} aria-label={S.paletteArgsFor(command.name)}>
+    <form className="cl-palette__form" onSubmit={submit} noValidate aria-label={S.paletteArgsFor(command.name)}>
       <p className="cl-palette__form-title">{command.name}</p>
       {fields.map((f) => (
         <label key={f.name} className="cl-palette__field">
@@ -146,6 +163,8 @@ export function Palette(props: PaletteProps) {
   const [form, setForm] = useState<PaletteCommand | undefined>(() => commands.find((c) => c.name === props.start));
   const [status, setStatus] = useState<{ text: string; tone: "info" | "error" } | undefined>(undefined);
   const [rebinding, setRebinding] = useState<string | undefined>(undefined);
+  /** The key just pressed was one no command takes: the row says so and waits for another. */
+  const [refused, setRefused] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), [form]);
 
@@ -158,8 +177,11 @@ export function Palette(props: PaletteProps) {
     return [...go, ...cmd];
   }, [commands, places, q]);
 
-  const run = (c: PaletteCommand, args?: Record<string, unknown>) => {
-    if (args === undefined && fieldsOf(c.args).length > 0) return setForm(c);
+  const run = (c: PaletteCommand, given?: Record<string, unknown>) => {
+    // A command that takes args asks for them; one whose schema takes none (or only optional ones it can do without)
+    // runs as it is, with what its schema takes (`{}` for an object), checked first (N4).
+    if (given === undefined && (fieldsOf(c.args).length > 0 || !runsBare(c.args))) return setForm(c);
+    const args = given ?? noArgs(c.args);
     setStatus({ text: S.paletteRunning(c.name), tone: "info" });
     props.onRun(c.name, args).then(
       () => props.onClose(),
@@ -190,9 +212,15 @@ export function Palette(props: PaletteProps) {
         if (rebinding) {
           e.preventDefault();
           e.stopPropagation();
-          if (e.key === "Escape") return setRebinding(undefined);
+          if (e.key === "Escape") {
+            setRefused(false);
+            return setRebinding(undefined);
+          }
           if (isModifierOnly(e.nativeEvent)) return;
-          props.onRebind?.(rebinding, writeChord(chordOf(e.nativeEvent), platform));
+          const chord = chordOf(e.nativeEvent);
+          if (reserved(chord, platform)) return setRefused(true);
+          setRefused(false);
+          props.onRebind?.(rebinding, writeChord(chord, platform));
           return setRebinding(undefined);
         }
         if (e.key === "ArrowDown") {
@@ -244,7 +272,7 @@ export function Palette(props: PaletteProps) {
                 <span className="cl-palette__keys">
                   {rebinding === r.c.name ? (
                     <span className="cl-palette__kbd" role="status">
-                      {S.palettePressKeys}
+                      {refused ? S.paletteKeyTaken : S.palettePressKeys}
                     </span>
                   ) : (
                     key && <kbd className="cl-palette__kbd">{showChord(key, platform)}</kbd>

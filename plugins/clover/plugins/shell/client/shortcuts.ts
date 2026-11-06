@@ -38,7 +38,7 @@ export function parseChord(text: string): Chord | undefined {
   if (text.endsWith("++")) parts.push("+");
   const key = parts.pop();
   if (!key) return undefined;
-  const chord: Chord = { mod: false, ctrl: false, alt: false, shift: false, meta: false, key: key.length === 1 ? key.toLowerCase() : key.toLowerCase() };
+  const chord: Chord = { mod: false, ctrl: false, alt: false, shift: false, meta: false, key: named(key.toLowerCase()) };
   for (const p of parts) {
     const m = MODS[p.toLowerCase()];
     if (!m) return undefined;
@@ -58,11 +58,15 @@ export function sameChord(a: Chord, b: Chord, platform: Platform): boolean {
   return x.ctrl === y.ctrl && x.meta === y.meta && x.alt === y.alt && x.shift === y.shift && x.key === y.key;
 }
 
+/** The same key by its other names: `event.key`'s (`ArrowUp`, `" "`, `Esc`) and the manifest's (`up`, `space`). */
+const ALIASES: Record<string, string> = { arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", " ": "space", spacebar: "space", esc: "escape", return: "enter", del: "delete" };
+const named = (key: string) => ALIASES[key] ?? key;
+
 /** The key a key press names, lower-case (`event.key`; a digit or letter as typed without Shift where the code says). */
 function pressedKey(e: Pick<KeyboardEvent, "key" | "code">): string {
   if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(e.code)) return e.code.slice(5);
-  return e.key.toLowerCase();
+  return named(e.key.toLowerCase());
 }
 
 /** A key press as a chord (`mod` left false: it is resolved per platform when compared). */
@@ -88,15 +92,33 @@ export function showChord(text: string, platform: Platform): string {
   return [r.ctrl ? "Ctrl" : "", r.alt ? "Alt" : "", r.shift ? "Shift" : "", r.meta ? "Win" : "", key].filter(Boolean).join("+");
 }
 
-/** The app's own shortcuts and the palette's: no command takes them. */
-export const CORE_KEYS = ["Mod+Q", "Mod+W", "Mod+,", "Mod+K"] as const;
+/** The app's own shortcuts: lane E's main process takes them ahead of every layer (`apps/desktop/src/main/shortcuts.ts`'s
+ *  `appShortcut`: ⌘Q, ⌘W and ⌘, with or without Shift), checked against it in the tests until E exports the list (asked in the PR). */
+export const APP_KEYS = ["Mod+Q", "Mod+W", "Mod+,", "Mod+Shift+,"] as const;
+
+/** The keys of E's Edit menu (Electron's `editMenu` role: undo, redo, cut, copy, paste, paste and match style, select
+ *  all) and find: what typing and text fields need, in the composer and everywhere else (review N3). */
+export const EDIT_KEYS = ["Mod+Z", "Mod+Shift+Z", "Mod+Y", "Mod+X", "Mod+C", "Mod+V", "Mod+Shift+V", "Mod+Alt+Shift+V", "Mod+A", "Mod+F"] as const;
+
+/** Moving the focus and acting on it (WCAG 2.1.1): Tab and Shift+Tab, Enter, Space, Escape, the arrows, Home, End,
+ *  Page Up and Down, Backspace, Delete, and F6 between the window's parts. Unmodified, no command takes them. */
+export const FOCUS_KEYS = ["Tab", "Shift+Tab", "Enter", "Shift+Enter", "Space", "Shift+Space", "Escape", "Up", "Down", "Left", "Right", "Shift+Up", "Shift+Down", "Shift+Left", "Shift+Right", "Home", "End", "PageUp", "PageDown", "Backspace", "Delete", "F6", "Shift+F6"] as const;
+
+/** The keys no command takes, not a plugin's default and not the user's binding either: the app's, the palette's, the
+ *  Edit menu's and the focus keys. */
+export const CORE_KEYS: readonly string[] = [...APP_KEYS, "Mod+K", ...EDIT_KEYS, ...FOCUS_KEYS];
 export const PALETTE_KEY = "Mod+K";
 
 /** A key press is a modifier alone (Shift, ⌘…): nothing to bind yet. */
 export const isModifierOnly = (e: Pick<KeyboardEvent, "key">) => ["Shift", "Control", "Alt", "Meta", "OS"].includes(e.key);
 
-/** Each command's shortcut: the user's own binding (null: none), else its default key, unless a core shortcut or a
- *  binding the user made has that key. A key two defaults share goes to neither, so neither runs by surprise. */
+/** Whether a key is one no command may take (`CORE_KEYS`). */
+export function reserved(key: Chord, platform: Platform): boolean {
+  return CORE_KEYS.some((k) => sameChord(parseChord(k)!, key, platform));
+}
+
+/** Each command's shortcut: the user's own binding (null: none), else its default key, unless a core key (`CORE_KEYS`)
+ *  or a binding the user made has that key. A key two defaults share goes to neither, so neither runs by surprise. */
 export function bindings(commands: readonly { name: string; key?: string }[], user: Readonly<Record<string, string | null>>, platform: Platform): Map<string, string> {
   const out = new Map<string, string>();
   const taken: Chord[] = CORE_KEYS.map((k) => parseChord(k)!);

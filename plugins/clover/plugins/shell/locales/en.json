@@ -61,6 +61,17 @@
     "clover.shell.paletteBot": "Bot",
     "clover.shell.paletteSession": "Agent or coding session",
     "clover.shell.noCore": "Clover's core isn't reachable.",
-    "clover.shell.output": "Output"
+    "clover.shell.output": "Output",
+    "clover.shell.paletteKeyTaken": "That key is Clover's own. Press another, or Esc",
+    "clover.shell.paletteTooSmall": "{field} must be at least {limit}.",
+    "clover.shell.paletteTooBig": "{field} must be at most {limit}.",
+    "clover.shell.paletteUnknownField": "This command doesn't take {field}.",
+    "clover.shell.paletteInvalid": "{field} isn't what this command takes.",
+    "clover.shell.paletteArgsInvalid": "These aren't what this command takes.",
+    "clover.shell.paletteSchemaUnreadable": "This command's arguments can't be checked, so it can't run from here.",
+    "clover.shell.paletteTooFew.characters": "{field} needs at least {count} characters.",
+    "clover.shell.paletteTooFew.items": "{field} needs at least {count} items.",
+    "clover.shell.paletteTooMany.characters": "{field} takes at most {count} characters.",
+    "clover.shell.paletteTooMany.items": "{field} takes at most {count} items."
   }
 }

@@ -19,6 +19,9 @@ export const S = {
     return t("clover.shell.noCore");
   },
   // The command palette.
+  get paletteKeyTaken() {
+    return t("clover.shell.paletteKeyTaken");
+  },
   get palette() {
     return t("clover.shell.palette");
   },
@@ -48,6 +51,18 @@ export const S = {
     return t("clover.shell.paletteRequiredMark");
   },
   paletteNumber: (field: string) => t("clover.shell.paletteNumber", { field }),
+  paletteTooSmall: (field: string, limit: number) => t("clover.shell.paletteTooSmall", { field, limit }),
+  paletteTooBig: (field: string, limit: number) => t("clover.shell.paletteTooBig", { field, limit }),
+  paletteTooFew: (field: string, count: number, of: "characters" | "items") => t(`clover.shell.paletteTooFew.${of}`, { field, count }),
+  paletteTooMany: (field: string, count: number, of: "characters" | "items") => t(`clover.shell.paletteTooMany.${of}`, { field, count }),
+  paletteUnknownField: (field: string) => t("clover.shell.paletteUnknownField", { field }),
+  paletteInvalid: (field: string) => t("clover.shell.paletteInvalid", { field }),
+  get paletteArgsInvalid() {
+    return t("clover.shell.paletteArgsInvalid");
+  },
+  get paletteSchemaUnreadable() {
+    return t("clover.shell.paletteSchemaUnreadable");
+  },
   paletteJson: (field: string) => t("clover.shell.paletteJson", { field }),
   paletteArgsFor: (command: string) => t("clover.shell.paletteArgsFor", { command }),
   paletteRunning: (command: string) => t("clover.shell.paletteRunning", { command }),
