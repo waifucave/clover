@@ -129,6 +129,25 @@ describe("Agent", () => {
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
   });
 
+  test("a bot no one had when the agent started is covered too: its memory is in the pattern, and a request into it is refused", async () => {
+    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit notes", paths: [] } }, { say: "Done." }]] });
+    // `latecomer` has no folder at the start, so no denial names it; the pattern and the request check still hold.
+    const late = join(w.cloverHome, "bots", "latecomer", "memory", "MEMORY.md");
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    script.script[0]![0]!.tool.paths = [late];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    let fence: { denyRead: string[]; denyWrite: string[] } | undefined;
+    const start = w.backend.start.bind(w.backend);
+    w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
+    await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
+    expect(fence!.denyRead.some((p) => p.includes("latecomer"))).toBe(false);
+    expect(fence!.denyRead).toContain(join(w.cloverHome, "bots", "*", "memory"));
+    expect(fence!.denyWrite).toContain(join(w.cloverHome, "bots"));
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
+  });
+
   test("bots' memory is out of every agent's reach: denied to its sandbox, and a request into it refused without a card", async () => {
     const w = make({ script: [[{ tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
     // Another bot's memory, under a folded name, and the delegating bot's own (which it doesn't have yet).
@@ -738,9 +757,11 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     const dir = join(w.cloverHome, "run", "agents", r.sessionId);
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
     // The fenced set, and bots' memory (the owner's decision).
-    expect(policy.denyWrite).toEqual([...w.fence.policy().denyWrite, join(w.cloverHome, "bots", "alpha", "memory")]);
+    expect(policy.denyWrite).toEqual([
+      ...w.fence.policy().denyWrite, join(w.cloverHome, "bots"), join(w.cloverHome, "bots", "*", "memory"), join(w.cloverHome, "bots", "alpha", "memory"),
+    ]);
     expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
-    expect(policy.denyRead).toContain(join(w.cloverHome, "bots", "alpha", "memory"));
+    expect(policy.denyRead).toContain(join(w.cloverHome, "bots", "*", "memory"));
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
     expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
     expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");

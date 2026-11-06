@@ -461,7 +461,7 @@ export class AgentManager {
         tools: e.bridgeTools,
       },
       // Bots' memory is out of every agent's reach (the owner's decision): denied to its sandbox for reads and writes.
-      fence: withMemoryDenied(this.#o.fence.policy(), botMemoryFolders(this.#o.home, e.bot)),
+      fence: withMemoryDenied(this.#o.fence.policy(), this.#o.home, botMemoryFolders(this.#o.home, e.bot)),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       admitted,

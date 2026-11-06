@@ -1,7 +1,10 @@
 // Bots' memory is out of every agent's reach (the owner's decision for K-M3): an ACP or delegated agent, the delegating
 // bot's own included, can't read or write any bot's memory folder (`<home>/bots/<bot>/memory/`, which the bot sees as
-// `home/memory`). The folders go into every agent's sandbox as read and write denials, and a permission request that
-// touches one is refused without a card, whatever the level. Lane C's fence refuses a root there (`checkAgentRoot`).
+// `home/memory`). Denied by pattern, so a bot created after the agent started is covered too: every agent's sandbox
+// gets `<home>/bots/*/memory` as a read denial (the runtime's sandbox and Claude Code's rules take globs), with each
+// bot's folder named as well for a sandbox that doesn't, and `<home>/bots` whole as a write denial, which needs no glob
+// (an agent never writes there: the daemon writes its transcripts). A permission request into any bot's memory is
+// refused without a card, whatever the level. Lane C's fence refuses a root there (`checkAgentRoot`).
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
@@ -33,10 +36,20 @@ export function touchesBotMemory(home: string, path: string, os?: Os): boolean {
   return rest.length >= 2 && foldName(rest[1]!, os) === "memory";
 }
 
-/** The policy with the memory folders denied for reads and writes. */
-export function withMemoryDenied(policy: SandboxPolicy, folders: readonly string[]): SandboxPolicy {
-  const add = (list: readonly string[]) => [...list, ...folders.filter((f) => !list.includes(f))];
-  return { ...policy, denyRead: add(policy.denyRead), denyWrite: add(policy.denyWrite) };
+/** Every bot's memory, as a pattern: `<home>/bots/<any bot>/memory` with a `*` for the bot. */
+export function botMemoryPattern(home: string): string {
+  return join(home, "bots", "*", "memory");
+}
+
+/** The policy with bots' memory denied: reads by the pattern and each known folder, writes by the pattern and the whole
+ *  `<home>/bots`. */
+export function withMemoryDenied(policy: SandboxPolicy, home: string, folders: readonly string[]): SandboxPolicy {
+  const add = (list: readonly string[], more: readonly string[]) => [...list, ...more.filter((f, i) => !list.includes(f) && more.indexOf(f) === i)];
+  return {
+    ...policy,
+    denyRead: add(policy.denyRead, [botMemoryPattern(home), ...folders]),
+    denyWrite: add(policy.denyWrite, [join(home, "bots"), botMemoryPattern(home), ...folders]),
+  };
 }
 
 /** Deny rules for the file tools: a read-denied folder for every file tool, a write-denied one for the editing ones. */

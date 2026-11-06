@@ -26,7 +26,7 @@ import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPath
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
-import { botMemoryFolders, fileToolDenials, touchesBotMemory, withMemoryDenied } from "../memory";
+import { botMemoryFolders, botMemoryPattern, fileToolDenials, touchesBotMemory, withMemoryDenied } from "../memory";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -526,9 +526,11 @@ describe("bots' memory", () => {
       expect(touchesBotMemory(home, join(home, "bots", "beta", "agents", "x"))).toBe(false);
       expect(touchesBotMemory(home, home)).toBe(false);
       expect(touchesBotMemory(home, "/elsewhere/bots/beta/memory")).toBe(false);
-      const p = withMemoryDenied({ allowWrite: [home], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, ["/m1", "/a"]);
-      expect(p.denyWrite).toEqual(["/a", "/m1"]);
-      expect(p.denyRead).toEqual(["/m1", "/a"]);
+      // By pattern, so a bot that comes later is covered; writes to all of `bots` need no glob.
+      const p = withMemoryDenied({ allowWrite: [home], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, home, ["/m1", "/a"]);
+      expect(botMemoryPattern(home)).toBe(join(home, "bots", "*", "memory"));
+      expect(p.denyRead).toEqual([join(home, "bots", "*", "memory"), "/m1", "/a"]);
+      expect(p.denyWrite).toEqual(["/a", join(home, "bots"), join(home, "bots", "*", "memory"), "/m1"]);
       expect(fileToolDenials(["/m1"], ["/w"])).toEqual(["Read(//m1)", "Read(//m1/**)", "Edit(//m1)", "Edit(//m1/**)", "Write(//m1)", "Write(//m1/**)", "Glob(//m1)", "Glob(//m1/**)", "Grep(//m1)", "Grep(//m1/**)", "NotebookEdit(//m1)", "NotebookEdit(//m1/**)", "Edit(//w)", "Edit(//w/**)", "Write(//w)", "Write(//w/**)", "NotebookEdit(//w)", "NotebookEdit(//w/**)"]);
     } finally {
       rmSync(home, { recursive: true, force: true });
