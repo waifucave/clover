@@ -4,7 +4,7 @@
 // the lanes the two servers declare (and that no other capability tool has one), and that the DAEMON side
 // tolerates a `Computer` call and a `Browser` call in flight at the same time.
 import { describe, expect, test } from "bun:test";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { BROWSER_CANCEL_SETTLE_MS, type BrowserToolDeps } from "../../src/agent/tools/browser";
 import type { ComputerUseService, CuActResult } from "../../src/agent/computer-use";
 import type { PanelCommandOutcome } from "../../src/panel/commands";

@@ -39,7 +39,7 @@ describe("the daemon's Clover side, booted", () => {
     expect(existsSync(tokenFile)).toBe(true);
     if (process.platform !== "win32") expect(statSync(tokenFile).mode & 0o777).toBe(0o600);
     expect(daemon.pair?.launcher).toBeNull(); // no app installed for a test daemon: it runs alone
-    expect(await checkDaemonServer(daemon.socketPath)).toMatchObject({ ok: true }); // what the app runs before its hello
+    expect(await checkDaemonServer(daemon.socketPath, { image: process.execPath })).toMatchObject({ ok: true }); // what the app runs before its hello
     const c = await rpc(daemon.socketPath);
     const hello = await c.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(tokenFile, "utf8"), clientName: "test-app", features: ["app.quit"] });
     expect(hello.error).toBeUndefined();

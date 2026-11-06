@@ -33,6 +33,7 @@ function k32(): FfiLib | null {
     Process32NextW: { args: ["u64", "ptr"], returns: "i32" },
     CloseHandle: { args: ["u64"], returns: "i32" },
     GetLastError: { args: [], returns: "u32" },
+    GetCurrentProcess: { args: [], returns: "u64" },
   });
 }
 
@@ -179,3 +180,32 @@ export class AgentJob {
 }
 
 export const JOB_LIMITS = { JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE } as const;
+
+// The daemon's own job (review B1): the daemon joins it at start, so every process it starts, however indirectly,
+// runs in it (no breakaway), and a process in it is never the user or the app. The app starts through the Task
+// Scheduler and the CLI from the user's terminal, so neither is. The agents' jobs nest inside it. It has no
+// kill-on-close: what the daemon leaves running when it exits is the agents' jobs' and the stop's to end.
+let daemonJob: bigint | null = null;
+
+/** Puts this process (the daemon) in a job of its own. False off Windows, or when it can't. */
+export function enterDaemonJob(): boolean {
+  const k = k32();
+  if (!k) return false;
+  if (daemonJob !== null) return true;
+  const h = k.CreateJobObjectW!(null, null) as bigint;
+  if (!h) return false;
+  if ((k.AssignProcessToJobObject!(h, k.GetCurrentProcess!()) as number) === 0) { k.CloseHandle!(h); return false; }
+  daemonJob = h;
+  return true;
+}
+
+/** Whether `pid` runs in the daemon's job (always false before `enterDaemonJob`, and for the daemon itself). */
+export function inDaemonJob(pid: number): boolean {
+  const k = k32();
+  if (!k || daemonJob === null || pid === process.pid) return false;
+  const job = daemonJob;
+  return withProcess(pid, PROCESS_QUERY_LIMITED_INFORMATION, (h) => {
+    const r = new Int32Array(1);
+    return (k.IsProcessInJob!(h, job, ptr(r)) as number) !== 0 && r[0] !== 0;
+  }, false);
+}

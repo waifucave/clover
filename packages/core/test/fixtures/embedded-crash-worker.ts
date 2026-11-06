@@ -2,7 +2,7 @@
 // (the production bridge, imported for its side effect) plus one listener that throws, uncaught, once
 // the session has received its first stdin chunk. Handed to a test daemon through
 // `startDaemon({ embeddedHost: { workerEntry } })`; never compiled into anything.
-import "@yanlinglabs/winter-agent-runtime/embedded-worker";
+import "@waifucave/clover-agent-runtime/embedded-worker";
 import { isMainThread } from "node:worker_threads";
 
 declare const self: { addEventListener(type: "message", listener: (event: MessageEvent) => void): void };

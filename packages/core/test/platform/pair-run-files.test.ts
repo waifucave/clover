@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appStartPath, appTokenPath, mintAppToken, removeAppToken, writeAppStart } from "../../src/platform/pair/run-files";
+import { appStartPath, appTokenPath, lockRunDir, mintAppToken, removeAppToken, writeAppStart } from "../../src/platform/pair/run-files";
+import { bunRunner, windowsUserSid } from "../../src/platform/login/live";
 import { appStarter, type AppLauncher } from "../../src/platform/pair/launch";
 import type { Runner } from "../../src/platform/login/live";
 
@@ -33,6 +34,31 @@ describe("the run files the daemon leaves for the app (E-M1, R2)", () => {
     expect(calls[0]!.slice(0, 1)).toEqual(["icacls"]);
     expect(calls[0]![1]).toMatch(/app\.token\..+\.tmp$/); // the temporary name, not the final one
     expect(calls[0]!.slice(2)).toEqual(["/inheritance:r", "/grant:r", "*S-1-5-21-1-2-3-1001:F"]);
+  });
+
+  test("review S6: the token is written only after its ACL is set, so the file is empty until then", async () => {
+    const dir = run();
+    const seen: string[] = [];
+    const deps = { os: "win32" as const, userSid: "S-1-5-21-1-2-3-1001", run: (async (argv: readonly string[]) => { seen.push(readFileSync(argv[1]!, "utf8")); return { ok: true, out: "" }; }) as Runner };
+    const token = await mintAppToken(dir, deps);
+    expect(seen).toEqual([""]); // what icacls locked down held nothing yet
+    expect(readFileSync(appTokenPath(dir), "utf8")).toBe(token);
+  });
+
+  test("the run folder is made the user's alone before anything is written in it", async () => {
+    const dir = join(run(), "run");
+    if (process.platform === "win32") {
+      const sid = (await windowsUserSid(bunRunner))!;
+      await lockRunDir(dir, { os: "win32", run: bunRunner, userSid: sid });
+      const acl = (await bunRunner(["icacls", dir])).out;
+      expect(acl).not.toMatch(/Authenticated Users|BUILTIN\\Users|Everyone/);
+      expect(acl).not.toMatch(/\(I\)/); // nothing inherited
+      await mintAppToken(dir, { os: "win32", run: bunRunner, userSid: sid });
+      expect(readFileSync(appTokenPath(dir), "utf8")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    } else {
+      await lockRunDir(dir, native);
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+    }
   });
 
   test("Windows: no SID or a refused ACL writes no token at all", async () => {

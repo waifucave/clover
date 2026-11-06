@@ -5,8 +5,8 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
-import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/base-theme/src/index";
-import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/base-theme/src/layout-check";
+import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
+import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/plugins/base-theme/src/layout-check";
 import theme from "../theme.json" with { type: "json" };
 import layout from "../layout.json" with { type: "json" };
 

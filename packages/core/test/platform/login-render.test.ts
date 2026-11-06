@@ -127,3 +127,13 @@ describe("login renderers run supervise, crash-only", () => {
     expect(appUnitName("dev")).toBe("clover-app-dev.service");
   });
 });
+
+describe("login-start paths with control characters (review M4)", () => {
+  test("a newline in the home or a binary is refused, never written into a unit", async () => {
+    const { renderSystemdUnit, renderXdgAutostart, renderLaunchdPlist } = await import("../../src/platform/login/render");
+    const base = { os: "linux" as const, profile: "dist" as const, bin: "/opt/clover/clover-core", home: "/home/me/.clover", userHome: "/home/me" };
+    expect(() => renderSystemdUnit({ ...base, bin: "/opt/clover\nExecStartPre=/bin/evil" } as never)).toThrow(/control character/);
+    expect(() => renderXdgAutostart({ ...base, app: { bin: "/opt/a\nExec=/bin/evil" } } as never)).toThrow(/control character/);
+    expect(() => renderLaunchdPlist({ ...base, os: "darwin", home: "/Users/me/.clo\u0007ver" } as never)).toThrow(/control character/);
+  });
+});

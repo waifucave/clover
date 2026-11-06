@@ -17,7 +17,9 @@ import {
   CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
+import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type CloverTokens } from "../auth/clover-tokens";
+import { proveDaemon } from "../platform/pair/run-files";
 import { gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
 import { probePeer, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
@@ -35,6 +37,9 @@ export interface CloverConn {
   readonly caller: Caller;
   readonly features: readonly string[];
   readonly clientName: string;
+  /** A plugin-host connection's verified process (review S1): handlers take the call's process from here, never
+   *  from a plugin id a plugin could share. */
+  readonly hostProcess?: { readonly hostProcess: "clover" | "shared" | "own"; readonly pluginId?: string };
   /** Areas this connection subscribed to (`events.subscribe`). */
   readonly areas: Set<string>;
   /** Send the client a request from the daemon (`app.quit`, `app.show`, `pluginHost.invoke`…); its id. */
@@ -116,10 +121,16 @@ export interface CloverServerDeps {
   handOver?(): Promise<void>;
   /** The pid the daemon started a plugin-host process with. */
   hostPidOf?(hostProcess: "clover" | "shared" | "own", pluginId?: string): number | undefined;
+  /** The link sidecar's pid (lane H): the only local process that says hello as `remote`, `web` or `peer`. */
+  linkPid?(): number | undefined;
+  /** This run's app token, for `protocol.prove` (the app's check of the daemon before its hello). */
+  readonly appToken?: string;
   /** Other lanes' Clover methods, by wire name. */
   readonly handlers?: Readonly<Record<string, CloverHandler>>;
   readonly features?: readonly string[];
   readonly os?: DaemonPlatform;
+  /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
+  readonly endpoint?: string;
   /** Test seam: the peer of a socket. */
   probe?(socket: object): PeerFacts;
   /** K's bridge tokens, and the session's bot for the hello's caller. Without it a `bridge` hello is checked
@@ -136,9 +147,24 @@ function currentOs(): DaemonPlatform {
   return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
 }
 
+/** The hash a signed answer binds a call with (review S7): SHA-256 over the method and its params in a canonical
+ *  JSON (object keys sorted, no spaces), hex. C-M3's sealed cards adopt it. */
+export function canonicalCallHash(method: string, params: unknown): string {
+  const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon)
+    : v !== null && typeof v === "object" ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+    : v;
+  return createHash("sha256").update(JSON.stringify(canon({ method, params: params ?? null }))).digest("hex");
+}
+
 export interface CloverServer {
-  /** The listener's `open`: on Windows, finds the connection's peer among the daemon's handles. */
-  opened(socket: object): void;
+  /** The listener's `open`: on Windows, finds the connection's peer among the daemon's handles. True when the
+   *  connection was made before the pipe's DACL was locked down, so the listener closes it (review M3). */
+  opened(socket: object): boolean;
+  /** Right after the listener locked the pipe's DACL down (Windows). */
+  lockedDown(): void;
+  /** `protocol.prove {nonce}` before the hello (review S3): an HMAC under this run's app token over the app's
+   *  nonce and the pid the daemon sees on this very connection, so a proof relayed from another connection fails. */
+  prove(socket: object, params: unknown): { proof: string; pid: number };
   /** Whether a `protocol.hello`'s params are Clover's (protocol version 1 or later). */
   isCloverHello(params: unknown): boolean;
   /** `end` closes the connection (a revoked bridge token's, a refused bridge). */
@@ -151,15 +177,17 @@ export interface CloverServer {
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
   /** Runs a method for a caller with no connection here: another computer's `peer.call` (lane H's door), under
-   *  `role`'s allow list. `answered`: the door has checked the user's signed answer bound to this very call, which
-   *  stands in for the user on a `userOnly` method; nothing else sets it. */
-  dispatch(method: string, params: unknown, as: { caller: Caller; role: CloverRole; answered?: boolean }): Promise<unknown>;
+   *  `role`'s allow list. `answer`: the user's signed answer the door verified, by its card id and the call hash it
+   *  binds (`canonicalCallHash`). It stands in for the user on a `userOnly` method only for this method and these
+   *  params, and once (review S7). */
+  dispatch(method: string, params: unknown, as: { caller: Caller; role: CloverRole; answer?: { cardId: string; callHash: string } }): Promise<unknown>;
   dispose(): void;
 }
 
 export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const os = deps.os ?? currentOs();
-  const pipePeers = os === "win32" ? new WindowsPipePeers() : null;
+  const pipePeers = os === "win32" ? new WindowsPipePeers(deps.endpoint) : null;
+  const spentAnswers = new Set<string>();
   const conns = new Map<number, CloverConn>();
   let requestSeq = 0;
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
@@ -173,8 +201,11 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       if (now() - beat.heard > beatTimeout) {
         stopBeat(conn.connId);
         deps.log?.(`[clover] the app (connection ${conn.connId}) didn't answer app.ping for ${beatTimeout} ms`);
+        // With no pid it can't be ended, and a new one beside it would be a second app (review M6): its
+        // connection closing counts as the crash instead.
+        if (beat.pid === null) { deps.log?.("[clover] its process is unknown: waiting for its connection to close"); return; }
         deps.pair?.appHung(String(conn.connId));
-        if (beat.pid !== null) killApp(beat.pid);
+        killApp(beat.pid);
         return;
       }
       beat.pending.add(conn.send("app.ping", {}));
@@ -268,7 +299,18 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   };
 
   return {
-    opened(socket) { pipePeers?.opened(socket); },
+    opened(socket) { pipePeers?.opened(socket); return pipePeers?.isEarly(socket) ?? false; },
+
+    lockedDown() { pipePeers?.lockedDown(); },
+
+    prove(socket, params) {
+      const nonce = (params as { nonce?: unknown } | null)?.nonce;
+      if (typeof nonce !== "string" || !/^[A-Za-z0-9_-]{22,128}$/.test(nonce)) throw new CloverRpcError(ERR.INVALID_PARAMS, "protocol.prove takes a base64url nonce of 16 to 96 bytes");
+      if (deps.appToken === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, "this daemon has no app token");
+      const pid = peerOf(socket).pid;
+      if (pid === null) throw new CloverRpcError(CLOVER_ERR.PROCESS_REFUSED, "this connection's process is unknown");
+      return { proof: proveDaemon(deps.appToken, nonce, pid), pid };
+    },
 
     // Clover's when it names version 1 or later and one of Clover's roles: an inherited role
     // (harness, admin, plugin) at any other version keeps the inherited path and its VERSION_MISMATCH.
@@ -288,6 +330,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       let caller: Caller;
       let peer: PeerFacts;
       let bridge: { sessionId: string; connection: number } | undefined;
+      let hostProcess: CloverConn["hostProcess"];
       if (h.role === "bridge" && deps.bridge) {
         peer = peerOf(socket);
         const b = await bridgeHello(socket, h, peer, end);
@@ -298,14 +341,16 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
         if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
         peer = peerOf(socket);
         const hostPid = binding.role === "plugin-host" ? deps.hostPidOf?.(binding.hostProcess, binding.pluginId) : undefined;
-        const resolved = resolveCloverCaller({ binding, peer, processes: deps.processes, ...(hostPid !== undefined ? { hostPid } : {}) });
+        const linkPid = deps.linkPid?.();
+        const resolved = resolveCloverCaller({ binding, peer, processes: deps.processes, ...(hostPid !== undefined ? { hostPid } : {}), ...(linkPid !== undefined ? { linkPid } : {}) });
         if ("code" in resolved) throw new CloverRpcError(resolved.code, resolved.message);
         caller = resolved;
+        if (binding.role === "plugin-host") hostProcess = { hostProcess: binding.hostProcess, ...(binding.pluginId ? { pluginId: binding.pluginId } : {}) };
         if (gone.has(socket)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
       }
       if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
       const conn: CloverConn = {
-        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(),
+        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}),
         send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
         notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
         follows: new Map(),
@@ -326,13 +371,20 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
 
     async dispatch(method, params, as) {
       if (method === "protocol.hello") throw new CloverRpcError(ERR.INVALID_REQUEST, "a hello is a connection's");
+      let answered = false;
+      if (as.answer) {
+        if (as.answer.callHash !== canonicalCallHash(method, params)) throw new CloverRpcError(CLOVER_ERR.NOT_THE_USER, "the answer is for another call");
+        if (spentAnswers.has(as.answer.cardId)) throw new CloverRpcError(CLOVER_ERR.NOT_THE_USER, "the answer was already used");
+        spentAnswers.add(as.answer.cardId);
+        answered = true;
+      }
       const conn: CloverConn = {
         connId: -1, role: as.role, caller: as.caller, features: [], clientName: "peer.call", areas: new Set(),
         send() { throw new CloverRpcError(ERR.INVALID_REQUEST, "a peer.call has no connection to send on"); },
         notify() { /* nowhere to send it */ },
         follows: new Map(),
       };
-      try { return await run(conn, method, params, as.answered === true); }
+      try { return await run(conn, method, params, answered); }
       finally { for (const stop of conn.follows.values()) { try { stop(); } catch { /* gone */ } } }
     },
 

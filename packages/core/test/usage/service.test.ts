@@ -2,7 +2,7 @@
 // delta and the record), ranges and rollups, and the subscriptions tracker.
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
 import { UsageService, rangeWindow, subscriptionCycle } from "../../src/usage/service";

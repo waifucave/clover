@@ -1,4 +1,4 @@
-import type { CanUseTool, Options } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, Options } from "@waifucave/clover-agent-sdk";
 import { CoworkGuestRuntimeSupervisor } from "./guest-runtime";
 import { CoworkError } from "./types";
 

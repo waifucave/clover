@@ -65,6 +65,9 @@ describe("diagnoseRuntimes (clover doctor's runtimes section, fix round 1 Major-
     const report = await diagnoseRuntimes({ execPath, home, env: {}, settings });
 
     expect(report.clover.resolved).toEqual({ path: settingClover, source: "setting" });
+    // A-M1: sessions run embedded; the executable is reported as one no session runs.
+    expect(report.sessions).toBe("embedded");
+    expect(report.clover.usedBySessions).toBe(false);
     // The bundle records are read independently of the ladder outcome — still reported here.
     expect(report.bundle?.versions?.winterAgentSdk).toBe(REQUIRED_WINTER_AGENT_SDK);
   });

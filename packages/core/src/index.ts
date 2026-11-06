@@ -1,6 +1,6 @@
 // C0 (review S1): loading core installs Clover's process-wide provider identity (`runtime-sdk/process-identity.ts`).
 export { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
-export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
+export { startDaemon, stopOnSignals, CORE_VERSION, type RunningDaemon } from "./daemon";
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
 export {
@@ -22,7 +22,7 @@ export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "
 export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
 export { cloverCall } from "./ipc/clover-client";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
-export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
+export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { AgentJob } from "./platform/win-job";

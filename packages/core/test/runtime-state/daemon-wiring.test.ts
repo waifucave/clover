@@ -8,8 +8,8 @@
 import { storeProjectsDir } from "../../src/agent/paths";
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { compatibilityKeys } from "@yanlinglabs/winter-agent-sdk";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -239,7 +239,7 @@ describe("daemon wiring — the runtime store is not readable by the model", () 
     await withTempHome(async (home) => {
       const { controlPlaneDenyRules } = await import("../../src/runtime-sdk/mode-options");
       const { tmpdir } = await import("node:os");
-      const { RESUME_STAGING_PREFIX } = await import("@yanlinglabs/winter-runtime-sdk");
+      const { RESUME_STAGING_PREFIX } = await import("../../src/runtime-sdk/host");
       const deny = controlPlaneDenyRules(home);
       // `//`-anchored (filesystem-root), never a bare single `/` (inert for an SDK-seeded rule —
       // see `fsRootAnchored`'s own comment), and the pattern itself is rooted at the SYSTEM temp

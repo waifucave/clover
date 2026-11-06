@@ -11,20 +11,20 @@
 //   3. with the same `Edit` rule, a Write to `<home>/settings.json` (a control-plane file) is refused
 //      and never lands — deny before allow.
 // HERMETIC: `env` is built by `buildChildEnv` from a temp home; the model is a scripted double.
-// SKIPS without a binary (`describeWithWinterBinary`).
+// Runs on the embedded runtime every session runs (`describeWithEmbeddedRuntime`, A-M1 review S7).
 import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, type CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import { query, type CanUseTool, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import type { CredentialPresence } from "../../src/runtime-sdk/host";
 import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
-async function writeOnce(bin: string, opts: { home: string; cwd: string; target: string; persistedAllow?: string[] }): Promise<{ asked: string[] }> {
+async function writeOnce(spawn: SpawnClaudeCodeProcess, opts: { home: string; cwd: string; target: string; persistedAllow?: string[] }): Promise<{ asked: string[] }> {
   const asked: string[] = [];
   const canUseTool: CanUseTool = async (name) => {
     asked.push(name);
@@ -34,7 +34,8 @@ async function writeOnce(bin: string, opts: { home: string; cwd: string; target:
     mode: "code", policy: "ask", sessionId: crypto.randomUUID(), home: opts.home, cwd: opts.cwd,
     model: "winter-test/laneb" as ModelTag, credentials: { byProvider: {} } as unknown as CredentialPresence,
     systemPrompt: "You are a measurement.", exaKeyPresent: false,
-    spawn: { pathToClaudeCodeExecutable: bin }, canUseTool, abort: new AbortController(),
+    // As production spawns every session (`create.ts`): the path is only a label, the hook runs the Worker.
+    spawn: { pathToClaudeCodeExecutable: "clover-embedded", spawnClaudeCodeProcess: spawn }, canUseTool, abort: new AbortController(),
     baseEnv: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: opts.home, TMPDIR: opts.home },
     ...(opts.persistedAllow === undefined ? {} : { persistedAllow: opts.persistedAllow }),
   });
@@ -53,23 +54,23 @@ async function writeOnce(bin: string, opts: { home: string; cwd: string; target:
   return { asked };
 }
 
-describeWithWinterBinary("saved allow rules on a real winter child — applied natively, and never over a deny", (bin) => {
+describeWithEmbeddedRuntime("saved allow rules on a real winter child — applied natively, and never over a deny", (spawn) => {
   test("no rule → asked and refused; `Edit` saved → written unasked; `Edit` saved → a control-plane file is still denied", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-allow-measure-home-")));
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-allow-measure-cwd-")));
     try {
       const first = join(cwd, "first.txt");
-      const without = await writeOnce(bin, { home, cwd, target: first });
+      const without = await writeOnce(spawn, { home, cwd, target: first });
       expect(without.asked).toContain("Write");
       expect(existsSync(first)).toBe(false);
 
       const second = join(cwd, "second.txt");
-      const withRule = await writeOnce(bin, { home, cwd, target: second, persistedAllow: ["Edit"] });
+      const withRule = await writeOnce(spawn, { home, cwd, target: second, persistedAllow: ["Edit"] });
       expect(existsSync(second)).toBe(true);
       expect(withRule.asked).not.toContain("Write");
 
       const controlPlane = join(home, "settings.json");
-      const fenced = await writeOnce(bin, { home, cwd, target: controlPlane, persistedAllow: ["Edit"] });
+      const fenced = await writeOnce(spawn, { home, cwd, target: controlPlane, persistedAllow: ["Edit"] });
       expect(existsSync(controlPlane)).toBe(false);
       expect(fenced.asked).not.toContain("Write"); // refused by the deny rule, before any ask
     } finally {

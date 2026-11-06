@@ -17,7 +17,7 @@
  * Only a provider-qualified catalog namespace is judged: the harness doubles (`winter-test/*`) have no
  * catalog row by construction.
  */
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { ModelRole } from "../settings";
 import type { RoleProblem } from "./role-health";
 

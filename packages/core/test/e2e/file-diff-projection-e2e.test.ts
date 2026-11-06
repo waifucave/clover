@@ -21,7 +21,7 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { readStoredDiff } from "../../src/diffs/store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -73,7 +73,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* closed */ } }
 }
 
-describeWithWinterBinary("tool_result.fileDiff — the projector's REAL wiring (M5)", (bin) => {
+describeWithEmbeddedRuntime("tool_result.fileDiff — the projector's REAL wiring (M5)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -83,7 +83,7 @@ describeWithWinterBinary("tool_result.fileDiff — the projector's REAL wiring (
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 2,
       provider: { type: "openai-compatible", model: "winter-test/p5checkpoint", baseUrl: "http://127.0.0.1:9/v1" },
-      runtimes: { winterExecutable: bin, winterLeg: { code: true }, winterIdleTimeoutSec: 10 },
+      runtimes: { winterLeg: { code: true }, winterIdleTimeoutSec: 10 },
     }, null, 2));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;

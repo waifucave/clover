@@ -14,7 +14,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import type { PlanSwitchOutcome } from "../../src/runtime-sdk/handoff";
 import type { RuntimeSessionRecord } from "../../src/runtime-state/records";
-import type { RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 
 class TestClient {
   private decoder = new LineDecoder();

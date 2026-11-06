@@ -11,7 +11,7 @@
 //    and travels as `ToolRunResult.content`, which `server.ts` hands over as MCP content in that order.
 //  - no card per script (R16): the call itself is allowed under every policy (`gate.ts`'s SELF_GATED, the
 //    `computerV2AllowHook`); the policy is per APP, inside the call (`computer-use/policy.ts`).
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { z } from "zod";
 import type { ToolDefinition } from "../agent/tools/registry";
 import { imagesAcceptedBy, rowForTag } from "../runtime-sdk/provider-selection";

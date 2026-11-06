@@ -7,7 +7,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { isWinterMcpServerInstance, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { ToolRegistry, type ToolContext } from "../../src/agent/tools/registry";
 import { registerLspTools } from "../../src/agent/tools/lsp";
 import { LspManager } from "../../src/agent/lsp/manager";

@@ -4,7 +4,7 @@
 //
 // THE SDK DOES THE PROTOCOL. Discovery, registration (pre-registered > CIMD > DCR), PKCE, the loopback
 // listener, `state`, the code exchange, the issuer checks and every auth request's SSRF policy live in
-// `@yanlinglabs/winter-agent-runtime/mcp-auth` (`startMcpOAuthLogin`, `revokeMcpOAuth`). The daemon adds
+// `@waifucave/clover-agent-runtime/mcp-auth` (`startMcpOAuthLogin`, `revokeMcpOAuth`). The daemon adds
 // what only a host can know:
 //   - WHICH server a name means: the same precedence a session folds (local > trusted project > user),
 //     for the caller's `cwd` -- or one explicit scope -- and the server's canonical URL keys the sign-in
@@ -23,7 +23,7 @@
 //
 // NOTHING SECRET LEAVES. No token, code, verifier, `state`, secret or authorize URL is ever logged: the
 // `authUrl` goes back to the caller that asked for it and nowhere else. Errors carry codes and origins.
-import { canonicalMcpServerUrl, discoverMcpOAuthIssuer, sameIssuer, decodeMcpOAuthClientRecord, decodeMcpOAuthTokenRecord, encodeMcpOAuthClientSecretItem, McpOAuthError, MCP_OAUTH_LOGIN_TIMEOUT_MS, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount, revokeMcpOAuth, startMcpOAuthLogin, validateMcpOAuthConfig, type McpOAuthConfig, type McpOAuthLogin, type McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { canonicalMcpServerUrl, discoverMcpOAuthIssuer, sameIssuer, decodeMcpOAuthClientRecord, decodeMcpOAuthTokenRecord, encodeMcpOAuthClientSecretItem, McpOAuthError, MCP_OAUTH_LOGIN_TIMEOUT_MS, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount, revokeMcpOAuth, startMcpOAuthLogin, validateMcpOAuthConfig, type McpOAuthConfig, type McpOAuthLogin, type McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { sdkLocalMcpServers, sdkUserMcpServers } from "../../settings";

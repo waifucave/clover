@@ -55,7 +55,7 @@ import {
   SYSTEM_SESSION_ID,
   SessionEvent, ConnWriter, type WritableSocket,
 } from "@waifucave/clover-protocol";
-import { SDK_VERSION } from "@yanlinglabs/winter-agent-sdk";
+import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 import type { TokenAuthority } from "../auth/tokens";
 import type { SecretStore } from "../auth/secret-store";
 import { readCredentialMaterial, writeOpenAiApiKey } from "../auth/credential-material";
@@ -148,7 +148,7 @@ import { reconnectLiveSessionsFor } from "../agent/mcp/reconnect";
 import { parseProjectMcpServers, readRawProjectMcpConfig } from "../agent/mcp/project-file";
 import { daemonMcpOAuthStore } from "../runtime-sdk/mcp-oauth-store";
 import { keychainService, resolveCloverProfile } from "../profile";
-import type { McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import type { McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { liveSdkSettings, readSdkGlobalConfig, SdkFileUnreadable, updateSdkSettings } from "../sdk-files";
 import { CONNECTOR_ALL_TOOLS, connectorFactsFor, connectorToolName, sdkRulesFor, type ConnectorPermission, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { bypassAllowedAtSpawn, disallowedToolsFor } from "../runtime-sdk/mode-options";
@@ -2063,7 +2063,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           seenCommands: new Map(),
           clover: null,
         };
-        opts.cloverConnections?.opened(socket);
+        // Windows: a connection made before the pipe's DACL was locked down came in under the default
+        // DACL (Everyone may read); nothing is sent before a hello, but it is closed all the same (review M3).
+        if (opts.cloverConnections?.opened(socket)) socket.end();
       },
       drain(socket) {
         socket.data?.writer?.onDrain();
@@ -2173,7 +2175,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   // A Unix socket file is tightened to the owner (its run directory is the owner's too). A Windows
   // named pipe has no file: its DACL becomes the user's and SYSTEM's alone (libuv already made the
   // first instance with FILE_FLAG_FIRST_PIPE_INSTANCE, so the name was free). A pipe that can't be
-  // locked down fails the start rather than staying open to others.
+  // locked down fails the start rather than staying open to others. Between `Bun.listen` and the lock-down the
+  // pipe has Windows' default DACL, which lets Everyone read: a client that connected then is closed when its
+  // connection opens (review M3); nothing is ever sent before a hello.
   if (!isPipe(opts.socketPath)) chmodSync(opts.socketPath, 0o600);
   else {
     const sid = currentUserSid();
@@ -2181,11 +2185,16 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       server.stop(true);
       throw new Error("the daemon's pipe could not be made owner-only");
     }
+    opts.cloverConnections?.lockedDown();
   }
 
   async function handle(socket: { data: ConnState }, method: string, params: unknown): Promise<unknown> {
     // C-M1: a Clover connection speaks only Clover's methods, through its role's gate.
     if (socket.data.clover) return opts.cloverConnections!.handle(socket.data.clover, method, params);
+    // Before the hello: the app checks the daemon holds this run's app token (review S3), on this connection.
+    if (method === "protocol.prove" && socket.data.authedRole === null && opts.cloverConnections) {
+      return opts.cloverConnections.prove(socket, params);
+    }
     if (method === METHODS.hello) {
       if (socket.data.authedRole !== null) {
         throw new RpcFailure(ERR.INVALID_REQUEST, "already authenticated — open a new connection to change role");

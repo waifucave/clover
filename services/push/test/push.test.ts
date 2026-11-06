@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import { b64u, sha256, utf8 } from "../../shared/encoding";
 import { REVOCATION_KEEP_MS, type PushDO } from "../src/push-do";
-import { apnsToken, call, clearOfMinuteBoundary, device, fakeLog, subscriptions, uniqueAccount } from "./helpers";
+import { apnsToken, call, callWith, device, fakeLog, subscriptions, uniqueAccount } from "./helpers";
+import { StepLimiter } from "../../shared/testing/step-limiter";
 import type { FakeLogEntry } from "./fake-log";
 
 async function since(before: number): Promise<FakeLogEntry[]> {
@@ -130,13 +131,19 @@ describe("targets", () => {
   it("rate-limits listing, removing targets and revoking, per account", async () => {
     const account = uniqueAccount();
     const phone = await device(account, "phone");
-    await clearOfMinuteBoundary();
+    const api = new StepLimiter(6);
+    const limited = callWith({ API_RATE: api, NOTIFY_RATE: new StepLimiter(100) });
     const statuses: number[] = [];
-    for (let i = 0; i < 30; i++) statuses.push((await call(phone.token, "GET", "/v1/targets")).status);
-    for (let i = 0; i < 20; i++) statuses.push((await call(phone.token, "DELETE", `/v1/targets/gone-${i}`)).status);
-    for (let i = 0; i < 11; i++) statuses.push((await call(phone.token, "DELETE", `/v1/devices/gone-${i}`)).status);
-    expect(statuses.slice(0, 60).every((s) => s === 200 || s === 204)).toBe(true);
-    expect(statuses[60]).toBe(429);
+    for (let i = 0; i < 2; i++) statuses.push((await limited(phone.token, "GET", "/v1/targets")).status);
+    for (let i = 0; i < 2; i++) statuses.push((await limited(phone.token, "DELETE", `/v1/targets/gone-${i}`)).status);
+    for (let i = 0; i < 3; i++) statuses.push((await limited(phone.token, "DELETE", `/v1/devices/gone-${i}`)).status);
+    expect(statuses.slice(0, 6).every((s) => s === 200 || s === 204)).toBe(true);
+    expect(statuses[6]).toBe(429);
+    // Another account has its own budget.
+    const other = await device(uniqueAccount(), "phone");
+    expect((await limited(other.token, "GET", "/v1/targets")).status).toBe(200);
+    api.nextWindow();
+    expect((await limited(phone.token, "GET", "/v1/targets")).status).toBe(200);
   });
 });
 
@@ -271,10 +278,10 @@ describe("notify", () => {
 
   it("rate-limits an account's notifies", async () => {
     const { token } = await device(uniqueAccount(), "computer");
-    await clearOfMinuteBoundary();
+    const limited = callWith({ NOTIFY_RATE: new StepLimiter(3), API_RATE: new StepLimiter(100) });
     const statuses: number[] = [];
-    for (let i = 0; i < 65; i++) statuses.push((await call(token, "POST", "/v1/notify", { badge: i })).status);
-    expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) statuses.push((await limited(token, "POST", "/v1/notify", { badge: i })).status);
+    expect(statuses).toEqual([200, 200, 200, 429, 429]);
   });
 
   it("an account's targets are its own", async () => {
