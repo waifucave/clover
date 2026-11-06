@@ -1,0 +1,971 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/qwen-cloud-token-plan/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read",
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`."
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.qwencloud.com/pricing/token-plan — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "qwen-cloud-token-plan/deepseek-v4-flash-0731",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "deepseek-v4-flash-0731",
+      "displayName": "DeepSeek V4 Flash 0731 (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-flash-0731: 1M context inferred from DeepSeek V4 family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-flash-0731: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-flash-0731: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-flash-0731: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-flash-0731: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-flash-0731: structured output supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-flash-0731: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-flash-0731: reasoning in plan capability roster",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "high"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-flash-0731",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qwen-cloud-token-plan/deepseek-v4-pro",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro: 1M context inferred from DeepSeek V4 family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro: structured output supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro: reasoning in plan capability roster",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "high"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qwen-cloud-token-plan/deepseek-v4-pro-0813",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "deepseek-v4-pro-0813",
+      "displayName": "DeepSeek V4 Pro 0813 (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro-0813: 1M context inferred from DeepSeek V4 family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro-0813: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro-0813: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro-0813: Function Calling supported by Alibaba deployment",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro-0813: Function Calling supported by Alibaba deployment",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro-0813: structured output supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4-pro-0813: context caching supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4-pro-0813: reasoning in plan capability roster",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "high"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro-0813",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qwen-cloud-token-plan/deepseek-v4.1-flash",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "deepseek-v4.1-flash",
+      "displayName": "DeepSeek V4.1 Flash (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4.1-flash: 1M context inferred from DeepSeek V4 family",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4.1-flash: visual understanding and text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4.1-flash: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4.1-flash: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4.1-flash: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4.1-flash: structured output supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deepseek-api — deepseek-v4.1-flash: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — deepseek-v4.1-flash: reasoning in plan capability roster",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "high"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4.1-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qwen-cloud-token-plan/glm-5.2",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "glm-5.2",
+      "displayName": "GLM-5.2 (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.2: 1M context stated for GLM-5.3 and GLM-5.2",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — glm-5.2: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — glm-5.2: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.2: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.2: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.2: structured output supported in non-thinking mode",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.2: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — glm-5.2: reasoning in plan capability roster",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qwen-cloud-token-plan/glm-5.3",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "glm-5.3",
+      "displayName": "GLM-5.3 (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.3: 1M context stated for GLM-5.3 and GLM-5.2",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — glm-5.3: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — glm-5.3: text generation in plan roster",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.3: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.3: Function Calling supported by Alibaba deployment",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.3: structured output supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/glm — glm-5.3: context caching supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview — glm-5.3: reasoning in plan capability roster",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "max"
+      },
+      "unsupportedParameters": [
+        "top_k",
+        "repetition_penalty"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qwen-cloud-token-plan/qwen3.6-flash",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "qwen3.6-flash",
+      "displayName": "Qwen3.6 Flash (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-flash: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-flash: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-flash: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.6-flash: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud-token-plan/qwen3.7-max",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "qwen3.7-max",
+      "displayName": "Qwen3.7 Max (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: text input documented in text-generation roster",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.7-max: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-max",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud-token-plan/qwen3.7-plus",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "qwen3.7-plus",
+      "displayName": "Qwen3.7 Plus (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.7-plus: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud-token-plan/qwen3.8-flash",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "qwen3.8-flash",
+      "displayName": "Qwen3.8 Flash (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-flash: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-flash: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.8-flash: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions — qwen3.8-flash Chat reasoning_effort accepts none, low, medium, xhigh (other standard levels map to these); default xhigh",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "none",
+        "defaultEffort": "xhigh"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "qwen-cloud-token-plan/qwen3.8-max",
+      "providerId": "qwen-cloud-token-plan",
+      "upstreamId": "qwen3.8-max",
+      "displayName": "Qwen3.8 Max (Token Plan)",
+      "aliases": [
+        "qwen3.8-max-preview"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-max: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-max: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.8-max: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:45:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions — qwen3.8-max Chat reasoning_effort accepts none, low, medium, xhigh (other standard levels map to these); default xhigh",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:45:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "none",
+        "defaultEffort": "xhigh"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-max",
+      "modelFamily": "qwen"
+    }
+  ]
+}

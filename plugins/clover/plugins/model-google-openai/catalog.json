@@ -1,0 +1,1588 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "Google documents the OpenAI-compatibility layer as beta; parameter coverage (reasoning_effort mapping, unsupported fields) is narrower than the native generateContent surface."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://ai.google.dev/gemini-api/docs/openai — Google's Gemini API OpenAI-compatibility page, retrieved 2026-09-25: Chat Completions at `https://generativelanguage.googleapis.com/v1beta/openai/` with the ordinary Gemini API key as the bearer token; the page describes the layer as still in beta.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "google-openai/gemini-2.5-flash",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-2.5-flash",
+      "displayName": "Gemini 2.5 Flash (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — supported input data types: text, image, audio, video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 2.5 Flash: Standard paid tier text/image/video; audio input $1 and cache read $0.10; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-2.5-flash-lite",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-2.5-flash-lite",
+      "displayName": "Gemini 2.5 Flash-Lite (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1,
+          "outputPerMTokUsd": 0.4,
+          "cacheReadPerMTokUsd": 0.01
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 2.5 Flash-Lite: Standard paid tier text/image/video; audio input $0.30 and cache read $0.03; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.5-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-2.5-pro",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-2.5-pro",
+      "displayName": "Gemini 2.5 Pro (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.125
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 2.5 Pro: Standard paid tier <=200k prompt tokens; >200k $2.50/$15/$0.25; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.5-pro",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3-flash-preview",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash Preview (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3-flash-preview"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3 Flash Preview: Standard paid tier text/image/video; audio input $1 and cache read $0.10; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3-flash-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.1-flash-lite",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash-Lite (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "minimal",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.1-flash-lite"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.25,
+          "outputPerMTokUsd": 1.5,
+          "cacheReadPerMTokUsd": 0.025
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.1 Flash-Lite: Standard paid tier text/image/video; audio input $0.50 and cache read $0.05; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.1-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.1-pro-preview",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.1-pro-preview",
+      "displayName": "Gemini 3.1 Pro Preview (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.1-pro-preview"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 12,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.1 Pro Preview: Standard paid tier <=200k prompt tokens; >200k $4/$18/$0.40; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.1-pro-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.5-flash",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.5-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.5,
+          "outputPerMTokUsd": 9,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.5 Flash: Standard paid tier; changelog says gemini-flash-latest currently points here; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.5-flash-lite",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.5-flash-lite",
+      "displayName": "Gemini 3.5 Flash-Lite (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "minimal",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.5-flash-lite"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.5 Flash-Lite: Standard paid tier; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.5-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.6-flash",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.6-flash",
+      "displayName": "Gemini 3.6 Flash (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.6-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.075
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.6 Flash: introductory Standard paid tier through 2026-12-31; 2027-01-01 rates $1.50/$7.50/$0.15; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.6-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.7-flash",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.7-flash",
+      "displayName": "Gemini 3.7 Flash (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.7-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.075
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.7 Flash: introductory Standard paid tier through 2026-12-31; 2027-01-01 rates $1.50/$7.50/$0.15; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.7-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-3.8-flash",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-3.8-flash",
+      "displayName": "Gemini 3.8 Flash (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice, plus native per-model function calling support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema/parse example; Gemini model has native structured outputs",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — extra_body.google.cached_content maps to Gemini content cache; native model lists Caching Supported",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — OpenAI compatibility maps reasoning_effort to Gemini thinking controls",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-3.8-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.075
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.8 Flash: introductory Standard paid tier through 2026-12-31; 2027-01-01 rates $1.50/$7.50/$0.15; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.8-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google-openai/gemini-4-argon",
+      "providerId": "google-openai",
+      "upstreamId": "gemini-4-argon",
+      "displayName": "Gemini 4 Argon (OpenAI compatible)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Context window (unified input and output token limit) 1,048,576\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Max output 65,536 (default synchronous)\"; https://ai.google.dev/gemini-api/docs/thinking: values above 65,536 without `background=True` return 400",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Inputs Text, Image, Video, Audio, and PDF\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Output Text\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function-calling example with tools and tool_choice; https://ai.google.dev/gemini-api/docs/models/gemini-4-argon: Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions function calling documented; same Gemini model backend",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — Chat Completions response_format JSON schema example; https://ai.google.dev/gemini-api/docs/models/gemini-4-argon: Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Caching Supported (Implicit only)\"; implicit caching needs no request field",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/openai — reasoning_effort mapping table has a `thinking_level` (Gemini 4 Argon) column: minimal->low, low->low, medium->medium, high->high",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "continuationDomain": {
+          "value": [
+            "google-openai/gemini-4-argon"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29), \"Signatures for OpenAI compatibility\": each `tool_calls` entry carries `\"extra_content\": {\"google\": {\"thought_signature\": \"<Signature A>\"}}`, sent back on the same entry (\"Required and Validated\"); in a parallel batch only the first call carries one. https://ai.google.dev/gemini-api/docs/openai: \"Gemini 3 supports OpenAI compatibility for thought signatures in chat completion APIs.\" The Chat Completions adapter captures `extra_content` per call id on this connection and replays it on that call. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing (read 2026-10-29) — Gemini 4 Argon, Standard, Paid Tier per 1M tokens in USD: Input price \"$2.00 through November 30, 2026. $4.00 starting December 1, 2026.\"; Output price (including thinking tokens) \"$10.00 through November 30, 2026. $20.00 starting December 1, 2026.\"; Context caching price \"$0.10 through November 30, 2026. $0.20 starting December 1, 2026. Implicit caching only (explicit caching is not supported).\" TIERED IN TIME, which `ModelPricing` cannot express: the CURRENT (through 2026-11-30) introductory rate is recorded, so from 2026-12-01 this row UNDER-reports by exactly 2x on every field until it is re-priced — the same disclosed gap as google/gemini-3.8-flash. No long-context tier is published for this model (flat across the 1M window); \"Gemini 4 Argon is not available on the Free tier.\" Batch/Flex (50%) and Priority are separate rate cards and are not folded in; no cache-write rate is published, so that key is absent.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-4-argon",
+      "modelFamily": "gemini"
+    }
+  ]
+}

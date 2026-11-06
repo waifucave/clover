@@ -130,6 +130,13 @@ export const SyncEntry = z.object({
 });
 export type SyncEntry = z.infer<typeof SyncEntry>;
 
+/** A link's connection number between two devices (H-M1's ask), which ranks their connections so both ends keep the
+ *  same one: the dialer proposes one, and the answer is the larger of that and one past the last the answerer took. */
+const ConnSeq = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
+/** An Ed25519 public key or signature, base64. */
+const Base64Key = utf16(256, 1).regex(/^[A-Za-z0-9+/]+={0,2}$/);
+
 export const DEVICES_METHODS = {
   deviceList: defineMethod({
     name: "device.list", owner: "H", roles: ["app", "cli", "remote", "layer"], capability: "devices.read",
@@ -208,12 +215,21 @@ export const DEVICES_METHODS = {
     params: Empty, result: z.object({ links: z.array(LinkView) }),
     doc: "This computer's links and their paths.",
   }),
+  deviceAnswerKeySet: defineMethod({
+    /** The app's main process hands the core the key it answers cards with (H-M1's ask; item 91): held apart from the
+     *  core's link key, so plugin code can't sign with it where the OS allows. The core takes it only with the app's
+     *  signature over `clover/answer-key/1\n<device>\n<publicKey>\n<held>` (`setOwnAnswerKey`), for a desktop. */
+    name: "device.answerKey.set", owner: "H", roles: ["app"], userOnly: true,
+    params: z.object({ publicKey: Base64Key, held: AnswerKeyHolder, signature: Base64Key }),
+    result: Ok,
+    doc: "Registers this desktop's app-held answer key, proved by the app's own signature.",
+  }),
 
   // Daemon to daemon, over the link.
   peerHello: defineMethod({
     name: "peer.hello", owner: "H", roles: ["peer"],
-    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)).max(64) }),
-    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)) }),
+    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)).max(64), connSeq: ConnSeq }),
+    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)), connSeq: ConnSeq }),
     doc: "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
   }),
   peerCall: defineMethod({

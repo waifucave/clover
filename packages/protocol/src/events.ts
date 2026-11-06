@@ -326,8 +326,9 @@ export const ElicitationResolvedEvent = ThreadBase.extend({
  *
  *  `contextTokens` (additive optional, like `agent_error.code` — an extra field on an EXISTING
  *  variant, so no new Swift case and no WinterKit exhaustive-switch trap) is the OTHER figure: the
- *  provider-reported input size of the turn's LARGEST single request, i.e. how full the context
- *  actually got. That is the only correct input to the auto-compaction trigger
+ *  provider-reported whole prompt (input + cache read + cache write) of the turn's LAST main-loop
+ *  request, i.e. how full the context is now. The runtime states it (`result.context_tokens`, agent
+ *  SDK 0.0.65); an older runtime's turn carries it only when it made exactly one request. That is the only correct input to the auto-compaction trigger
  *  (`engine.ts`'s `maybeAutoCompact`), which previously read `inputTokens` and therefore compacted
  *  prematurely on tool-heavy turns — a session whose context was 40% full got summarized because
  *  three rounds of it summed past the threshold.
@@ -339,8 +340,8 @@ export const ElicitationResolvedEvent = ThreadBase.extend({
  *  on precisely the events that carry the least information. `engine.ts`'s `maybeAutoCompact`
  *  deliberately carries NO `?? inputTokens` for this reason; a consumer with nothing to read should
  *  keep looking back rather than trust a figure that means something else. If you EMIT this field,
- *  it is the per-round MAXIMUM (`Math.max` across the turn's requests), never a sum and never the
- *  last round's value.
+ *  it is the LAST main-loop request's prompt (a compaction mid-turn makes it smaller than an earlier
+ *  request's), never a sum across the turn's requests and never a subagent's or a tool's inner pass.
  *
  *  Mirrored on the Swift side too (followups T3, `apple/WinterProtocol/Sources/WinterProtocol/
  *  SessionEvent.swift`'s `TurnCompleted.contextTokens`), with a TS-generated fixture

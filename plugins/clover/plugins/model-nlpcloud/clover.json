@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "NLP Cloud",
+  "description": "NLP Cloud's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nlpcloud",
+        "name": "NLP Cloud",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your NLP Cloud API key. Clover keeps it in your credential store and adds it to NLP Cloud's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.nlpcloud.io/v1"
+        }
+      }
+    ]
+  }
+}

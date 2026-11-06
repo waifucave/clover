@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "OfoxAI",
+  "description": "OfoxAI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "ofoxai",
+        "name": "OfoxAI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OfoxAI API key. Clover keeps it in your credential store and adds it to OfoxAI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.ofox.ai/v1"
+        }
+      }
+    ]
+  }
+}

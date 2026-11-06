@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Zhipu BigModel API (Anthropic dialect)",
+  "description": "Zhipu BigModel API (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zhipu-anthropic",
+        "name": "Zhipu BigModel API (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Zhipu BigModel API (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Zhipu BigModel API (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://open.bigmodel.cn/api/anthropic"
+        }
+      }
+    ]
+  }
+}

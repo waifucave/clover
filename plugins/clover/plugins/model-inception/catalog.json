@@ -1,0 +1,331 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/inception/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.inceptionlabs.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.inceptionlabs.ai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "inception/mercury-2",
+      "providerId": "inception",
+      "upstreamId": "mercury-2",
+      "displayName": "Mercury 2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/inception/index.ts#mercury-2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 50000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/inception/index.ts#mercury-2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/inception/index.ts#mercury-2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/inception/index.ts#mercury-2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-09-27): \"Mercury 2 row Features column: \"Tool Calling, Structured Outputs\"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-09-27): \"Mercury 2 row Features column: \"Tool Calling, Structured Outputs\"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.inceptionlabs.ai/capabilities/reasoning-efforts (read 2026-09-27): \"reasoning_effort controls how much the model deliberates before answering. It applies to mercury-2.5 and mercury-2 on the chat completions endpoint and accepts four values: instant / low / medium (default) / high. If reasoning_effort is omitted, the model uses medium.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "instant",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.25,
+          "outputPerMTokUsd": 0.75,
+          "cacheReadPerMTokUsd": 0.025
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-09-27): \"Mercury 2 row: Input $0.25, Cached Input $0.025, Output $0.75 (per 1M tokens)\" — USD 0.25 input / 0.75 output / 0.025 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "mercury-2",
+      "modelFamily": "other"
+    },
+    {
+      "key": "inception/mercury-2.5",
+      "providerId": "inception",
+      "upstreamId": "mercury-2.5",
+      "displayName": "Mercury 2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 260000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Context Window",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Max Output Tokens",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Supported Formats `Text`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Supported Formats `Text`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Features `Tool Calling`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Features `Tool Calling`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — Features `Structured Outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): a Cached Input Price is listed for this model",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.inceptionlabs.ai/capabilities/reasoning-efforts (read 2026-10-29): \"`reasoning_effort` controls how much the model deliberates before answering. It applies to `mercury-3`, `mercury-2.5`, and `mercury-2` on the chat completions endpoint and accepts four values\" (instant / low / medium / high); \"If `reasoning_effort` is omitted, `mercury-3` defaults to `low`, while `mercury-2.5` and `mercury-2` default to `medium`.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "instant",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.2,
+          "outputPerMTokUsd": 0.75,
+          "cacheReadPerMTokUsd": 0.02
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 2.5** | $0.20 | $0.02 | $0.75 | `v1/chat/completions` | Chat: 260K | 65,536 | `Tool Calling` `Structured Outputs` | `Text` |\" — input $0.20, cached input $0.02, output $0.75 per 1M tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mercury-2.5",
+      "modelFamily": "other"
+    },
+    {
+      "key": "inception/mercury-3",
+      "providerId": "inception",
+      "upstreamId": "mercury-3",
+      "displayName": "Mercury 3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Context Window",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Max Output Tokens",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Supported Formats `Text`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Supported Formats `Text`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Features `Tool Calling`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Features `Tool Calling`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — Features `Structured Outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): a Cached Input Price is listed for this model",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.inceptionlabs.ai/capabilities/reasoning-efforts (read 2026-10-29): \"`reasoning_effort` controls how much the model deliberates before answering. It applies to `mercury-3`, `mercury-2.5`, and `mercury-2` on the chat completions endpoint and accepts four values\" (instant / low / medium / high); \"If `reasoning_effort` is omitted, `mercury-3` defaults to `low`, while `mercury-2.5` and `mercury-2` default to `medium`.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "instant",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "low",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.2,
+          "outputPerMTokUsd": 0.7,
+          "cacheReadPerMTokUsd": 0.02
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.inceptionlabs.ai/get-started/models (read 2026-10-29): \"| **Mercury 3** | ~~$0.20~~ → **$0.10** | ~~$0.02~~ → **$0.01** | ~~$0.70~~ → **$0.35** | `v1/chat/completions` | Chat: 1M | 131,072 | `Tool Calling` `Structured Outputs` | `Text` |\" — REGULAR list price recorded (input $0.20, cached input $0.02, output $0.70 per 1M); the struck-through figures are the regular prices and the bold ones the launch promotion ($0.10 / $0.01 / $0.35).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mercury-3",
+      "modelFamily": "other"
+    }
+  ]
+}

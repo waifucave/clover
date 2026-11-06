@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "TabiToken",
+  "description": "TabiToken's models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "tabitoken",
+        "name": "TabiToken",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your TabiToken API key. Clover keeps it in your credential store and adds it to TabiToken's requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://tabitoken.com"
+        }
+      }
+    ]
+  }
+}

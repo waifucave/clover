@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Crusoe Managed Inference",
+  "description": "Crusoe Managed Inference's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "crusoe",
+        "name": "Crusoe Managed Inference",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Crusoe Managed Inference API key. Clover keeps it in your credential store and adds it to Crusoe Managed Inference's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.inference.crusoecloud.com/v1"
+        }
+      }
+    ]
+  }
+}

@@ -40,6 +40,43 @@
                 "properties": {
                   "kind": {
                     "type": "string",
+                    "const": "session"
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "session"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "plugin"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pluginId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
                     "const": "user"
                   }
                 },
@@ -103,6 +140,45 @@
                       "properties": {
                         "kind": {
                           "type": "string",
+                          "const": "session"
+                        },
+                        "session": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9._:-]+$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "session"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "plugin"
+                        },
+                        "pluginId": {
+                          "type": "string",
+                          "maxLength": 81,
+                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "pluginId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
                           "const": "user"
                         }
                       },
@@ -158,6 +234,10 @@
                 },
                 "heldByUser": {
                   "type": "boolean"
+                },
+                "view": {
+                  "type": "string",
+                  "maxLength": 256
                 }
               },
               "required": [
@@ -183,7 +263,7 @@
       }
     },
     "browser.open": {
-      "doc": "Opens a tab in its owner's partition, headless unless shown.",
+      "doc": "Opens a tab in its owner's partition, headless unless `show` names a view.",
       "owner": "L",
       "direction": "to-daemon",
       "roles": [
@@ -220,6 +300,43 @@
                 "properties": {
                   "kind": {
                     "type": "string",
+                    "const": "session"
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "session"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "plugin"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pluginId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
                     "const": "user"
                   }
                 },
@@ -233,14 +350,44 @@
             "type": "string",
             "maxLength": 8192
           },
-          "show": {
-            "type": "boolean"
-          },
           "computer": {
             "type": "string",
             "minLength": 1,
             "maxLength": 63,
             "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "show": {
+            "type": "object",
+            "properties": {
+              "view": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "viewport": {
+                "type": "object",
+                "properties": {
+                  "width": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 16384
+                  },
+                  "height": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 16384
+                  }
+                },
+                "required": [
+                  "width",
+                  "height"
+                ]
+              }
+            },
+            "required": [
+              "view",
+              "viewport"
+            ]
           }
         },
         "required": [
@@ -283,6 +430,45 @@
                     "required": [
                       "kind",
                       "bot"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "session"
+                      },
+                      "session": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "session"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plugin"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pluginId"
                     ],
                     "additionalProperties": false
                   },
@@ -346,6 +532,10 @@
               },
               "heldByUser": {
                 "type": "boolean"
+              },
+              "view": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [
@@ -480,6 +670,45 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "session"
+                      },
+                      "session": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "session"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plugin"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pluginId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "user"
                       }
                     },
@@ -535,6 +764,10 @@
               },
               "heldByUser": {
                 "type": "boolean"
+              },
+              "view": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [
@@ -651,6 +884,45 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "session"
+                      },
+                      "session": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "session"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plugin"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pluginId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "user"
                       }
                     },
@@ -706,6 +978,10 @@
               },
               "heldByUser": {
                 "type": "boolean"
+              },
+              "view": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [
@@ -796,6 +1072,45 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "session"
+                      },
+                      "session": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "session"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plugin"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pluginId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "user"
                       }
                     },
@@ -851,6 +1166,10 @@
               },
               "heldByUser": {
                 "type": "boolean"
+              },
+              "view": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [
@@ -1148,6 +1467,43 @@
                 "properties": {
                   "kind": {
                     "type": "string",
+                    "const": "session"
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "session"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "plugin"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pluginId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
                     "const": "user"
                   }
                 },
@@ -1220,6 +1576,45 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "session"
+                      },
+                      "session": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "session"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plugin"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pluginId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "user"
                       }
                     },
@@ -1275,6 +1670,10 @@
               },
               "heldByUser": {
                 "type": "boolean"
+              },
+              "view": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [
@@ -1519,6 +1918,45 @@
                       "properties": {
                         "kind": {
                           "type": "string",
+                          "const": "session"
+                        },
+                        "session": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9._:-]+$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "session"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "plugin"
+                        },
+                        "pluginId": {
+                          "type": "string",
+                          "maxLength": 81,
+                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "pluginId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
                           "const": "user"
                         }
                       },
@@ -1574,6 +2012,10 @@
                 },
                 "heldByUser": {
                   "type": "boolean"
+                },
+                "view": {
+                  "type": "string",
+                  "maxLength": 256
                 }
               },
               "required": [
@@ -1660,6 +2102,43 @@
                               "properties": {
                                 "kind": {
                                   "type": "string",
+                                  "const": "session"
+                                },
+                                "session": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9._:-]+$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "session"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "plugin"
+                                },
+                                "pluginId": {
+                                  "type": "string",
+                                  "maxLength": 81,
+                                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "pluginId"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
                                   "const": "user"
                                 }
                               },
@@ -1713,6 +2192,10 @@
                         },
                         "heldByUser": {
                           "type": "boolean"
+                        },
+                        "view": {
+                          "type": "string",
+                          "maxLength": 256
                         }
                       },
                       "required": [
@@ -1895,6 +2378,43 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "session"
+                      },
+                      "session": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "session"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plugin"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pluginId"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "user"
                       }
                     },
@@ -1948,6 +2468,10 @@
               },
               "heldByUser": {
                 "type": "boolean"
+              },
+              "view": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [

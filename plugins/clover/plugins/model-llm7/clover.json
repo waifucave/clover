@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "LLM7.io",
+  "description": "LLM7.io's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "llm7",
+        "name": "LLM7.io",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your LLM7.io API key. Clover keeps it in your credential store and adds it to LLM7.io's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.llm7.io/v1"
+        }
+      }
+    ]
+  }
+}

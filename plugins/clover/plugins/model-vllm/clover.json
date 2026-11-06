@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "vLLM (local)",
+  "description": "vLLM (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "vllm",
+        "name": "vLLM (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:8000/v1"
+        }
+      }
+    ]
+  }
+}

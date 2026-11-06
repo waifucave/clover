@@ -421,6 +421,8 @@ export function world(options: WorldOptions = {}): UiRuntime {
               remove: () => fail("the gallery's folder is read only"),
               move: () => fail("the gallery's folder is read only"),
               glob: () => later({ paths: [], truncated: false }),
+              // The gallery's folder never changes.
+              watch: () => later(() => undefined),
             },
           }
         : {}),

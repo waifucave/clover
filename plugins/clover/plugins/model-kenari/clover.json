@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Kenari",
+  "description": "Kenari's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "kenari",
+        "name": "Kenari",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Kenari API key. Clover keeps it in your credential store and adds it to Kenari's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://kenari.id/v1"
+        }
+      }
+    ]
+  }
+}

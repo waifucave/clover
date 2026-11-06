@@ -1,0 +1,31 @@
+{
+  "manifest": 1,
+  "name": "Grok (xAI OAuth)",
+  "description": "Grok (xAI OAuth)'s models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "network:cli-chat-proxy.grok.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "xai-oauth",
+        "name": "Grok (xAI OAuth)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "custom",
+            "handler": "signIn"
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

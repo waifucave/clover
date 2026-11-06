@@ -1,0 +1,657 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Membership API-key access, plan-dependent model entitlements, and the OpenAI-compatible endpoint are documented, but no Winter live gate has exercised this subscription surface."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.kimi.com/code/docs/en/kimi-code/models.html — Kimi Code's current model configuration documents the OpenAI-compatible Coding endpoint at https://api.kimi.com/coding/v1, membership API keys, and third-party tool use (retrieved 2026-09-19).",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "kimi-coding-openai/k3",
+      "providerId": "kimi-coding-openai",
+      "upstreamId": "k3",
+      "canonicalModelId": "kimi-k3",
+      "displayName": "Kimi K3 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — K3 up to 1048576 for higher tiers; Plus/Moderato limited to 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3 supports image and video input plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3 supports low/high/max thinking effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`); Kimi Code serves the same models (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-openai/k3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/guide/kimi-k3-quickstart (read 2026-09-27): \"max_completion_tokens 默认 131072，最大可设置为 1048576\" — same underlying K3 model as kimi-coding/k3, OpenAI dialect",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-openai/k3-256k",
+      "providerId": "kimi-coding-openai",
+      "upstreamId": "k3-256k",
+      "canonicalModelId": "kimi-k3",
+      "displayName": "Kimi K3 256K (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3-256k context window 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3-256k supports image input, not video, plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3-256k supports low/high/max thinking effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`); Kimi Code serves the same models (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-openai/k3-256k"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-openai/k3.1-pro",
+      "providerId": "kimi-coding-openai",
+      "upstreamId": "k3.1-pro",
+      "displayName": "Kimi K3.1 Pro (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro` Context window \"Up to 1048576 (for higher-tier members)\"; \"Plus and above\" with \"1M context for Pro and above\" (legacy plans: Moderato and above, 1M for Allegretto and above)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart (read 2026-10-29): \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\" — the open platform's figure for the same model, applied as a model-level property (Kimi Code's page states no output ceiling)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro` Multimodal input \"Image, video\" plus text",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — \"switching models or thinking effort invalidates the existing context cache\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro` Reasoning \"reasoning_effort: low / high / max (default high ; thinking cannot be disabled)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`); Kimi Code serves the same models (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-openai/k3.1-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "k3.1-pro",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-openai/k3.1-pro-highspeed",
+      "providerId": "kimi-coding-openai",
+      "upstreamId": "k3.1-pro-highspeed",
+      "displayName": "Kimi K3.1 Pro Highspeed (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro-highspeed` Context window \"Up to 1048576 (for higher-tier members)\"; \"Pro and above\" (legacy plans \"Allegretto and above\")",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart (read 2026-10-29): \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\" — the open platform's figure for the same model, applied as a model-level property (Kimi Code's page states no output ceiling)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro-highspeed` Multimodal input \"Image, video\" plus text",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — \"switching models or thinking effort invalidates the existing context cache\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro-highspeed` Reasoning \"reasoning_effort: low / high / max (default high ; thinking cannot be disabled)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`); Kimi Code serves the same models (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-openai/k3.1-pro-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "k3.1-pro-highspeed",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-openai/kimi-for-coding",
+      "providerId": "kimi-coding-openai",
+      "upstreamId": "kimi-for-coding",
+      "canonicalModelId": "kimi-for-coding",
+      "displayName": "Kimi K2.8 Preview (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding context window 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding supports image and video input plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding supports low/high/max thinking effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`); Kimi Code serves the same models (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-openai/kimi-for-coding"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-openai/kimi-for-coding-highspeed",
+      "providerId": "kimi-coding-openai",
+      "upstreamId": "kimi-for-coding-highspeed",
+      "canonicalModelId": "kimi-for-coding-highspeed",
+      "displayName": "Kimi K2.7 Code HighSpeed (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding-highspeed context window 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding-highspeed supports image and video input plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — HighSpeed has Thinking:ON",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`); Kimi Code serves the same models (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-openai/kimi-for-coding-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.kimi.com/code/docs/en/kimi-code/error-reference.html (read 2026-10-29): 400 \"thinking is enabled but reasoning_content is missing in assistant tool call message at index 2\" -- \"This is a Kimi Code-specific field required when thinking mode is active. How to fix: Add the reasoning_content field to the assistant message in tool calls\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "modelFamily": "kimi"
+    }
+  ]
+}

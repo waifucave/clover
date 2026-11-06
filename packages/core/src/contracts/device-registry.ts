@@ -33,6 +33,9 @@ export interface DeviceRecord {
   /** A desktop's answer key: its app's Ed25519 key, apart from the core's, and how the OS holds it. A phone answers
    *  with its own key (`publicKey`) unless it names one here. */
   answerKey?: { publicKey: string; held: AnswerKeyHolder };
+  /** Its X25519 box key, raw 32 bytes as base64url (H-M1's ask), which account-scope boxes are sealed to (lane I's);
+   *  absent until the device has published one. A revoked device's is never used. */
+  boxKey?: string;
   addedAt: number;
   /** How it was added, from the core's own record. */
   addedBy: PairingProof["via"];

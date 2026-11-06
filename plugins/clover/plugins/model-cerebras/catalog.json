@@ -1,0 +1,336 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/cerebras/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is a FETCHED vendor document, but no live gate case has run against this endpoint"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://inference-docs.cerebras.ai/ — Cerebras's own Inference API documentation, retrieved 2026-09-06: OpenAI-compatible base `https://api.cerebras.ai/v1` with `Authorization: Bearer ${CEREBRAS_API_KEY}`, \"mostly compatible with OpenAI's client libraries\". The base matches the API root the mapper derives from the pinned RegistryEntry, so two independent sources agree. (Round-1 finding I-3: the previous citation, `https://inference.cerebras.ai`, 301s to `chat.cerebras.ai` — a chat product, not documentation.)",
+      "tier": "fetched-document"
+    }
+  },
+  "rows": [
+    {
+      "key": "cerebras/gemma-4-31b",
+      "providerId": "cerebras",
+      "upstreamId": "gemma-4-31b",
+      "displayName": "Gemma 4 31B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#gemma-4-31b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#gemma-4-31b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#gemma-4-31b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#gemma-4-31b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemma-4-31b",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "cerebras/gpt-oss-120b",
+      "providerId": "cerebras",
+      "upstreamId": "gpt-oss-120b",
+      "displayName": "GPT OSS 120B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares capabilities.vision: false.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares capabilities.function_calling and capabilities.tools: true.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares capabilities.tools: true.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares limits.max_context_length: 131072.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 40960,
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares limits.max_completion_tokens: 40960.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares capabilities.structured_outputs: true.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.35,
+          "outputPerMTokUsd": 0.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference-docs.cerebras.ai/api-reference/models/public-models — Cerebras documents the unauthenticated public model-discovery endpoint; its current gpt-oss-120b response was read 2026-09-19. It declares pricing.prompt: $0.00000035 and pricing.completion: $0.00000075 per token.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference-docs.cerebras.ai/capabilities/reasoning (read 2026-09-27): \"GPT OSS 120B: Accepts \"low, medium, high\" with \"medium\" as the default.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "cerebras/qwen-3.8-27b",
+      "providerId": "cerebras",
+      "upstreamId": "qwen-3.8-27b",
+      "displayName": "Qwen 3.8 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): context_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): max_output_length 32768",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://inference-docs.cerebras.ai/capabilities/reasoning (read 2026-10-29): `qwen-3.8-27b` returns reasoning \"separately in `choices[0].message.reasoning`\"; \"When you include an earlier assistant message with its `reasoning` field, `clear_thinking` controls whether Qwen receives that historical reasoning\" -- `false` or omitted \"Preserves historical assistant reasoning. This is the default.\" The adapter replays it under Cerebras's own field name, `reasoning`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://inference-docs.cerebras.ai/capabilities/reasoning (read 2026-10-29): `qwen-3.8-27b` returns reasoning \"separately in `choices[0].message.reasoning`\"; \"When you include an earlier assistant message with its `reasoning` field, `clear_thinking` controls whether Qwen receives that historical reasoning\" -- `false` or omitted \"Preserves historical assistant reasoning. This is the default.\" The adapter replays it under Cerebras's own field name, `reasoning`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "cerebras/qwen-3.8-27b"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://inference-docs.cerebras.ai/capabilities/reasoning (read 2026-10-29): `qwen-3.8-27b` returns reasoning \"separately in `choices[0].message.reasoning`\"; \"When you include an earlier assistant message with its `reasoning` field, `clear_thinking` controls whether Qwen receives that historical reasoning\" -- `false` or omitted \"Preserves historical assistant reasoning. This is the default.\" The adapter replays it under Cerebras's own field name, `reasoning`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.99,
+          "outputPerMTokUsd": 1.49
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api.cerebras.ai/public/v1/models?format=openrouter — Cerebras's own unauthenticated public model list (documented at https://inference-docs.cerebras.ai/api-reference/models/public-models), entry `qwen-3.8-27b` (read 2026-09-27): pricing.prompt 0.00000099 / pricing.completion 0.00000149 USD per token",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen-3.8-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "cerebras/zai-glm-4.7",
+      "providerId": "cerebras",
+      "upstreamId": "zai-glm-4.7",
+      "displayName": "GLM 4.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#zai-glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#zai-glm-4.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#zai-glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cerebras/index.ts#zai-glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    }
+  ]
+}

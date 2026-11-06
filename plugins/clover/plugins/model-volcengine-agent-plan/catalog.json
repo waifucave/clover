@@ -1,0 +1,950 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/volcengine/agent-plan/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://console.volcengine.com/ark/region:cn-beijing/subscription/agent-plan — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://ark.cn-beijing.volces.com/api/plan/v3. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "volcengine-agent-plan/deepseek-v4-flash-ga-260731",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "deepseek-v4-flash-ga-260731",
+      "displayName": "DeepSeek V4 Flash GA (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-flash-ga-260731",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-flash-ga-260731",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-flash-ga-260731 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-flash-ga-260731",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-flash-ga-260731",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-flash-ga-260731",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "volcengine-agent-plan/deepseek-v4-flash-ga-260731"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 384000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"deepseek-v4-flash-ga-260731 … 最大回答(默认 4k): 384k\" — not flagged 即将下线 — currently active",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash-ga-260731",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "volcengine-agent-plan/deepseek-v4-pro-260425",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "deepseek-v4-pro-260425",
+      "displayName": "DeepSeek V4 Pro (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-pro-260425",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-pro-260425",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-pro-260425 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-pro-260425",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-pro-260425",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#deepseek-v4-pro-260425",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "volcengine-agent-plan/deepseek-v4-pro-260425"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 384000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"deepseek-v4-pro-260425 即将下线 … 最大回答(默认 4k): 384k\" — retiring soon per official model list",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro-260425",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "volcengine-agent-plan/doubao-seed-2-0-lite-260215",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "doubao-seed-2-0-lite-260215",
+      "displayName": "Doubao Seed 2.0 Lite (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-lite-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-lite-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-lite-260215 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-lite-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-lite-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-lite-260215",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "volcengine-agent-plan/doubao-seed-2-0-lite-260215"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"doubao-seed-2-0-lite-260215 即将下线 … 128k\" — retiring soon",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.0-lite-260215",
+      "modelFamily": "other"
+    },
+    {
+      "key": "volcengine-agent-plan/doubao-seed-2-0-mini-260215",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "doubao-seed-2-0-mini-260215",
+      "displayName": "Doubao Seed 2.0 Mini (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-mini-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-mini-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-mini-260215 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-mini-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-mini-260215",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-0-mini-260215",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "volcengine-agent-plan/doubao-seed-2-0-mini-260215"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"doubao-seed-2-0-mini-260215 即将下线 … 128k\" — retiring soon",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.0-mini-260215",
+      "modelFamily": "other"
+    },
+    {
+      "key": "volcengine-agent-plan/doubao-seed-2-1-turbo-260628",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "doubao-seed-2-1-turbo-260628",
+      "displayName": "Doubao Seed 2.1 Turbo (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-1-turbo-260628",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-1-turbo-260628",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-1-turbo-260628 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-1-turbo-260628",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-1-turbo-260628",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-2-1-turbo-260628",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 256k\" — active, top-recommended model, not retiring",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-2.1-turbo-260628",
+      "modelFamily": "other"
+    },
+    {
+      "key": "volcengine-agent-plan/doubao-seed-evolving",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "doubao-seed-evolving",
+      "displayName": "Doubao Seed Evolving (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-evolving",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-evolving",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-evolving — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-evolving",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-evolving",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#doubao-seed-evolving",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 256k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "doubao-seed-evolving",
+      "modelFamily": "other"
+    },
+    {
+      "key": "volcengine-agent-plan/glm-5-2-260617",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "glm-5-2-260617",
+      "displayName": "GLM 5.2 (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#glm-5-2-260617",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#glm-5-2-260617",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#glm-5-2-260617 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#glm-5-2-260617",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#glm-5-2-260617",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#glm-5-2-260617",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.volcengine.com/docs/82379/1449737 (read 2026-10-29): reasoning in `choices.message.reasoning_content`; these models output the raw chain of thought",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "volcengine-agent-plan/glm-5-2-260617"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.volcengine.com/docs/82379/1449737 (深度思考, read 2026-10-29), 回传原始思考内容: models that output their raw chain of thought take `reasoning_content` back on the assistant message beside `tool_calls`; supported: doubao-seed-2-0-lite/mini-260428 and -260215, doubao-seed-2-0-pro-260215, doubao-seed-2-0-code-preview-260215, deepseek-v4-pro-260425, deepseek-v4-flash-ga-260731, deepseek-v4-1-flash variants, glm-5-2-260617. \"工具调用场景中开启深度思考后 ... 历史轮次的思维链内容按需（模型自主判断）参与推理\" (in tool calls, earlier rounds' chain of thought takes part in reasoning as the model judges); English mirror https://docs.byteplus.com/en/docs/ModelArk/1449737 Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.volcengine.com/docs/82379/1330310 (read 2026-09-27): \"最大回答(默认 4k): 128k\" — active, not retiring",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.2-260617",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "volcengine-agent-plan/kimi-k2.6",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "kimi-k2.6",
+      "displayName": "Kimi K2.6 (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart (read 2026-09-27): \"kimi-k2.7-code and kimi-k2.6 models both provide a 256K context window\" — maker page for the identical model id served by the Agent Plan; catalog's 1048576 is contradicted by the maker-stated 256K (=256000) (CORRECTS the upstream-extracted 1048576, which carried no vendor statement: open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.6)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.6",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "volcengine-agent-plan/kimi-k2.7-code",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "kimi-k2.7-code",
+      "displayName": "Kimi K2.7 Code (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart (read 2026-09-27): \"kimi-k2.7-code and kimi-k2.6 models both provide a 256K context window\" (CORRECTS the upstream-extracted 1048576, which carried no vendor statement: open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.7-code)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.7-code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.7-code — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.7-code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.7-code",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k2.7-code",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "volcengine-agent-plan/kimi-k3",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "kimi-k3",
+      "displayName": "Kimi K3 (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#kimi-k3",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.kimi.ai/docs/guide/kimi-k3-quickstart (read 2026-09-27): \"max_completion_tokens defaults to 131072 and can be set up to 1048576.\" — exact integer given directly, no K/M conversion needed",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "volcengine-agent-plan/minimax-m2.7",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "minimax-m2.7",
+      "displayName": "MiniMax M2.7 (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.minimax.io/docs/guides/text-generation (read 2026-09-27): \"MiniMax-M2.7 | 204,800 | Beginning the journey of recursive self-improvement\" — exact integer stated by maker; catalog's 1048576 is contradicted (CORRECTS the upstream-extracted 1048576, which carried no vendor statement: open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m2.7)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m2.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m2.7",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "volcengine-agent-plan/minimax-m3",
+      "providerId": "volcengine-agent-plan",
+      "upstreamId": "minimax-m3",
+      "displayName": "MiniMax M3 (Agent Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/volcengine/agent-plan/index.ts#minimax-m3",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax"
+    }
+  ]
+}
