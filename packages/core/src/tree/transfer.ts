@@ -47,10 +47,9 @@ const SENT_WAIT_MS = 10 * 60 * 1000;
 export const ReceiveParams = z.object({
   from: TreePath, to: TreePath, move: z.boolean(),
   session: SessionId.optional(), level: Level,
-  /** The user's signed answer whose card binds the destination. */
+  /** The one signed answer for the whole operation (ruling R15), which both holders check; the destination passes it
+   *  to the source with the stream. */
   answer: SignedCardAnswer.optional(),
-  /** The one whose card binds the source. */
-  sourceAnswer: SignedCardAnswer.optional(),
 });
 export type ReceiveParams = z.infer<typeof ReceiveParams>;
 const SendMeta = z.object({ from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
@@ -66,7 +65,7 @@ export interface TransferResult {
  *  operation, both paths and both computers, each holder naming them from its own tree. The card binds the
  *  destination; each holder rebuilds the same card and checks the one answer against it. */
 export function transferChange(move: boolean, from: string, to: string, source: string, destination: string): TreeChange {
-  return { method: "tree.transfer", params: { operation: move ? "move" : "copy", from, to, source, destination } } as unknown as TreeChange;
+  return { method: "tree.transfer", params: { op: move ? "move" : "copy", from, to, source, destination } } as unknown as TreeChange;
 }
 
 /** One holder's part: the destination judges the whole operation, the source a move (a copy only reads there). A
@@ -398,7 +397,7 @@ async function cleanUp(staging: string, made: string): Promise<void> {
 /** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
 export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: ReceiveParams, as: Caller): Promise<TransferResult> {
   const dcall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
-  const scall: HolderCall = { as, level: p.level, ...(p.sourceAnswer ? { answer: p.sourceAnswer } : {}) };
+  const scall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
   const to = await dst.realEntry(p.to, dcall, "write");
   if (to.exists) throw new ContractError("conflict", `${p.to} already exists`);
   const from = await src.realEntry(p.from, scall, p.move ? "delete" : "read");
@@ -488,7 +487,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     }
     const stream = link.openStream("tree.send", "files", {
       from: p.from, to: p.to, move: p.move, level: p.level,
-      ...(p.session ? { session: p.session } : {}), ...(p.sourceAnswer ? { answer: p.sourceAnswer } : {}),
+      ...(p.session ? { session: p.session } : {}), ...(p.answer ? { answer: p.answer } : {}),
     } satisfies z.infer<typeof SendMeta>);
     let got: { sendId: string; files: number; bytes: number };
     try {
@@ -618,9 +617,8 @@ export async function transferAsking(o: {
   // One card for the whole operation, whichever holders ask: the same signed answer goes to both.
   const put = (answer: SignedCardAnswer) => {
     p.answer = answer;
-    p.sourceAnswer = answer;
   };
-  if (o.ask && !p.answer && !p.sourceAnswer) {
+  if (o.ask && !p.answer) {
     const parts: { role: "source" | "destination"; end: End }[] = [];
     // The destination judges the call as a peer's unless it is this computer; the source judges the destination's
     // stream as a peer's whenever the two differ.

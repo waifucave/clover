@@ -44,7 +44,7 @@ describe("approvals follow the files (R1)", () => {
     const reviewed: string[] = [];
     const reviewer: PeerReviewer = async (c) => {
       reviewed.push(`${c.computer} ${c.method}`);
-      return JSON.stringify(c.params).includes("risky") ? "ask" : "allow";
+      return JSON.stringify(c.params).includes("risky") ? "risky" : "safe";
     };
     const { studio, laptop, phone } = await two({ reviewer });
     await studio.node.tree.write("home/Laptop1/plain.txt", utf8("plain"), { as: BOT });
@@ -62,9 +62,16 @@ describe("approvals follow the files (R1)", () => {
     expect(existsSync(join(laptop.home, "risky2.txt"))).toBe(false);
   });
 
+  test("a reviewer that can't judge (no model can run) counts as risky", async () => {
+    const { studio, laptop, phone } = await two({ reviewer: async () => "unavailable" });
+    await studio.node.tree.write("home/Laptop1/x.txt", utf8("x"), { as: BOT });
+    expect(phone.shown.map((n) => n.method)).toEqual(["tree.write"]);
+    expect(readFileSync(join(laptop.home, "x.txt"), "utf8")).toBe("x");
+  });
+
   test("a delete at ask-risky always asks; the reviewer isn't asked", async () => {
     const reviewed: string[] = [];
-    const { studio, laptop, phone } = await two({ reviewer: async (c) => { reviewed.push(c.method); return "allow"; } });
+    const { studio, laptop, phone } = await two({ reviewer: async (c) => { reviewed.push(c.method); return "safe"; } });
     writeFileSync(join(laptop.home, "old.log"), "x");
     await studio.node.tree.remove("home/Laptop1/old.log", { as: BOT });
     expect(existsSync(join(laptop.home, "old.log"))).toBe(false);
@@ -74,7 +81,7 @@ describe("approvals follow the files (R1)", () => {
 
   test("a command on another computer: the reviewer there, or the user's answer for that command", async () => {
     if (!posix) return;
-    const { studio, laptop, phone } = await two({ reviewer: async (c) => (JSON.stringify(c.params).includes("rm ") ? "ask" : "allow") });
+    const { studio, laptop, phone } = await two({ reviewer: async (c) => (JSON.stringify(c.params).includes("rm ") ? "risky" : "safe") });
     const ctx = { session: "s_alpha", sessionKind: "bot" as const, callId: "c1", cwd: "home/Studio" };
     const ok = await studio.node.tools.run("Bash", { command: "cd home/Laptop1 && echo fine" }, ctx);
     expect((ok.output as { stdout: string }).stdout).toBe("fine\n");

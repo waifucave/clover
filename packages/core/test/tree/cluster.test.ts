@@ -142,6 +142,11 @@ describe("a fenced name in another case (review B1)", () => {
     expect(await code(t.write("home/Laptop1/.clover/levels/COMPUTER.JSON", utf8("{}"), { as: BOT }))).toBe("fenced");
     await t.write("home/Laptop1/stage/x.json", utf8("{}"), { as: BOT });
     expect(await code(t.move("home/Laptop1/stage", "home/Laptop1/.clover/CONNECTORS", { as: BOT }))).toBe("fenced");
+    // The long s and the Kelvin sign fold too, and no name under the Clover home may be anything but ASCII.
+    expect(await code(t.write("home/Laptop1/.clover/\u017Fettings/settings.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/secrets.\u212Aey", utf8("x"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/plugins/caf\u00E9/clover.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/caf\u00E9.txt", utf8("ok"), { as: BOT }))).toBe("ok");
     // A bot on Laptop1 itself, through its own tree.
     expect(await code(laptop.node.tree.write("home/Laptop1/.clover/Settings/settings.json", utf8('{"evil":1}'), { as: BOT }))).toBe("fenced");
     expect(existsSync(join(ch, "rules", "allow.json"))).toBe(false);
@@ -417,7 +422,7 @@ describe("moves between computers take the direct path (review S1)", () => {
     await cluster.join();
     mkdirSync(join(studio.home, "proj"));
     writeFileSync(join(studio.home, "proj", "a.txt"), "a");
-    const whole = { operation: "move", from: "home/Studio/proj", to: "home/Laptop1/proj", source: "Studio", destination: "Laptop1" };
+    const whole = { op: "move", from: "home/Studio/proj", to: "home/Laptop1/proj", source: "Studio", destination: "Laptop1" };
     // An answer for another operation, or for one holder's own call, doesn't carry it.
     const elsewhere = await phone.approve("Laptop1", "tree.transfer", { ...whole, to: "home/Laptop1/elsewhere" });
     expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: elsewhere }))).toBe("refused");

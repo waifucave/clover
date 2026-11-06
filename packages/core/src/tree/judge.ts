@@ -18,8 +18,9 @@ import {
 } from "../contracts/approval-broker";
 import { ContractError, isContractError } from "../contracts/common";
 
-/** The holder's reviewer for a peer's call at `ask-risky` (lane C's): `allow`, or `ask` for one it judges risky. */
-export type PeerReviewer = (call: { computer: string; method: string; params: unknown; as: Caller; effect: ActionEffect }) => Promise<"allow" | "ask">;
+/** The holder's reviewer for a peer's call at `ask-risky` (lane C's; the shape of B-M1's `TreeReviewer`): `safe` runs;
+ *  `risky`, or `unavailable` (no model can run), needs the user's answer. */
+export type PeerReviewer = (call: { computer: string; method: string; params: unknown; as: Caller; effect: ActionEffect }) => Promise<"safe" | "risky" | "unavailable">;
 
 export interface Answers {
   devices: AnswerDevices;
@@ -77,7 +78,7 @@ export async function judgePeer(o: {
   if (!o.answer) {
     if (d === "review" && o.reviewer) {
       const verdict = await o.reviewer({ computer: o.computer, method: o.method, params: o.params, as: o.as, effect: o.effect });
-      if (verdict === "allow") return;
+      if (verdict === "safe") return;
     }
     throw needsAnswer(o.boundTo ?? o.computer, o.method, o.params, o.answers?.render, `${o.computer} needs the user's answer for this, signed and bound to it`);
   }

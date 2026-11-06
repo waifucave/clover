@@ -23,7 +23,7 @@
 //   `judge.ts`, R1): at `ask-risky` this computer's reviewer passes what isn't risky, and where the level asks, only the
 //   user's signed answer bound to exactly that call lets it through; the refusal carries this computer's card for the
 //   calling computer to show. Reads, lists, glob and grep are fenced but never asked about.
-import { constants as FS, promises as fsp, type Dirent, type Stats } from "node:fs";
+import { constants as FS, promises as fsp, realpathSync, type Dirent, type Stats } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import {
   DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment,
@@ -91,6 +91,9 @@ export interface LocalHolderOptions {
   os?: Os;
   /** This computer's fence. Calls for the user and the core never ask it. */
   fence?: Pick<Fence, "check" | "fencedSet">;
+  /** The Clover home, where a fenced caller may make no name that isn't ASCII (B-M1's contract review): a name the
+   *  disk folds where no fold here does can't reach a fenced item. */
+  cloverHome?: string;
   /** This computer's level, which a peer's change is judged at. */
   level?: () => Level;
   /** What checks a peer's signed answer: the paired devices, this computer's ledger of used card ids, and its own
@@ -144,6 +147,7 @@ export function diskError(err: unknown, what: string): ContractError {
 export class LocalHolder implements Holder {
   readonly os: Os;
   readonly #o: LocalHolderOptions;
+  #cloverHomeReal: string | undefined;
   readonly #answers: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   readonly watches: FolderWatches;
 
@@ -732,6 +736,9 @@ export class LocalHolder implements Holder {
   #fenced(op: FenceOp, call: HolderCall): void {
     const as = call.as;
     if (as.kind === "user" || as.kind === "core") return;
+    if (op.op === "write" || op.op === "delete" || op.op === "move") {
+      for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderCloverHome(p);
+    }
     const verdict = this.#check(op);
     if (!verdict.allowed) {
       throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer: this.#o.name(), reason: verdict.reason });
@@ -741,6 +748,29 @@ export class LocalHolder implements Holder {
   #mayRead(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return true;
     return this.#check({ op: "read", path: real }).allowed;
+  }
+
+  /** A change under the Clover home names only ASCII below it. */
+  #asciiUnderCloverHome(real: string): void {
+    if (!this.#o.cloverHome) return;
+    // The home's real path, as the paths it is compared with are (`/var` is `/private/var` on a Mac).
+    this.#cloverHomeReal ??= (() => {
+      try {
+        return realpathSync.native(this.#o.cloverHome!);
+      } catch {
+        return this.#o.cloverHome!;
+      }
+    })();
+    const home = this.#cloverHomeReal;
+    const fold = (p: string) => foldPath(p, this.os).replace(/\/+$/, "");
+    const h = fold(home);
+    const p = fold(real);
+    if (p !== h && !p.startsWith(`${h}/`)) return;
+    // The real path's own spelling below the home, not the fold (which may have made it ASCII).
+    const below = real.slice(home.replace(/[\\/]+$/, "").length);
+    if (/[^\x00-\x7f]/.test(below)) {
+      throw new ContractError("fenced", `names under the Clover home are ASCII; ${below.replace(/^[\\/]/, "")} isn't`, { computer: this.#o.name(), reason: "clover-home" });
+    }
   }
 
   /** The fence's verdict, as is and folded (review B1): refused when either refuses. */

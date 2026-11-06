@@ -135,6 +135,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     aliases: () => registry.self().aliases,
     home: o.home,
     botsRoot,
+    cloverHome: o.cloverHome,
     runsBot: (bot) => bots().includes(bot),
     os,
     level: () => registry.self().level,
@@ -190,7 +191,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.resolve(path).computer) });
   const tree: CoreTree = new CoreTree({
     directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
-    transfer: ({ from, to, move, source, destination, call, answers }) => {
+    transfer: ({ from, to, move, source, destination, call }) => {
       const session = call.as.kind === "session" || call.as.kind === "peer" ? call.as.sessionId : undefined;
       // R1: asks the user up front for each holder whose level needs their answer, then sends the call once.
       return transferAsking({
@@ -199,7 +200,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
         params: {
           from, to, move, level: call.level ?? registry.self().level,
           ...(session === undefined ? {} : { session }),
-          ...(answers.destination ? { answer: answers.destination } : {}), ...(answers.source ? { sourceAnswer: answers.source } : {}),
+          ...(call.answer ? { answer: call.answer } : {}),
         },
         ...(o.askUser ? { ask: o.askUser } : {}),
       });
