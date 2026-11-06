@@ -11,6 +11,11 @@
 //   credits back as its listeners take the bytes. A listener may return a promise; the next chunk, and the credit,
 //   wait for it, so a slow reader slows the sender instead of growing a buffer here.
 //
+// The sidecar restarts (§8.3, S6.1): if it exits, the same wire starts it again with backoff (0.5 s doubling to 30 s,
+// from the first again after a healthy minute), with the same `init` (the seed over stdin again, the last allow list,
+// the current n0 lookup). Its connections, streams and dials end offline, so the transport re-dials; dials made while
+// it restarts wait for it (within their timeout); `onRestart` tells the daemon to read the net report again.
+//
 // Hooks for the other lanes: `spawn` is where lane C's fence wraps the process (it needs UDP and its pipes, nothing
 // else; `spawnSidecar` is the plain spawn to wrap), and `binary` is the signed one lane M ships beside the core.
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -32,6 +37,10 @@ const T_CREDIT = 2;
 export const STREAM_WINDOW = 2 * 1024 * 1024;
 /** Writes go over in pieces of at most this, so credit comes back while a big write is still going. */
 const PIECE = 256 * 1024;
+/** The restart backoff (§8.3): doubling from half a second, at most 30 s. */
+const RESTART_BACKOFF_MS: readonly number[] = [500, 1000, 2000, 4000, 8000, 16000, 30000];
+/** A sidecar that ran this long before it exited restarts from the first step again. */
+const HEALTHY_MS = 60_000;
 
 /** The process the wire talks to: what `Bun.spawn` gives, narrowed to what's used. */
 export interface SidecarProcess {
@@ -39,6 +48,7 @@ export interface SidecarProcess {
   readonly stdout: ReadableStream<Uint8Array>;
   kill(): void;
   readonly exited: Promise<number>;
+  readonly pid?: number;
 }
 
 export interface SidecarWireOptions {
@@ -46,7 +56,8 @@ export interface SidecarWireOptions {
   key: DeviceKey;
   /** `default` (n0's relays, with QUIC address discovery), `disabled`, or a relay's URL. */
   relay?: string;
-  /** Publish to n0's address lookup (the relay URL only): only for a device without an account (item 81). */
+  /** Publish to n0's address lookup (the relay URL only): only for a device without an account (item 81).
+   *  `setN0Lookup` changes it while running. */
   n0Lookup: boolean;
   /** `ip:port` to bind instead of every interface (tests bind loopback). */
   bind?: string;
@@ -56,8 +67,10 @@ export interface SidecarWireOptions {
   congestion?: "bbr" | "cubic";
   /** Lane C's fence wraps the spawn here. */
   spawn?(argv: readonly string[]): SidecarProcess;
-  /** The sidecar's own diagnostics (never a secret: the key is never printed). */
+  /** The sidecar's own diagnostics, and the wire's restarts (never a secret: the key is never printed). */
   onLog?(line: string): void;
+  /** For tests: the restart backoff, in ms. */
+  restartBackoffMs?: readonly number[];
 }
 
 type NetReport = { mapping: NatMapping; globalV4?: string; relay?: string; direct: string[] };
@@ -116,8 +129,11 @@ export function spawnSidecar(argv: readonly string[], onLog?: (line: string) => 
     stdout: p.stdout,
     kill: () => p.kill(),
     exited: p.exited,
+    pid: p.pid,
   };
 }
+
+type Waiter = { resolve(): void; reject(e: Error): void };
 
 export class SidecarWire implements WireEndpoint {
   readonly publicKey: Bytes;
@@ -127,9 +143,19 @@ export class SidecarWire implements WireEndpoint {
   readonly #streams = new Map<number, SidecarStream>();
   readonly #dials = new Map<number, { key: string; alpn: string; resolve(c: WireConn): void; reject(e: Error): void }>();
   readonly #asks = new Map<number, { resolve(m: Record<string, unknown>): void; reject(e: Error): void }>();
+  readonly #restarted = new Listeners<void>();
+  /** Waiting for the sidecar to be up again (dials and reports made while it restarts). */
+  readonly #waiters = new Set<Waiter>();
   #proc: SidecarProcess | undefined;
+  /** Which process the conns and streams belong to: an object of an older one never reaches a newer one. */
+  #gen = 0;
   #up = false;
+  #upSince = 0;
   #relay: string | undefined;
+  #n0Lookup: boolean;
+  #allow: { keys: string[]; revoked: string[] } = { keys: [], revoked: [] };
+  #attempt = 0;
+  #restartTimer: ReturnType<typeof setTimeout> | undefined;
   #nextReq = 1;
   #nextStream = 2;
   #closed = false;
@@ -137,6 +163,7 @@ export class SidecarWire implements WireEndpoint {
   private constructor(o: SidecarWireOptions) {
     this.#o = o;
     this.publicKey = own(Uint8Array.from(o.key.publicKey));
+    this.#n0Lookup = o.n0Lookup;
   }
 
   static async start(o: SidecarWireOptions): Promise<SidecarWire> {
@@ -159,11 +186,14 @@ export class SidecarWire implements WireEndpoint {
   async dial(target: DialTarget, opts: DialOptions): Promise<WireConn> {
     if (this.#closed) throw new WireOffline("this endpoint is closed");
     if (opts.signal?.aborted) throw new WireOffline("the dial was cancelled");
+    const deadline = Date.now() + (opts.timeoutMs ?? 10_000);
+    // A sidecar that is restarting is waited for, within the dial's own time (and again, should it go once more).
+    while (!this.#up) await this.#whenUp(deadline - Date.now(), opts.signal);
     const id = this.#nextReq++;
     const done = new Promise<WireConn>((resolve, reject) => this.#dials.set(id, { key: toHex(target.key), alpn: opts.alpn, resolve, reject }));
     this.#send({
       op: "dial", id, key: toHex(target.key), alpn: opts.alpn, lan: target.lan ?? [], direct: target.direct ?? [],
-      relay: target.relay ?? null, directOnly: opts.directOnly === true, timeoutMs: opts.timeoutMs ?? 10_000,
+      relay: target.relay ?? null, directOnly: opts.directOnly === true, timeoutMs: Math.max(1, deadline - Date.now()),
     });
     opts.signal?.addEventListener("abort", () => {
       const d = this.#dials.get(id);
@@ -181,13 +211,31 @@ export class SidecarWire implements WireEndpoint {
   }
 
   /** The keys whose link connections the sidecar lets through, and the revoked ones it closes as revoked. Until the
-   *  first call, it lets none through. */
+   *  first call, it lets none through; a restart starts with the last lists. */
   allow(keys: readonly Uint8Array[], revoked: readonly Uint8Array[] = []): void {
-    this.#send({ op: "allow", keys: keys.map(toHex), revoked: revoked.map(toHex) });
+    this.#allow = { keys: keys.map(toHex), revoked: revoked.map(toHex) };
+    if (this.#up) this.#send({ op: "allow", ...this.#allow });
+  }
+
+  /** Whether to publish to n0's address lookup (item 81: only a device without an account): the sidecar switches it
+   *  while running, and a restart keeps it (m10 of H-M1's review). */
+  setN0Lookup(on: boolean): void {
+    if (this.#n0Lookup === on) return;
+    this.#n0Lookup = on;
+    if (this.#up) this.#send({ op: "n0Lookup", on });
+  }
+
+  get n0Lookup(): boolean {
+    return this.#n0Lookup;
   }
 
   networkChanged(): void {
-    this.#send({ op: "networkChanged" });
+    if (this.#up) this.#send({ op: "networkChanged" });
+  }
+
+  /** The sidecar was started again after it exited (its port and addresses may have changed). */
+  onRestart(fn: () => void): Unsubscribe {
+    return this.#restarted.add(fn);
   }
 
   /** The two-STUN mapping check (iroh's net report over QUIC address discovery), and this endpoint's addresses. */
@@ -224,6 +272,10 @@ export class SidecarWire implements WireEndpoint {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    if (this.#restartTimer) clearTimeout(this.#restartTimer);
+    this.#restartTimer = undefined;
+    for (const w of [...this.#waiters]) w.reject(new WireOffline("this endpoint is closed"));
+    this.#waiters.clear();
     const proc = this.#proc;
     if (proc) {
       send(proc, { op: "shutdown" });
@@ -232,20 +284,26 @@ export class SidecarWire implements WireEndpoint {
     }
     this.#up = false;
     this.#proc = undefined;
-    this.#lost("the link sidecar is gone");
+    this.#lost("the link sidecar is gone", true);
   }
 
   // ---- for the conns and streams ----
 
-  /** @internal */
-  sendJson(m: Record<string, unknown>): void {
-    this.#send(m);
+  /** @internal Which process objects made now belong to. */
+  get gen(): number {
+    return this.#gen;
   }
 
-  /** @internal Stream bytes to the sidecar; false when it is gone. */
-  sendData(stream: number, chunk: Uint8Array): boolean {
+  /** @internal */
+  sendJson(m: Record<string, unknown>, gen: number): void {
+    if (gen === this.#gen) this.#send(m);
+  }
+
+  /** @internal Stream bytes to the sidecar; false when the process they were for is gone. */
+  sendData(stream: number, chunk: Uint8Array, gen: number): boolean {
+    // Keyed on the process, not on `#up`: a stream may start in the same read as the process's `ready`.
     const proc = this.#proc;
-    if (this.#closed || !proc) return false;
+    if (this.#closed || !proc || gen !== this.#gen) return false;
     const head = new Uint8Array(13);
     const v = new DataView(head.buffer);
     v.setUint32(0, 9 + chunk.byteLength, false);
@@ -256,9 +314,9 @@ export class SidecarWire implements WireEndpoint {
   }
 
   /** @internal The core's reader took `n` more bytes of a stream. */
-  sendCredit(stream: number, n: number): void {
+  sendCredit(stream: number, n: number, gen: number): void {
     const proc = this.#proc;
-    if (this.#closed || !proc) return;
+    if (this.#closed || !proc || gen !== this.#gen) return;
     const f = new Uint8Array(17);
     const v = new DataView(f.buffer);
     v.setUint32(0, 13, false);
@@ -272,10 +330,10 @@ export class SidecarWire implements WireEndpoint {
   newStream(conn: SidecarConn, priority: number): SidecarStream {
     const id = this.#nextStream;
     this.#nextStream += 2;
-    const s = new SidecarStream(this, id, priority, conn);
+    const s = new SidecarStream(this, id, priority, conn, conn.gen);
     this.#streams.set(id, s);
     conn.streams.add(s);
-    this.#send({ op: "open", conn: conn.num, stream: id, priority });
+    this.sendJson({ op: "open", conn: conn.num, stream: id, priority }, conn.gen);
     return s;
   }
 
@@ -289,6 +347,7 @@ export class SidecarWire implements WireEndpoint {
   /** Starts a sidecar process and waits for its `ready` under this device's key. */
   async #launch(): Promise<void> {
     const o = this.#o;
+    const gen = ++this.#gen;
     const proc = o.spawn ? o.spawn([o.binary]) : spawnSidecar([o.binary], o.onLog);
     this.#proc = proc;
     const ready = new Promise<{ publicKey: string; relay?: string | null }>((resolve, reject) => {
@@ -298,8 +357,9 @@ export class SidecarWire implements WireEndpoint {
         try {
           for await (const chunk of proc.stdout) {
             for (const f of reader.push(chunk)) {
-              if (started) this.#frame(f);
-              else if (f[0] === T_JSON) {
+              if (started) {
+                if (gen === this.#gen) this.#frame(f);
+              } else if (f[0] === T_JSON) {
                 const m = JSON.parse(fromUtf8(f.subarray(1))) as Record<string, unknown>;
                 if (m.ev === "ready") {
                   started = true;
@@ -312,7 +372,7 @@ export class SidecarWire implements WireEndpoint {
           // the pipe broke: handled below
         }
         reject(new ContractError("closed", "the link sidecar exited"));
-        this.#exited();
+        this.#exited(gen);
       })();
     });
     const seed = fromBase64(o.key.seed().reveal());
@@ -320,10 +380,11 @@ export class SidecarWire implements WireEndpoint {
       proc.kill();
       throw new ContractError("invalid", "the device key's seed is unreadable");
     }
+    const sent = { allow: this.#allow, n0Lookup: this.#n0Lookup };
     send(proc, {
       op: "init", seed: toHex(seed), alpns: [...(o.alpns ?? [ALPN_LINK, ALPN_PAIR])], relay: o.relay ?? "default",
-      n0Lookup: o.n0Lookup, window: STREAM_WINDOW, ...(o.congestion ? { congestion: o.congestion } : {}),
-      ...(o.bind ? { bind: o.bind } : {}),
+      n0Lookup: sent.n0Lookup, window: STREAM_WINDOW, ...(o.congestion ? { congestion: o.congestion } : {}),
+      ...(o.bind ? { bind: o.bind } : {}), allow: sent.allow.keys, revoked: sent.allow.revoked,
     });
     seed.fill(0);
     let r: { publicKey: string; relay?: string | null };
@@ -337,23 +398,85 @@ export class SidecarWire implements WireEndpoint {
       proc.kill();
       throw new ContractError("failed", "the link sidecar runs under another key");
     }
+    if (this.#closed || gen !== this.#gen) {
+      proc.kill();
+      throw new WireOffline("this endpoint is closed");
+    }
     this.#relay = r.relay ?? undefined;
     this.#up = true;
+    this.#upSince = Date.now();
+    // What changed while it started.
+    if (this.#allow !== sent.allow) this.#send({ op: "allow", ...this.#allow });
+    if (this.#n0Lookup !== sent.n0Lookup) this.#send({ op: "n0Lookup", on: this.#n0Lookup });
+    for (const w of [...this.#waiters]) w.resolve();
+    this.#waiters.clear();
   }
 
-  /** The sidecar exited, or was killed: the wire ends with it (a restart is a follow-up). */
-  #exited(): void {
+  /** A process's stdout ended: it exited, or was killed. */
+  #exited(gen: number): void {
+    if (gen !== this.#gen) return;
     const wasUp = this.#up;
     this.#up = false;
     this.#proc = undefined;
-    if (!wasUp || this.#closed) return;
-    this.#closed = true;
-    this.#lost("the link sidecar is gone");
+    if (this.#closed) return;
+    // Only a sidecar that was running restarts; the first start's failure is `start`'s to report.
+    if (!wasUp && this.#upSince === 0) return;
+    this.#lost("the link sidecar exited", false);
+    if (wasUp && Date.now() - this.#upSince >= HEALTHY_MS) this.#attempt = 0;
+    this.#scheduleRestart();
   }
 
-  /** A request answered by id (`netReport`, `stats`). */
+  #scheduleRestart(): void {
+    if (this.#closed || this.#restartTimer) return;
+    const backoff = this.#o.restartBackoffMs ?? RESTART_BACKOFF_MS;
+    const ms = backoff[Math.min(this.#attempt, backoff.length - 1)] ?? 30_000;
+    this.#attempt++;
+    this.#o.onLog?.(`the link sidecar exited; starting it again in ${ms} ms`);
+    this.#restartTimer = setTimeout(() => {
+      this.#restartTimer = undefined;
+      void this.#restart();
+    }, ms);
+  }
+
+  async #restart(): Promise<void> {
+    if (this.#closed) return;
+    try {
+      await this.#launch();
+    } catch (e) {
+      if (this.#closed) return;
+      this.#o.onLog?.(`the link sidecar didn't start again: ${e instanceof Error ? e.message : String(e)}`);
+      this.#up = false;
+      this.#proc = undefined;
+      this.#scheduleRestart();
+      return;
+    }
+    this.#o.onLog?.("the link sidecar started again");
+    this.#restarted.emit();
+  }
+
+  #whenUp(ms: number, signal?: AbortSignal): Promise<void> {
+    if (this.#up) return Promise.resolve();
+    if (this.#closed) return Promise.reject(new WireOffline("this endpoint is closed"));
+    return new Promise<void>((resolve, reject) => {
+      const done = (fn: () => void) => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        this.#waiters.delete(w);
+        fn();
+      };
+      const w: Waiter = { resolve: () => done(resolve), reject: (e) => done(() => reject(e)) };
+      const onAbort = () => w.reject(new WireOffline("the dial was cancelled"));
+      const timer = setTimeout(() => w.reject(new WireOffline("the link sidecar is restarting")), Math.max(0, ms));
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.#waiters.add(w);
+    });
+  }
+
+  /** A request answered by id (`netReport`, `stats`), waiting for a restarting sidecar first. */
   async #ask(op: string): Promise<Record<string, unknown>> {
     if (this.#closed) throw new WireOffline("this endpoint is closed");
+    const deadline = Date.now() + 10_000;
+    while (!this.#up) await this.#whenUp(deadline - Date.now());
     const id = this.#nextReq++;
     const p = new Promise<Record<string, unknown>>((resolve, reject) => this.#asks.set(id, { resolve, reject }));
     this.#send({ op, id });
@@ -361,14 +484,14 @@ export class SidecarWire implements WireEndpoint {
   }
 
   /** Everything of the process that went: dials, requests, streams and connections, offline. */
-  #lost(reason: string): void {
+  #lost(reason: string, local: boolean): void {
     for (const d of this.#dials.values()) d.reject(new WireOffline(reason));
     this.#dials.clear();
     for (const a of this.#asks.values()) a.reject(new WireOffline(reason));
     this.#asks.clear();
     for (const s of [...this.#streams.values()]) s.receiveReset(RESET_CONN_LOST);
     this.#streams.clear();
-    for (const c of [...this.#conns.values()]) c.end({ code: CLOSE_LOST, reason, local: true });
+    for (const c of [...this.#conns.values()]) c.end({ code: CLOSE_LOST, reason, local });
     this.#conns.clear();
   }
 
@@ -427,7 +550,7 @@ export class SidecarWire implements WireEndpoint {
           this.#send({ op: "reset", stream: m.stream, code: RESET_CONN_LOST });
           return;
         }
-        const s = new SidecarStream(this, m.stream as number, 0, conn);
+        const s = new SidecarStream(this, m.stream as number, 0, conn, conn.gen);
         this.#streams.set(s.num, s);
         conn.streams.add(s);
         conn.incoming(s);
@@ -466,7 +589,7 @@ export class SidecarWire implements WireEndpoint {
   #adopt(num: number, outbound: boolean, peerKey: string, alpn: string, path: PathInfo): SidecarConn {
     const known = this.#conns.get(num);
     if (known) return known;
-    const conn = new SidecarConn(this, num, own(Uint8Array.from(Buffer.from(peerKey, "hex"))), alpn, outbound, path);
+    const conn = new SidecarConn(this, num, own(Uint8Array.from(Buffer.from(peerKey, "hex"))), alpn, outbound, path, this.#gen);
     this.#conns.set(num, conn);
     return conn;
   }
@@ -506,6 +629,7 @@ class SidecarConn implements WireConn {
   readonly alpn: string;
   readonly outbound: boolean;
   readonly closed: Promise<WireClose>;
+  readonly gen: number;
   /** Its streams, which end with it. */
   readonly streams = new Set<SidecarStream>();
   readonly #wire: SidecarWire;
@@ -516,10 +640,11 @@ class SidecarConn implements WireConn {
   #resolveClosed!: (c: WireClose) => void;
   #ended = false;
 
-  constructor(wire: SidecarWire, num: number, peerKey: Bytes, alpn: string, outbound: boolean, path: PathInfo) {
+  constructor(wire: SidecarWire, num: number, peerKey: Bytes, alpn: string, outbound: boolean, path: PathInfo, gen: number) {
     this.#wire = wire;
     this.num = num;
-    this.id = `sc${num}`;
+    this.gen = gen;
+    this.id = `sc${gen}.${num}`;
     this.peerKey = peerKey;
     this.alpn = alpn;
     this.outbound = outbound;
@@ -536,8 +661,8 @@ class SidecarConn implements WireConn {
   }
 
   openStream(priority: number): WireStream {
-    if (this.#ended) {
-      const s = new SidecarStream(this.#wire, -1, priority, undefined);
+    if (this.#ended || this.gen !== this.#wire.gen) {
+      const s = new SidecarStream(this.#wire, -1, priority, undefined, this.gen);
       s.receiveReset(RESET_CONN_LOST);
       return s;
     }
@@ -552,7 +677,7 @@ class SidecarConn implements WireConn {
 
   close(code: number, reason: string): void {
     if (this.#ended) return;
-    this.#wire.sendJson({ op: "close", conn: this.num, code, reason });
+    this.#wire.sendJson({ op: "close", conn: this.num, code, reason }, this.gen);
   }
 
   /** @internal */
@@ -585,6 +710,7 @@ class SidecarStream implements WireStream {
   readonly num: number;
   readonly #wire: SidecarWire;
   readonly #conn: SidecarConn | undefined;
+  readonly #gen: number;
   readonly #data = new Set<(chunk: Uint8Array) => void | Promise<void>>();
   readonly #fin = new Listeners<void>();
   readonly #reset = new Listeners<number>();
@@ -609,11 +735,12 @@ class SidecarStream implements WireStream {
   #resetCode: number | undefined;
   #forgotten = false;
 
-  constructor(wire: SidecarWire, num: number, priority: number, conn: SidecarConn | undefined) {
+  constructor(wire: SidecarWire, num: number, priority: number, conn: SidecarConn | undefined, gen: number) {
     this.#wire = wire;
     this.num = num;
     this.priority = priority;
     this.#conn = conn;
+    this.#gen = gen;
   }
 
   get queuedBytes(): number {
@@ -652,7 +779,7 @@ class SidecarStream implements WireStream {
     if (this.#resetCode !== undefined) return;
     this.#resetCode = code;
     this.#dropAll(new WireOffline("the stream was reset"));
-    this.#wire.sendJson({ op: "reset", stream: this.num, code });
+    this.#wire.sendJson({ op: "reset", stream: this.num, code }, this.#gen);
     this.#maybeForget();
   }
 
@@ -715,8 +842,8 @@ class SidecarStream implements WireStream {
       if (this.#unacked > 0 && this.#unacked + p.bytes.byteLength > STREAM_WINDOW) break;
       this.#queue[this.#queueHead++] = undefined as unknown as Piece;
       this.#queuedBytes -= p.bytes.byteLength;
-      if (!this.#wire.sendData(this.num, p.bytes)) {
-        // The sidecar is gone; the reset that comes with that fails the rest.
+      if (!this.#wire.sendData(this.num, p.bytes, this.#gen)) {
+        // The process it was for is gone; the reset that comes with that fails the rest.
         p.reject?.(new WireOffline("the link sidecar is gone"));
         continue;
       }
@@ -732,7 +859,7 @@ class SidecarStream implements WireStream {
     }
     if (this.#finished && !this.#finSent && this.#queueHead === this.#queue.length && this.#resetCode === undefined) {
       this.#finSent = true;
-      this.#wire.sendJson({ op: "finish", stream: this.num });
+      this.#wire.sendJson({ op: "finish", stream: this.num }, this.#gen);
       this.#maybeForget();
     }
   }
@@ -776,7 +903,7 @@ class SidecarStream implements WireStream {
     if (this.#gotFin) return;
     this.#owed += n;
     if (this.#owed >= STREAM_WINDOW / 4) {
-      this.#wire.sendCredit(this.num, this.#owed);
+      this.#wire.sendCredit(this.num, this.#owed, this.#gen);
       this.#owed = 0;
     }
   }

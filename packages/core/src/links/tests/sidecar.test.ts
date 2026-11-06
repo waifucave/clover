@@ -1,6 +1,7 @@
 // The link over real iroh: two `clover-link` sidecars on loopback (no relay, nothing leaves the machine), the
 // transport on top, and pairing through the pair ALPN. Runs when the sidecar is built: `CLOVER_LINK_BIN`, or
-// native/link's release build (the link workflow builds it; locally `cargo build --release` in native/link).
+// native/link's release build (the link workflow builds it; locally `cargo build --release` in native/link). The
+// restart's bookkeeping also runs against a fake sidecar process, which needs no build.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,12 +10,14 @@ import { isContractError } from "../../contracts/common";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { FileDeviceRegistry } from "../../devices/registry";
 import { SystemClock } from "../../clock/system-clock";
+import { fromBase64, fromUtf8, toHex, utf8 } from "../../identity/bytes";
 import { DeviceKey } from "../../identity/device-key";
+import { FrameReader, MAX_FRAME } from "../frames";
 import { PairingService } from "../pairing";
-import { followRegistry, SidecarWire, type SidecarWireOptions, STREAM_WINDOW } from "../sidecar-wire";
+import { followRegistry, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
 import { CloverLinkTransport } from "../transport";
-import { WireOffline, type WireStream } from "../wire";
+import { CLOSE_LOST, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
@@ -303,6 +306,54 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     expect(left).toBe(0);
   }, 20_000);
 
+  test("a sidecar killed mid-link is started again under the same key, and the link comes back (S6.1)", async () => {
+    const procs: SidecarProcess[] = [];
+    const spawn = (argv: readonly string[]) => {
+      const p = spawnSidecar(argv);
+      procs.push(p);
+      return p;
+    };
+    const where = new Map<string, DeviceLinks>();
+    const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
+    const start = async (name: string, own: boolean) => {
+      const l = await startDeviceLinks({
+        home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-restart-")), store: new MemorySecretStore(), clock, self: { name }, directory,
+        sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false, ...(own ? { spawn } : {}) },
+        transport: { redialBackoffMs: [0, 200, 500, 1000] },
+      });
+      where.set(l.key.id, l);
+      stops.push(() => l.close());
+      return l;
+    };
+    const a = await start("Studio", true);
+    const b = await start("Laptop", false);
+    await pairBoth(a, b);
+    a.transport.handle("who", () => "studio");
+    b.transport.handle("who", () => "laptop");
+    const link = await a.transport.connect(b.key.id);
+    expect(await link.request<string>("who", null)).toBe("laptop");
+
+    const wire = a.wire as SidecarWire;
+    let restarts = 0;
+    wire.onRestart(() => restarts++);
+    const before = a.localAddresses().direct.join();
+    process.kill(procs[0]!.pid!, "SIGKILL");
+    await waitFor(() => !link.view().up, 5000);
+    await waitFor(() => restarts === 1, 10_000);
+    expect(procs.length).toBe(2);
+    expect(a.wire).toBe(wire);
+    expect(toHex(wire.publicKey)).toBe(toHex(a.key.publicKey));
+    // The link comes back by itself (the transport re-dials), to the same device under the same key.
+    await waitFor(() => link.view().up, 15_000);
+    expect(await link.request<string>("who", null)).toBe("laptop");
+    // The daemon read the net report again: the new sidecar is on another port.
+    await waitFor(() => a.localAddresses().direct.join() !== before, 5000);
+    // And the other side links back to it.
+    const back = await b.transport.connect(a.key.id);
+    await waitFor(() => back.view().up, 10_000);
+    expect(await back.request<string>("who", null)).toBe("studio");
+  }, 60_000);
+
   test("the controller is BBR with its window sized to each path, and control messages get through during a bulk transfer (S6.5)", async () => {
     const where = new Map<string, DeviceLinks>();
     const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
@@ -395,6 +446,140 @@ async function pairBoth(a: DeviceLinks, b: DeviceLinks): Promise<void> {
   await Promise.all([a.pairing.confirm(view.pairingId, joined.words!, { terminal: true }), b.pairing.confirm(view.pairingId, joined.words!, { terminal: true })]);
   await waitFor(() => a.registry.get(b.key.id) !== undefined && b.registry.get(a.key.id) !== undefined);
 }
+
+/** A sidecar process in memory: it answers `init` with `ready` (or an error) and records the core's control messages. */
+class FakeSidecar implements SidecarProcess {
+  readonly ops: Record<string, unknown>[] = [];
+  readonly stdout: ReadableStream<Uint8Array>;
+  readonly exited: Promise<number>;
+  readonly #reader = new FrameReader(MAX_FRAME + 16);
+  #ctl!: ReadableStreamDefaultController<Uint8Array>;
+  #exit!: (n: number) => void;
+  #dead = false;
+
+  constructor(readonly publicKey: string, readonly fail = false) {
+    this.stdout = new ReadableStream<Uint8Array>({ start: (c) => void (this.#ctl = c) });
+    this.exited = new Promise((r) => (this.#exit = r));
+  }
+
+  write(bytes: Uint8Array): void {
+    if (this.#dead) return;
+    for (const f of this.#reader.push(bytes)) {
+      if (f[0] !== 0) continue;
+      const m = JSON.parse(fromUtf8(f.subarray(1))) as Record<string, unknown>;
+      this.ops.push(m);
+      if (m.op === "init") {
+        if (this.fail) {
+          this.emit({ ev: "error", message: "bind failed", fatal: true });
+          this.kill();
+        } else this.emit({ ev: "ready", publicKey: this.publicKey, relay: null });
+      } else if (m.op === "shutdown") this.kill();
+    }
+  }
+
+  emit(m: Record<string, unknown>): void {
+    if (this.#dead) return;
+    const body = utf8(JSON.stringify(m));
+    const f = new Uint8Array(5 + body.byteLength);
+    new DataView(f.buffer).setUint32(0, 1 + body.byteLength);
+    f.set(body, 5);
+    this.#ctl.enqueue(f);
+  }
+
+  kill(): void {
+    if (this.#dead) return;
+    this.#dead = true;
+    this.#ctl.close();
+    this.#exit(0);
+  }
+}
+
+describe("the link sidecar's restart (S6.1), against a fake process", () => {
+  test("restarts with backoff under the same seed, allow list and lookup, ends what it carried offline, and holds dials until it is back", async () => {
+    const store = new MemorySecretStore();
+    const key = await DeviceKey.loadOrCreate(store);
+    const seedHex = toHex(fromBase64(key.seed().reveal())!);
+    const procs: FakeSidecar[] = [];
+    const logs: string[] = [];
+    let failNext = false;
+    const wire = await SidecarWire.start({
+      binary: "clover-link", key, relay: "disabled", n0Lookup: false, restartBackoffMs: [30, 150, 400],
+      onLog: (l) => logs.push(l),
+      spawn: () => {
+        const p = new FakeSidecar(toHex(key.publicKey), failNext);
+        failNext = false;
+        procs.push(p);
+        return p;
+      },
+    });
+    stops.push(() => wire.close());
+    const peer = new Uint8Array(32).fill(7);
+    wire.allow([peer]);
+    wire.setN0Lookup(true);
+    expect(procs[0]!.ops.map((o) => o.op)).toEqual(["init", "allow", "n0Lookup"]);
+    expect(procs[0]!.ops[0]).toMatchObject({ seed: seedHex, n0Lookup: false, window: STREAM_WINDOW, allow: [], revoked: [] });
+    expect(procs[0]!.ops[2]).toMatchObject({ on: true });
+
+    // A connection with a stream, and a dial in flight, when the process dies.
+    const conns: WireConn[] = [];
+    wire.onIncoming("clover/link/1", (c) => conns.push(c));
+    procs[0]!.emit({ ev: "incoming", conn: 1, peerKey: toHex(peer), alpn: "clover/link/1", path: { kind: "lan" } });
+    await waitFor(() => conns.length === 1);
+    const streams: WireStream[] = [];
+    conns[0]!.onStream((st) => streams.push(st));
+    procs[0]!.emit({ ev: "stream", conn: 1, stream: 1 });
+    await waitFor(() => streams.length === 1);
+    const resets: number[] = [];
+    streams[0]!.onReset((c) => resets.push(c));
+    const inFlight = wire.dial({ key: peer, direct: ["127.0.0.1:9"] }, { alpn: "clover/link/1", timeoutMs: 5000 }).catch((e: unknown) => e);
+    await waitFor(() => procs[0]!.ops.some((o) => o.op === "dial"));
+    let restarts = 0;
+    wire.onRestart(() => restarts++);
+
+    const t0 = Date.now();
+    procs[0]!.kill();
+    expect(await conns[0]!.closed).toMatchObject({ code: CLOSE_LOST, local: false });
+    expect(await inFlight).toBeInstanceOf(WireOffline);
+    expect(resets).toEqual([RESET_CONN_LOST]);
+    expect(await streams[0]!.write(new Uint8Array(1)).catch((e: unknown) => e)).toBeInstanceOf(WireOffline);
+    // A dial made while it restarts waits for the new process.
+    const waiting = wire.dial({ key: peer, direct: ["127.0.0.1:9"] }, { alpn: "clover/link/1", timeoutMs: 5000 });
+    await waitFor(() => restarts === 1);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(25);
+    expect(procs.length).toBe(2);
+    // The same seed, over stdin again, with the last allow list and the lookup as it is now.
+    expect(procs[1]!.ops[0]).toMatchObject({ op: "init", seed: seedHex, allow: [toHex(peer)], revoked: [], n0Lookup: true });
+    await waitFor(() => procs[1]!.ops.some((o) => o.op === "dial"));
+    const d = procs[1]!.ops.find((o) => o.op === "dial")!;
+    procs[1]!.emit({ ev: "dialed", id: d.id, conn: 1, path: { kind: "lan" } });
+    const again = await waiting;
+    expect(again.id).not.toBe(conns[0]!.id);
+    // What belonged to the dead process stays dead: no stream of the old connection reaches the new one.
+    const late = conns[0]!.openStream(3);
+    expect(await late.write(new Uint8Array(1)).catch((e: unknown) => e)).toBeInstanceOf(WireOffline);
+    expect(procs[1]!.ops.some((o) => o.op === "open")).toBe(false);
+
+    // Dying again at once backs off further, and a start that fails backs off once more.
+    failNext = true;
+    const t1 = Date.now();
+    procs[1]!.kill();
+    await waitFor(() => procs.length === 3);
+    expect(Date.now() - t1).toBeGreaterThanOrEqual(140);
+    await waitFor(() => restarts === 2, 3000);
+    expect(procs.length).toBe(4);
+    expect(Date.now() - t1).toBeGreaterThanOrEqual(140 + 390);
+    expect(logs.some((l) => l.includes("starting it again"))).toBe(true);
+    // The seed went only over stdin: never into a log line.
+    expect(logs.some((l) => l.includes(seedHex))).toBe(false);
+
+    // Closing ends it for good.
+    await wire.close();
+    expect(procs[3]!.ops.at(-1)?.op).toBe("shutdown");
+    await Bun.sleep(500);
+    expect(procs.length).toBe(4);
+    expect(await wire.dial({ key: peer }, { alpn: "clover/link/1" }).catch((e: unknown) => e)).toBeInstanceOf(WireOffline);
+  }, 20_000);
+});
 
 async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
   const end = Date.now() + ms;

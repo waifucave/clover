@@ -2,6 +2,7 @@
 //! device, keyed by the device's link key, which clover-core hands over on stdin, never in arguments, the environment
 //! or a file. The core drives it over stdin and stdout; the link protocol itself (hello, lanes, requests, streams)
 //! lives in the core (`packages/core/src/links/transport.ts`), and this process only carries connections and streams.
+//! If it exits, the core starts it again with the same `init` and re-dials (§8.3; `sidecar-wire.ts`).
 //!
 //! Frames, both ways: a big-endian u32 length, then that many bytes. The first byte says what follows:
 //! * `0`: a JSON control message (`{"op": …}` from the core, `{"ev": …}` to it);
@@ -26,9 +27,10 @@
 //!
 //! What the owner decided for edit 6 (items 79-81): presence on n0's relays is accepted and QUIC address discovery is
 //! on (iroh's default relays carry it); only a device without an account publishes to n0's address lookup, and then the
-//! relay URL only (`PkarrPublisher`'s default filter); UPnP, NAT-PMP and PCP stay off (no firewall prompt, S1).
-//! Connections on the link ALPN from keys the core hasn't allowed are closed at once (`allow`; the list starts empty),
-//! and a revoked device's with "revoked", so it stops re-dialling; the core checks again.
+//! relay URL only (`PkarrPublisher`'s default filter); UPnP, NAT-PMP and PCP stay off (no firewall prompt, S1). The
+//! lookup switches on and off while running (`n0Lookup`), so signing in or out needs no restart. Connections on the
+//! link ALPN from keys the core hasn't allowed are closed at once (`allow`, also in `init`; the list starts empty), and
+//! a revoked device's with "revoked", so it stops re-dialling; the core checks again.
 //!
 //! Hooks the other lanes fill (the sidecar holds the device key): lane C's fence wraps how the core spawns it (it needs
 //! only UDP, its stdin and stdout); lane M signs the binary and ships it beside the core.
@@ -41,14 +43,17 @@ use std::{
     net::SocketAddr,
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use iroh::endpoint::{Connection, ConnectionError, ReadError, RecvStream, SendStream, VarInt, WriteError};
+use iroh::{
+    address_lookup::AddressLookupBuilder,
+    endpoint::{Connection, ConnectionError, ReadError, RecvStream, SendStream, VarInt, WriteError},
+};
 use n0_future::StreamExt;
 use serde_json::{json, Value};
 use tokio::{
@@ -136,11 +141,13 @@ struct Sidecar {
     out_bytes: Arc<AtomicUsize>,
     window: usize,
     congestion: &'static str,
+    n0_lookup: AtomicBool,
     conns: Mutex<HashMap<u64, Connection>>,
     /// Codes this side closed a connection with, for its `closed` event.
     local_close: Mutex<HashMap<u64, (u32, String)>>,
     streams: Mutex<HashMap<u64, StreamEntry>>,
-    /// The paired devices' keys; it starts empty, so nothing gets in before the core says who may.
+    /// The paired devices' keys; it starts as `init` says (empty at first), so nothing gets in before the core says
+    /// who may.
     allow: Mutex<HashSet<[u8; 32]>>,
     /// Revoked devices' keys: closed with "revoked", so the other side stops re-dialling.
     revoked: Mutex<HashSet<[u8; 32]>>,
@@ -274,32 +281,49 @@ impl Sidecar {
             }
             _ => builder.relay_mode(iroh::RelayMode::Default),
         };
-        if init["n0Lookup"].as_bool() == Some(true) {
-            // Only devices without an account (item 81): the relay URL only, the publisher's default filter.
-            builder = builder
-                .address_lookup(iroh::address_lookup::PkarrPublisher::n0_dns())
-                .address_lookup(iroh::address_lookup::PkarrResolver::n0_dns())
-                .address_lookup(iroh::address_lookup::DnsAddressLookup::n0_dns());
-        }
         if let Some(bind) = init["bind"].as_str() {
             let addr: SocketAddr = bind.parse().context("bind address")?;
             builder = builder.clear_ip_transports().bind_addr(addr)?;
         }
         let ep = builder.bind().await.context("bind the iroh endpoint")?;
-        Ok(Arc::new(Sidecar {
+        let sidecar = Arc::new(Sidecar {
             ep,
             out,
             out_bytes,
             window,
             congestion,
+            n0_lookup: AtomicBool::new(false),
             conns: Mutex::new(HashMap::new()),
             local_close: Mutex::new(HashMap::new()),
             streams: Mutex::new(HashMap::new()),
-            allow: Mutex::new(HashSet::new()),
-            revoked: Mutex::new(HashSet::new()),
+            // A restart's `init` carries the last lists, so a paired device that dials in at once isn't refused.
+            allow: Mutex::new(keys(&init["allow"])?),
+            revoked: Mutex::new(keys(&init["revoked"])?),
             next_conn: AtomicU64::new(1),
             next_stream: AtomicU64::new(1),
-        }))
+        });
+        sidecar.set_n0_lookup(init["n0Lookup"].as_bool() == Some(true))?;
+        Ok(sidecar)
+    }
+
+    /// Publishes to n0's address lookup, and resolves through it, or stops (items 79-81: only a device without an
+    /// account). iroh takes and drops lookup services on a running endpoint, so this needs no restart.
+    fn set_n0_lookup(&self, on: bool) -> Result<()> {
+        if self.n0_lookup.swap(on, Ordering::AcqRel) == on {
+            return Ok(());
+        }
+        let lookup = self.ep.address_lookup().map_err(|e| anyhow!("{e}"))?;
+        if on {
+            // The relay URL only, the publisher's default filter.
+            let err = |e: iroh::address_lookup::AddressLookupBuilderError| anyhow!("{e}");
+            lookup.add(iroh::address_lookup::PkarrPublisher::n0_dns().into_address_lookup(&self.ep).map_err(err)?);
+            lookup.add(iroh::address_lookup::PkarrResolver::n0_dns().into_address_lookup(&self.ep).map_err(err)?);
+            lookup.add(iroh::address_lookup::DnsAddressLookup::n0_dns().into_address_lookup(&self.ep).map_err(err)?);
+        } else {
+            // These three are the only services (the Minimal preset adds none); dropping the publisher ends its task.
+            lookup.clear();
+        }
+        Ok(())
     }
 
     fn ready(&self) -> Value {
@@ -503,6 +527,7 @@ impl Sidecar {
                 *self.allow.lock().await = set;
                 *self.revoked.lock().await = gone;
             }
+            "n0Lookup" => self.set_n0_lookup(m["on"].as_bool() == Some(true))?,
             "networkChanged" => {
                 let me = self.clone();
                 tokio::spawn(async move { me.ep.network_change().await });
