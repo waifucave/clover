@@ -150,9 +150,10 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run("/bin/launchctl print system >/dev/null"))).toBe(false);
     } else {
       expect(ok(await w.run(`test -z "$(ls -A /run/user/${process.getuid!()} 2>/dev/null)"`))).toBe(true); // the user's bus is hidden
-      // The home takes no new names while a fenced start file (.zshrc) isn't there, and the refusal says why.
+      // The home takes no new names while a fenced start file isn't there, and the refusal says which and why.
       const held = await w.run(`echo x > '${join(w.home, "new-top-level.txt")}'`);
-      expect(held.kind === "exited" && held.code !== 0 && held.stderr.includes(`because ${join(w.home, ".zshrc")} is fenced`)).toBe(true);
+      expect(held.kind === "exited" && held.code !== 0).toBe(true);
+      expect(held.kind === "exited" && held.stderr).toMatch(new RegExp(`${w.home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} takes no new names under the fence, because \\S+ is fenced and isn't there yet; write in a subfolder of it, or ask the user`));
       // Its own pid namespace: a handful of its own processes, and not the daemon's.
       expect(ok(await w.run(`test $(ls /proc | grep -c '^[0-9]') -lt 10 && test ! -e /proc/${process.pid}/cmdline`))).toBe(true);
     }
