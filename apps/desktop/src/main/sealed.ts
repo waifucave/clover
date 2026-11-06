@@ -236,7 +236,6 @@ export class SealedFrames {
     this.dropChannels(id);
     if (outcome === "approved" || outcome === "denied") {
       this.answered.add(id);
-      if (outcome === "approved") (this.cards.get(id) as { picked?: string } | undefined)?.picked;
     } else this.cards.delete(id);
   }
 

@@ -29,7 +29,6 @@ function tokenCss(tokens: Readonly<Record<string, TokenValue>> | undefined): str
   return lines.length === 0 ? "" : `:root {\n${lines.join("\n")}\n}\n`;
 }
 
-const TOKEN_VALUE_ALLOWED = /^([-+\d.]+(%|[a-z]{1,6}|turn|deg|grad|rad)?|[a-z]+(?:-[a-z0-9]+)*|#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(?:rgb|hsl)a?\(\s*[-+\d.,%\s]+\))$/i;
 const FONT_VALUE_ALLOWED = /^[a-z0-9"' ,_-]+$/i;
 
 /** A token's value stays what the store said: one grammar's run (a colour, a measure, a simple name), escaped's only
@@ -42,7 +41,7 @@ function cssSafe(text: string): string | undefined {
   if (/^#[0-9a-f]{3,8}$/i.test(text)) return text;
   if (/^(?:rgba?|hsla?)\(\s*[-+0-9.,%\s/]+\)$/i.test(text)) return text;
   if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(text)) return text;
-  if (FONT_VALUE_ALLOWED.test(text) || FONT_VALUE_ALLOWED.test(text)) return text;
+  if (FONT_VALUE_ALLOWED.test(text)) return text;
   return undefined;
 }
 
@@ -158,7 +157,7 @@ export function ownCardPage(input: {
   const buttons = input.options.map((o) => `<button type="button" class="seal-button" data-option="${esc(o.id)}" data-kind="${esc(o.kind)}"><span class="label">${esc(sealedEscape(labelOf(o.label)))}</span></button>`).join("\n");
   // The card's own who: a plugin's own asking with its name, a bot's with its name, else the core's (the words are
   // said by the core's own strings — the page's own type carries what its table holds). The page's own footer holds
-  // what a救治 plugin's own strip would: the asking's own source (§5.5's `source` field rides the card's own table),
+  // what a plugin's own strip would: the asking's own source (§5.5's `source` field rides the card's own table),
   // and the expiry the card says (a turn the user didn't start: denied after, the app's own text).
   // The asking's own who: the card's `source` field says so (a plugin with its id and source; a bot's own). A page's
   // own footer carries it, in the core's own table's words.
@@ -168,11 +167,14 @@ export function ownCardPage(input: {
   const script = `(() => {
   const b = window.cloverSealed;
   if (b === undefined) return;
-  // About a second after the page is shown (showInactive), and reset on any move: a plugin can't predict
-  // when the window stops following the cursor, so a timed "click here" prompt can't land on Approve (S3).
+  // About a second after the page is shown (showInactive), reset on any move, and require the pointer to have
+  // entered the window after it showed: a timed "click here" prompt can't land on Approve (S3).
   let openedAt = Date.now();
-  window.addEventListener("mousemove", () => { openedAt = Date.now(); }, { once: true, passive: true });
+  let pointerEntered = false;
+  window.addEventListener("mousemove", () => { openedAt = Date.now(); }, { passive: true });
+  window.addEventListener("mouseenter", () => { pointerEntered = true; }, { once: true, passive: true });
   document.addEventListener("click", (e) => {
+    if (!pointerEntered) return;
     if (Date.now() - openedAt < 1000) return;
     if (!e.isTrusted) return;
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;

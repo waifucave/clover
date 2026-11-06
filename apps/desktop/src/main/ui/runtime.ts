@@ -959,7 +959,7 @@ export class UiRuntime {
       return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }), headers: sealHeaders() };
     }
     if (element === "own") {
-      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options }), headers: sealHeaders() };
+      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) }), headers: sealHeaders() };
     }
     return undefined;
   }

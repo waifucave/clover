@@ -284,6 +284,13 @@ async function showFallbackCard(cardId: string): Promise<void> {
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
     if (!win.isDestroyed()) win.showInactive();
+    // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3).
+    try {
+      const cursor = screen.getCursorScreenPoint();
+      const bounds = win.getBounds();
+      const awayX = cursor.x > 0 ? Math.max(0, cursor.x - bounds.width - 200) : cursor.x + 200;
+      win.setBounds({ x: awayX, y: Math.max(0, cursor.y - 200), width: bounds.width, height: bounds.height });
+    } catch { /* best effort */ }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
@@ -310,18 +317,6 @@ function makePair(): Pair {
       // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
       void client.request<unknown>("card.list").catch(() => undefined).then((r) => {
         for (const c of (r as { cards?: unknown[] })?.cards ?? []) { sealed.fromCore(c); armFallback(String((c as { id?: unknown }).id ?? "")); }
-      });
-      client.onNotification((method, params) => {
-        const e = params as Record<string, unknown> | undefined;
-        if (method === "core.event" && typeof e?.type === "string") {
-          if (e.type === "card_requested" || e.type === "card_pending") {
-            sealed.fromCore(e.card);
-            armFallback(String((e.card as { id?: unknown })?.id ?? ""));
-          } else if (e.type === "card_resolved") {
-            sealed.resolvedOutcome(String(e.id ?? ""), String(e.outcome ?? "cancelled") as never);
-            disarmFallback(String(e.id ?? ""));
-          }
-        }
       });
       return loadRegistry(client);
     },
