@@ -12,7 +12,8 @@
 import type { AnswerKeyHolder, Os } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { Secret } from "../contracts/secret-store";
-import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import { cardAnswerSigningInput, userMessageHashInput, userMessageSigningInput } from "@waifucave/clover-protocol";
+import { createHash } from "node:crypto";
 import { fromBase64, toBase64, utf8 } from "./bytes";
 import { type Ed25519Key, ed25519FromSeed, generateEd25519 } from "./keys";
 
@@ -75,6 +76,12 @@ export class AnswerKey {
   /** Signs the user's answer to a card, for any computer to verify (`cardAnswerSigningInput`). */
   signAnswer(a: { id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {
     return toBase64(this.#key.sign(utf8(cardAnswerSigningInput(a))));
+  }
+
+  /** Signs a user's message for a relay to the computer running its bot (`userMessageSigningInput`, review N3). */
+  signUserMessage(m: { session: string; clientMessageId: string; text: string; images?: { n: number; path: string }[]; files?: { n: number; path: string }[]; sentAt: number }): string {
+    const hash = createHash("sha256").update(userMessageHashInput(m)).digest("hex");
+    return toBase64(this.#key.sign(utf8(userMessageSigningInput({ session: m.session, clientMessageId: m.clientMessageId, hash, sentAt: m.sentAt }))));
   }
 
   toJSON(): string {

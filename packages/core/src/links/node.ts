@@ -16,6 +16,7 @@ import { DialPolicy, type NatMapping } from "./dial-policy";
 import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
 import { PairingService, type PairingRendezvous } from "./pairing";
+import { shareDeviceUpdates } from "./relay";
 import { followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
 import { CloverLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
 import type { DialTarget, WireEndpoint } from "./wire";
@@ -122,6 +123,9 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     ...(o.handshake ? { handshake: o.handshake } : {}),
     ...(o.rendezvous ? { rendezvous: o.rendezvous } : {}),
   });
+
+  // Peers learn this device's name and answer key over the link, so they can check what its app signs (lane D's relay).
+  offs.push(shareDeviceUpdates({ transport, registry, key, clock: o.clock }));
 
   // One persistent link per pair (§8.2): every paired computer's link is wanted from the start and from its pairing,
   // so a daemon that restarts dials its computers itself; phones and browsers dial in.
