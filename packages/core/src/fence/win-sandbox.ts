@@ -17,10 +17,47 @@ import type { FenceCaller } from "./per-caller";
 import { botSegment } from "../sessions/ids";
 import { SRT_WIN_PINS, launcherDigest, launcherProblem, srtWinArch, srtWinPath, type SrtWinArch } from "./windows-launcher";
 
+/** The protected copy location for elevated sandbox commands, per user SID.
+ *  Uses `[Environment]::GetFolderPath("ProgramFiles")` to find Program Files.
+ *  Path: `%ProgramFiles%\Clover Sandbox\<user SID>\clover-core.exe` */
+export async function protectedCopyPath(): Promise<string> {
+  const { execSync } = await import("node:child_process");
+  const ps = `
+    Add-Type -AssemblyName System.Environment
+    $pf = [Environment]::GetFolderPath("ProgramFiles")
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    Write-Output "${pf}\\Clover Sandbox\\$sid\\clover-core.exe"
+  `.trim();
+  const out = execSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
+  return out.trim();
+}
+
+/** Whether the current process is running from the protected copy location. */
+export async function isProtectedCopy(execPath: string = process.execPath): Promise<boolean> {
+  const protectedPath = await protectedCopyPath();
+  return win32.normalize(execPath).toUpperCase() === win32.normalize(protectedPath).toUpperCase();
+}
+
 export { SRT_WIN_PINS, launcherPinned, authenticodeDigest, srtWinArch, srtWinPath, launcherProblem, launcherDigest, type SrtWinArch } from "./windows-launcher";
 
-/** The dedicated sandbox principal Bash runs as: hidden, local, non-admin, never the user. */
-export const SANDBOX_PRINCIPAL = "clover-sandbox";
+/** The dedicated sandbox principal Bash runs as: hidden, local, non-admin, never the user.
+ *  Per Addendum 6, the principal is per-user (SID-suffixed) so one user's remove doesn't touch another's. */
+export function sandboxPrincipal(): string {
+  // The base name; the actual principal used at runtime is suffixed with the current user's SID.
+  return "clover-sandbox";
+}
+
+/** The full principal name including the current user's SID suffix.
+ *  Used for all live operations (setup, remove, status, exec) to ensure per-user isolation. */
+export async function currentSandboxPrincipal(): Promise<string> {
+  const { execSync } = await import("node:child_process");
+  const ps = `
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    Write-Output "clover-sandbox-$sid"
+  `.trim();
+  const out = execSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
+  return out.trim();
+}
 
 /** Clover's WFP sublayer: the launcher's network filters live under this GUID, not its default. */
 export const CLOVER_WFP_SUBLAYER = "F6D7C8CF-13C0-4547-8835-F14E27345468";
@@ -37,18 +74,18 @@ export const SANDBOX_EXIT = { OK: 0, FAILED: 1, NOT_ELEVATED: 2, HASH_MISMATCH: 
 /** `srt-win install`: one elevated step provisioning the principal and its WFP filters (the launcher
  *  self-elevates via UAC; idempotent — re-running rotates the password and refreshes the filters).
  *  Loopback stays closed (the default): Bash gets no network, as on macOS and Linux. */
-export function setupArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER): readonly string[] {
-  return [launcher, "install", "--sandbox-user", SANDBOX_PRINCIPAL, "--sublayer-guid", sublayer];
+export function setupArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER, principal: string = sandboxPrincipal()): readonly string[] {
+  return [launcher, "install", "--sandbox-user", principal, "--sublayer-guid", sublayer];
 }
 
 /** `srt-win uninstall`: undoes everything (`--keep-user` is never passed: remove removes all of it).
  *  Exits 0 when nothing is left. */
-export function removeArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER): readonly string[] {
-  return [launcher, "uninstall", "--sublayer-guid", sublayer];
+export function removeArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER, principal: string = sandboxPrincipal()): readonly string[] {
+  return [launcher, "uninstall", "--sandbox-user", principal, "--sublayer-guid", sublayer];
 }
 
 /** `srt-win status`: one line of JSON `{user, wfp}`; never elevates. */
-export function statusArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER): readonly string[] {
+export function statusArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER, principal: string = sandboxPrincipal()): readonly string[] {
   return [launcher, "status", "--sublayer-guid", sublayer];
 }
 
@@ -168,15 +205,21 @@ export interface SandboxStep {
 
 /** Removing the principal's profile and hive (spec item 1116): unload the hive, remove the ProfileList key
  *  and the profile folder, and any leftover `C:\Users\clover-sandbox*` folder. Every step that matters is
- *  required: anything left behind fails the next launch closed. */
-export function principalResetPlan(o: { sid: string; profileRoot: string; usersRoot?: string }): readonly SandboxStep[] {
+ *  Required: anything left behind fails the next launch closed. */
+export function principalResetPlan(o: {
+  sid: string;
+  profileRoot: string;
+  usersRoot?: string;
+  principalPrefix?: string;
+}): readonly SandboxStep[] {
   const profileKey = `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${o.sid}`;
   const users = o.usersRoot ?? "C:\\Users";
+  const prefix = o.principalPrefix ?? sandboxPrincipal();
   return [
     { name: "unload-hive", argv: ["reg", "unload", `HKU\\${o.sid}`], required: false },
     { name: "remove-profile-key", argv: ["reg", "delete", profileKey, "/f"], required: true },
     { name: "remove-profile-dir", argv: ["cmd", "/d", "/s", "/c", `rmdir /s /q "${o.profileRoot}"`], required: true },
-    { name: "remove-leftover-dirs", argv: ["cmd", "/d", "/s", "/c", `for /d %d in ("${win32.join(users, `${SANDBOX_PRINCIPAL}*`)}") do @rmdir /s /q "%d" 2>nul & exit 0`], required: false },
+    { name: "remove-leftover-dirs", argv: ["cmd", "/d", "/s", "/c", `for /d %d in ("${win32.join(users, `${prefix}*`)}") do @rmdir /s /q "%d" 2>nul & exit 0`], required: false },
   ];
 }
 

@@ -27,10 +27,11 @@ export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { AgentJob } from "./platform/win-job";
 export {
-  SANDBOX_PRINCIPAL, CLOVER_WFP_SUBLAYER, SRT_WIN_TAG, SRT_WIN_COMMIT, SRT_WIN_PINS, SANDBOX_EXIT,
+  sandboxPrincipal, currentSandboxPrincipal, CLOVER_WFP_SUBLAYER, SRT_WIN_TAG, SRT_WIN_COMMIT, SRT_WIN_PINS, SANDBOX_EXIT,
   srtWinPath, srtWinArch, launcherDigest, launcherPinned, launcherProblem, setupArgs, removeArgs, statusArgs,
   parseSrtStatus, setupBashRefusal, elevatedFromNetSession, NET_SESSION_PROBE, setupExitMessage,
   winCallerRules, winLaunchPlan, principalResetPlan, sessionResetPlan, setupProfileSteps,
+  protectedCopyPath, isProtectedCopy,
   type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
 } from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";

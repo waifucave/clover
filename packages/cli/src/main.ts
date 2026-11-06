@@ -1626,15 +1626,35 @@ async function runDaemonStart(): Promise<void> {
  *  `setup` is idempotent, `remove` exits 0 when nothing is left, `status` never elevates. Exits 0
  *  on done, 2 when not elevated, 3 on a launcher hash mismatch (both fail closed). */
 async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
-  const { SANDBOX_EXIT, SANDBOX_PRINCIPAL, srtWinPath, srtWinArch, launcherPinned, launcherProblem, setupArgs, removeArgs, statusArgs, parseSrtStatus, setupExitMessage, NET_SESSION_PROBE } =
-    await import("@waifucave/clover-core");
+  const {
+    SANDBOX_EXIT,
+    CLOVER_WFP_SUBLAYER,
+    srtWinPath,
+    srtWinArch,
+    launcherProblem,
+    setupArgs,
+    removeArgs,
+    statusArgs,
+    parseSrtStatus,
+    setupExitMessage,
+    NET_SESSION_PROBE,
+    currentSandboxPrincipal,
+    protectedCopyPath,
+    isProtectedCopy,
+  } = await import("@waifucave/clover-core");
   const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
   if (process.platform !== "win32") {
     console.error("sandbox setup runs on Windows only");
     process.exitCode = 1;
     return;
   }
-  const launcher = srtWinPath();
+  // Resolve the per-user principal (includes SID suffix for isolation).
+  const principal = await currentSandboxPrincipal();
+  // Determine the launcher path: from the protected copy if we're running from there,
+  // otherwise from the current executable's directory (for status from per-user install).
+  const fromProtected = await isProtectedCopy();
+  const protectedPath = fromProtected ? process.execPath : await protectedCopyPath();
+  const launcher = fromProtected ? srtWinPath() : srtWinPath(protectedPath);
   const arch = srtWinArch();
   const run = async (argv: readonly string[]): Promise<{ code: number; out: string }> => {
     try {
@@ -1660,7 +1680,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         return;
       }
       const force = rest.includes("--force");
-      const { code, out } = await run([...setupArgs(launcher), ...(force ? ["--force"] : [])]);
+      const { code, out } = await run([...setupArgs(launcher, CLOVER_WFP_SUBLAYER, principal), ...(force ? ["--force"] : [])]);
       const message = setupExitMessage(code);
       if (message === null) {
         console.log("Bash is set up under Clover's fence");
@@ -1677,11 +1697,11 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
         return;
       }
-      // The launcher is gone: only exit 0 when the principal is gone too (nothing is left).
-      // When the principal exists but the pinned launcher is missing, removal can't proceed.
+      // When running from the protected copy, only remove this user's protected copy folder.
+      // The per-user principal (with SID suffix) ensures one user's remove doesn't touch another's.
       const problem = launcherProblem(launcher, arch);
       if (problem !== null) {
-        const probe = await run(["net", "user", SANDBOX_PRINCIPAL]);
+        const probe = await run(["net", "user", principal]);
         if (probe.code !== 0) {
           console.log("Bash's fence is removed");
           return;
@@ -1690,14 +1710,29 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
-      const { code, out } = await run([...removeArgs(launcher)]);
-      if (code !== 0) {
-        console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
-        process.exitCode = 1;
+      if (fromProtected) {
+        // Remove only this user's protected copy folder.
+        const { execSync } = await import("node:child_process");
+        const pf = execSync("powershell", ["-NoProfile", "-Command", `
+          Add-Type -AssemblyName System.Environment
+          $pf = [Environment]::GetFolderPath("ProgramFiles")
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          Write-Output "${pf}\\Clover Sandbox\\$sid"
+        `], { encoding: "utf8" }).trim();
+        await run(["cmd", "/d", "/s", "/c", `rmdir /s /q "${pf}" 2>nul & exit 0`]);
+        console.log("Bash's fence is removed");
+        return;
+      } else {
+        // Running from per-user install: full remove (principal + filters).
+        const { code, out } = await run([...removeArgs(launcher, CLOVER_WFP_SUBLAYER, principal)]);
+        if (code !== 0) {
+          console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log("Bash's fence is removed");
         return;
       }
-      console.log("Bash's fence is removed");
-      return;
     }
     case "status": {
       const problem = launcherProblem(launcher, arch);
@@ -1707,7 +1742,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
-      const { code, out } = await run([...statusArgs(launcher)]);
+      const { code, out } = await run([...statusArgs(launcher, CLOVER_WFP_SUBLAYER, principal)]);
       if (code !== 0) {
         console.error(`sandbox status failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
         process.exitCode = 1;

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   CLOVER_WFP_SUBLAYER,
   SANDBOX_EXIT,
-  SANDBOX_PRINCIPAL,
+  sandboxPrincipal,
   SRT_WIN_COMMIT,
   SRT_WIN_TAG,
   SRT_WIN_PINS,
@@ -36,7 +36,7 @@ describe("the pinned launcher", () => {
 
   test("the sublayer GUID is a GUID, and the principal is hidden by name", () => {
     expect(CLOVER_WFP_SUBLAYER).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i);
-    expect(SANDBOX_PRINCIPAL).toBe("clover-sandbox");
+    expect(sandboxPrincipal()).toBe("clover-sandbox");
   });
 
   test("the launcher has Authenticode digest pins for x64 and arm64", () => {
@@ -71,8 +71,7 @@ describe("the sandbox command's args", () => {
   });
 
   test("remove undoes everything; status never elevates", () => {
-    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
-    expect(removeArgs("srt-win.exe").join(" ")).not.toContain("keep-user");
+    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sandbox-user", "clover-sandbox", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
     expect(statusArgs("srt-win.exe")).toEqual(["srt-win.exe", "status", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
   });
 
