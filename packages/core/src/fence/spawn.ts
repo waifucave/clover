@@ -79,14 +79,16 @@ function runAsUser(r: FencedRun): Promise<FencedRunResult> {
 
 /** Runs `how.argv` for `r` (a shell, or a sandbox wrapping one): stdin written and closed, both streams capped, its own
  *  process group (POSIX) or job (Windows) ended at its limit and at its end, the shell's exit deciding. */
-export async function runCommand(r: FencedRun, how: { shell: RunShell; argv: readonly string[] }): Promise<FencedRunResult> {
+export async function runCommand(r: FencedRun, how: { shell: RunShell; argv: readonly string[]; extraFds?: readonly number[] }): Promise<FencedRunResult> {
   if (r.signal?.aborted) return { kind: "refused", reason: "cancelled before it started" };
   const win = process.platform === "win32";
   const { shell } = how;
   const argv = [...how.argv];
   let proc: ReturnType<typeof Bun.spawn<"pipe", "pipe", "pipe">>;
   try {
-    proc = Bun.spawn(argv, { cwd: r.cwd, env: { ...r.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: !win, windowsHide: true, ...(shell === "cmd" ? { windowsVerbatimArguments: true } : {}) });
+    proc = Bun.spawn(argv, { cwd: r.cwd, env: { ...r.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: !win, windowsHide: true,
+      ...(how.extraFds?.length ? { stdio: ["pipe", "pipe", "pipe", ...how.extraFds] } : {}),
+      ...(shell === "cmd" ? { windowsVerbatimArguments: true } : {}) }) as typeof proc;
   } catch (err) {
     return { kind: "refused", reason: `it couldn't start: ${err instanceof Error ? err.message : String(err)}` };
   }
