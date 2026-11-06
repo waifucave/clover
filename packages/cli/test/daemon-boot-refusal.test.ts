@@ -5,8 +5,22 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CredentialMigrationBusy, MigrationCRefused, MigrationRefused, OtherInstallHomeRefused, OTHER_INSTALL_HOMES } from "@waifucave/clover-core";
+import { AlreadyRunningError, CredentialMigrationBusy, LockFailedError, LockHeldNoDaemonError, MigrationCRefused, MigrationRefused, OtherInstallHomeRefused, OTHER_INSTALL_HOMES } from "@waifucave/clover-core";
 import { bootRefusalExitCode, CREDENTIAL_MIGRATION_BUSY_EXIT_CODE, migrationRefusalMessage } from "../src/daemon-boot-refusal";
+
+describe("the home's daemon lock at boot (C-M1)", () => {
+  test("a second daemon whose home's daemon answers exits 0, so its login item does not loop", () => {
+    const err = new AlreadyRunningError(4242);
+    expect(migrationRefusalMessage(err)).toContain("pid 4242");
+    expect(bootRefusalExitCode(err)).toBe(0);
+  });
+  test("a lock held with no daemon answering, or refused by the OS, exits 1 so it is retried", () => {
+    for (const err of [new LockHeldNoDaemonError("/h/run/core.lock"), new LockFailedError("/h/run/core.lock", 13)]) {
+      expect(migrationRefusalMessage(err)).toBe(err.message);
+      expect(bootRefusalExitCode(err)).toBe(1);
+    }
+  });
+});
 
 describe("migrationRefusalMessage", () => {
   test("Migration B's and Migration C's refusals are operator messages", () => {

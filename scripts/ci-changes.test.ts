@@ -63,6 +63,21 @@ describe("ci-changes", () => {
     expect(core).not.toContain("app");
   });
 
+  test("a model plugin alone runs the core's suite (lane A's catalog and generator check), and other plugins don't", () => {
+    expect(on(["plugins/clover/plugins/model-openai/clover.json"])).toContain("core");
+    expect(on(["plugins/clover/plugins/model-anthropic/src/catalog.ts"])).toContain("core");
+    expect(on(["plugins/clover/plugins/shell/src/a.tsx"])).not.toContain("core");
+  });
+
+  test("the tree job (Linux and Windows) runs for the tree's and the computers' code and tests, and their conformance suites", () => {
+    for (const f of ["packages/core/src/tree/index.ts", "packages/core/src/computers/registry.ts", "packages/core/test/tree/x.test.ts",
+      "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"]) {
+      expect(on([f]), f).toContain("tree");
+    }
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("tree");
+    expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
+  });
+
   test("the Swift kits run for apple/, the protocol's generated fixtures and the core, and not for the rest of the protocol or the CLI", () => {
     expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["scripts", "swift"]);
     expect(on(["apple/WinterProtocol/Tests/WinterProtocolTests/Fixtures/x.json"])).toEqual(["scripts", "codegen", "swift"]);

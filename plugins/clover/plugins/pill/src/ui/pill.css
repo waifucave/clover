@@ -269,6 +269,19 @@
   margin: 0;
 }
 
+.clp-menu-detail {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: var(--clover-font-size-label, 13px);
+  color: var(--clover-pill-muted, #8B8B8B);
+}
+
+.clp-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--clover-pill-rim, #FFFFFF17);
+}
+
 .clp-menu-glyph {
   width: 16px;
   display: inline-flex;

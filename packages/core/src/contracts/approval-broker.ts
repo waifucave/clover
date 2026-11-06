@@ -9,7 +9,7 @@
 // waits for the first answer from a sealed frame or a paired device.
 //
 // The rules the contract pins (and the fake keeps):
-// 1. Changes, `confirm`, plugin OKs and elicitations are always cards (§5.5, S5 §7), and none of them offers an
+// 1. Changes, `confirm`, plugin OKs, elicitations and the person's browser (R10) are always cards (§5.5, S5 §7), and none of them offers an
 //    "always", whatever `ruleKey` or `options` the requester passes: each is answered on its own (`ALWAYS_CARD_KINDS`).
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
 //    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
@@ -45,7 +45,7 @@ import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 
 /** The kinds that are always cards and never offer "always" (rule 1). */
-export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation"];
+export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation", "person-browser"];
 
 /** The kinds whose card is denied after 10 minutes unanswered when the user's own message didn't start the turn
  *  (rule 6): every kind but a plugin's OK, which waits for the user. */

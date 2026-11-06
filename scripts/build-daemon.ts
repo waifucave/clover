@@ -4,8 +4,9 @@
 //
 //   bun run build:daemon                                  this machine's target
 //   bun run build:daemon --target linux-x64[,…] | --all   cross-compile (Bun fetches the other targets' runtimes)
-//   bun run build:daemon --smoke                          also run the host binary's `--version` on a temp home, and
-//                                                         its `__ffi-probe` (bun:ffi in the compiled binary)
+//   bun run build:daemon --smoke                          also run the host binary's `--version` on a temp home, its
+//                                                         `__ffi-probe` (bun:ffi, and the bridge's peer-pid check) and
+//                                                         `bridge` (an MCP initialize, K-M1's dispatch)
 //   bun run build:daemon --dry-run                        print the commands, build nothing
 //
 // Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
@@ -111,8 +112,43 @@ function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-/** `--version` and `__ffi-probe` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
-function smoke(binary: string, version: string): void {
+/**
+ * `clover-core bridge` (K-M1) answers an MCP `initialize` on stdio. Started with no session, as here, it reaches no
+ * daemon (it says so on stderr) but still serves the handshake, which shows the dispatch reaches the bridge. Returns
+ * the server's name and protocol version.
+ */
+async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const bridgeEnv = { ...env };
+  for (const k of ["CLOVER_BRIDGE_TOKEN", "CLOVER_BRIDGE_SESSION", "CLOVER_BRIDGE_SOCKET"]) delete bridgeEnv[k];
+  const proc = Bun.spawn([binary, "bridge"], { env: bridgeEnv, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const timer = setTimeout(() => proc.kill(), 60_000);
+  try {
+    const request = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "build-daemon", version: "0" } } };
+    proc.stdin.write(`${JSON.stringify(request)}\n`);
+    await proc.stdin.flush();
+    const reader = proc.stdout.getReader();
+    let out = "";
+    while (!out.includes("\n")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      out += new TextDecoder().decode(value);
+    }
+    await proc.stdin.end();
+    const code = await proc.exited;
+    const stderr = await new Response(proc.stderr).text();
+    let answer: { id?: number; result?: { protocolVersion?: string; serverInfo?: { name?: string } } } = {};
+    try { answer = JSON.parse(out.split("\n")[0] ?? ""); } catch { /* below */ }
+    if (answer.id !== 1 || answer.result?.serverInfo?.name !== "clover" || code !== 0) {
+      throw new Error(`${binary} bridge: exit ${code}, answered ${JSON.stringify(out.slice(0, 300))}${stderr ? `\n${stderr.slice(0, 2000)}` : ""}`);
+    }
+    return `bridge: ok (serverInfo ${answer.result.serverInfo.name}, MCP ${answer.result.protocolVersion})`;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** `--version`, `__ffi-probe` and `bridge` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
+async function smoke(binary: string, version: string): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
   try {
     const env: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: home, CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test.build-daemon" };
@@ -126,16 +162,17 @@ function smoke(binary: string, version: string): void {
     // bun:ffi inside the compiled binary (the bridge's peer-pid check, the Keychain): the C library's pid is this one.
     const ffi = spawnSync(binary, ["__ffi-probe"], { env, encoding: "utf8", timeout: 60_000 });
     const ffiOut = (ffi.stdout ?? "").trim();
-    if (ffi.status !== 0 || !ffiOut.startsWith("ffi: ok")) {
+    if (ffi.status !== 0 || !/^ffi: ok/m.test(ffiOut) || !/^peer-pid: (ok|none on Windows)/m.test(ffiOut)) {
       throw new Error(`${binary} __ffi-probe: exit ${ffi.status ?? ffi.signal}, printed ${JSON.stringify(ffiOut)}${ffi.stderr ? `\n${ffi.stderr.slice(0, 2000)}` : ""}`);
     }
-    console.log(`build:daemon: smoke: ${ffiOut}`);
+    for (const line of ffiOut.split("\n")) console.log(`build:daemon: smoke: ${line}`);
+    console.log(`build:daemon: smoke: ${await smokeBridge(binary, env)}`);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
 }
 
-export function main(argv: readonly string[], root: string): number {
+export async function main(argv: readonly string[], root: string): Promise<number> {
   let args: BuildDaemonArgs;
   try {
     args = parseBuildDaemonArgs(argv, hostTarget());
@@ -171,7 +208,7 @@ export function main(argv: readonly string[], root: string): number {
     console.log(`build:daemon: ${target}: ${daemonOutput(target)} (${(statSync(output).size / 1_048_576).toFixed(1)} MB, sha256 ${sha256(output)})`);
     if (args.smoke && target === host) {
       try {
-        smoke(output, version);
+        await smoke(output, version);
       } catch (err) {
         console.error(`build:daemon: smoke failed: ${(err as Error).message}`);
         return 1;
@@ -181,4 +218,4 @@ export function main(argv: readonly string[], root: string): number {
   return 0;
 }
 
-if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));
+if (import.meta.main) process.exit(await main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));

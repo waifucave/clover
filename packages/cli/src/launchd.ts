@@ -1,79 +1,24 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
-import { LEGACY_LAUNCHD_LABEL, legacyImportOn, resolveCloverProfile, type CloverProfile } from "@waifucave/clover-core";
+import { unlinkSync, existsSync } from "node:fs";
+import { LEGACY_LAUNCHD_LABEL, legacyImportOn, loginLabel, resolveCloverProfile, type CloverProfile } from "@waifucave/clover-core";
 
-/** Resolves the profile at CALL time (default param, not a module-level snapshot) so a settings
- *  change mid-process — or simply different callers under different envs — is always honored. */
+// C-M1 retired this file's LaunchAgent installer (`installDaemon`, `uninstallDaemon`, `daemonStatus`,
+// `renderPlist`, `plistPath`): it ran `daemon run` under `KeepAlive true`, which restarted a daemon the
+// user had quit. Login start is now core's cross-OS `platform/login/` behind `clover autostart
+// enable|disable|status` (a crash-only unit running `clover-core supervise`); `clover daemon
+// install|uninstall|status` forward to it. What stays: the profile label and the teardown of the
+// historical pre-rename agent.
+
+/** The LaunchAgent label for a profile: core's `loginLabel`, resolved at call time. */
 export function launchdLabel(profile: CloverProfile = resolveCloverProfile()): string {
-  return profile === "dev" ? "com.waifucave.clover.core.dev" : "com.waifucave.clover.core";
-}
-
-export function plistPath(): string {
-  return join(homedir(), "Library", "LaunchAgents", `${launchdLabel()}.plist`);
-}
-
-function xmlEscape(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-export function renderPlist(opts: { binaryPath: string; cloverHome: string; profile?: CloverProfile }): string {
-  const home = xmlEscape(opts.cloverHome);
-  const profile = opts.profile ?? resolveCloverProfile();
-  const label = launchdLabel(profile);
-  // DD branch review (I3): a launchd-installed DEV daemon must carry CLOVER_PROFILE=dev into its
-  // environment, or `packages/core/src/auth/secret-store.ts`'s module-load-time
-  // `keychainService()` resolves to the DIST literal (`com.waifucave.clover.core`) despite running out of
-  // `~/.clover-dev` — silent credential cross-contamination between profiles. The dist plist must
-  // stay BYTE-IDENTICAL to before this fix (no new key, no whitespace drift) — only "dev" adds
-  // the extra `<key>`/`<string>` pair to the EnvironmentVariables dict.
-  const envVars = profile === "dev"
-    ? `<dict><key>CLOVER_HOME</key><string>${home}</string><key>CLOVER_PROFILE</key><string>dev</string></dict>`
-    : `<dict><key>CLOVER_HOME</key><string>${home}</string></dict>`;
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>${label}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${xmlEscape(opts.binaryPath)}</string>
-    <string>daemon</string>
-    <string>run</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  ${envVars}
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${xmlEscape(join(opts.cloverHome, "logs", "core.out.log"))}</string>
-  <key>StandardErrorPath</key><string>${xmlEscape(join(opts.cloverHome, "logs", "core.err.log"))}</string>
-</dict>
-</plist>
-`;
+  return loginLabel(profile);
 }
 
 async function launchctl(...args: string[]): Promise<{ ok: boolean; out: string }> {
   const proc = Bun.spawn(["launchctl", ...args], { stdout: "pipe", stderr: "pipe" });
   const out = await new Response(proc.stdout).text() + await new Response(proc.stderr).text();
   return { ok: (await proc.exited) === 0, out };
-}
-
-export async function installDaemon(binaryPath: string, cloverHome: string): Promise<void> {
-  writeFileSync(plistPath(), renderPlist({ binaryPath, cloverHome }));
-  const uid = process.getuid!();
-  await launchctl("bootout", `gui/${uid}/${launchdLabel()}`); // ignore failures: may not be loaded
-  const res = await launchctl("bootstrap", `gui/${uid}`, plistPath());
-  if (!res.ok) throw new Error(`launchctl bootstrap failed: ${res.out}`);
-}
-
-export async function uninstallDaemon(): Promise<void> {
-  await launchctl("bootout", `gui/${process.getuid!()}/${launchdLabel()}`);
-  if (existsSync(plistPath())) unlinkSync(plistPath());
-}
-
-export async function daemonStatus(): Promise<string> {
-  const res = await launchctl("print", `gui/${process.getuid!()}/${launchdLabel()}`);
-  return res.ok ? "loaded" : "not loaded";
 }
 
 /** Injectable seams for `migrateFromLaunchdAgent` — real filesystem/launchctl by default, fakes in
