@@ -108,7 +108,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
     .filter(([, s]) => s.type === "stdio")
     .map(([name, s]) => ({ name, command: s.command, args: s.args ?? [], env: s.env ?? {} }));
   const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler }));
-  const backends = (c.agentBackends ?? []).map((b) => ({ id: b.id, command: b.command, args: (b as { args?: unknown }).args }));
+  // An agent backend runs what its whole entry says (lane K's ask): its command and args, its handler, its protocol
+  // and its quirks file, which names the command and the env it gets. Only its display name is data.
+  const backends = (c.agentBackends ?? []).map(({ name: _name, ...run }) => run);
   const dotted: Record<string, unknown> = {};
   for (const [point, raw] of Object.entries(c as Record<string, unknown>)) {
     if (!point.includes(".")) continue;
@@ -151,7 +153,7 @@ function runStrings(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string
   const c = m.contributes ?? {};
   for (const x of Object.values(c.mcpServers ?? {})) if (x.type === "stdio") deep([x.command, x.args, x.env]);
   for (const h of c.hooks ?? []) deep([h.command, h.args]);
-  for (const b of c.agentBackends ?? []) deep([b.command, (b as { args?: unknown }).args]);
+  for (const { name: _name, ...run } of c.agentBackends ?? []) deep(run); // its quirks file too (lane K's ask)
   for (const [point, raw] of Object.entries(c as Record<string, unknown>)) {
     if (!point.includes(".")) continue;
     const fields = codeFieldsOf(point);

@@ -101,6 +101,20 @@ describe("what runs, whatever its extension (#197's review)", () => {
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "art/a.png": "a" }, { "art/a.png": "b" })).toBe("applies");
   });
 
+  test("every file an agent backend names is code, its quirks file included (lane K's ask)", async () => {
+    const backend = (extra: Record<string, unknown>) => manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor", protocol: "acp", command: "cursor-agent", ...extra }] } });
+    const quirks = backend({ quirks: "quirks/cursor.json" });
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, { "quirks/cursor.json": '{"launch":1}' })).toBe("asks-again");
+    expect(await again({ "clover.json": backend({ command: "${plugin}/bin/agent.md" }), "bin/agent.md": "a" }, { "bin/agent.md": "b" })).toBe("asks-again");
+    expect(await again({ "clover.json": backend({ command: "agent", args: ["./lib"] }), "lib/a.txt": "a" }, { "lib/a.txt": "b" })).toBe("asks-again");
+    // Pointing at another quirks file asks again too; the entry's display name, and other data, apply at once.
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "quirks/b.json": "{}" }, { "clover.json": backend({ quirks: "quirks/b.json" }) })).toBe("asks-again");
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, {
+      "clover.json": manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor CLI", protocol: "acp", command: "cursor-agent", quirks: "quirks/cursor.json" }] } }),
+    })).toBe("applies");
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
+  });
+
   test("a model's endpoint, an http server's url or headers, and a host from settings ask again", async () => {
     const model = (baseUrl: string, extra: Record<string, unknown> = {}) => manifest({
       settings: { region: { type: "string", title: "Region" } }, ...extra,
