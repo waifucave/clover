@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
-import { CloverFence } from "../../src/fence/fence";
+import { CloverFence, isRefusedShare, unmapIpv4 } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
 import { botFolders, pendingFenced } from "../../src/fence/layout";
 import { makeBotFolders } from "../../src/fence/per-caller";
@@ -248,6 +248,15 @@ describe("the real fence on a real disk", () => {
     }
     expect(win.checkAgentRoot("\\\\localhost\\C$\\Users\\me")).toMatchObject({ allowed: false });
     expect(win.checkAgentRoot(`\\\\${host}\\Users\\me`)).toMatchObject({ allowed: false });
+    // IPv4-mapped forms of this computer's own addresses are known by the address they map (check 4's note).
+    expect(unmapIpv4("::ffff:192.168.1.5")).toBe("192.168.1.5");
+    expect(unmapIpv4("::ffff:c0a8:105")).toBe("192.168.1.5");
+    expect(unmapIpv4("0:0:0:0:0:ffff:7f00:1")).toBe("127.0.0.1");
+    expect(unmapIpv4("fe80::1")).toBe("fe80::1");
+    const mine = () => new Set(["192.168.1.5"]);
+    for (const server of ["::ffff:192.168.1.5", "[::ffff:c0a8:105]", "0:0:0:0:0:ffff:c0a8:0105"]) expect(isRefusedShare(`\\\\${server}\\Users\\x`, mine)).toBe(true);
+    expect(isRefusedShare("\\\\::ffff:7f00:1\\share\\x", () => new Set())).toBe(true); // loopback, mapped
+    expect(isRefusedShare("\\\\::ffff:10.0.0.9\\share\\x", mine)).toBe(false); // another computer
     // Drive-relative: against that drive's own current folder, which the fence doesn't track.
     for (const p of ["C:.clover\\settings.json", "c:settings.json", "C:"]) expect(win.check({ op: "read", path: p })).toMatchObject({ allowed: false });
     // Another computer's ordinary share, and drive paths, stay as they were.

@@ -355,8 +355,21 @@ function thisComputersNames(): Set<string> {
 export function isRefusedShare(p: string, names: () => Set<string> = thisComputersNames): boolean {
   const m = /^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)/.exec(p);
   if (!m) return false;
-  const server = m[1]!.toLowerCase(), share = m[2]!;
+  const server = unmapIpv4(m[1]!.toLowerCase().replace(/^\[|\]$/g, "")), share = m[2]!;
   if (share.endsWith("$")) return true;
   if (/^127\./.test(server) || server.endsWith(".ipv6-literal.net") || server === "localhost" || server.startsWith("localhost.")) return true;
   return names().has(server);
+}
+
+/** An IPv4-mapped IPv6 address (`::ffff:192.168.1.5`, `::ffff:c0a8:105`, `0:0:0:0:0:ffff:…`) as the IPv4 address it
+ *  maps, so a mapped form of one of this computer's addresses is known by the same name (#205's check 4 note). */
+export function unmapIpv4(server: string): string {
+  const m = /^(?:0{0,4}:){1,6}ffff:(.+)$/.exec(server);
+  if (!m) return server;
+  const tail = m[1]!;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(tail)) return tail;
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
+  if (!hex) return server;
+  const a = parseInt(hex[1]!, 16), b = parseInt(hex[2]!, 16);
+  return [a >> 8, a & 255, b >> 8, b & 255].join(".");
 }
