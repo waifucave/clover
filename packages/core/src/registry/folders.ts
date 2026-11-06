@@ -7,14 +7,25 @@
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
 import { existsSync, mkdirSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, describeOk, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
 import { classifyChange, okSnapshot, type CodeFieldsOf, type OkSnapshot } from "./changes";
 import type { RegistryCore, RegistryInput } from "./core";
+import type { OkText } from "./ok-cards";
 import type { DevFolderState, RegistryStore } from "./state";
+
+/** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
+export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> = {
+  "user-app": "You added it in the app.",
+  "user-terminal": "You added it in your terminal.",
+  bot: "A bot added it with its tools.",
+  migration: "It came over from Winter.",
+  found: "It was found on disk.",
+  bundled: "It ships with Clover.",
+};
 import { TreeProblem, folderReader, treeEntries } from "./tree";
 
 /** How long a folder must be unchanged before it is read (§5.1). */
@@ -45,6 +56,8 @@ export interface ReadFolder {
   inputs: RegistryInput[];
   snapshot?: OkSnapshot;
   parses: boolean;
+  /** The validator's report, for the OK's text. */
+  tree?: TreeReport;
 }
 
 const firstError = (issues: readonly ValidationIssue[]) => issues.find((i) => i.severity === "error" && i.refuses === "plugin")?.message;
@@ -94,7 +107,7 @@ export async function readPluginFolder(
     });
   }
   const snapshot = tree.ok ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? (() => [])) : undefined;
-  return { id, inputs, ...(snapshot ? { snapshot } : {}), parses };
+  return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
 interface Source {
@@ -115,6 +128,7 @@ export class PluginFolders {
   readonly #watchers = new Map<string, FSWatcher>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
+  readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance }>();
 
   constructor(opts: PluginFoldersOptions) {
     this.#o = opts;
@@ -180,6 +194,18 @@ export class PluginFolders {
     if (r.snapshot) this.#current.set(r.id, r.snapshot);
     const removed = was !== undefined && was !== r.id ? [was] : [];
     this.#o.core.putAll(r.inputs, [...removed, ...this.#staleChildren(r)]);
+  }
+
+  /** The OK's text for a top-level plugin as last read (§5.6): what it is, adds and reaches, and who wrote it. */
+  okText(id: string, os: "macos" | "windows" | "linux"): OkText {
+    const r = this.#reports.get(id);
+    if (!r) return { title: id, lines: [`${id} was found on disk.`], source: PROVENANCE_TEXT.found };
+    const name = r.tree.top.manifest?.name;
+    return {
+      title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
+      lines: describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards }),
+      source: PROVENANCE_TEXT[r.provenance.by],
+    };
   }
 
   // ---- development folders (§5.6) ----
@@ -289,6 +315,7 @@ export class PluginFolders {
       if (change !== undefined) input.change = change;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
+    if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance });
     return r;
   }
 

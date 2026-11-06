@@ -2,7 +2,7 @@
 // mid-write is left alone, bundled plugins and development folders need none, and the watcher reads a folder once it
 // settles.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
@@ -128,6 +128,33 @@ describe("PluginFolders", () => {
       expect(w.core.get("tarot")?.state).toBe("found");
     } finally {
       w.folders.stop();
+    }
+  });
+});
+
+describe("openPluginRegistry", () => {
+  test("opens on a Clover home: a found plugin's OK card through the broker carries its OK text, and the OK is kept", async () => {
+    const { openPluginRegistry } = await import("../open");
+    const { FakeApprovalBroker } = await import("../../contracts/fakes/approval-broker");
+    const { FakeClock } = await import("../../contracts/fakes/clock");
+    const home = mkdtempSync(join(tmpdir(), "clover-b-open-"));
+    mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
+    writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot", { name: "Tarot" }));
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, settleMs: 50 });
+    try {
+      const { card } = await opened.registry.installed("tarot", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      expect(shown.fields.title).toEqual({ type: "text", text: "Tarot" });
+      expect(shown.fields.source).toEqual({ type: "text", text: "It was found on disk." });
+      expect((shown.fields.what as { items: string[] }).items[0]).toBe("tarot is data only: files, no code.");
+      const frame = broker.frameChannel(card!)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame, input: "click", at: Date.now() } }, { role: "app" });
+      await Bun.sleep(5);
+      expect(opened.registry.get("tarot")?.state).toBe("running");
+      expect(JSON.parse(readFileSync(join(home, "plugins-state", "oks", "tarot.json"), "utf8")).okHash).toBe(opened.registry.get("tarot")!.treeHash);
+    } finally {
+      opened.close();
     }
   });
 });
