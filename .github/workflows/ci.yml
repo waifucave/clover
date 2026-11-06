@@ -202,6 +202,22 @@ jobs:
           CLOVER_UI_TESTS: "1"
         run: xvfb-run -a bun test test/ui-smoke.test.ts
 
+      # The Clover Browser in a real Electron (lane L, plan §4 L M1): offscreen bot tabs, the viewport, the person's
+      # selecting and copying through it, the screen-reader hybrid. CI only, like the UI test.
+      - name: App · Browser test
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+        run: bun test test/browser.test.ts
+
+      - name: App · Browser test (under xvfb)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+        run: xvfb-run -a bun test test/browser.test.ts
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         with:
