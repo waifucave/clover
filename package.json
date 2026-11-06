@@ -51,9 +51,12 @@
     "libreoffice:fetch": "bun run scripts/fetch-libreoffice.ts"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/bun": "1.4.4",
-    "typescript": "^5.6.0"
+    "openpgp": "6.3.2",
+    "typescript": "^5.6.0",
+    "wrangler": "4.153.0"
   },
   "workspaces": [
     "packages/*",

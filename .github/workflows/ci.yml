@@ -68,6 +68,7 @@ jobs:
       verify: ${{ steps.areas.outputs.verify }}
       tree: ${{ steps.areas.outputs.tree }}
       link: ${{ steps.areas.outputs.link }}
+      linuxrepo: ${{ steps.areas.outputs.linuxrepo }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -404,7 +405,49 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
+
+  # The Linux repositories' signatures against the verifiers users run: a throwaway key signs a fixture Release and
+  # repomd.xml as `linux-repo.ts sign` does, and gpgv and sqv must accept them and refuse a changed one.
+  # Three distributions' verifiers: the runner's Ubuntu 24.04, Debian trixie and Ubuntu 26.04 (as containers).
+  linux-repo-signatures:
+    name: linux repositories · signatures · ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.linuxrepo == 'true'
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, runner: ubuntu-24.04, container: "" }
+          - { os: debian-trixie, runner: ubuntu-24.04, container: "debian:trixie" }
+          - { os: ubuntu-26.04, runner: ubuntu-24.04, container: "ubuntu:26.04" }
+    steps:
+      # Before the checkout and Bun: in a bare container, setup-bun needs unzip and the downloads need CA certificates.
+      - name: gpgv, sqv and apt-ftparchive
+        run: |
+          if [ "$(id -u)" = 0 ]; then SUDO=; else SUDO=sudo; fi
+          $SUDO apt-get update -qq && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq --no-install-recommends gpgv sqv apt-utils ca-certificates unzip
+          gpgv --version | head -1; sqv --version; apt-get --version | head -1
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The signatures verify with gpgv and sqv, and apt-get update takes the signed repository
+        run: bun scripts/release/linux-repo-verify.ts
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
@@ -604,6 +647,7 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
       - name: verify:workflow
@@ -831,7 +875,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

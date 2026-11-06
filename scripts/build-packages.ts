@@ -4,7 +4,7 @@
 // E-M1's app starts the daemon and the daemon its sidecar. The dmg and the Windows installer come with E-M1's app;
 // signing and updates are M2.
 //
-//   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run]
+//   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--channel latest|beta] [--check] [--dry-run]
 //
 // Linux only: electron-builder makes the deb and the rpm with fpm, and the rpm needs rpmbuild (`apt-get install rpm`).
 // An architecture builds on its own machine (CI runs one job per architecture): clover-link is Rust with ring's C,
@@ -21,6 +21,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, st
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -30,6 +31,7 @@ export type LinuxFormat = (typeof LINUX_FORMATS)[number];
 export interface BuildPackagesArgs {
   arches: LinuxArch[];
   formats: LinuxFormat[];
+  channel: Channel;
   check: boolean;
   dryRun: boolean;
 }
@@ -46,6 +48,7 @@ function listOf<T extends string>(flag: string, value: string | undefined, allow
 export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string): BuildPackagesArgs {
   let arches: LinuxArch[] | undefined;
   let formats: LinuxFormat[] = [...LINUX_FORMATS];
+  let channel: Channel = "latest";
   let check = false;
   let dryRun = false;
   for (let i = 0; i < argv.length; i++) {
@@ -55,7 +58,8 @@ export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--arch" || a.startsWith("--arch=")) arches = listOf("--arch", value("--arch"), LINUX_ARCHES);
     else if (a === "--formats" || a.startsWith("--formats=")) formats = listOf("--formats", value("--formats"), LINUX_FORMATS);
-    else throw new Error(`unknown argument ${a} (usage: build-packages [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run])`);
+    else if (a === "--channel" || a.startsWith("--channel=")) channel = parseChannel(value("--channel"));
+    else throw new Error(`unknown argument ${a} (usage: build-packages [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--channel latest|beta] [--check] [--dry-run])`);
   }
   if (arches === undefined) {
     if (!LINUX_ARCHES.includes(hostArch as LinuxArch)) throw new Error(`this machine is ${hostArch}: name an architecture with --arch`);
@@ -63,7 +67,7 @@ export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string
   }
   const foreign = arches.filter((a) => a !== hostArch);
   if (!dryRun && foreign.length > 0) throw new Error(`this machine is ${hostArch}: build ${foreign.join(", ")} on ${foreign.length === 1 ? "a machine" : "machines"} of ${foreign.length === 1 ? "that architecture" : "those architectures"} (clover-link, the link sidecar, builds for the machine it is on)`);
-  return { arches, formats, check, dryRun };
+  return { arches, formats, channel, check, dryRun };
 }
 
 export function daemonTargetFor(arch: LinuxArch): DaemonTarget {
@@ -75,14 +79,36 @@ export function packageArchNames(arch: LinuxArch): { deb: string; rpm: string; a
   return arch === "x64" ? { deb: "amd64", rpm: "x86_64", appImage: "x86_64" } : { deb: "arm64", rpm: "aarch64", appImage: "arm64" };
 }
 
-/** The electron-builder command for one architecture, run in apps/desktop. */
-export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxFormat[]): string[] {
-  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never"];
+/** The electron-builder command for one architecture, run in apps/desktop: never publishing, with the update files
+ *  written for `channel` (scripts/release/lib.ts). */
+export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxFormat[], channel: Channel = "latest"): string[] {
+  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never", ...channelArgs(channel)];
 }
 
 /** The link sidecar's build (native/link), relative to the repo root: one for this machine. */
 export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
 export const LINK_OUTPUT = "native/link/target/release/clover-link";
+
+/**
+ * The privacy scrub for the sidecar's build: a Rust binary keeps the absolute paths of the sources it was built from
+ * (for panic messages), which on the owner's Mac name their home folder. They are remapped to fixed names: the
+ * home folder to /home, the cargo home to /cargo, the checkout to /clover. Any RUSTFLAGS already set come first.
+ */
+export function linkBuildEnv(env: Record<string, string | undefined>, root: string): Record<string, string | undefined> {
+  const home = env.HOME ?? env.USERPROFILE;
+  const cargoHome = env.CARGO_HOME ?? (home === undefined ? undefined : join(home, ".cargo"));
+  // rustc takes the last remapping that matches, so the home folder comes first and the paths inside it after.
+  const remaps = [
+    ...(home === undefined ? [] : [`--remap-path-prefix=${home}=/home`]),
+    ...(cargoHome === undefined ? [] : [`--remap-path-prefix=${cargoHome}=/cargo`]),
+    `--remap-path-prefix=${root}=/clover`,
+  ];
+  // CARGO_ENCODED_RUSTFLAGS, one flag per 0x1f: a path with a space (the owner's checkout has one) stays one flag.
+  // Flags already set (either form) come first; RUSTFLAGS is then dropped, as cargo would ignore it.
+  const before = env.CARGO_ENCODED_RUSTFLAGS ? env.CARGO_ENCODED_RUSTFLAGS.split("\x1f") : (env.RUSTFLAGS ?? "").split(" ").filter(Boolean);
+  const { RUSTFLAGS: _dropped, ...rest } = env;
+  return { ...rest, CARGO_ENCODED_RUSTFLAGS: [...before, ...remaps].join("\x1f") };
+}
 
 /** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
 export const REQUIRED_FILES = [
@@ -193,13 +219,16 @@ export function main(argv: readonly string[], root: string): number {
   ];
   for (const arch of args.arches) {
     steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch)], cwd: root });
-    steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats)], cwd: desktop, stage: arch });
+    steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats, args.channel)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
     for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
     return 0;
   }
   rmSync(outDir, { recursive: true, force: true });
+  // The sidecar's build carries no path of this machine's (linkBuildEnv).
+  process.env.CARGO_ENCODED_RUSTFLAGS = linkBuildEnv(process.env, root).CARGO_ENCODED_RUSTFLAGS;
+  delete process.env.RUSTFLAGS;
   for (const s of steps) {
     console.log(`build-packages: ${s.say}…`);
     if (s.stage !== undefined) {
@@ -213,6 +242,11 @@ export function main(argv: readonly string[], root: string): number {
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
   }
   rmSync(staged, { recursive: true, force: true });
+  // A full release serves beta users too: its update files under the beta names.
+  writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
+  // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).
+  const commit = checkoutCommit(root, false);
+  for (const a of args.arches) writeBuildCommit(outDir, a === "x64" ? "linux-x64" : "linux-arm64", commit);
   if (args.check) {
     const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
     for (const p of problems) console.error(`build-packages: ${p}`);
