@@ -55,7 +55,7 @@ describe("MainLease beyond the contract", () => {
     expect(lease.canAct()).toBe(false);
   });
 
-  test("a peer's newer epoch is a claim: before its deadline the holder acts on; past it, acting through the exception, it stops; a claim the service disproves gets that peer ignored a TTL (checks 3 to 6)", async () => {
+  test("a peer's newer epoch is a claim: the holder acts on while the service can settle it, stops when it can't, and past its deadline stops anyway (checks 3 to 7)", async () => {
     const clock = new FakeClock();
     const service = new MemoryLeaseService(clock);
     const studio = memoryLease(service, { self: "studio", clock, mayOutlast: () => true });
@@ -64,22 +64,28 @@ describe("MainLease beyond the contract", () => {
     // Not newer, or another scope's: no claim.
     expect(studio.peerEpoch(1, undefined, "laptop")).toBe(false);
     expect(studio.peerEpoch(9, "group:other", "laptop")).toBe(false);
-    // A newer epoch: a claim. Before the deadline the service's word stands, and the holder acts on (check 6, L8).
+    // A newer epoch: a claim. Before the deadline, with the service reachable, the holder acts on (check 6, L8).
     expect(studio.peerEpoch(2, studio.scopeId(), "laptop")).toBe(true);
+    expect(studio.claimOpen()).toBe(true);
     expect(studio.canAct()).toBe(true);
     // Past the deadline, acting only through the exception, the open claim stops it (L3, L4).
     clock.advance(studio.ttlMs - studio.marginMs + 1);
     expect(studio.canAct()).toBe(false);
-    // A renew sent after the claim shows epoch 1: the claim was false. The holder acts again, and the laptop's claims
-    // are ignored for a TTL; another peer's still count.
+    // A renew sent after the claim shows epoch 1: the claim was false, and the holder acts again.
     await studio.renew();
+    expect(studio.claimOpen()).toBe(false);
     expect(studio.canAct()).toBe(true);
     expect(studio.highestEpoch()).toBe(1);
-    expect(studio.distrusts("laptop")).toBe(true);
-    expect(studio.peerEpoch(3, undefined, "laptop")).toBe(false);
+    // The service out of reach before the deadline: a claim it can't settle stops the holder at once (check 7, L10).
+    service.cutOff("studio");
+    await studio.refresh().catch(() => undefined);
+    expect(studio.canAct()).toBe(true);
     expect(studio.peerEpoch(3, undefined, "server")).toBe(true);
-    clock.advance(studio.ttlMs);
-    expect(studio.distrusts("laptop")).toBe(false);
+    expect(studio.canAct()).toBe(false);
+    // Back in reach, a read sent after the claim settles it.
+    service.cutOff("studio", false);
+    await studio.refresh();
+    expect(studio.canAct()).toBe(true);
   });
 
   test("an acquire answered after a release gives the lease back instead of holding it unasked (check 3)", async () => {

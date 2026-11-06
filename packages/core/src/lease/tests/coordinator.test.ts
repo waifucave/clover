@@ -347,6 +347,26 @@ describe("the main computer", () => {
     expect(relayed).toBeLessThanOrEqual(4 + Math.ceil((N * 10 * 4) / 1000));
   }, 30_000);
 
+  test("L10: the user chooses a computer the main isn't linked to while the main can't reach the service, before its deadline: the main stops (check 7)", async () => {
+    const names = ["Studio", "Laptop", "Server"];
+    const w = await computers(names, undefined, [["Studio", "Laptop"], ["Laptop", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    // Right after a renew: most of the time to the deadline is left.
+    const n0 = w.service.log.length;
+    await waitFor(() => w.service.log.length > n0 && w.service.log.at(-1) === `${w.id("Studio")} renew`, 3_000);
+    w.service.cutOff(w.id("Studio"), true);
+    const t0 = performance.now();
+    await w.n("Server").mc.coordinator.chooseSelf();
+    let two = 0;
+    while (performance.now() - t0 < 1_500) {
+      await Bun.sleep(25);
+      if (names.filter((n) => w.n(n).mc.lease.canAct()).length > 1) two++;
+    }
+    expect(w.holder()).toBe("Server");
+    expect(two).toBe(0);
+  }, 30_000);
+
   test("only a computer that votes starts a new tenure: a non-voter never takes over a lapse, nor is handed the lease, and a not_voter refusal stops its tries (check 3)", async () => {
     let refused = 0;
     const w = await computers(["Studio", "Laptop", "Server"], (name, scope) => {

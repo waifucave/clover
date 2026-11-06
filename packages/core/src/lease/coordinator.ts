@@ -114,8 +114,9 @@ export class LeaseCoordinator {
   readonly #passed = new Set<string>();
   /** Per peer, how many of its claims this computer may still pass on now. */
   readonly #passBuckets = new Map<string, { tokens: number; at: number }>();
-  /** When a peer's claim last made this computer read the record (monotonic). */
+  /** When a peer's claim last made this computer read the record (monotonic), and the read waiting its turn. */
   #claimReadAt = Number.NEGATIVE_INFINITY;
+  #claimReadTimer: TimerHandle | undefined;
   /** Until when (monotonic) not to try a new tenure again, after the service said this computer doesn't vote yet. */
   #notVoterUntil = Number.NEGATIVE_INFINITY;
   #handBackHook: (() => Promise<void>) | undefined;
@@ -226,18 +227,22 @@ export class LeaseCoordinator {
     this.#kick();
   }
 
-  /** A peer named this epoch (its hello, or an announcement): a claim of a later lease. The lease holds it (past
-   *  its deadline it stops this computer acting); this computer passes it on, a few a second from each peer, so a
-   *  computer the new holder never paired with hears it too, and reads the record, at most every few seconds, so the
-   *  service's answer settles it (a false one gets that peer ignored for a TTL; check 6, L8). */
+  /** A peer named this epoch (its hello, or an announcement): a claim of a later lease. The lease holds it open
+   *  until the service settles it (lease.ts canAct); this computer passes it on, a few a second from each peer, so a
+   *  computer the new holder never paired with hears it too, and reads the record so the service's answer settles it:
+   *  at once, or at the end of the current few seconds when it read lately (checks 6 and 7). */
   peerEpoch(epoch: number, scope?: string, from?: string): void {
     if (!this.lease.peerEpoch(epoch, scope, from)) return;
     if (from === undefined || this.#passToken(from)) this.#passOn(scope ?? this.lease.scopeId(), epoch, from);
-    const mono = this.#o.clock.monotonic();
-    if (mono - this.#claimReadAt < CLAIM_READ_EVERY_MS) return;
-    this.#claimReadAt = mono;
-    this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: reading the record`);
-    void this.lease.refresh().catch(() => undefined).then(() => this.#kick());
+    if (this.#claimReadTimer) return;
+    const wait = Math.max(0, this.#claimReadAt + CLAIM_READ_EVERY_MS - this.#o.clock.monotonic());
+    if (wait === 0) this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: reading the record`);
+    this.#claimReadTimer = this.#o.clock.setTimeout(() => {
+      this.#claimReadTimer = undefined;
+      if (this.#closed || !this.lease.claimOpen()) return;
+      this.#claimReadAt = this.#o.clock.monotonic();
+      void this.lease.refresh().catch(() => undefined).then(() => this.#kick());
+    }, wait);
   }
 
   /** One pass-on from `from`, a few a second at most (a token bucket per peer). */
@@ -335,6 +340,7 @@ export class LeaseCoordinator {
   close(): void {
     this.#closed = true;
     if (this.#timer) this.#o.clock.clearTimeout(this.#timer);
+    if (this.#claimReadTimer) this.#o.clock.clearTimeout(this.#claimReadTimer);
     for (const off of this.#offs.splice(0)) off();
     this.lease.close();
   }

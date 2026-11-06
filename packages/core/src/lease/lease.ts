@@ -11,11 +11,11 @@
 //   before the deadline passed (a link that came back later may be to a computer that took over meanwhile). The
 //   coordinator answers that from the links (coordinator.ts).
 // * **A newer epoch from a peer** (its hello, or the announcement each computer sends its links of every new epoch it
-//   learns, coordinator.ts) is a claim that another computer may hold a later lease in the same scope. Before its
-//   deadline the holder acts on (its lease is the service's word) and only reads the record; past its deadline, acting
-//   through the exception, an open claim stops it (H-M2's checks 3 to 6, L3 to L8). Newer means newer than the newest
-//   the service has shown this device; a peer's word never raises that. A service answer to a request sent after a
-//   claim, showing an older epoch, proves the claim false: that peer's claims are ignored for one TTL (check 6, L8).
+//   learns, coordinator.ts) is a claim that another computer may hold a later lease in the same scope. Until a service
+//   answer to a request sent after it settles it, an open claim stops the holder past its deadline (acting through the
+//   exception), and before it whenever the service can't be reached; while the service answers, the holder acts on and
+//   only reads the record (H-M2's checks 3 to 7, L3 to L10). Newer means newer than the newest the service has shown
+//   this device; a peer's word never raises that.
 // * **The fencing token is (scope, epoch)** (H-M2's review): epochs count within one lease record (the account's, a
 //   group's, or this computer's own), so a sign-in or a merge starts a new count. `fence()` is what an act is stamped
 //   with; `isStale(epoch, scope)` tells a receiver to refuse an act from an earlier lease: an older epoch in the
@@ -75,8 +75,6 @@ export class MainLease implements Lease {
   #woke = false;
   /** Open claims of a newer epoch in this scope, per peer (the newest each named, and when, monotonic). */
   readonly #claims = new Map<string, { epoch: number; at: number }>();
-  /** Peers whose claims the service proved false, ignored until (monotonic). */
-  readonly #distrust = new Map<string, number>();
   /** The last device the record named as holder (a hand-over's or hand-back's sender, after it released). */
   #lastHolder: string | null = null;
   #handingOver = false;
@@ -122,9 +120,12 @@ export class MainLease implements Lease {
   canAct(): boolean {
     if (this.#local) return true;
     if (this.#woke || this.#deadline === null || this.#known.holder !== this.self) return false;
+    // A peer's open claim of a later lease that the service can't settle stops it at once (check 7, L10); past the
+    // deadline, acting only through the exception, any open claim does (L3 to L7).
+    const claimed = this.#claimedAbove();
+    if (claimed && !this.#reachable) return false;
     if (this.#mono() < this.#deadline) return true;
-    // Past the deadline, acting only through the exception: a peer's open claim of a later lease stops it.
-    if (this.#claimedAbove()) return false;
+    if (claimed) return false;
     return this.#o.mayOutlast?.(this.#deadline) ?? false;
   }
 
@@ -186,28 +187,21 @@ export class MainLease implements Lease {
   }
 
   /** `from` claims `epoch` in `scope` (its hello, or an announcement): newer than the newest the service has shown
-   *  this device in this scope, another computer may hold a later lease. Held as an open claim until the service
-   *  answers: past its deadline it stops this device acting. An epoch of another scope is never compared, and a peer
-   *  whose claim the service lately proved false is ignored. Returns whether the claim is taken (newer, and trusted):
-   *  the caller reads the record and passes it on. */
+   *  this device in this scope, another computer may hold a later lease. Held as an open claim until a service answer
+   *  settles it (canAct). An epoch of another scope is never compared. Returns whether the claim is taken (newer): the
+   *  caller reads the record and passes it on. */
   peerEpoch(epoch: number, scope?: string, from = "a peer"): boolean {
     if (this.#local || (scope !== undefined && scope !== this.scopeId())) return false;
     if (epoch <= this.highestEpoch()) return false;
-    const until = this.#distrust.get(from);
-    if (until !== undefined) {
-      if (this.#mono() < until) return false;
-      this.#distrust.delete(from);
-    }
     const prev = this.#claims.get(from);
     this.#claims.set(from, { epoch: Math.max(prev?.epoch ?? 0, epoch), at: this.#mono() });
     this.#changed();
     return true;
   }
 
-  /** Whether `from`'s claims are being ignored now. */
-  distrusts(from: string): boolean {
-    const until = this.#distrust.get(from);
-    return until !== undefined && this.#mono() < until;
+  /** Whether a peer's claim of a later lease is open (the service hasn't answered since it came). */
+  claimOpen(): boolean {
+    return this.#claimedAbove();
   }
 
   #claimedAbove(): boolean {
@@ -217,15 +211,9 @@ export class MainLease implements Lease {
   }
 
   /** The service answered a request sent at `sent` with `epoch`: a claim it covers is settled, and one made before the
-   *  request yet above what it shows was false (epochs only rise at the service), so that peer is ignored a TTL. */
+   *  request yet above what it shows was false (epochs only rise at the service). A claim made since stays open. */
   #settleClaims(epoch: number, sent: number): void {
-    for (const [from, c] of this.#claims) {
-      if (c.epoch <= epoch) this.#claims.delete(from);
-      else if (c.at < sent) {
-        this.#claims.delete(from);
-        this.#distrust.set(from, this.#mono() + this.ttlMs);
-      }
-    }
+    for (const [from, c] of this.#claims) if (c.epoch <= epoch || c.at < sent) this.#claims.delete(from);
   }
 
   /** The last device the record named as holder, even once it released. */
@@ -377,8 +365,9 @@ export class MainLease implements Lease {
     } catch (err) {
       if (err instanceof ContractError && err.code === "conflict") {
         this.#reachable = true;
-        this.#observeConflict(err);
-        this.#settleClaims(this.#known.epoch, sent);
+        // Only a refusal that carries the service's record settles a claim.
+        const lease = this.#observeConflict(err);
+        if (lease) this.#settleClaims(lease.epoch, sent);
         this.#changed();
         const holder = this.#known.holder ?? "another device";
         throw new ContractError("not_main", op === "renew" ? "this device doesn't hold the lease" : `${holder} holds the lease until ${this.#known.expiresAt}`);
@@ -414,9 +403,10 @@ export class MainLease implements Lease {
     return this.state();
   }
 
-  #observeConflict(err: ContractError): void {
+  #observeConflict(err: ContractError): ScopeLease | undefined {
     const lease = (err.detail as { lease?: ScopeLease } | undefined)?.lease;
     if (lease) this.#observe(lease);
+    return lease;
   }
 
   #observe(r: ScopeLease): void {
