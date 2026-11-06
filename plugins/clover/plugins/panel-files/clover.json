@@ -12,15 +12,20 @@
     ]
   },
   "capabilities": [
-    "files"
+    "files",
+    "conversation.read"
   ],
   "contributes": {
     "ui": [
       {
         "spot": "panel",
+        "id": "files",
         "key": "files",
         "title": "Files",
-        "component": "FilesPanel"
+        "component": "FilesEntry",
+        "when": {
+          "session": "coding"
+        }
       }
     ]
   }
