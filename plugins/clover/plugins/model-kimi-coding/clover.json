@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Kimi Code China (Anthropic dialect)",
+  "description": "Kimi Code China (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "kimi-coding",
+        "name": "Kimi Code China (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Kimi Code China (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Kimi Code China (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.kimi.com/coding"
+        }
+      }
+    ]
+  }
+}

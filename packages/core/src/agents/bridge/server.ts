@@ -60,18 +60,32 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
       broken = "the bridge was started without its session";
       throw new Error(broken);
     }
-    const peer = new RpcPeer({ write: (line) => link.write(line) });
-    const link = await io.connect(socket, (c) => peer.feed(c), () => {
-      broken ??= "the Clover daemon went away";
-      peer.close(new Error(broken));
-    });
-    daemon = peer;
-    try {
-      await peer.request("protocol.hello", { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "bridge", token, clientName: "clover-bridge", agentSessionId: sessionId }, { timeoutMs: 60_000 });
-    } catch (err) {
-      broken = err instanceof Error ? err.message : String(err);
-      link.close();
-      throw err;
+    // Windows: when two clients connect to the pipe in the same instant, the daemon can't tell which pid is whose and
+    // refuses the hello (`unverified-caller`); the bridge tries once more (lane C's note).
+    for (let attempt = 1; ; attempt++) {
+      let closed = false;
+      const peer = new RpcPeer({ write: (line) => link.write(line) });
+      const link = await io.connect(socket, (c) => peer.feed(c), () => {
+        closed = true;
+        if (daemon === peer) broken ??= "the Clover daemon went away";
+        peer.close(new Error(broken ?? "the Clover daemon closed the connection"));
+      });
+      try {
+        await peer.request("protocol.hello", { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "bridge", token, clientName: "clover-bridge", agentSessionId: sessionId }, { timeoutMs: 60_000 });
+        daemon = peer;
+        if (closed) broken ??= "the Clover daemon went away";
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        link.close();
+        if (attempt === 1 && /unverified-caller/.test(msg)) {
+          // Apart from the client it collided with: 50 to 250 ms (K-M2 review 7).
+          await new Promise((r) => setTimeout(r, 50 + Math.floor(Math.random() * 200)));
+          continue;
+        }
+        broken = msg;
+        throw err;
+      }
     }
   })();
   ready.catch((err: unknown) => io.log(`clover bridge: not connected: ${err instanceof Error ? err.message : String(err)}`));

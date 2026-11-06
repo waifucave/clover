@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Kimi Code Overseas (OpenAI dialect)",
+  "description": "Kimi Code Overseas (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "kimi-coding-intl-openai",
+        "name": "Kimi Code Overseas (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Kimi Code Overseas (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Kimi Code Overseas (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.kimi.ai/coding/v1"
+        }
+      }
+    ]
+  }
+}

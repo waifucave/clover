@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Inception",
+  "description": "Inception's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "inception",
+        "name": "Inception",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Inception API key. Clover keeps it in your credential store and adds it to Inception's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.inceptionlabs.ai/v1"
+        }
+      }
+    ]
+  }
+}

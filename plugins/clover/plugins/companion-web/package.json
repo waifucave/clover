@@ -1,0 +1,27 @@
+{
+  "name": "@waifucave/clover-plugin-companion-web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/companion-web: the computer's side of the web companion (clover.waifucave.com): browser pairing through the waifucave handshake, and each browser's WebRTC link.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./host": "./src/web-host.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@waifucave/clover-service-handshake": "workspace:*",
+    "@waifucave/clover-service-web": "workspace:*",
+    "node-datachannel": "0.33.6"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@waifucave/clover-core": "workspace:*",
+    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,8 +1,9 @@
 // The pill's client entry (spec §10): what the manifest's `ui` entry names, and its parts.
 
 export { DispatchPill, type DispatchPillProps } from "../src/ui/DispatchPill";
+export { PillApp, PillHostContext, type PillHost, type PillEntryProps, type TargetTurn } from "../src/ui/host";
 export { Shell, type ShellProps } from "../src/ui/Shell";
-export { Bar, Menu, Portrait, measureText, type BarProps, type BarMenu, type PillTarget } from "../src/ui/Bar";
+export { Bar, Menu, Portrait, measureText, targetLabel, type BarProps, type BarMenu, type PillTarget } from "../src/ui/Bar";
 export { CardBody, SealedCardBody, QuestionCardBody, type CardBodyProps } from "../src/ui/Card";
 export { Preview, type PreviewProps } from "../src/ui/Preview";
 export { Children, type ChildrenProps } from "../src/ui/Children";
@@ -30,3 +31,7 @@ export * from "../src/model/cards";
 export * from "../src/model/children";
 export * from "../src/model/preview";
 export * from "../src/model/plume";
+export * from "../src/model/targets";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

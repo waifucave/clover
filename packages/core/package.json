@@ -14,15 +14,17 @@
   },
   "dependencies": {
     "@waifucave/clover-protocol": "workspace:*",
-    "@waifucave/clover-agent-sdk": "0.0.63",
-    "@waifucave/clover-agent-runtime": "0.0.63",
-    "@waifucave/clover-provider-catalog": "0.0.63",
-    "@waifucave/clover-provider-runtime": "0.0.63",
+    "@waifucave/clover-agent-sdk": "0.0.65",
+    "@waifucave/clover-agent-runtime": "0.0.65",
+    "@waifucave/clover-provider-catalog": "0.0.65",
+    "@waifucave/clover-provider-runtime": "0.0.65",
     "unpdf": "^1.6.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@waifucave/clover-provider-conformance": "0.0.63"
+    "@waifucave/clover-provider-conformance": "0.0.65",
+    "@waifucave/clover-service-shared": "workspace:*",
+    "@waifucave/clover-test-harness": "workspace:*"
   },
   "optionalDependencies": {
     "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55"

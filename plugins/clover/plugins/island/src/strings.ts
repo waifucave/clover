@@ -1,42 +1,46 @@
-// The island's words, in locale format 1's shape (spec §5.9): keys start with `clover.`, strings use
-// `{name}` placeholders, and a key may hold plural forms. Until the app's `t()` exists (lane E), this is
-// the English table and a stand-in lookup with the same rules.
+// The island's words. The English table is `locales/en.json` (locale format 1, spec §5.5 "Translations"), which the manifest
+// declares, so the app has it to fall back to and a language pack can translate every key. `t` asks the translator the
+// app installs (`setTranslator`: lane E's `useT()` in a part, the plugin API's `t` in a host half) and falls back to
+// English for a key it doesn't know. Keys start with `clover.`; strings use `{name}` placeholders, and a key may hold
+// plural forms, chosen by `count`.
 
-type Entry = string | { one?: string; other: string };
+import en from "../locales/en.json" with { type: "json" };
 
-export const EN: Readonly<Record<string, Entry>> = {
-  "clover.island.label": "Clover island.",
-  "clover.island.nothingNeedsYou": "Nothing needs you",
-  "clover.island.needsYouCount": { one: "1 thing needs you.", other: "{count} things need you." },
-  "clover.island.workingCount": { one: "1 bot working.", other: "{count} bots working." },
-  "clover.island.needsYou": "Needs you",
-  "clover.island.question": "Question",
-  "clover.island.questionFrom": "Question · {name}",
-  "clover.island.asks": "{name} asks",
-  "clover.island.aQuestion": "A question for you",
-  "clover.island.otherPlaceholder": "Something else",
-  "clover.island.typeAnswer": "Type an answer",
-  "clover.island.next": "Next question",
-  "clover.island.previous": "Previous question",
-  "clover.island.send": "Send",
-  "clover.island.showWaiting": "Waiting: {line}. Show it.",
-  "clover.island.tabs": "Island tabs",
-  "clover.island.onComputer": "on {computer}",
-  "clover.island.notSent": "Not sent. Try again.",
-  "clover.island.approval": "Approval",
-  "clover.island.linkRequest": "Link request",
-  "clover.island.moreBelow": "More below",
-  "clover.island.declineLink": "Decline the link",
-  "clover.island.openLink": "Open the link",
-  "clover.island.deny": "Deny",
-  "clover.island.allowOnce": "Allow once",
-};
+type Entry = string | { readonly zero?: string; readonly one?: string; readonly two?: string; readonly few?: string; readonly many?: string; readonly other: string };
 
-export function t(key: string, vars: Record<string, string | number> = {}): string {
+/** The app's translator for this plugin's keys, in the user's language: a key it has no string for reads as itself. */
+export type Translator = (key: string, params?: Record<string, string | number>) => string;
+
+/** The English table, as `locales/en.json` holds it. */
+export const EN: Readonly<Record<string, Entry>> = en.strings;
+
+let installed: Translator | null = null;
+
+/** Installs the app's translator (null: English only). Calling it again with the same one changes nothing. */
+export function setTranslator(translator: Translator | null): void {
+  installed = translator;
+}
+
+const englishPlurals = new Intl.PluralRules("en");
+
+/** A key's English string, its placeholders filled and its plural form chosen by `count`. */
+export function english(key: string, vars: Record<string, string | number> = {}): string {
   const entry = EN[key];
   if (entry === undefined) return key;
   let text: string;
   if (typeof entry === "string") text = entry;
-  else text = vars.count === 1 && entry.one !== undefined ? entry.one : entry.other;
+  else {
+    const n = typeof vars.count === "number" ? vars.count : Number(vars.count);
+    const form = Number.isFinite(n) ? englishPlurals.select(n) : "other";
+    text = entry[form] ?? entry.other;
+  }
   return text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`));
+}
+
+export function t(key: string, vars: Record<string, string | number> = {}): string {
+  if (installed) {
+    const text = installed(key, vars);
+    if (text !== key) return text;
+  }
+  return english(key, vars);
 }

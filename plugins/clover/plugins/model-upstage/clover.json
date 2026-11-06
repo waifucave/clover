@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Upstage",
+  "description": "Upstage's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "upstage",
+        "name": "Upstage",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Upstage API key. Clover keeps it in your credential store and adds it to Upstage's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.upstage.ai/v1"
+        }
+      }
+    ]
+  }
+}

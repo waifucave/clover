@@ -71,7 +71,7 @@ export function Specimen({ title }: { title: string }): ReactElement {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 8px 16px", borderRadius: v("composer.radius"), background: v("composer.background"), boxShadow: `inset 0 0 0 1px ${v("composer.rim")}, ${v("shadow.raised")}` }}>
               <span style={{ flex: 1, color: v("composer.placeholder") }}>Message Alpha</span>
-              <span style={{ width: 32, height: 32, borderRadius: v("radius.round"), background: v("color.accent"), color: v("color.accent.contrast"), display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>↑</span>
+              <span style={{ width: 32, height: 32, borderRadius: v("radius.round"), background: v("color.accent.fill"), color: v("color.accent.contrast"), display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>↑</span>
             </div>
           </div>
           <div

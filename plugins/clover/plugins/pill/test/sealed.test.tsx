@@ -9,7 +9,7 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { CSSProperties, ReactElement } from "react";
-import { BASE_THEME, tokensFor } from "../../base-theme/src/index";
+import { BASE_THEME, resolveTokens, tokensFor } from "../../base-theme/src/index";
 import { sealedProblems } from "../../base-theme/src/sealed-check";
 import * as client from "../client/index";
 import { CardBody } from "../src/ui/Card";
@@ -17,7 +17,7 @@ import { DispatchPill, type DispatchPillProps } from "../src/ui/DispatchPill";
 import type { FrameTimers } from "../src/ui/Plume";
 import { Shell } from "../src/ui/Shell";
 import { PILL_CSS } from "../src/ui/styles";
-import { MIN_SEALED_BUTTON, PILL_CARD_SOURCES, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
+import { MIN_SEALED_BUTTON, PILL_CARD_SOURCES, resolveCardTokens, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
 import { mockSealedKit } from "../src/mock-kit";
 import { PILL_STORIES as STORIES } from "../src/gallery";
 import { emptyDraft } from "../src/model/cards";
@@ -143,11 +143,22 @@ describe("the frames take the pill's own tokens", () => {
   });
 
   test("every card value comes from a pill token, the base theme's value when nothing sets it", () => {
-    const base = tokensFor(BASE_THEME, "light");
+    const base = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
     for (const [name, source] of Object.entries(PILL_CARD_SOURCES)) {
       expect(name.startsWith("card.")).toBe(true);
       if ("token" in source) expect(source.fallback, name).toBe(String(base[source.token]));
     }
+  });
+
+  test("card styling (G-M3): the frames get every card token, the theme's face, the ✓'s own ink, and never a keyword", () => {
+    const { CARD_TOKENS } = require("../../../../../packages/plugin-sdk/src/catalogs/tokens") as { CARD_TOKENS: readonly { name: string }[] };
+    expect(Object.keys(PILL_CARD_SOURCES).sort()).toEqual(CARD_TOKENS.map((x) => x.name).sort());
+    const src = PILL_CARD_SOURCES["card.approve.text"]!;
+    expect("token" in src && src.token).toBe("pill.accept.text");
+    const font = PILL_CARD_SOURCES["card.font.family"]!;
+    expect("token" in font && font.token).toBe("card.font.family");
+    const unresolved = resolveCardTokens(PILL_CARD_SOURCES, () => "system");
+    for (const [key, source] of Object.entries(PILL_CARD_SOURCES)) if ("token" in source) expect(unresolved[key], key).toBe(source.fallback);
   });
 
   test("a theme's ✓ reaches the approval's frames as it reaches the question's circle", () => {

@@ -1,0 +1,2574 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key",
+      "oauth-approved"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "provider-native",
+    "liveCatalogAuthority": "authoritative",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/anthropic/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "approved",
+      "reasons": []
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "oauth-documented",
+      "citation": "spec:WS-13b §0 D20",
+      "tier": "spec-ruling"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "anthropic/claude-fable-5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-fable-5",
+      "displayName": "Claude Fable 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5/overview — Claude Fable 5 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5/overview — Claude Fable 5 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5/overview — Claude Fable 5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5/overview — Claude Fable 5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Fable 5 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Fable 5 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Fable 5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-fable-5; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Fable 5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/fable-5/overview — Claude Fable 5 model page specifies always on; thinking.type enabled/disabled rejected.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — \"the text in a thinking block is a summary of Claude's reasoning\" and \"what you see is never the raw chain of thought\". Paired with `summaryRequest`, the catalog's convention: a summary this row can ask for is a readable summary.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted",
+              "updates"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#progress-updates (read 2026-10-05) — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Sonnet 5.5, and Claude Fable 5, the model can write a progress update between tool calls\"; `display: \"updates\"` (beta) returns reasoning blocks with an empty `thinking` field and each progress update as readable summary text, and \"requires the beta header `thinking-display-updates-2026-08-18`\" (without it the value is a 400). https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — `display` accepts \"summarized\", \"omitted\" (the default on this model) and \"updates\" (beta). Winter requests \"summarized\" wherever this list carries it (user ruling 2026-10-05, 0.0.48: live tests saw no progress update in five tool-using turns under \"updates\", while summarized thinking narrates what the model is doing); \"updates\" stays recorded, and is requested only by a row that lists it without \"summarized\". Earlier evidence: derived-shapes-p6.md item (c) — ThinkingAdaptive/ThinkingEnabled `display`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 10,
+          "outputPerMTokUsd": 50,
+          "cacheReadPerMTokUsd": 1,
+          "cacheWritePerMTokUsd": 12.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled",
+        "thinking.type.disabled"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"This feature is available on Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 4.8, and Claude Opus 5. No beta header is required for mid-conversation system messages. This feature is not available on Claude Sonnet 5.\""
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition / tool_removal blocks in a role:\"system\" message, by reference (\"Add/remove by reference: mid-conversation-tool-changes-2026-07-01 — Claude API, Amazon Bedrock, Google Cloud\"); available on Claude Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 4.8 and Opus 5, \"Not available on Claude Sonnet 5\". Retrieved 2026-09-26; release note 2026-07-24 (https://platform.claude.com/docs/en/release-notes/overview)."
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition with a tool_definition (\"Add/remove by reference + define by value: inline-tools-2026-09-15 — Claude API\"); \"The inline-tools-2026-09-15 header covers all reference-based changes\"; redefinition: \"send a different definition under the same name ... The new definition replaces the earlier one from that position onward\" (no removal first, a tool declared in tools included); a definition reusing the name of a different type of tool is a 400 tool_name_conflict. Same model list as midConversationToolChanges. Claude API only, so set on the anthropic and console providers (both api.anthropic.com), never on a cloud reseller. Retrieved 2026-09-26; release note 2026-09-22."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "canonicalModelId": "claude-fable-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-fable-5-1",
+      "providerId": "anthropic",
+      "upstreamId": "claude-fable-5-1",
+      "displayName": "Claude Fable 5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-1/overview — Claude Fable 5.1 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-1/overview — Claude Fable 5.1 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-1/overview — Claude Fable 5.1 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-1/overview — Claude Fable 5.1 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Fable 5.1 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Fable 5.1 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Fable 5.1 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-fable-5-1; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Fable 5.1 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-1/overview — Claude Fable 5.1 model page specifies always on; thinking.type enabled/disabled rejected.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1, applied per anthropic/claude-opus-5's own evidence — the Messages API returns a readable thinking summary, never the raw chain, for every current Claude model",
+          "confidence": "declared",
+          "observedAt": "2026-09-07T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted",
+              "updates"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#progress-updates (read 2026-10-05) — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Sonnet 5.5, and Claude Fable 5, the model can write a progress update between tool calls\"; `display: \"updates\"` (beta) returns reasoning blocks with an empty `thinking` field and each progress update as readable summary text, and \"requires the beta header `thinking-display-updates-2026-08-18`\" (without it the value is a 400). https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — `display` accepts \"summarized\", \"omitted\" (the default on this model) and \"updates\" (beta). Winter requests \"summarized\" wherever this list carries it (user ruling 2026-10-05, 0.0.48: live tests saw no progress update in five tool-using turns under \"updates\", while summarized thinking narrates what the model is doing); \"updates\" stays recorded, and is requested only by a row that lists it without \"summarized\". Earlier evidence: derived-shapes-p6.md item (c) — ThinkingAdaptive/ThinkingEnabled `display`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary, applied per anthropic/claude-opus-5's own evidence — a thinking block's signature arrives across signature_delta events, so the complete replayable block exists only at content_block_stop",
+          "confidence": "declared",
+          "observedAt": "2026-09-07T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-fable-5-1"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §4.4, BOTH halves, applied per anthropic/claude-opus-5's own evidence. Own-state acceptance: a Claude model's own thinking blocks are replayed to it unchanged, in order, with signatures intact. Why the domain is NARROW: prior thinking/redacted_thinking blocks are tied to the model that produced them, so \"same provider\" is not automatically \"same continuation domain\" — the domain is this model alone.",
+          "confidence": "declared",
+          "observedAt": "2026-09-07T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        },
+        "blockBinding": {
+          "value": {
+            "beta": "thinking-binding-controls-2026-08-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T13:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting — \"A 400 error says a thinking block signature is invalid\": on Claude Fable 5.1 and Opus 5.5 a replayed thinking block is bound to the conversation (system, tools and earlier messages) and is rejected once that prefix changes (enforced for accounts created on or after 2026-08-31); the documented escape is the `thinking-binding-controls-2026-08-01` beta with `thinking.block_binding.prefix_mismatch_behavior: \"drop_block\"`. See also https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5 (\"Thinking blocks are tied to the model and the conversation\")."
+        },
+        "perMessageEffort": {
+          "value": {
+            "beta": "mid-conversation-output-config-2026-07-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T18:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Opus 5, use a per-message effort change, which keeps the prompt cache\": a role:\"system\" message with empty content and output_config.effort, beta header mid-conversation-output-config-2026-07-01; \"Models without per-message effort, including Claude Fable 5, return a 400 error\". claude 2.1.282 sends the older alias per-turn-control-2026-07-01, which the page does not document."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 10,
+          "outputPerMTokUsd": 50,
+          "cacheReadPerMTokUsd": 0.25,
+          "cacheWritePerMTokUsd": 12.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.anthropic.com/en/docs/about-claude/pricing (301 → https://platform.claude.com/docs/en/about-claude/pricing; both retrieved 2026-09-08) — the vendor's own Model pricing table, row \"Claude Fable 5.1\": \"Base input tokens $10 / MTok | 5m cache writes $12.50 / MTok | 1h cache writes $20 / MTok | Cache hits and refreshes $0.25 / MTok | Output tokens $50 / MTok\", with the page's own footnote \"Cache hits and refreshes on Claude Fable 5.1 and Claude Mythos 5.1 are priced at 0.025x the base input price. All other models use the standard 0.1x multiplier.\" P7a upgrade: this row previously cited the MODELS page, which states input/output and the cache-read multiplier but no cache-write rate (P6.6 could not reach the pricing page). `cacheWritePerMTokUsd` records the 5-MINUTE write ($12.50), matching every other Anthropic row here; the 1-hour write ($20) has no field of its own and is under-reported, exactly as `ModelPricing`'s one-rate-per-direction shape requires — a disclosed schema gap, not a claim the 1h rate does not exist. Batch (-50%), fast-mode and `inference_geo: \"us\"` (1.1x) modifiers are likewise unrepresentable and are NOT folded into these numbers.",
+        "confidence": "declared",
+        "observedAt": "2026-09-08T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.enabled",
+        "thinking.type.disabled",
+        "tool_choice.any",
+        "tool_choice.tool"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"This feature is available on Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 4.8, and Claude Opus 5. No beta header is required for mid-conversation system messages. This feature is not available on Claude Sonnet 5.\""
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition / tool_removal blocks in a role:\"system\" message, by reference (\"Add/remove by reference: mid-conversation-tool-changes-2026-07-01 — Claude API, Amazon Bedrock, Google Cloud\"); available on Claude Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 4.8 and Opus 5, \"Not available on Claude Sonnet 5\". Retrieved 2026-09-26; release note 2026-07-24 (https://platform.claude.com/docs/en/release-notes/overview)."
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition with a tool_definition (\"Add/remove by reference + define by value: inline-tools-2026-09-15 — Claude API\"); \"The inline-tools-2026-09-15 header covers all reference-based changes\"; redefinition: \"send a different definition under the same name ... The new definition replaces the earlier one from that position onward\" (no removal first, a tool declared in tools included); a definition reusing the name of a different type of tool is a 400 tool_name_conflict. Same model list as midConversationToolChanges. Claude API only, so set on the anthropic and console providers (both api.anthropic.com), never on a cloud reseller. Retrieved 2026-09-26; release note 2026-09-22."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "canonicalModelId": "claude-fable-5.1",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-haiku-4-5-20251001",
+      "providerId": "anthropic",
+      "upstreamId": "claude-haiku-4-5-20251001",
+      "displayName": "Claude Haiku 4.5",
+      "aliases": [
+        "haiku"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 standard Messages context 200K (200000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 synchronous Messages max output 64K (64000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Haiku 4.5 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Haiku 4.5 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Haiku 4.5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-haiku-4-5-20251001; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Haiku 4.5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 5,
+          "cacheReadPerMTokUsd": 0.1,
+          "cacheWritePerMTokUsd": 1.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://claude.com/pricing — Haiku 4.5: input $1, output $5, prompt cache read $0.10, prompt cache write $1.25 per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.adaptive"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "canonicalModelId": "claude-haiku-4.5-20251001",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-haiku-4.5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-haiku-4.5",
+      "displayName": "Claude Haiku 4.5",
+      "aliases": [
+        "claude-haiku-4-5"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 standard Messages context 200K (200000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 synchronous Messages max output 64K (64000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-4-5/overview — Claude Haiku 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Haiku 4.5 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Haiku 4.5 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Haiku 4.5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-haiku-4-5-20251001; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Haiku 4.5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 5,
+          "cacheReadPerMTokUsd": 0.1,
+          "cacheWritePerMTokUsd": 1.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.adaptive"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "canonicalModelId": "claude-haiku-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-haiku-5-5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-haiku-5-5",
+      "displayName": "Claude Haiku 5.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/overview — Claude Haiku 5.5 context window 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/overview — Claude Haiku 5.5 synchronous Messages max output 128K (128000) tokens; 300K only on the Message Batches API with the output-300k-2026-03-24 beta.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/overview — Claude Haiku 5.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/overview — Claude Haiku 5.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use\"; Claude Haiku 5.5 is in the current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — every current model supports tool use (client tools declared in `tools`); Claude Haiku 5.5 is in the current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Haiku 5.5 has 5m/1h cache-write and cache-hit price columns; https://platform.claude.com/docs/en/models/haiku-5-5/overview — \"The minimum cacheable prompt length is 512 tokens\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/overview — Claude Haiku 5.5 thinking: Adaptive, on by default; https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5 — manual extended thinking (budget_tokens) returns an error.",
+          "confidence": "declared",
+          "observedAt": "2026-10-24T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "live-probe",
+          "sourceRef": "packages/conformance/compat/anthropic/0.3.250/derived-shapes-p6.md capture (F) — the runtime normalises an unsigned thinking block to signature: \"\" and replays it",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5 — \"Thinking text is omitted by default\": \"To receive summarized thinking, set `thinking.display` to `\\\"summarized\\\"`\". `updates` is not listed for this model on these pages, so it is not recorded.",
+          "confidence": "declared",
+          "observedAt": "2026-10-24T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary — a thinking block's `signature` arrives across `signature_delta` events, so the COMPLETE replayable block exists only at `content_block_stop`; an earlier partial copy would replay an unsigned block",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-haiku-5-5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §4.4, BOTH halves, as on every Claude row: the model's own `thinking` blocks are replayed to it unchanged, in order, with their signatures intact, and \"when changing Claude models, prior `thinking` and `redacted_thinking` blocks should be stripped because they are tied to the model that produced them\". The domain is this model alone, never the Anthropic provider.",
+          "confidence": "declared",
+          "observedAt": "2026-10-24T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "live-probe",
+          "sourceRef": "continuity report §3 (wire probe of the pinned Claude Agent SDK, 0.3.250→0.3.258) — every uncompacted historical thinking/redacted block is replayed on every later request",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — supportedModels lists claude-haiku-5-5; effort is requested through `output_config.effort`; \"Claude Haiku 5.5 supports all five effort levels, and `medium` is the default\".",
+          "confidence": "declared",
+          "observedAt": "2026-10-24T00:00:00Z"
+        },
+        "perMessageEffort": {
+          "value": {
+            "beta": "mid-conversation-output-config-2026-07-01"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta — \"On the Claude API and Claude Models on Google Cloud (Google managed), Claude Haiku 5.5 also supports changing effort mid-conversation with a per-message `output_config`\", beta header mid-conversation-output-config-2026-07-01; with `thinking: disabled` a differing per-message effort returns 400 (Winter sends adaptive thinking whenever it sends per-message effort).",
+          "confidence": "declared",
+          "observedAt": "2026-10-24T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1,
+          "outputPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 0.125,
+          "cacheReadPerMTokUsd": 0.01,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 100001,
+              "inputPerMTokUsd": 0.5,
+              "outputPerMTokUsd": 2.5,
+              "cacheWritePerMTokUsd": 0.625,
+              "cacheReadPerMTokUsd": 0.05
+            }
+          ]
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Haiku 5.5 USD/MTok, \"for prompts up to 100,000 tokens\": base input $0.10, 5m cache write $0.125, 1h cache write $0.20, cache hit $0.01, output $0.50; \"for prompts over 100,000 tokens\": $0.50, $0.625, $1, $0.05, $2.50 (the same on https://platform.claude.com/docs/en/models/haiku-5-5/overview). The 1h cache write is 2x the tier's input rate in both tiers, which the estimator's ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLIER already applies.",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled",
+        "thinking.type.disabled+output_config.effort.xhigh",
+        "thinking.type.disabled+output_config.effort.max"
+      ],
+      "status": "candidate",
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5 — \"Assistant message prefill returns an error\" (Breaking): \"End `messages` with a user turn.\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-24T00:00:00Z"
+      },
+      "canonicalModelId": "claude-haiku-5.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-opus-4.5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-opus-4.5",
+      "displayName": "Claude Opus 4.5",
+      "aliases": [
+        "claude-opus-4-5",
+        "claude-opus-4-5-20251101"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-5/overview — Claude Opus 4.5 standard Messages context 200K (200000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-5/overview — Claude Opus 4.5 synchronous Messages max output 64K (64000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-5/overview — Claude Opus 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-5/overview — Claude Opus 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Opus 4.5 is listed as available legacy.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Opus 4.5 availability confirmed on model page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Opus 4.5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-opus-4-5-20251101; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 4.5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-5/overview — Claude Opus 4.5 model page specifies extended thinking only, defaults off; thinking.type enabled + budget_tokens enables; adaptive rejected.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.adaptive"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "canonicalModelId": "claude-opus-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-opus-4.6",
+      "providerId": "anthropic",
+      "upstreamId": "claude-opus-4.6",
+      "displayName": "Claude Opus 4.6",
+      "aliases": [
+        "claude-opus-4-6"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-6/overview — Claude Opus 4.6 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-6/overview — Claude Opus 4.6 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-6/overview — Claude Opus 4.6 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-6/overview — Claude Opus 4.6 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Opus 4.6 is listed as available legacy.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Opus 4.6 availability confirmed on model page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Opus 4.6 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-opus-4-6; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 4.6 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-6/overview — Claude Opus 4.6 model page specifies adaptive thinking defaults off; enabled/budget_tokens remains accepted but deprecated; disabled turns off.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "canonicalModelId": "claude-opus-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-opus-4.7",
+      "providerId": "anthropic",
+      "upstreamId": "claude-opus-4.7",
+      "displayName": "Claude Opus 4.7",
+      "aliases": [
+        "claude-opus-4-7"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-7/overview — Claude Opus 4.7 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-7/overview — Claude Opus 4.7 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-7/overview — Claude Opus 4.7 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-7/overview — Claude Opus 4.7 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Opus 4.7 is listed as available legacy.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Opus 4.7 availability confirmed on model page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Opus 4.7 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-opus-4-7; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 4.7 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-7/overview — Claude Opus 4.7 model page specifies adaptive thinking defaults off; can set thinking.type adaptive or disabled.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — \"the text in a thinking block is a summary of Claude's reasoning\" and \"what you see is never the raw chain of thought\".",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — `display` accepts \"summarized\" (\"thinking blocks contain summarized thinking text\") and \"omitted\", which is \"the default on ... Claude Opus 4.8, Claude Opus 4.7\": without asking for \"summarized\" this model's thinking streams empty. \"updates\" is not listed: the progress-updates section names no Claude 4.x model.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "canonicalModelId": "claude-opus-4.7",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-opus-4.8",
+      "providerId": "anthropic",
+      "upstreamId": "claude-opus-4.8",
+      "displayName": "Claude Opus 4.8",
+      "aliases": [
+        "claude-opus-4-8"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-8/overview — Claude Opus 4.8 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-8/overview — Claude Opus 4.8 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-8/overview — Claude Opus 4.8 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-8/overview — Claude Opus 4.8 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Opus 4.8 is listed as available legacy.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Opus 4.8 availability confirmed on model page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Opus 4.8 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-opus-4-8; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 4.8 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/opus-4-8/overview — Claude Opus 4.8 model page specifies adaptive thinking defaults off; can set thinking.type adaptive or disabled.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — \"the text in a thinking block is a summary of Claude's reasoning\" and \"what you see is never the raw chain of thought\".",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — `display` accepts \"summarized\" (\"thinking blocks contain summarized thinking text\") and \"omitted\", which is \"the default on ... Claude Opus 4.8, Claude Opus 4.7\": without asking for \"summarized\" this model's thinking streams empty. \"updates\" is not listed: the progress-updates section names no Claude 4.x model.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"This feature is available on Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 4.8, and Claude Opus 5. No beta header is required for mid-conversation system messages. This feature is not available on Claude Sonnet 5.\""
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition / tool_removal blocks in a role:\"system\" message, by reference (\"Add/remove by reference: mid-conversation-tool-changes-2026-07-01 — Claude API, Amazon Bedrock, Google Cloud\"); available on Claude Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 4.8 and Opus 5, \"Not available on Claude Sonnet 5\". Retrieved 2026-09-26; release note 2026-07-24 (https://platform.claude.com/docs/en/release-notes/overview)."
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition with a tool_definition (\"Add/remove by reference + define by value: inline-tools-2026-09-15 — Claude API\"); \"The inline-tools-2026-09-15 header covers all reference-based changes\"; redefinition: \"send a different definition under the same name ... The new definition replaces the earlier one from that position onward\" (no removal first, a tool declared in tools included); a definition reusing the name of a different type of tool is a 400 tool_name_conflict. Same model list as midConversationToolChanges. Claude API only, so set on the anthropic and console providers (both api.anthropic.com), never on a cloud reseller. Retrieved 2026-09-26; release note 2026-09-22."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "canonicalModelId": "claude-opus-4.8",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-opus-5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-opus-5",
+      "displayName": "Claude Opus 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5/overview — Claude Opus 5 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5/overview — Claude Opus 5 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5/overview — Claude Opus 5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5/overview — Claude Opus 5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Opus 5 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Opus 5 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Opus 5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-opus-5; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/opus-5/overview — Claude Opus 5 model page specifies thinking defaults on; disabled allowed only at low/medium/high, rejected at xhigh/max.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "live-probe",
+          "sourceRef": "packages/conformance/compat/anthropic/0.3.250/derived-shapes-p6.md capture (F) — the runtime normalises an unsigned thinking block to signature: \"\" and replays it",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "derived-shapes-p6.md item (c) — ThinkingAdaptive/ThinkingEnabled `display`",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "live-probe",
+          "sourceRef": "continuity report §3 (wire probe of the pinned Claude Agent SDK, 0.3.250→0.3.258) — every uncompacted historical thinking/redacted block is replayed on every later request",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary — a thinking block's `signature` arrives across `signature_delta` events, so the COMPLETE replayable block exists only at `content_block_stop`; an earlier partial copy would replay an unsigned block",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-opus-5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §4.4, BOTH halves. Own-state acceptance: the model's own `thinking` blocks are replayed to it unchanged, in order, with their signatures intact (§4.4's replay rules and its worked request). Why the domain is NARROW: \"when changing Claude models, prior `thinking` and `redacted_thinking` blocks should be stripped because they are tied to the model that produced them. Therefore 'same provider' is not automatically 'same continuation domain.'\" The domain is this model alone, never the Anthropic provider.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        },
+        "perMessageEffort": {
+          "value": {
+            "beta": "mid-conversation-output-config-2026-07-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T18:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Opus 5, use a per-message effort change, which keeps the prompt cache\": a role:\"system\" message with empty content and output_config.effort, beta header mid-conversation-output-config-2026-07-01; \"Models without per-message effort, including Claude Fable 5, return a 400 error\". claude 2.1.282 sends the older alias per-turn-control-2026-07-01, which the page does not document."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://claude.com/pricing — Opus 5: input $5, output $25, prompt cache read $0.50, prompt cache write $6.25 per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled",
+        "thinking.type.disabled+output_config.effort.xhigh",
+        "thinking.type.disabled+output_config.effort.max"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"This feature is available on Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 4.8, and Claude Opus 5. No beta header is required for mid-conversation system messages. This feature is not available on Claude Sonnet 5.\""
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition / tool_removal blocks in a role:\"system\" message, by reference (\"Add/remove by reference: mid-conversation-tool-changes-2026-07-01 — Claude API, Amazon Bedrock, Google Cloud\"); available on Claude Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 4.8 and Opus 5, \"Not available on Claude Sonnet 5\". Retrieved 2026-09-26; release note 2026-07-24 (https://platform.claude.com/docs/en/release-notes/overview)."
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition with a tool_definition (\"Add/remove by reference + define by value: inline-tools-2026-09-15 — Claude API\"); \"The inline-tools-2026-09-15 header covers all reference-based changes\"; redefinition: \"send a different definition under the same name ... The new definition replaces the earlier one from that position onward\" (no removal first, a tool declared in tools included); a definition reusing the name of a different type of tool is a 400 tool_name_conflict. Same model list as midConversationToolChanges. Claude API only, so set on the anthropic and console providers (both api.anthropic.com), never on a cloud reseller. Retrieved 2026-09-26; release note 2026-09-22."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "canonicalModelId": "claude-opus-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-opus-5-5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-opus-5-5",
+      "displayName": "Claude Opus 5.5",
+      "aliases": [
+        "opus"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/overview — Claude Opus 5.5 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/overview — Claude Opus 5.5 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/overview — Claude Opus 5.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/overview — Claude Opus 5.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Opus 5.5 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Opus 5.5 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Opus 5.5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-opus-5-5; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 5.5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/overview — Claude Opus 5.5 model page specifies always on; thinking.type enabled/disabled rejected.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "live-probe",
+          "sourceRef": "packages/conformance/compat/anthropic/0.3.250/derived-shapes-p6.md capture (F) — the runtime normalises an unsigned thinking block to signature: \"\" and replays it",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted",
+              "updates"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#progress-updates (read 2026-10-05) — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Sonnet 5.5, and Claude Fable 5, the model can write a progress update between tool calls\"; `display: \"updates\"` (beta) returns reasoning blocks with an empty `thinking` field and each progress update as readable summary text, and \"requires the beta header `thinking-display-updates-2026-08-18`\" (without it the value is a 400). https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — `display` accepts \"summarized\", \"omitted\" (the default on this model) and \"updates\" (beta). Winter requests \"summarized\" wherever this list carries it (user ruling 2026-10-05, 0.0.48: live tests saw no progress update in five tool-using turns under \"updates\", while summarized thinking narrates what the model is doing); \"updates\" stays recorded, and is requested only by a row that lists it without \"summarized\". Earlier evidence: derived-shapes-p6.md item (c) — ThinkingAdaptive/ThinkingEnabled `display`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary — a thinking block's `signature` arrives across `signature_delta` events, so the COMPLETE replayable block exists only at `content_block_stop`; an earlier partial copy would replay an unsigned block",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-opus-5-5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §4.4, BOTH halves. Own-state acceptance: the model's own `thinking` blocks are replayed to it unchanged, in order, with their signatures intact (§4.4's replay rules and its worked request). Why the domain is NARROW: \"when changing Claude models, prior `thinking` and `redacted_thinking` blocks should be stripped because they are tied to the model that produced them. Therefore 'same provider' is not automatically 'same continuation domain.'\" The domain is this model alone, never the Anthropic provider.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "live-probe",
+          "sourceRef": "continuity report §3 (wire probe of the pinned Claude Agent SDK, 0.3.250→0.3.258) — every uncompacted historical thinking/redacted block is replayed on every later request",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        },
+        "blockBinding": {
+          "value": {
+            "beta": "thinking-binding-controls-2026-08-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T13:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting — \"A 400 error says a thinking block signature is invalid\": on Claude Fable 5.1 and Opus 5.5 a replayed thinking block is bound to the conversation (system, tools and earlier messages) and is rejected once that prefix changes (enforced for accounts created on or after 2026-08-31); the documented escape is the `thinking-binding-controls-2026-08-01` beta with `thinking.block_binding.prefix_mismatch_behavior: \"drop_block\"`. See also https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5 (\"Thinking blocks are tied to the model and the conversation\")."
+        },
+        "perMessageEffort": {
+          "value": {
+            "beta": "mid-conversation-output-config-2026-07-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T18:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Opus 5, use a per-message effort change, which keeps the prompt cache\": a role:\"system\" message with empty content and output_config.effort, beta header mid-conversation-output-config-2026-07-01; \"Models without per-message effort, including Claude Fable 5, return a 400 error\". claude 2.1.282 sends the older alias per-turn-control-2026-07-01, which the page does not document."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 4,
+          "outputPerMTokUsd": 20,
+          "cacheWritePerMTokUsd": 5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Opus 5.5 USD/MTok base input $4, output $20, 5m cache write $5, 1h cache write $8, cache hit $0.2.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.enabled",
+        "thinking.type.disabled",
+        "tool_choice.any",
+        "tool_choice.tool"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"This feature is available on Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 4.8, and Claude Opus 5. No beta header is required for mid-conversation system messages. This feature is not available on Claude Sonnet 5.\""
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition / tool_removal blocks in a role:\"system\" message, by reference (\"Add/remove by reference: mid-conversation-tool-changes-2026-07-01 — Claude API, Amazon Bedrock, Google Cloud\"); available on Claude Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 4.8 and Opus 5, \"Not available on Claude Sonnet 5\". Retrieved 2026-09-26; release note 2026-07-24 (https://platform.claude.com/docs/en/release-notes/overview)."
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition with a tool_definition (\"Add/remove by reference + define by value: inline-tools-2026-09-15 — Claude API\"); \"The inline-tools-2026-09-15 header covers all reference-based changes\"; redefinition: \"send a different definition under the same name ... The new definition replaces the earlier one from that position onward\" (no removal first, a tool declared in tools included); a definition reusing the name of a different type of tool is a 400 tool_name_conflict. Same model list as midConversationToolChanges. Claude API only, so set on the anthropic and console providers (both api.anthropic.com), never on a cloud reseller. Retrieved 2026-09-26; release note 2026-09-22."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "undeclaredToolCalls": {
+        "value": true,
+        "source": "live-probe",
+        "sourceRef": "scripts/probe-fork-undeclared-tool.ts (WS-24), run live 2026-09-26: A -- a call to a tool absent from `tools` and its result in the history -> 200; B -- a ToolSearch result carrying the definition as text -> the model called the undeclared tool; C -- that call and its result fed back -> 200",
+        "confidence": "verified",
+        "observedAt": "2026-09-26T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-5.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-sonnet-4.5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-sonnet-4.5",
+      "displayName": "Claude Sonnet 4.5",
+      "aliases": [
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-5-20250929"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-5/overview — Claude Sonnet 4.5 standard Messages context 200K (200000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-5/overview — Claude Sonnet 4.5 synchronous Messages max output 64K (64000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-5/overview — Claude Sonnet 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-5/overview — Claude Sonnet 4.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Sonnet 4.5 is listed as available legacy.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Sonnet 4.5 availability confirmed on model page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Sonnet 4.5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-sonnet-4-5-20250929; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 4.5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-5/overview — Claude Sonnet 4.5 model page specifies extended thinking only, defaults off; thinking.type enabled + budget_tokens enables; adaptive rejected.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "continuation": "opaque-provider-state"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3,
+          "cacheWritePerMTokUsd": 3.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.adaptive"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "canonicalModelId": "claude-sonnet-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-sonnet-4.6",
+      "providerId": "anthropic",
+      "upstreamId": "claude-sonnet-4.6",
+      "displayName": "Claude Sonnet 4.6",
+      "aliases": [
+        "claude-sonnet-4-6"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview — Claude Sonnet 4.6 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview — Claude Sonnet 4.6 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview — Claude Sonnet 4.6 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview — Claude Sonnet 4.6 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Sonnet 4.6 is listed as available legacy.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Sonnet 4.6 availability confirmed on model page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Sonnet 4.6 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-sonnet-4-6; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 4.6 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview — Claude Sonnet 4.6 model page specifies adaptive thinking defaults off; enabled/budget_tokens remains accepted but deprecated; disabled turns off.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3,
+          "cacheWritePerMTokUsd": 3.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — current first-party Model pricing table; catalog records standard input/output, cache hits, and the 5-minute cache-write rate. The documented 1-hour cache-write rate is not representable by the one cache-write field (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T18:30:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
+      },
+      "canonicalModelId": "claude-sonnet-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-sonnet-5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-sonnet-5",
+      "displayName": "Claude Sonnet 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5/overview — Claude Sonnet 5 standard Messages context 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5/overview — Claude Sonnet 5 synchronous Messages max output 128K (128000) tokens; some models have 300K Batch beta only.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5/overview — Claude Sonnet 5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5/overview — Claude Sonnet 5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Anthropic overview says current Claude models support tool use; Claude Sonnet 5 is listed in current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — Claude model family supports tool use; Claude Sonnet 5 availability confirmed on model page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Sonnet 5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-sonnet-5; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 5 has cache-write and cache-hit price columns; prompt caching is available.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:25:20Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5/overview — Claude Sonnet 5 model page specifies adaptive thinking on by default; thinking.type disabled turns it off.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:25:20Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "live-probe",
+          "sourceRef": "derived-shapes-p6.md capture (F) — the runtime normalises an unsigned thinking block to signature: \"\" and replays it",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "derived-shapes-p6.md item (c) — ThinkingAdaptive/ThinkingEnabled `display`",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "live-probe",
+          "sourceRef": "continuity report §3 (wire probe of the pinned Claude Agent SDK, 0.3.250→0.3.258) — every uncompacted historical thinking/redacted block is replayed on every later request",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary — a thinking block's `signature` arrives across `signature_delta` events, so the COMPLETE replayable block exists only at `content_block_stop`",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-sonnet-5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §4.4, BOTH halves. Own-state acceptance: §4.4 requires the model's own assistant blocks — `thinking` with its signature, `redacted_thinking` — replayed unchanged and in order across a tool loop. Why the domain is NARROW: Anthropic documents model switching as a boundary at which those blocks are STRIPPED, because they are tied to the producing model; \"same provider\" is therefore not \"same continuation domain\", and this domain is the model alone.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:30:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-1, claude-fable-5, claude-opus-5-5, claude-opus-5, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5 and claude-sonnet-4-6: effort is requested through `output_config.effort` (Claude 4.7 and later reject a manual `thinking.budget_tokens`, https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting#rejected-configurations)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.2,
+          "cacheWritePerMTokUsd": 2.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://claude.com/pricing — Sonnet 5: input $2, output $10, prompt cache read $0.20, prompt cache write $2.50 per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled"
+      ],
+      "status": "candidate",
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
+      },
+      "undeclaredToolCalls": {
+        "value": true,
+        "source": "live-probe",
+        "sourceRef": "scripts/probe-fork-undeclared-tool.ts (WS-24), run live 2026-09-26: A -- a call to a tool absent from `tools` and its result in the history -> 200; B -- a ToolSearch result carrying the definition as text -> the model called the undeclared tool; C -- that call and its result fed back -> 200",
+        "confidence": "verified",
+        "observedAt": "2026-09-26T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "anthropic/claude-sonnet-5-5",
+      "providerId": "anthropic",
+      "upstreamId": "claude-sonnet-5-5",
+      "displayName": "Claude Sonnet 5.5",
+      "aliases": [
+        "sonnet"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview — Claude Sonnet 5.5 context window 1M (1000000) tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview — Claude Sonnet 5.5 synchronous Messages max output 128K (128000) tokens; 300K only on the Message Batches API with the output-300k-2026-03-24 beta.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview — Claude Sonnet 5.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview — Claude Sonnet 5.5 input → output: text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/models/overview — \"All current models support text and image input, text output, multilingual capabilities, vision, and tool use\"; Claude Sonnet 5.5 is in the current lineup.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5 — Feature support: Claude Sonnet 5.5 supports \"server-side and client-side tools\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true to limit Claude Sonnet 5.5 to at most one tool call; parallel use is otherwise available for tool-capable models.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels includes actual wire ID claude-sonnet-5-5; output_config.format supports JSON schema outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 5.5 has cache-write and cache-hit price columns; https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5 lists prompt caching with a 512-token minimum cacheable prompt.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview — Claude Sonnet 5.5 thinking: Adaptive, on by default; https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide — thinking.type values accepted: \"adaptive\", \"between_tools\" (disabled and enabled/budget_tokens return 400).",
+          "confidence": "declared",
+          "observedAt": "2026-09-29T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "live-probe",
+          "sourceRef": "packages/conformance/compat/anthropic/0.3.250/derived-shapes-p6.md capture (F) — the runtime normalises an unsigned thinking block to signature: \"\" and replays it",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted",
+              "updates"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/thinking#progress-updates (read 2026-10-05) — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Sonnet 5.5, and Claude Fable 5, the model can write a progress update between tool calls\"; `display: \"updates\"` (beta) returns reasoning blocks with an empty `thinking` field and each progress update as readable summary text, and \"requires the beta header `thinking-display-updates-2026-08-18`\" (without it the value is a 400). https://platform.claude.com/docs/en/build-with-claude/thinking#controlling-thinking-display (read 2026-10-05) — `display` accepts \"summarized\", \"omitted\" (the default on this model) and \"updates\" (beta). Winter requests \"summarized\" wherever this list carries it (user ruling 2026-10-05, 0.0.48: live tests saw no progress update in five tool-using turns under \"updates\", while summarized thinking narrates what the model is doing); \"updates\" stays recorded, and is requested only by a row that lists it without \"summarized\". Earlier evidence: derived-shapes-p6.md item (c) — ThinkingAdaptive/ThinkingEnabled `display`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary — a thinking block's `signature` arrives across `signature_delta` events, so the COMPLETE replayable block exists only at `content_block_stop`; an earlier partial copy would replay an unsigned block",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-sonnet-5-5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §4.4, BOTH halves. Own-state acceptance: the model's own `thinking` blocks are replayed to it unchanged, in order, with their signatures intact (§4.4's replay rules and its worked request). Why the domain is NARROW: \"when changing Claude models, prior `thinking` and `redacted_thinking` blocks should be stripped because they are tied to the model that produced them. Therefore 'same provider' is not automatically 'same continuation domain.'\" The domain is this model alone, never the Anthropic provider.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "live-probe",
+          "sourceRef": "continuity report §3 (wire probe of the pinned Claude Agent SDK, 0.3.250→0.3.258) — every uncompacted historical thinking/redacted block is replayed on every later request",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-sonnet-5-5 (with claude-fable-5-1, claude-opus-5-5, claude-opus-5, claude-sonnet-5, …): effort is requested through `output_config.effort`; \"Claude Sonnet 5.5 supports all five effort levels, and `high` is the default on the Claude API\". budget_tokens returns 400 (https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide).",
+          "confidence": "declared",
+          "observedAt": "2026-09-29T00:00:00Z"
+        },
+        "blockBinding": {
+          "value": {
+            "beta": "thinking-binding-controls-2026-08-01"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5 — \"Thinking blocks are tied to the model and the conversation\": the API checks whether the system prompt, the tools or an earlier message changed since a Claude Sonnet 5.5 thinking block was produced, enforced by default for accounts created on or after 2026-08-31 (400 on replay); \"send the `thinking-binding-controls-2026-08-01` beta header and set `thinking.block_binding.prefix_mismatch_behavior` to \\\"drop_block\\\"\"; block_binding works only with thinking type adaptive.",
+          "confidence": "declared",
+          "observedAt": "2026-09-29T00:00:00Z"
+        },
+        "perMessageEffort": {
+          "value": {
+            "beta": "mid-conversation-output-config-2026-07-01"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta — \"On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 5, and Claude Sonnet 5.5, use a per-message effort change, which keeps the prompt cache\": a role:\"system\" message with empty content and output_config.effort, beta header mid-conversation-output-config-2026-07-01. On Sonnet 5.5 with thinking between_tools a differing per-message effort returns 400 (Winter never sends between_tools, so adaptive thinking always applies).",
+          "confidence": "declared",
+          "observedAt": "2026-09-29T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheWritePerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 5.5 USD/MTok base input $2, output $10, 5m cache write $2.50, 1h cache write $4, cache hit $0.20 (same as Claude Sonnet 5; confirmed on https://platform.claude.com/docs/en/models/sonnet-5-5/overview).",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "temperature",
+        "top_p",
+        "top_k",
+        "thinking.type.enabled",
+        "thinking.type.disabled",
+        "tool_choice.any",
+        "tool_choice.tool"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Claude Sonnet 5.5 (claude-sonnet-5-5) with tool_search_tool_regex_20251119 / tool_search_tool_bm25_20251119; \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\".",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"This feature is available on Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 4.8, Claude Opus 5, and Claude Sonnet 5.5. No beta header is required for mid-conversation system messages. This feature is not available on Claude Sonnet 5.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition / tool_removal blocks in a role:\"system\" message, by reference (\"The `mid-conversation-tool-changes-2026-07-01` header works for changes that name a tool by reference, on the Claude API, Amazon Bedrock, and Google Cloud\"); same model list as mid-conversation system messages, which names Claude Sonnet 5.5; https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5 — Feature support lists mid-conversation tool changes (beta) on Claude Sonnet 5.5 and not on Claude Sonnet 5.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool_addition with a tool_definition (\"On the Claude API, send the `inline-tools-2026-09-15` beta header, which also covers defining a tool inside a `tool_addition` block\"), same models as the reference changes, Claude Sonnet 5.5 included; https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5 — \"Define tools in a message (beta)\" on Claude Sonnet 5.5. Claude API only, so set on the anthropic and console providers (both api.anthropic.com), never on a cloud reseller.",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide — \"Prefill returns an error. Claude Sonnet 5.5 rejects a prefilled last assistant turn with a 400 error, as Claude Sonnet 4.6 and Claude Sonnet 5 do\": \"This model does not support assistant message prefill. The conversation must end with a user message.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-29T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-5.5",
+      "modelFamily": "claude"
+    }
+  ]
+}

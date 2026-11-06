@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "Ollama (local)",
+  "description": "Ollama (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "ollama-local",
+        "name": "Ollama (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:11434/v1"
+        }
+      }
+    ]
+  }
+}

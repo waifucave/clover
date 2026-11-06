@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Doubao",
+  "description": "Doubao's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "doubao",
+        "name": "Doubao",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Doubao API key. Clover keeps it in your credential store and adds it to Doubao's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ark.cn-beijing.volces.com/api/v3"
+        }
+      }
+    ]
+  }
+}

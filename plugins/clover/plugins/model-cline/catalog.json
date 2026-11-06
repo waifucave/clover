@@ -1,0 +1,172 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "audit OQ-7: Cline's ToS forbids using the Service \"in competition with us, to develop competing products or services\", and whether that clause reaches a general-purpose agent host consuming the documented public API is unresolved — a vendor clarification, not a document search, settles it",
+        "no live gate case has run"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "audit:§2.1 `cline` / §5.2 — Cline's public API reference (docs.cline.bot/api/overview, retrieved 2026-09-06): OpenAI-compatible Chat Completions at `https://api.cline.bot/api/v1/chat/completions`, `Authorization: Bearer YOUR_API_KEY`, keys from Settings -> API Keys in app.cline.bot; Cline-provider billing is pay-as-you-go credits.",
+      "tier": "audit"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "cline/x-ai/grok-4.5",
+      "providerId": "cline",
+      "upstreamId": "x-ai/grok-4.5",
+      "displayName": "Grok 4.5 (via Cline)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#x-ai/grok-4.5 at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#x-ai/grok-4.5 at v3.8.50 (5458026c) — `toolCalling: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#x-ai/grok-4.5 at v3.8.50 (5458026c) — `toolCalling: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/cline/index.ts#x-ai/grok-4.5 at v3.8.50 (5458026c) — `supportsReasoning: true`",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 500000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.x.ai/docs/models (read 2026-09-27): \"grok-4.5 ... Context Window: 500k tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "grok-4.5",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "cline/z-ai/glm-5.2",
+      "providerId": "cline",
+      "upstreamId": "z-ai/glm-5.2",
+      "displayName": "GLM 5.2 (via Cline)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1040000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#z-ai/glm-5.2 at v3.8.50 (5458026c) — `contextLength`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#z-ai/glm-5.2 at v3.8.50 (5458026c) — `maxOutputTokens`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#z-ai/glm-5.2 at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#z-ai/glm-5.2 at v3.8.50 (5458026c) — `toolCalling: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/cline/index.ts#z-ai/glm-5.2 at v3.8.50 (5458026c) — `toolCalling: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/cline/index.ts#z-ai/glm-5.2 at v3.8.50 (5458026c) — `supportsReasoning: true`",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    }
+  ]
+}

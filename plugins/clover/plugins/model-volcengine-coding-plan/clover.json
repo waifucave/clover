@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Volcengine Ark Coding Plan",
+  "description": "Volcengine Ark Coding Plan's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "volcengine-coding-plan",
+        "name": "Volcengine Ark Coding Plan",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Volcengine Ark Coding Plan API key. Clover keeps it in your credential store and adds it to Volcengine Ark Coding Plan's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3"
+        }
+      }
+    ]
+  }
+}

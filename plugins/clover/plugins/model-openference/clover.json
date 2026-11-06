@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Openference",
+  "description": "Openference's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "openference",
+        "name": "Openference",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Openference API key. Clover keeps it in your credential store and adds it to Openference's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.openference.com/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "FastRouter",
+  "description": "FastRouter's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "fastrouter",
+        "name": "FastRouter",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your FastRouter API key. Clover keeps it in your credential store and adds it to FastRouter's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.fastrouter.ai/api/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,3394 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "azure-openai",
+      "openai-responses"
+    ],
+    "authKinds": [
+      "api-key",
+      "cloud-credential-chain"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.azure-openai",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "native cloud (R6-16): deployment-path/api-version identity and Entra-vs-key auth each need their own request-serialization proof before promotion"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "cloud-credential",
+      "citation": "https://azure.microsoft.com/products/ai-services/openai-service — the vendor's own product page as OmniRoute's product catalog records it at 5458026. The credential is the OPERATOR'S OWN Azure subscription key against their own resource endpoint, which is why the basis is cloud-credential rather than api-key. EVIDENCE TIER: pinned-upstream — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "azure-openai/codex-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "codex-mini",
+      "displayName": "Codex Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 100000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — Azure confirms reasoning support but does not publish a model-specific named vocabulary for Codex Mini (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed`. Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "codex-mini",
+      "modelFamily": "other"
+    },
+    {
+      "key": "azure-openai/gpt-4",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-4",
+      "displayName": "GPT-4 Turbo (Azure deployment)",
+      "aliases": [
+        "gpt-4-turbo"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-4 turbo-2024-04-09 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-4 turbo-2024-04-09 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "Azure says provisioned gpt-4 Turbo is text-only; this deployment-varying row records the conservative entitlement.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.azure.com/catalog/models/gpt-4 (read 2026-09-27): \"improved instruction following, JSON mode, reproducible outputs, parallel function calling, and more\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.azure.com/catalog/models/gpt-4 (read 2026-09-27): \"improved instruction following, JSON mode, reproducible outputs, parallel function calling, and more\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://ai.azure.com/catalog/models/gpt-4 (read 2026-09-27): \"gpt-4-1106-preview (GPT-4 Turbo): The latest gpt-4 model with improved instruction following, JSON mode, reproducible outputs, parallel function calling, and more.\" — pre-reasoning-era GPT-4 Turbo description; no thinking/reasoning mode documented anywhere on the page",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-4.1",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-4.1",
+      "displayName": "GPT-4.1 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models — Azure GPT-4.1 is 1,047,576 tokens on eligible standard deployments, 300K on some standard deployments, and below 128K on provisioned/batch deployments. This single-value schema records the lowest advertised deployment entitlement (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models — GPT-4.1 maximum output is 32,768 tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models — Azure GPT-4.1 supports structured outputs on Chat Completions (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1 (read 2026-09-27): \"Smartest non-reasoning model\" — OpenAI's own model page for the identical model; Azure deploys the same gpt-4.1",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4.1",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-4.1-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-4.1-mini",
+      "displayName": "GPT-4.1 Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — deployment-dependent 1,047,576/300K/128K; lowest documented entitlement recorded (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-4.1 series output limit (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-mini (read 2026-09-27): \"low latency without a reasoning step\" — OpenAI's own model page for the identical model; Azure deploys the same gpt-4.1-mini",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4.1-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-4.1-nano",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-4.1-nano",
+      "displayName": "GPT-4.1 Nano (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — deployment-dependent 1,047,576/300K/128K; lowest documented entitlement recorded (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-4.1 series output limit (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4.1-nano (read 2026-09-27): \"low latency without a reasoning step\" — OpenAI's own model page for the identical model; Azure deploys the same gpt-4.1-nano",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4.1-nano",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-4o",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-4o",
+      "displayName": "GPT-4o (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — current GPT-4o table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — current GPT-4o table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4o (read 2026-09-27): \"is the best model for most tasks, and is our most capable model outside of our o-series models\" — OpenAI's own model page for the identical model; Azure deploys the same gpt-4o",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4o",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-4o-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-4o-mini",
+      "displayName": "GPT-4o Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — current GPT-4o Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — current GPT-4o Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-4o-mini (read 2026-09-27): \"no Reasoning feature row present (Function calling: Supported, Streaming: Supported, Structured outputs: Supported)\" — OpenAI's own model page for the identical model; Azure deploys the same gpt-4o-mini",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-4o-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5",
+      "displayName": "GPT-5 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — minimal is reserved for original GPT-5 reasoning models (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5-codex",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5-codex",
+      "displayName": "GPT-5 Codex (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — original GPT-5 reasoning model; minimal/low/medium/high are the documented compatible vocabulary (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5-codex",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5-mini",
+      "displayName": "GPT-5 Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — minimal is reserved for original GPT-5 reasoning models (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5-nano",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5-nano",
+      "displayName": "GPT-5 Nano (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Nano table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Nano table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — minimal is reserved for original GPT-5 reasoning models (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5-nano",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5-pro",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5-pro",
+      "displayName": "GPT-5 Pro (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Pro table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5 Pro table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5 Pro accepts only high, which is its default (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "high"
+        ],
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5-pro",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.1",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.1",
+      "displayName": "GPT-5.1 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.1 supports none and defaults it; minimal/xhigh/max are unavailable (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "none",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.1",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.1-codex",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.1-codex",
+      "displayName": "GPT-5.1 Codex (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.1 Codex supports none; no higher special tier is documented (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high"
+        ],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.1-codex",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.1-codex-max",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.1-codex-max",
+      "displayName": "GPT-5.1 Codex Max (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 Codex Max table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 Codex Max table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.1 Codex Max adds xhigh and cannot use none (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.1-codex-max",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.1-codex-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.1-codex-mini",
+      "displayName": "GPT-5.1 Codex Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 Codex Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.1 Codex Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.1 Codex Mini supports none; no higher special tier is documented (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high"
+        ],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.1-codex-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.2",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.2",
+      "displayName": "GPT-5.2 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.2 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.2 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.2 supports none; minimal/xhigh/max are excluded by the documented model rules (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.2",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.2-codex",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.2-codex",
+      "displayName": "GPT-5.2 Codex (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.2 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.2 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.2 Codex supports none; minimal/xhigh/max are excluded by the documented model rules (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.2-codex",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.3-codex",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.3-codex",
+      "displayName": "GPT-5.3 Codex (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.3 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.3 Codex table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.3 Codex reasoning support; only the model-dependent vocabulary listed is recorded (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.3-codex",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.4",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.4",
+      "displayName": "GPT-5.4 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.4 supports none and xhigh (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "defaultEffort": "none",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.4",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.4-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.4-mini",
+      "displayName": "GPT-5.4 Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 Mini table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.4 supports none and xhigh (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "defaultEffort": "none",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.4-mini",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.4-nano",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.4-nano",
+      "displayName": "GPT-5.4 Nano (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 Nano table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 Nano table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.4 supports none and xhigh (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "defaultEffort": "none",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.4-nano",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.4-pro",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.4-pro",
+      "displayName": "GPT-5.4 Pro (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 Pro table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.4 Pro table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.4 Pro reasoning support, xhigh available to GPT-5.4 (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.4-pro",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.5",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.5",
+      "displayName": "GPT-5.5 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.5 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.5 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.5 supports none; xhigh is supported on GPT-5.5 (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.5",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.6-luna",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.6-luna",
+      "displayName": "GPT-5.6 Luna (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.6 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.6 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.6 supports none and max on Responses (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.6-luna",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.6-sol",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.6-sol",
+      "displayName": "GPT-5.6 Sol (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.6 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.6 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.6 supports none and max on Responses (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.6-sol",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-5.6-terra",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-5.6-terra",
+      "displayName": "GPT-5.6 Terra (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.6 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-5.6 table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-5.6 supports none and max on Responses (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed` (\"gpt-5 series do not support concise\", so `concise` is not listed). Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-5.6-terra",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-6-astra",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-6-astra",
+      "displayName": "GPT-6 Astra (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-6 Astra table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — GPT-6 Astra table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — GPT-6 reasoning feature table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-6-astra",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-6-luna",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-6-luna",
+      "displayName": "GPT-6 Luna (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"1,050,000 Input: 922,000 Output: 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Max Output Tokens ... 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Text and image input with text output.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Functions, tools, and parallel tool calling.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Functions, tools, and parallel tool calling.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it): https://developers.openai.com/api/docs/models/gpt-6-luna (read 2026-09-27): \"reasoning.effort supports none, low, medium (default), high, xhigh, and max\" — effort values ['none', 'low', 'medium', 'high', 'xhigh', 'max'] (via `reasoning.effort`) are not recorded: not the literal this adapter sends, or not the serving provider's own statement",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-6-luna",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-6-sol",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-6-sol",
+      "displayName": "GPT-6 Sol (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"1,050,000 Input: 922,000 Output: 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Max Output Tokens ... 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Text and image input with text output.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Functions, tools, and parallel tool calling.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/models-sold-directly-by-azure (read 2026-09-27): \"Functions, tools, and parallel tool calling.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it): https://developers.openai.com/api/docs/models/gpt-6-sol (read 2026-09-27): \"reasoning.effort supports none, low, medium (default), high, xhigh, and max\" — effort values ['none', 'low', 'medium', 'high', 'xhigh', 'max'] (via `reasoning.effort`) are not recorded: not the literal this adapter sends, or not the serving provider's own statement",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gpt-6-sol",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-chat-latest",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-chat-latest",
+      "displayName": "GPT Chat Latest (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — current gpt-chat-latest preview is 400K context/128K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — current gpt-chat-latest preview is 400K context/128K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-chat-latest has a fixed, non-configurable reasoning level (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [
+        "reasoning_effort"
+      ],
+      "status": "experimental",
+      "canonicalModelId": "gpt-chat-latest",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "azure-openai/gpt-oss-120b",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-oss-120b",
+      "displayName": "gpt-oss-120b (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-oss table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-oss table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — reasoning is supported but no Azure-specific named effort vocabulary is published (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "azure-openai/gpt-oss-20b",
+      "providerId": "azure-openai",
+      "upstreamId": "gpt-oss-20b",
+      "displayName": "gpt-oss-20b (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-oss table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — gpt-oss table (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — reasoning is supported but no Azure-specific named effort vocabulary is published (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gpt-oss-20b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "azure-openai/o1",
+      "providerId": "azure-openai",
+      "upstreamId": "o1",
+      "displayName": "o1 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 100000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — Azure confirms reasoning support; its published matrix does not name the per-model effort subset (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "o1",
+      "modelFamily": "o-series"
+    },
+    {
+      "key": "azure-openai/o1-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "o1-mini",
+      "displayName": "o1 Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — o1-mini: 128K input and 65,536 output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — o1-mini: 128K input and 65,536 output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/o1-mini (read 2026-09-27): \"Function calling | Not supported\" — OpenAI's own model page for the identical model; Azure deploys the same o1-mini. Azure's own catalog page (ai.azure.com/catalog/models/o1-mini) is a client-rendered SPA that did not expose this field",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/o1-mini (read 2026-09-27): \"Function calling | Not supported\" — OpenAI's own model page for the identical model; Azure deploys the same o1-mini. Azure's own catalog page (ai.azure.com/catalog/models/o1-mini) is a client-rendered SPA that did not expose this field",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — o1-mini is a reasoning model but does not support reasoning_effort (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [
+        "reasoning_effort"
+      ],
+      "status": "experimental",
+      "canonicalModelId": "o1-mini",
+      "modelFamily": "o-series"
+    },
+    {
+      "key": "azure-openai/o3",
+      "providerId": "azure-openai",
+      "upstreamId": "o3",
+      "displayName": "o3 (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 100000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — Azure confirms reasoning support; its published matrix does not name the per-model effort subset (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed`. Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "o3",
+      "modelFamily": "o-series"
+    },
+    {
+      "key": "azure-openai/o3-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "o3-mini",
+      "displayName": "o3 Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 100000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — Azure confirms reasoning support; its published matrix does not name the per-model effort subset (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "o3-mini",
+      "modelFamily": "o-series"
+    },
+    {
+      "key": "azure-openai/o3-pro",
+      "providerId": "azure-openai",
+      "upstreamId": "o3-pro",
+      "displayName": "o3 Pro (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 100000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — Azure confirms reasoning support but does not publish a model-specific named vocabulary for o3-pro (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "o3-pro",
+      "modelFamily": "o-series"
+    },
+    {
+      "key": "azure-openai/o4-mini",
+      "providerId": "azure-openai",
+      "upstreamId": "o4-mini",
+      "displayName": "o4 Mini (Azure deployment)",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 100000,
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — O-series table: 200K input + 100K output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure — model capability table states text output (retrieved 2026-09-19).",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-ie/azure/ai-foundry/openai/how-to/reasoning — Azure examples and the feature matrix support low/medium/high for o4-mini (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"you can use the reasoning summary parameter to receive summaries of the model's chain of thought reasoning\"; extracting raw reasoning any other way is not supported.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning (read 2026-10-05) — \"When using the latest reasoning models with the Responses API you can use the reasoning summary parameter\"; the page's API and feature support table marks Reasoning summary as supported for this model. Values from the page's example, `auto`, `concise` or `detailed`. Responses API only: the adapter's Chat Completions leg sends no `reasoning.summary`. Not supported with multi-agent orchestration, which Winter does not enable.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "o4-mini",
+      "modelFamily": "o-series"
+    }
+  ]
+}

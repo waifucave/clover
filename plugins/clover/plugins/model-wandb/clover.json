@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Weights & Biases Inference",
+  "description": "Weights & Biases Inference's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "wandb",
+        "name": "Weights & Biases Inference",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Weights & Biases Inference API key. Clover keeps it in your credential store and adds it to Weights & Biases Inference's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.inference.wandb.ai/v1"
+        }
+      }
+    ]
+  }
+}

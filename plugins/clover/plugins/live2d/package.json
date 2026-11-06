@@ -1,0 +1,36 @@
+{
+  "name": "@waifucave/clover-plugin-live2d",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./client/index.tsx",
+    "./gallery": "./src/gallery.tsx"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p .",
+    "placeholder": "bun scripts/make-placeholder.ts"
+  },
+  "dependencies": {
+    "@waifucave/clover-plugin-vrm": "workspace:*",
+    "@waifucave/mochi2d": "0.13.0",
+    "fflate": "0.8.3"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "5.9.3"
+  }
+}

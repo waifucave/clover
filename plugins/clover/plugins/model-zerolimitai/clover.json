@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "ZeroLimitAI",
+  "description": "ZeroLimitAI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zerolimitai",
+        "name": "ZeroLimitAI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your ZeroLimitAI API key. Clover keeps it in your credential store and adds it to ZeroLimitAI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://www.zerolimitai.com/api/v1"
+        }
+      }
+    ]
+  }
+}

@@ -6,7 +6,9 @@
   "type": "module",
   "exports": {
     ".": "./client/index.tsx",
-    "./gallery": "./src/gallery.tsx"
+    "./gallery": "./src/gallery.tsx",
+    "./fixtures": "./src/fixtures.ts",
+    "./names": "./src/model/names.ts"
   },
   "scripts": {
     "test": "bun test",

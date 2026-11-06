@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Wafer AI",
+  "description": "Wafer AI's models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "wafer",
+        "name": "Wafer AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Wafer AI API key. Clover keeps it in your credential store and adds it to Wafer AI's requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://pass.wafer.ai"
+        }
+      }
+    ]
+  }
+}

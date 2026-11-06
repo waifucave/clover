@@ -1,0 +1,309 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions",
+      "openai-responses"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "partial",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/deepseek/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "reasoning continuity is tool-loop fragile: WS-13 §8.2 records a hard 400 when reasoning state is missing mid-tool-loop, so the tool-loop corpus must pass before promotion"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://platform.deepseek.com — the vendor's own developer platform as OmniRoute's product catalog records it at 5458026; the api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Responses at https://api.deepseek.com. EVIDENCE TIER: pinned-upstream — see PROVENANCE.md \"Two tiers of admission citation\". The audit covers the OAuth/keyless ids and carries no citation for this one.",
+      "tier": "pinned-upstream"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "deepseek/deepseek-flash",
+      "providerId": "deepseek",
+      "upstreamId": "deepseek-flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "aliases": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — model details: both have 1M context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/create-chat-completion/ — max_tokens accepts up to 384K (393216) for both",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — vision supported for Flash; text chat input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/list-models/ — model schema lists output_modalities text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/guides/responses_api/ — parallel_tool_calls is ignored because parallel calling is always enabled",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — JSON Output checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — price table lists cache-hit input rate for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — Chat Completions thinking toggle uses thinking.type enabled/disabled; reasoning_effort low/high/max; default high. Responses reasoning.effort additionally accepts none",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:31:56.381Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — OpenAI-compatible responses return `reasoning_content`",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — with tool calls, all historical `reasoning_content` must be returned on the next request",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — omitting required historical `reasoning_content` in a tool loop produces a 400 error",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.006
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ (retrieved 2026-09-19) — DeepSeek-V4.1-Flash PEAK rate per 1M tokens: cache-miss input $0.30, cache-hit input $0.006, output $1.20. The page also publishes lower off-peak rates ($0.15 / $0.003 / $0.60), which `ModelPricing` cannot represent. Peak is intentionally recorded so budget estimates do not under-report during peak hours; it over-reports off-peak usage.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "undeclaredToolCalls": {
+        "value": true,
+        "source": "live-probe",
+        "sourceRef": "scripts/probe-fork-undeclared-tool.ts (WS-24), run live 2026-09-26: A -- a call to a tool absent from `tools` and its result in the history -> 200; B -- a ToolSearch result carrying the definition as text -> the model called the undeclared tool; C -- that call and its result fed back -> 200",
+        "confidence": "verified",
+        "observedAt": "2026-09-26T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "deepseek/deepseek-v4-pro",
+      "providerId": "deepseek",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — model details: both have 1M context",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/create-chat-completion/ — max_tokens accepts up to 384K (393216) for both",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — vision not supported for V4 Pro; text chat input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/api/list-models/ — model schema lists output_modalities text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — tool calls checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/guides/responses_api/ — parallel_tool_calls is ignored because parallel calling is always enabled",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — JSON Output checked for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ — price table lists cache-hit input rate for both models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — Chat Completions thinking toggle uses thinking.type enabled/disabled; reasoning_effort low/high/max; default high. Responses reasoning.effort additionally accepts none",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T12:31:56.381Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — OpenAI-compatible responses return `reasoning_content`",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — with tool calls, all historical `reasoning_content` must be returned on the next request",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://api-docs.deepseek.com/guides/thinking_mode/ — omitting required historical `reasoning_content` in a tool loop produces a 400 error",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.32,
+          "outputPerMTokUsd": 3.96,
+          "cacheReadPerMTokUsd": 0.044
+        },
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com/quick_start/pricing/ (retrieved 2026-09-19) — DeepSeek-V4-Pro PEAK rate per 1M tokens: cache-miss input $1.32, cache-hit input $0.044, output $3.96. The page also publishes lower off-peak rates ($0.66 / $0.022 / $1.98), which `ModelPricing` cannot represent. Peak is intentionally recorded so budget estimates do not under-report during peak hours; it over-reports off-peak usage.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    }
+  ]
+}

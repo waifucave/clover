@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Moonshot AI (Kimi platform)",
+  "description": "Moonshot AI (Kimi platform)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "moonshot",
+        "name": "Moonshot AI (Kimi platform)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Moonshot AI (Kimi platform) API key. Clover keeps it in your credential store and adds it to Moonshot AI (Kimi platform)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.moonshot.ai/v1"
+        }
+      }
+    ]
+  }
+}

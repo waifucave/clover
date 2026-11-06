@@ -1,0 +1,112 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it",
+        "NO backend RegistryEntry exists at the pin — the vendor's document is the ONLY source for this row, with no pinned-tree value to cross-check it against"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.arcee.ai/ — the vendor's own documentation, retrieved 2026-09-06: the docs home documents base `https://api.arcee.ai/api/v1` with `Authorization: Bearer api-key`.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "arcee-ai/trinity-large-thinking",
+      "providerId": "arcee-ai",
+      "upstreamId": "trinity-large-thinking",
+      "displayName": "trinity-large-thinking",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.arcee.ai/ — the model is listed as a chat model; no vision/audio/video capability is stated",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.arcee.ai/arcee-language-models/trinity-large-thinking (read 2026-09-27): \"Agentic-first design: Purpose-built for tool calling, multi-step planning, and agent workflows\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.arcee.ai/arcee-language-models/trinity-large-thinking (read 2026-09-27): \"Agentic-first design: Purpose-built for tool calling, multi-step planning, and agent workflows\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 524288,
+        "source": "official-doc",
+        "sourceRef": "https://docs.arcee.ai/arcee-language-models/trinity-large-thinking (read 2026-09-27): \"The 512k extended context window accommodates long reasoning chains across many agentic steps.\" — stated as \"512k\". CAVEAT: the sibling Trinity-Large-Preview page (same base architecture) explicitly says \"Trained at 256K sequence length with support for 512K inference (hosted at 128k)\" -- i.e. that sibling's actual HOSTED API context is capped at 128k despite 512k model capability. Trinity-La...",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.arcee.ai/arcee-language-models/trinity-large-thinking (read 2026-09-27): \"Trinity-Large-Thinking generates explicit reasoning traces wrapped in <think>...</think> blocks before producing its final response.\" — No reasoning_effort/level parameter documented.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.25,
+          "outputPerMTokUsd": 0.8,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.arcee.ai/get-started/pricing (read 2026-09-27): \"trinity-large-thinking | $0.25 | $0.80 | $0.06 (Input/Output/Cached Input)\" — USD 0.25 input / 0.8 output / 0.06 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "trinity-large-thinking",
+      "modelFamily": "other"
+    }
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "custom"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "hobby-grade: audit §5.1 records no availability guarantee, and the ToU's one real constraint is not degrading service — a host must rate-limit conservatively",
+        "the ToU prohibits developing \"competing machine learning services without attribution\", which is a term a host embedding this provider should read before shipping"
+      ]
+    },
+    "pricingBasis": "free",
+    "admission": {
+      "basis": "keyless-documented",
+      "citation": "audit:§2.2 `uncloseai` / §5.1 — uncloseai.com and its terms of use (uncloseai.com/terms-of-use.html), retrieved 2026-09-06: OpenAI-compatible endpoints at `hermes.ai.unturf.com/v1`, `qwen.ai.unturf.com/v1`, `speech.ai.unturf.com/v1`; the service states it does NOT require a valid API key and is \"completely public domain\"; third-party clients are explicitly encouraged (\"open source client implementations in 42+ programming languages\").",
+      "tier": "audit"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "uncloseai/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic",
+      "providerId": "uncloseai",
+      "upstreamId": "adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic",
+      "displayName": "Hermes 3 Llama 3.1 8B (free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/uncloseai/index.ts#adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B (read 2026-09-27): \"more powerful and reliable function calling and structured output capabilities ... advanced agentic capabilities\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-8B (read 2026-09-27): \"more powerful and reliable function calling and structured output capabilities ... advanced agentic capabilities\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "adamo1139/hermes-3-llama-3.1-8b-fp8-dynamic",
+      "modelFamily": "other"
+    },
+    {
+      "key": "uncloseai/gemma4:31b",
+      "providerId": "uncloseai",
+      "upstreamId": "gemma4:31b",
+      "displayName": "Gemma 4 31B (free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/uncloseai/index.ts#gemma4:31b at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemma/docs/core (read 2026-09-27): \"Enhanced Coding & Agentic Capabilities: ... built-in function-calling support, powering highly capable autonomous agents.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemma/docs/core (read 2026-09-27): \"Enhanced Coding & Agentic Capabilities: ... built-in function-calling support, powering highly capable autonomous agents.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemma/docs/core (read 2026-09-27): \"Small models feature a 128K context window, while the medium models support 256K.\" — Gemma 4 31B falls in the 'medium' size class (256K).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemma4-31b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "uncloseai/qwen3.6:27b",
+      "providerId": "uncloseai",
+      "upstreamId": "qwen3.6:27b",
+      "displayName": "Qwen3 Coder 27B (free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/uncloseai/index.ts#qwen3.6:27b at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-27B (read 2026-09-27): \"Qwen3.6 excels in tool calling capabilities ... Tool Use ... integration with frameworks like Qwen-Agent\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-27B (read 2026-09-27): \"Qwen3.6 excels in tool calling capabilities ... Tool Use ... integration with frameworks like Qwen-Agent\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-27B (read 2026-09-27): \"Context Length: 262,144 natively and extensible up to 1,010,000 tokens.\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-27B (read 2026-09-27): \"We recommend using an output length of 32,768 tokens for most queries. For benchmarking on highly complex problems ... suggest setting the max output length to 81,920 tokens.\" — Card gives a recommended output length rather than a hard API ceiling; 81,920 is offered as an alternative for complex benchmarking.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-27B (read 2026-09-27): \"pass the parameter of whether to enable thinking mode ... 'enable_thinking': True/False\" — Boolean toggle, not a graded effort list.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3.6-27b",
+      "modelFamily": "qwen"
+    }
+  ]
+}

@@ -113,7 +113,7 @@ describe("appearance and the fallback order", () => {
     expect(isValueForToken("color.focus", SYSTEM_ACCENT) && isValueForToken("island.accept", SYSTEM_ACCENT) && isValueForToken("pill.accept", SYSTEM_ACCENT)).toBe(true);
     expect(isValueForToken("pill.accept.text", AUTO_INK)).toBe(true);
     // The frame's variables are the shell's: no theme sets them.
-    expect(FRAME_VARIABLES.map((v) => cssProperty(v.name))).toEqual(["--clover-frame-inset-top", "--clover-frame-window-controls"]);
+    expect(FRAME_VARIABLES.map((v) => cssProperty(v.name))).toEqual(["--clover-frame-inset-top", "--clover-frame-window-controls", "--clover-frame-window-controls-end"]);
     expect(isValueForToken("frame.inset.top", "45px")).toBe(false);
     expect(systemAccentFromOs("blue")).toBeUndefined();
     // A theme file may say so.
