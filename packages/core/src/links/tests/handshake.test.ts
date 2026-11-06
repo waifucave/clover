@@ -142,6 +142,34 @@ describe("handshake client", () => {
   });
 });
 
+describe("a join that moves a key (lane I's #195)", () => {
+  test("the statement names the group it moves from as a fifth line, byte for byte with the service's; a move signed without it is refused", async () => {
+    const { joinStatement, admitStatement } = await import("../handshake");
+    const text = (b: Uint8Array) => new TextDecoder().decode(b);
+    expect(text(joinStatement("g", "k", 1793000000123, "old"))).toBe("clover-handshake-v1 join\ng\nk\n1793000000123\nold");
+    expect(text(joinStatement("g", "k", 1793000000123))).toBe("clover-handshake-v1 join\ng\nk\n1793000000123");
+    const hs = service();
+    const client = new HandshakeClient({ baseUrl: hs.url, clock });
+    const host = generateEd25519();
+    const mover = generateEd25519();
+    const [g1, g2] = [toBase64Url(randomBytes(16)), toBase64Url(randomBytes(16))];
+    const k = (x: typeof host) => toBase64Url(x.publicKey);
+    let t = client.now();
+    for (const [g, key] of [[g1, host], [g2, mover]] as const) {
+      expect(await client.createGroup({ group: g, key: k(key), t, sig: toBase64Url(key.sign(groupStatement(g, k(key), t))) })).toBe(true);
+    }
+    t = client.now();
+    const admit = { by: k(host), bysig: toBase64Url(host.sign(admitStatement(g1, k(mover), t))) };
+    // Signed as a plain join, with `from` sent anyway: refused.
+    const four = await client.joinGroup(g1, { key: k(mover), t, sig: toBase64Url(mover.sign(joinStatement(g1, k(mover), t))), ...admit, from: g2 }).catch((e: unknown) => e);
+    expect((four as HandshakeError).status).toBe(401);
+    // Signed with the group it moves from: in, and out of the old group.
+    expect(await client.joinGroup(g1, { key: k(mover), t, sig: toBase64Url(mover.sign(joinStatement(g1, k(mover), t, g2))), ...admit, from: g2 })).toBe(true);
+    expect(hs.groups.get(g1)?.members.has(k(mover))).toBe(true);
+    expect(hs.groups.has(g2)).toBe(false);
+  });
+});
+
 describe("handshake directory", () => {
   test("paired devices find each other's addresses, sealed, and a dial-now reaches the peer", async () => {
     const hs = service();
