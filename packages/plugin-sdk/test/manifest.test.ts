@@ -350,9 +350,19 @@ describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun proce
     expect(issues({ settings, capabilities: ["network:a.${secret:region}.amazonaws.com"] })).toEqual(["capability_unknown:/capabilities/0"]);
     expect(issues({ settings, capabilities: ["network:${setting:region}.com"] })).toEqual(["capability_unknown:/capabilities/0"]);
     const model = (baseUrl: string) => ({ contributes: { models: [{ provider: "bedrock", name: "Bedrock", catalog: [], auth: [], endpoint: { protocol: "openai-chat", baseUrl } }] } });
-    expect(issues({ settings, ...model("https://${setting:region}.example.com/v1") })).toEqual([]);
+    const declared = { capabilities: ["network:${setting:region}.example.com"] };
+    expect(issues({ settings, ...declared, ...model("https://${setting:region}.example.com/v1") })).toEqual([]);
+    expect(issues({ settings, ...model("https://api.example.com/v1?region=${setting:region}") })).toEqual([]);
     expect(issues({ settings, ...model("https://${secret:region}.example.com/v1") }).some((i) => i.startsWith("interpolation:/contributes/models/0/endpoint/baseUrl"))).toBe(true);
-    expect(issues({ ...model("https://${setting:tenant}.example.com/v1") })).toEqual(["interpolation:/contributes/models/0/endpoint/baseUrl"]);
+    expect(issues({ ...declared, ...model("https://${setting:tenant}.example.com/v1") })).toContain("interpolation:/contributes/models/0/endpoint/baseUrl");
+    // #187's review: the host comes from settings only as a declared network: host has it, with no userinfo.
+    const at = "endpoint_host:/contributes/models/0/endpoint/baseUrl";
+    expect(issues({ settings, ...model("https://${setting:region}.example.com/v1") })).toEqual([at]); // not declared
+    expect(issues({ settings, ...declared, ...model("https://${setting:region}/v1") })).toEqual([at]); // the whole host
+    expect(issues({ settings, ...declared, ...model("https://user@${setting:region}.example.com/v1") })).toEqual([at]);
+    expect(issues({ settings, ...model("https://user:pw@api.example.com/v1") })).toEqual([at]);
+    expect(issues({ settings, ...declared, ...model("${setting:region}") }).includes(at)).toBe(true);
+    expect(issues({ settings, capabilities: ["network:${setting:region}.github.io"], ...model("https://${setting:region}.github.io/v1") })).toContain(at);
     const report = validateManifest({ manifest: 1, id: "bedrock", name: "Bedrock", settings, capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] }, { folderName: "bedrock" });
     expect(report.dynamicHosts).toBe(true);
   });

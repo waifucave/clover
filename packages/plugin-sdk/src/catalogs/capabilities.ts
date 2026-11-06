@@ -77,6 +77,24 @@ function wildcardTooWide(domain: string): boolean {
   return labels.length === 2 && REGISTRY_LABELS.has(labels[0]!) && /^[a-z]{2}$/.test(labels[1]!);
 }
 
+/** Shared-hosting suffixes, from the Public Suffix List's private section (#187's review): anyone can get a name under
+ *  them, so a host whose setting label sits under one would reach every tenant's site. A `${setting:}` host is refused
+ *  there. */
+export const SHARED_HOSTING_SUFFIXES: readonly string[] = [
+  "github.io", "gitlab.io", "codeberg.page", "workers.dev", "pages.dev", "r2.dev", "trycloudflare.com", "vercel.app",
+  "now.sh", "netlify.app", "netlify.com", "herokuapp.com", "herokudns.com", "appspot.com", "web.app", "firebaseapp.com",
+  "cloudfront.net", "azurewebsites.net", "azurestaticapps.net", "cloudapp.net", "trafficmanager.net", "blogspot.com",
+  "wordpress.com", "glitch.me", "onrender.com", "fly.dev", "deno.dev", "railway.app", "up.railway.app", "repl.co",
+  "replit.app", "surge.sh", "ngrok.io", "ngrok-free.app", "ngrok.app", "loca.lt", "s3.amazonaws.com",
+  "elasticbeanstalk.com", "amplifyapp.com", "translate.goog", "run.app", "web.val.run", "neocities.org",
+];
+
+/** Whether `domain` is a shared-hosting suffix or a name under one. */
+export function underSharedHosting(domain: string): boolean {
+  const d = domain.toLowerCase();
+  return SHARED_HOSTING_SUFFIXES.some((s) => d === s || d.endsWith(`.${s}`));
+}
+
 /** A label that names one of the plugin's settings (lane A's ask): `bedrock-runtime.${setting:region}.amazonaws.com`. */
 const SETTING_LABEL_RE = /^\$\{setting:([A-Za-z][A-Za-z0-9_.-]{0,63})\}$/;
 /** What a setting's value must be where a host names it: one DNS label, so a setting can't move the host elsewhere. */
@@ -108,7 +126,7 @@ export function parseNetworkHost(arg: string): { host: string; port?: number; wi
   return null;
 }
 
-function parseSettingHost(arg: string): { host: string; port?: number; wildcard: boolean; settings: readonly string[] } | null {
+export function parseSettingHost(arg: string): { host: string; port?: number; wildcard: boolean; settings: readonly string[] } | null {
   let rest = arg;
   let port: number | undefined;
   const portMatch = /^(.*):(\d{1,5})$/.exec(rest);
@@ -128,6 +146,9 @@ function parseSettingHost(arg: string): { host: string; port?: number; wildcard:
   if (settings.length === 0 || labels.length < 3) return null;
   const fixed = labels.slice(-2);
   if (fixed.some((l) => SETTING_LABEL_RE.test(l)) || wildcardTooWide(fixed.join("."))) return null;
+  // Nor under a shared-hosting suffix: the labels after the last setting are the plugin's own domain.
+  const lastSetting = labels.map((l) => SETTING_LABEL_RE.test(l)).lastIndexOf(true);
+  if (underSharedHosting(labels.slice(lastSetting + 1).join("."))) return null;
   return { host: rest, wildcard: false, settings, ...(port !== undefined ? { port } : {}) };
 }
 
