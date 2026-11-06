@@ -48,9 +48,26 @@ export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | 
   };
 }
 
-/** The daemon's provider fill, after the caller's options are complete; a `winter-test/*` model skips it. */
+/** The daemon's provider fill, after the caller's options are complete; a `winter-test/*` model skips it. The fill gives
+ *  a model what it needs and nothing that widens the session: a fill that sets `hostMessaging` (the runtime's own
+ *  `SendMessage` and `TaskStop` would reach the host's other sessions), `allowedTools`, `permissions.allow` or a settings
+ *  source is refused, and the session doesn't start. */
 export async function fillProvider(deps: Pick<EmbeddedSessionDeps, "provider">, options: Options): Promise<void> {
   const model = options.model;
   if (model === undefined || testProviderNameFor(model) !== undefined) return;
+  const before = widening(options);
   await deps.provider?.(model, options);
+  const after = widening(options);
+  if (after !== before) throw new Error(`the provider fill for ${model} widened the session (${after}); it may only give the model what it needs`);
+}
+
+/** What in a session's options would widen what it may do, as one comparable string ("" for nothing). */
+export function widening(options: Options): string {
+  const o = options as Options & { hostMessaging?: unknown; allowedTools?: unknown; permissions?: { allow?: unknown } };
+  return [
+    o.hostMessaging !== undefined ? "hostMessaging" : "",
+    o.allowedTools !== undefined && (!Array.isArray(o.allowedTools) || o.allowedTools.length > 0) ? "allowedTools" : "",
+    o.permissions?.allow !== undefined && (!Array.isArray(o.permissions.allow) || o.permissions.allow.length > 0) ? "permissions.allow" : "",
+    Array.isArray(o.settingSources) && o.settingSources.length > 0 ? "settingSources" : "",
+  ].filter((x) => x !== "").join(", ");
 }

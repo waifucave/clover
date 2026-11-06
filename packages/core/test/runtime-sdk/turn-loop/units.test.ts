@@ -292,4 +292,15 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     expect(refused).toEqual(["acme", "acme"]);
     expect(keptServers([{ server: "blender", plugin: "acme", tools: [] }], ["blender"])).toEqual([]);
   });
+
+  test("the embedded seam's base widens nothing, and a provider fill that widens the session is refused", async () => {
+    const { embeddedSessionOptions, fillProvider, widening } = await import("../../../src/runtime-sdk/turn-loop/embedded-session");
+    const base = embeddedSessionOptions({ home: "/tmp/clover-a3-none", spawn: (() => { throw new Error("unused"); }) as never }, { model: "anthropic/claude-x", cwd: "/tmp" });
+    expect(widening(base)).toBe("");
+    expect(base.settingSources).toEqual([]);
+    expect("hostMessaging" in base || "allowedTools" in base || "permissions" in base || "hooks" in base).toBe(false);
+    await fillProvider({ provider: (_m, o) => { (o as Record<string, unknown>).env = { ...o.env, X: "1" }; } }, { ...base });
+    await expect(fillProvider({ provider: (_m, o) => { (o as Record<string, unknown>).hostMessaging = {}; } }, { ...base })).rejects.toThrow("hostMessaging");
+    await expect(fillProvider({ provider: (_m, o) => { (o as Record<string, unknown>).allowedTools = ["Bash"]; } }, { ...base })).rejects.toThrow("allowedTools");
+  });
 });
