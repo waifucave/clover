@@ -131,6 +131,14 @@ export const SecretStoreView = z.object({
 });
 export type SecretStoreView = z.infer<typeof SecretStoreView>;
 export type Os = z.infer<typeof Os>;
+
+/** A device's OS (lane H's ask): a computer's, or a phone's `ios`. `Os` stays the computers' alone, since the fence,
+ *  the platforms and the tree are kept per computer OS. */
+export const DeviceOs = z.enum([...Os.options, "ios"]);
+export type DeviceOs = z.infer<typeof DeviceOs>;
+
+/** Whether a device's OS is one a computer runs (a phone's `ios` never is). */
+export const isComputerOs = (os: DeviceOs): os is Os => os !== "ios";
 /** The daemon's four targets; no darwin-x64, since macOS 27 is Apple silicon only (§3.1, §4). */
 export const Platform = z.enum(["darwin-arm64", "windows-x64", "linux-x64", "linux-arm64"]);
 export type Platform = z.infer<typeof Platform>;
@@ -170,6 +178,39 @@ export type ClientKind = z.infer<typeof ClientKind>;
 /** Who called (§5.4 "The caller"): the user and the client, a bot's or agent's session, a plugin by id, or the core
  *  itself (the routine engine, a hook run, compaction). The caller check (§3.1) decides between `user` and `session`
  *  for a CLI or app connection: a command started by a bot, an agent or a plugin never counts as the user. */
+/** The main computer's fencing token (H-M2's review, and its check 2): the lease's scope (an account's, or an
+ *  account-less group's), its epoch and its holder. An act one computer asks of another (`peer.call`, a tree call, a
+ *  level change) carries the sender's as `fence`, and the receiver judges it against its own lease (`fenceVerdict`),
+ *  so a main that lost its lease without knowing can't act through others. */
+export const FencingToken = z.object({ scope: utf16(128, 1), epoch: z.number().int().nonnegative(), holder: utf16(64, 1) });
+export type FencingToken = z.infer<typeof FencingToken>;
+
+/** What a receiver knows of its own lease, from its own lease events: the scope it belongs to, and the newest epoch
+ *  and holder it has seen. */
+export interface FenceView {
+  scope: string;
+  epoch: number;
+  holder: string | null;
+}
+
+/** `ok`; `stale`: another scope (a receiver takes only its own lease's), an epoch other than its own lease's (older,
+ *  or ahead of what its own records say), or the same epoch from another holder (a split takeover, where two computers
+ *  each think they won); `missing`: no token, where the receiver has
+ *  seen tokens for its scope, so an act without one is refused. */
+export type FenceVerdict = "ok" | "stale" | "missing";
+
+/** Judges an act's token against the receiver's own lease (`own`, undefined while it has none). The receiver's view
+ *  moves only from its own lease records, never from a token (#187's check 2): a token ahead of it is refused until
+ *  those records catch up, so a forged far-ahead epoch can't lock the real main out. */
+export function fenceVerdict(own: FenceView | undefined, token: FencingToken | undefined, seenForScope: boolean): FenceVerdict {
+  if (token === undefined) return seenForScope ? "missing" : "ok";
+  if (own === undefined) return "stale"; // a receiver with no lease of its own can't place a token's scope
+  if (token.scope !== own.scope) return "stale";
+  if (token.epoch !== own.epoch) return "stale";
+  if (own.holder !== null && token.holder !== own.holder) return "stale";
+  return "ok";
+}
+
 export const Caller = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user"), client: ClientKind, device: DeviceId.optional() }),
   z.object({ kind: z.literal("session"), sessionId: SessionId, sessionKind: SessionKind, bot: BotId.optional() }),

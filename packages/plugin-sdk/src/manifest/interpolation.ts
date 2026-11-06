@@ -1,7 +1,8 @@
 // Interpolation in a manifest (spec §5.9): in a stdio server's `command`, `args` and `env`, an http server's `url` and
 // `headers`, and a hook's or agent backend's `command` and `args`, a value may hold `${plugin}` (the folder's path),
 // `${data}` (its data folder, §5.4), `${setting:k}` and `${secret:k}`, which names only the plugin's own secrets.
-// Secrets may appear only in `env` and `headers`. Nothing else in a manifest is an expression.
+// Secrets may appear only in `env` and `headers`. A model's `endpoint.baseUrl` and a `network:` capability's host may
+// name settings, never secrets (lane A's ask). Nothing else in a manifest is an expression.
 import { KEY_RE } from "./fields";
 
 export type InterpolationPart =
@@ -22,6 +23,10 @@ export const INTERPOLATED_FIELDS = [
   { where: "mcpServers.<name>.headers (http)", secrets: true },
   { where: "hooks[].command, hooks[].args", secrets: false },
   { where: "agentBackends[].command, agentBackends[].args", secrets: false },
+  /** Settings only, never `${plugin}`, `${data}` or a secret: the host then comes from its settings (lane A's ask). */
+  { where: "models[].endpoint.baseUrl (settings only)", secrets: false },
+  /** Settings only, as whole labels of a name whose last two labels are fixed (`parseNetworkHost`). */
+  { where: "capabilities[] network:<host> (settings only)", secrets: false },
 ] as const;
 
 /** Splits a value into text and placeholders; an unknown `${…}` is an error. */
