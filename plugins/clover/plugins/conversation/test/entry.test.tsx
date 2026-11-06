@@ -95,9 +95,15 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
+  const OLD_PAGES: Record<string, { events: CoreEvent[]; cursor?: string }> = {
+    first: { events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" }), ev("card_pending", { card: "c1" })], cursor: "p2" },
+    p2: { events: [ev("assistant_message", { text: "The second page" })], cursor: "p3" },
+    p3: { events: [ev("assistant_message", { text: "The last page" })] },
+  };
+
   function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
-    const core = fakeCore({ "archive.history": () => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] }) });
+    const core = fakeCore({ "archive.history": ({ cursor }) => OLD_PAGES[cursor ?? "first"]! });
     const api = fakeApi({
       bots: { list: async () => [], get: async () => { throw new Error("none"); }, watch: () => () => undefined },
       conversation: {
@@ -148,12 +154,34 @@ describe("the conversation entry", () => {
     expect(screen.getAllByTestId("conversation.message.extra").length).toBeGreaterThan(0);
   });
 
-  test("archived: reads the old session from the core, and its approvals read as notes", async () => {
+  test("archived: reads the whole old session page by page, its approvals read as notes, and no card of it waits", async () => {
     const { core } = mount({ archived: true });
-    await act(() => settle());
-    expect(core.calls).toEqual([{ method: "archive.history", params: { id: "s_alpha", limit: 500 } }]);
+    await act(() => settle(8));
+    expect(core.calls).toEqual([
+      { method: "archive.history", params: { id: "s_alpha", limit: 500 } },
+      { method: "archive.history", params: { id: "s_alpha", limit: 500, cursor: "p2" } },
+      { method: "archive.history", params: { id: "s_alpha", limit: 500, cursor: "p3" } },
+    ]);
     expect(screen.getByText("From the old app")).toBeTruthy();
     expect(screen.getByText("Asked to use Bash")).toBeTruthy();
+    expect(screen.getByText("The last page")).toBeTruthy();
     expect(screen.queryByText("Hello there")).toBeNull();
+    expect(document.querySelector(".cl-conv-card, [data-card]")).toBeNull();
+  });
+
+  test("archived: no add-on spot sees an old session; only the view's own renderers draw it (S3)", async () => {
+    const Spy: EntryComponent = ({ entry }) => <p data-testid={`spy-${entry.spot}`}>spy</p>;
+    mount({
+      archived: true,
+      component: Spy,
+      entries: [
+        { pluginId: "spy", id: "user", spot: "conversation.message", key: "user", component: "Spy", source: "installed", enabledAt: 1 },
+        { pluginId: "spy", id: "x", spot: "conversation.message.extra", component: "Spy", source: "installed", enabledAt: 1 },
+        { pluginId: "spy", id: "t", spot: "tool.result", component: "Spy", source: "installed", enabledAt: 1 },
+      ],
+    });
+    await act(() => settle(8));
+    expect(screen.getByText("From the old app")).toBeTruthy();
+    expect(screen.queryAllByText("spy")).toEqual([]);
   });
 });

@@ -5,10 +5,11 @@
 // several lines runs. Its tabs sit in the panel's header row.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Screen } from "./ansi";
 import { TerminalPanel, TerminalTabs } from "./TerminalPanel";
 import type { TerminalInputEvent } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
-import type { TerminalChunk, TerminalTab } from "./types";
+import type { TerminalTab } from "./types";
 
 export interface TerminalEntryProps {
   session?: string;
@@ -29,7 +30,9 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
   const term = api.terminal;
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [active, setActive] = useState<string | undefined>(undefined);
-  const [chunks, setChunks] = useState<Record<string, TerminalChunk[]>>({});
+  // Each terminal's screen (escape codes read, not printed), and a count that redraws when one changes.
+  const screens = useRef(new Map<string, Screen>());
+  const [, setDrawn] = useState(0);
   const stops = useRef(new Map<string, () => void>());
   const counter = useRef(0);
 
@@ -43,7 +46,12 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
     stops.current.set(
       terminalId,
       term.onData(terminalId, (data, exited) => {
-        if (data) setChunks((c) => ({ ...c, [terminalId]: [...(c[terminalId] ?? []), { text: data }] }));
+        if (data) {
+          let screen = screens.current.get(terminalId);
+          if (!screen) screens.current.set(terminalId, (screen = new Screen()));
+          screen.write(data);
+          setDrawn((n) => n + 1);
+        }
         if (exited) setTabs((t) => t.map((x) => (x.id === terminalId ? { ...x, exited: { code: exited.code ?? 0 } } : x)));
       }),
     );
@@ -53,7 +61,11 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
     void open();
     const current = stops.current;
     return () => {
-      for (const stop of current.values()) stop();
+      // Closing the panel ends its shells on the computer too (review S6), not only this view of them.
+      for (const [id, stop] of current) {
+        stop();
+        void term?.close(id);
+      }
       current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,6 +74,7 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
   const close = (id: string) => {
     stops.current.get(id)?.();
     stops.current.delete(id);
+    screens.current.delete(id);
     void term?.close(id);
     setTabs((t) => {
       const rest = t.filter((x) => x.id !== id);
@@ -79,7 +92,8 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
       <TerminalPanel
         tabs={tabs}
         active={active}
-        chunks={chunks[active] ?? []}
+        chunks={[]}
+        lines={screens.current.get(active)?.view() ?? []}
         onEvent={(event) => void term?.input(active, event as unknown as TerminalInputEvent)}
       />
     </>

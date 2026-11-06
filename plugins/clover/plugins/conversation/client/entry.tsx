@@ -12,7 +12,7 @@
 // The archive draws an old session (from the app Clover replaces) through this spot too, with `archived`: then the part reads the session
 // from the core's `archive.history` (the `clover` layer's call), follows nothing and answers nothing.
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
+import { ConversationView, DEFAULT_RENDERERS, type ConversationViewProps, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
 import { plain } from "../../shell/runtime/views";
@@ -33,6 +33,8 @@ export interface ConversationEntryProps {
 
 /** How many past events a tab reads before following live. */
 const HISTORY_PAGE = 500;
+/** At most this many pages of an old session (100,000 events), so a broken cursor can't loop. */
+const ARCHIVE_PAGES = 200;
 
 /** Each `conversation.message` key drawn through its spot, falling back to the view's own renderer. */
 function spotRenderers(): Partial<MessageRenderers> {
@@ -61,15 +63,22 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   useEffect(() => {
     let live = true;
     setEvents([]);
-    if (archived) {
-      core?.call("archive.history", { id: props.session, limit: HISTORY_PAGE }).then(
-        (page) => {
-          if (!live) return;
-          setEvents(page.events as CoreEvent[]);
-          setHasEarlier(false);
-        },
-        () => undefined,
-      );
+    if (archived && core) {
+      // The whole old session, a page at a time, following the cursor (review S4); each page shows as it arrives.
+      // Card events are left out: an old session's approvals read as notes, and no card of it can wait (S3).
+      const page = (cursor?: string, n = 0): void => {
+        core.call("archive.history", { id: props.session, limit: HISTORY_PAGE, ...(cursor !== undefined ? { cursor } : {}) }).then(
+          (p) => {
+            if (!live) return;
+            const kept = (p.events as CoreEvent[]).filter((e) => !String(e.type).startsWith("card_"));
+            setEvents((list) => [...list, ...kept]);
+            if (p.cursor !== undefined && p.cursor !== cursor && n < ARCHIVE_PAGES) page(p.cursor, n + 1);
+          },
+          () => undefined,
+        );
+      };
+      setHasEarlier(false);
+      page();
       return () => {
         live = false;
       };
@@ -102,11 +111,17 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       now={props.now ?? Date.now()}
       hasEarlier={hasEarlier}
       {...(here ? { device: here } : {})}
-      renderers={RENDERERS}
-      renderToolResult={(call, standard): ReactNode => (
-        <Spot name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
-      )}
-      renderMessageExtra={(item) => <Spot name="conversation.message.extra" props={{ ...at, item, ctx: {} }} />}
+      {...(archived
+        ? {}
+        : {
+            // An old session goes through the view's own renderers only: no add-on spot sees it (review S3), since the
+            // plugin API can't otherwise reach the archive.
+            renderers: RENDERERS,
+            renderToolResult: (call: Parameters<NonNullable<ConversationViewProps["renderToolResult"]>>[0], standard: ReactNode): ReactNode => (
+              <Spot name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
+            ),
+            renderMessageExtra: (item: Parameters<NonNullable<ConversationViewProps["renderMessageExtra"]>>[0]) => <Spot name="conversation.message.extra" props={{ ...at, item, ctx: {} }} />,
+          })}
       onAnswerQuestion={archived ? undefined : (callId: string, answer: QuestionAnswer) => conv?.answer?.(props.session, callId, answer.answers)}
       onOpenAgent={props.onOpenAgent}
       onOpenFile={props.onOpenFile}
