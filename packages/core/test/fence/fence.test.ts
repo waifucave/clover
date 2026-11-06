@@ -3,6 +3,7 @@ import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, wr
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { runFenceConformance } from "../../src/contracts/conformance/fence";
+import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
 import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
@@ -105,5 +106,14 @@ describe("the real fence on a real disk", () => {
     writeFileSync(join(home, "project", "a.txt"), "x");
     linkSync(join(home, "project", "a.txt"), join(home, "project", "b.txt")); // two links, neither fenced
     expect(fence.check({ op: "write", path: join(home, "project", "b.txt") })).toEqual({ allowed: true });
+  });
+
+  test("the Clover Browser's SOCKS5 filter ports are blocked for fenced commands, after the metadata address (L's ask)", () => {
+    const { home, clover } = make();
+    let ports = [41001];
+    const f = new CloverFence({ home, cloverHome: clover, loopbackPorts: () => ports });
+    expect(f.policy().blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES, "127.0.0.1:41001", "[::1]:41001"]);
+    ports = [];
+    expect(f.policy().blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES]); // read each time: the ports change with the browser
   });
 });

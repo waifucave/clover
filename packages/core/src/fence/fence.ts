@@ -29,6 +29,10 @@ export interface CloverFenceOptions {
   devFolders?: string[];
   /** Replaces the layout for some items (tests). */
   layout?: Partial<Record<FencedKind, string[]>>;
+  /** The Clover Browser's SOCKS5 filter's loopback ports (lane L's `DaemonBrowser.filterPorts()`): unauthenticated, since
+   *  Chromium sends no SOCKS credentials, so no fenced command may reach them. L's filter takes connections only from
+   *  the browser's own network process; this is the second layer. */
+  loopbackPorts?: () => readonly number[];
   /** How a path is resolved on this disk; the conformance suite's paths are fictional, so it passes its own. */
   canonical?: (path: string) => string;
 }
@@ -46,6 +50,7 @@ export class CloverFence implements Fence {
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #canonical: (path: string) => string;
   readonly #listeners = new Listeners<void>();
+  readonly #loopbackPorts: () => readonly number[];
   #devFolders: string[];
 
   constructor(opts: CloverFenceOptions) {
@@ -56,6 +61,7 @@ export class CloverFence implements Fence {
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
     this.#layout = opts.layout ?? {};
+    this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
   }
 
   fencedSet(): readonly FencedPath[] {
@@ -156,7 +162,8 @@ export class CloverFence implements Fence {
       denyWrite: set.map((i) => i.path),
       denyRead: set.filter((i) => i.deny === "read-write").map((i) => i.path),
       closedDoors: [...CLOSED_DOORS[this.os]],
-      blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
+      // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
+      blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],
       network: "none",
     };
   }
