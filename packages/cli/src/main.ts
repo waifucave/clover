@@ -1639,8 +1639,20 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     setupExitMessage,
     NET_SESSION_PROBE,
     currentSandboxPrincipal,
+    currentUserSid,
     protectedCopyPath,
     isProtectedCopy,
+    warmUpArgs,
+    profileQueryArgs,
+    parseProfileImagePath,
+    startupFolders,
+    mkdirArgs,
+    icaclsDenyArgs,
+    icaclsRemoveDenyArgs,
+    setDescriptionArgs,
+    getDescriptionArgs,
+    descriptionMatches,
+    profileLaunchCheck,
   } = await import("@waifucave/clover-core");
   const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
   if (process.platform !== "win32") {
@@ -1682,12 +1694,76 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       const force = rest.includes("--force");
       const { code, out } = await run([...setupArgs(launcher, CLOVER_WFP_SUBLAYER, principal), ...(force ? ["--force"] : [])]);
       const message = setupExitMessage(code);
-      if (message === null) {
-        console.log("Bash is set up under Clover's fence");
+      if (message !== null) {
+        console.error(`sandbox setup: ${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
+        process.exitCode = 1;
         return;
       }
-      console.error(`sandbox setup: ${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
-      process.exitCode = 1;
+      // The install provisioned the principal. Finish the profile work in the same call (brief item 5):
+      // stamp the owner SID, warm up (first logon creates the profile), resolve by SID, lock down Startup.
+      const ownerSid = currentUserSid();
+      if (ownerSid === null) {
+        console.error("sandbox setup: could not read the current user SID; set up again");
+        process.exitCode = 1;
+        return;
+      }
+      const stamp = await run([...setDescriptionArgs(principal, ownerSid)]);
+      if (stamp.code !== 0) {
+        console.error(`sandbox setup: stamping the owner SID failed (exit ${stamp.code})${stamp.out.trim() ? `\n${stamp.out.trim().slice(0, 2000)}` : ""}`);
+        process.exitCode = 1;
+        return;
+      }
+      const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+      const warm = await run([...warmUpArgs({ launcher, systemRoot })]);
+      if (warm.code !== 0) {
+        console.error(`sandbox setup: the first logon failed (exit ${warm.code})${warm.out.trim() ? `\n${warm.out.trim().slice(0, 2000)}` : ""}`);
+        process.exitCode = 1;
+        return;
+      }
+      const st = await run([...statusArgs(launcher, CLOVER_WFP_SUBLAYER, principal)]);
+      let principalSid: string | null = null;
+      if (st.code === 0) {
+        try {
+          const u = (JSON.parse(st.out) as { user?: { user?: { sid?: unknown }; sid?: unknown } }).user;
+          const sid = u?.user && typeof u.user === "object" ? (u.user as { sid?: unknown }).sid : u?.sid;
+          if (typeof sid === "string") principalSid = sid;
+        } catch { /* unresolved below */ }
+      }
+      if (principalSid === null) {
+        console.error("sandbox setup: the principal's SID isn't reported; set up again");
+        process.exitCode = 1;
+        return;
+      }
+      const reg = await run([...profileQueryArgs(principalSid)]);
+      const profileRoot = reg.code === 0 ? parseProfileImagePath(reg.out) : null;
+      const check = profileLaunchCheck(profileRoot === null ? null : { sid: principalSid, path: profileRoot });
+      if (!check.ok) {
+        console.error(`sandbox setup: ${check.reason}; set up again`);
+        process.exitCode = 1;
+        return;
+      }
+      const realUserProfile = process.env.USERPROFILE ?? "";
+      const programData = process.env.ProgramData ?? "C:\\ProgramData";
+      const commonStartup = `${programData}\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp`;
+      const allStartups = startupFolders({ profileRoot: profileRoot!, realUserProfile: realUserProfile || profileRoot!, commonStartup });
+      const startups = realUserProfile && realUserProfile !== profileRoot
+        ? allStartups
+        : [allStartups[0]!, allStartups[2]!];
+      const mkdir = await run([...mkdirArgs(startups[0]!)]);
+      if (mkdir.code !== 0) {
+        console.error(`sandbox setup: creating the principal's Startup folder failed (exit ${mkdir.code})`);
+        process.exitCode = 1;
+        return;
+      }
+      for (const path of startups) {
+        const deny = await run([...icaclsDenyArgs(path, principalSid)]);
+        if (deny.code !== 0) {
+          console.error(`sandbox setup: denying ${path} failed (exit ${deny.code})${deny.out.trim() ? `\n${deny.out.trim().slice(0, 2000)}` : ""}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+      console.log("Bash is set up under Clover's fence");
       return;
     }
     case "remove": {
@@ -1712,12 +1788,55 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         return;
       }
       {
+        // Ownership first (Addendum 9): when the principal exists, its description must name this user.
+        // A hash collision can never remove another user's principal.
+        const ownerSid = currentUserSid();
+        if (ownerSid === null) {
+          console.error("sandbox remove: could not read the current user SID");
+          process.exitCode = 1;
+          return;
+        }
+        const st = await run([...statusArgs(launcher, CLOVER_WFP_SUBLAYER, principal)]);
+        let principalSid: string | null = null;
+        let principalExists = false;
+        if (st.code === 0) {
+          try {
+            const u = (JSON.parse(st.out) as { user?: { exists?: unknown; user?: { sid?: unknown }; sid?: unknown } }).user;
+            principalExists = u?.exists === true || ((u?.user as { exists?: unknown } | undefined)?.exists === true);
+            const sid = u?.user && typeof u.user === "object" ? u.user.sid : u?.sid;
+            if (typeof sid === "string") principalSid = sid;
+          } catch { /* exists stays false */ }
+        }
+        if (principalExists) {
+          const desc = await run([...getDescriptionArgs(principal)]);
+          if (!(desc.code === 0 && descriptionMatches(desc.out, ownerSid))) {
+            console.error("sandbox remove refused: the principal belongs to another user");
+            process.exitCode = 1;
+            return;
+          }
+        }
+        // The profile for the reset below, resolved before the uninstall.
+        let profileRoot: string | null = null;
+        if (principalSid !== null) {
+          const reg = await run([...profileQueryArgs(principalSid)]);
+          if (reg.code === 0) profileRoot = parseProfileImagePath(reg.out);
+        }
         // Full remove (principal + filters), from the protected copy or the per-user install alike.
         const { code, out } = await run([...removeArgs(launcher, CLOVER_WFP_SUBLAYER)]);
         if (code !== 0) {
           console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
           process.exitCode = 1;
           return;
+        }
+        // Undo what setup did outside srt-win (best effort: the uninstall already took the account).
+        if (profileRoot !== null && principalSid !== null) {
+          await run(["reg", "unload", `HKU\\${principalSid}`]);
+          await run(["reg", "delete", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${principalSid}`, "/f"]);
+          await run(["cmd", "/d", "/s", "/c", `rmdir /s /q "${profileRoot}"`]);
+          const realUserProfile = process.env.USERPROFILE ?? "";
+          const programData = process.env.ProgramData ?? "C:\\ProgramData";
+          const startups = startupFolders({ profileRoot, realUserProfile: realUserProfile || profileRoot, commonStartup: `${programData}\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp` });
+          for (const path of startups) await run([...icaclsRemoveDenyArgs(path, principalSid)]);
         }
         console.log("Bash's fence is removed");
         return;
@@ -1737,7 +1856,31 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = 1;
         return;
       }
-      const st = parseSrtStatus(out, { launcher, arch });
+      const base = parseSrtStatus(out, { launcher, arch });
+      // The owner-SID check (Addendum 9): the principal's description must name this user, so a hash
+      // collision can never report — or remove — another user's principal as ready.
+      const ownerSid = currentUserSid();
+      let owned: boolean | null = null;
+      if (ownerSid !== null && base.user?.exists === true) {
+        const desc = await run([...getDescriptionArgs(principal)]);
+        owned = desc.code === 0 && descriptionMatches(desc.out, ownerSid);
+      }
+      // The profile check (brief item 7): resolve by SID, fail closed on missing or temporary.
+      const principalSid = base.user?.sid ?? null;
+      let profile: { sid: string; path: string } | null = null;
+      if (principalSid !== null) {
+        const reg = await run([...profileQueryArgs(principalSid)]);
+        const root = reg.code === 0 ? parseProfileImagePath(reg.out) : null;
+        if (root !== null) profile = { sid: principalSid, path: root };
+      }
+      let st = base;
+      if (base.ready) {
+        if (owned === false) {
+          st = { ...base, ready: false, reason: "the principal belongs to another user; set it up again", exit: SANDBOX_EXIT.FAILED };
+        } else {
+          st = parseSrtStatus(out, { launcher, arch, profile, profileChecked: true });
+        }
+      }
       if (rest.includes("--json")) {
         console.log(JSON.stringify({ ready: st.ready, reason: st.reason, user: st.user }));
         return;
