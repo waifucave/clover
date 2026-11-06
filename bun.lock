@@ -60,6 +60,7 @@
       "dependencies": {
         "@waifucave/clover-agent-runtime": "0.0.63",
         "@waifucave/clover-agent-sdk": "0.0.63",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
         "@waifucave/clover-protocol": "workspace:*",
         "@waifucave/clover-provider-catalog": "0.0.63",
         "@waifucave/clover-provider-runtime": "0.0.63",
