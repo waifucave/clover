@@ -77,7 +77,7 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
       answers: answersFor(name),
       ...(fence ? {
         fence: {
-          check: (op) => fence.check(op.op === "move" ? { ...op, path: fromDisk(op.path), to: fromDisk(op.to) } : { ...op, path: fromDisk(op.path) }),
+          check: (op, ctx) => fence.check(op.op === "move" ? { ...op, path: fromDisk(op.path), to: fromDisk(op.to) } : { ...op, path: fromDisk(op.path) }, ctx),
           // The folded check (review B1) compares the fenced set on this disk.
           fencedSet: () => (typeof (fence as Partial<Fence>).fencedSet === "function" ? (fence as Fence).fencedSet().map((i) => ({ ...i, path: toDisk(i.path) })) : []),
         } satisfies Pick<Fence, "check" | "fencedSet">,

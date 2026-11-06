@@ -168,3 +168,27 @@ describe("a part's folder is code (#197, the controller's adjustment)", () => {
     expect(classifyChange(ok, await snapOf({ ...files, "README.md": "changed" }))).toBe("applies");
   });
 });
+
+describe("spellings a disk reads alike (#197's check 4)", () => {
+  test("NFC and NFD, a trailing dot or space and a stream match what a run field names; an 8.3 name counts as code", async () => {
+    const { treeKey } = await import("../changes");
+    expect(treeKey("lib/Server.txt.")).toBe("lib/server.txt");
+    expect(treeKey("lib/server.txt ")).toBe("lib/server.txt");
+    expect(treeKey("lib/server.txt:secret")).toBe("lib/server.txt");
+    expect(treeKey("lib/cafe\u0301.txt")).toBe(treeKey("lib/caf\u00E9.txt"));
+    const snapOf = async (files: Record<string, string>) => {
+      const root = folder(files);
+      const entries = treeEntries(root);
+      const tree = await validateTree(folderReader(root), { folderName: "tarot" });
+      return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields);
+    };
+    // A tree's own names are NFC (an NFD name makes the tree invalid); the run field may spell it NFD, with a trailing dot.
+    const m = manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: ["${plugin}/lib/cafe\u0301.txt."] } } } });
+    const ok = await snapOf({ "clover.json": m, "lib/caf\u00E9.txt": "1" });
+    expect(ok.codePaths).toContain(treeKey("lib/caf\u00E9.txt"));
+    expect(classifyChange(ok, await snapOf({ "clover.json": m, "lib/caf\u00E9.txt": "2" }))).toBe("asks-again");
+    const data = manifest();
+    const before = await snapOf({ "clover.json": data, "README.md": "a" });
+    expect(classifyChange(before, await snapOf({ "clover.json": data, "README.md": "a", "SERVER~1.TXT": "x" }))).toBe("asks-again");
+  });
+});

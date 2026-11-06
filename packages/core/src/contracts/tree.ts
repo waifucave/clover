@@ -47,6 +47,7 @@ import {
 } from "@waifucave/clover-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
 import type { Unsubscribe } from "./common";
+import { foldName } from "./fence";
 
 export type { TreePath };
 
@@ -159,7 +160,13 @@ export const RESERVED_COMPUTER_NAMES: readonly string[] = [MEMORY_TREE_FOLDER];
  *  for any other path (or one that could climb out). */
 export function memoryTreeRest(path: string): string | undefined {
   const split = splitTreePath(path);
-  return split?.area === "home" && split.name === MEMORY_TREE_FOLDER ? split.rest : undefined;
+  return split?.area === "home" && isReservedComputerName(split.name) ? split.rest : undefined;
+}
+
+/** Whether a computer name is reserved (`memory`), compared folded as a disk would (`foldName`), so `Memory` and
+ *  `MEMORY` are it too (#197's check 4). */
+export function isReservedComputerName(name: string): boolean {
+  return RESERVED_COMPUTER_NAMES.some((r) => foldName(r) === foldName(name));
 }
 
 /** Splits a tree path: `home/Studio/a/b` → `{ area: "home", name: "Studio", rest: "a/b" }`; null for anything that

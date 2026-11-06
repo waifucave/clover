@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, callerReaches, fenceContextFor, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -118,6 +118,9 @@ export class FakeFence implements Fence {
 
   touches(paths: readonly string[]): FencedPath | null {
     for (const path of paths) {
+      const p = patternItemAt(path, this.#cloverHome, this.os);
+      if (p?.kind === "bot-memory") return { kind: "bot-memory", path: p.root, deny: "caller", ...(p.folder ? { bot: p.folder.replace("--", "/") } : {}) };
+      if (p?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: p.root, deny: "read-write" };
       for (const item of this.fencedSet()) {
         if (isInsideFolded(path, item.path, this.os) || isInsideFolded(item.path, path, this.os)) return item;
       }
@@ -140,13 +143,13 @@ export class FakeFence implements Fence {
     return { allowed: true };
   }
 
-  policy(ctx?: FenceContext): SandboxPolicy {
-    const set = this.fencedSet();
-    const reaches = (i: FencedPath) => i.deny === "caller" && callerReaches(i, ctx, this.os);
+  policy(_ctx?: FenceContext): SandboxPolicy {
+    const set = this.fencedSet().filter((i) => i.deny !== "caller");
+    const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: set.filter((i) => !reaches(i)).map((i) => i.path),
-      denyRead: set.filter((i) => i.deny === "read-write" || (i.deny === "caller" && !reaches(i))).map((i) => i.path),
+      denyWrite: [...set.map((i) => i.path), patterns[0]!],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",

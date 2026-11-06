@@ -17,7 +17,7 @@ import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { RESERVED_COMPUTER_NAMES, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
+import { RESERVED_COMPUTER_NAMES, isReservedComputerName, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -103,6 +103,9 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(memoryTreeRest("home/Studio/memory/x")).toBeUndefined();
       expect(memoryTreeRest("home/memory/../settings")).toBeUndefined();
       expect(RESERVED_COMPUTER_NAMES).toContain("memory");
+      expect(memoryTreeRest("home/Memory/MEMORY.md")).toBe("MEMORY.md");
+      expect(memoryTreeRest("home/MEMORY")).toBe("");
+      expect([isReservedComputerName("Memory"), isReservedComputerName("Studio")]).toEqual([true, false]);
     });
 
     // Lane J builds home/memory/ (synced, H): it resolves for the caller's bot, and only that bot's main conversation and

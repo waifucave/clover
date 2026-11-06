@@ -81,6 +81,17 @@ function extensionOf(path: string): string {
   return dot < 0 ? "" : name.slice(name.lastIndexOf(".") + 1).toLowerCase();
 }
 
+/** A tree path as a disk could read it, for matching what a run field names against the tree's files (#197's check 4):
+ *  each name in Unicode NFC, without the trailing dots and spaces Windows drops or a `:stream`, case folded. */
+export function treeKey(path: string): string {
+  return path.normalize("NFC").split("/").map((seg) => seg.replace(/:.*$/, "").replace(/[. ]+$/, "").toLowerCase()).join("/");
+}
+
+/** A name that may be another file's on Windows: an 8.3 short name (`SERVER~1.TXT`) or a stream (`a.txt:x`). */
+function aliasName(path: string): boolean {
+  return path.split("/").some((seg) => /~\d/.test(seg) || seg.includes(":") || /[. ]$/.test(seg));
+}
+
 /** Whether a file is data: by its extension, and never with its executable bit set. Live2D's `*.motion3.json` and
  *  the like end in `json`, so they count by their last extension. */
 export function isDataFile(entry: Pick<TreeEntry, "path" | "executable">): boolean {
@@ -156,7 +167,7 @@ function runStrings(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string
  *  names the whole plugin. `base` is a child's folder in the tree (`plugins/<folder>/`). */
 function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet<string>, folders: ReadonlySet<string>): string[] {
   const out = new Set<string>();
-  const whole = base === "" ? "" : base.slice(0, -1).toLowerCase();
+  const whole = base === "" ? "" : treeKey(base.slice(0, -1));
   for (const s of strings) {
     for (const raw of s.split(/[\s=,;:"'`|&]+/)) {
       // `${plugin}` as one mark first, so taking the brackets off a word leaves it whole.
@@ -173,7 +184,7 @@ function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet
         continue;
       }
       if (w.startsWith("/") || w.includes("${")) continue;
-      const p = posix.normalize(`${base}${w}`).replace(/\/+$/, "").toLowerCase();
+      const p = treeKey(posix.normalize(`${base}${w}`).replace(/\/+$/, ""));
       if (p === "." || p.startsWith("../") || p === "..") continue;
       if (files.has(p) || folders.has(p)) out.add(p);
     }
@@ -197,10 +208,10 @@ function partDirs(m: Manifest | undefined, base: string): string[] {
   deep(m.helper);
   for (const raw of paths) {
     if (!raw.includes("/") && !raw.includes(".")) continue; // a word such as a runtime's name, not a path
-    const p = posix.normalize(`${base}${raw.replace(/\\/g, "/").replace(/^\.\//, "")}`).toLowerCase();
+    const p = treeKey(posix.normalize(`${base}${raw.replace(/\\/g, "/").replace(/^\.\//, "")}`));
     if (p.startsWith("..") || p.startsWith("/")) continue;
     const dir = posix.dirname(p);
-    out.add(dir === "." ? (base === "" ? "" : base.slice(0, -1).toLowerCase()) : dir);
+    out.add(dir === "." ? (base === "" ? "" : treeKey(base.slice(0, -1))) : dir);
   }
   return [...out];
 }
@@ -241,8 +252,8 @@ function cardsOf(tree: TreeReport, files: readonly TreeEntry[]): string {
 export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf): OkSnapshot {
   const plugins: Record<string, PluginFingerprint> = { "": fingerprintOf(tree.top, codeFieldsOf) };
   for (const c of tree.children) plugins[c.folder] = fingerprintOf(c.report, codeFieldsOf);
-  const fileSet = new Set(files.map((f) => f.path.toLowerCase()));
-  const folders = new Set(files.flatMap((f) => f.path.toLowerCase().split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
+  const fileSet = new Set(files.map((f) => treeKey(f.path)));
+  const folders = new Set(files.flatMap((f) => treeKey(f.path).split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
   const codePaths = new Set(pathsNamed(runStrings(tree.top.manifest, codeFieldsOf), "", fileSet, folders));
   for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
   for (const p of partDirs(tree.top.manifest, "")) codePaths.add(p);
@@ -290,10 +301,11 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   // data file there changes only by the user's own hand or an install's OK, never by a bot slipping code past the OK.
   const code = [...(ok.codePaths ?? []), ...now.codePaths];
   const named = (path: string) => {
-    const p = path.toLowerCase();
+    const p = treeKey(path);
     return code.some((c) => c === "" || p === c || p.startsWith(`${c}/`));
   };
-  if (touched.some((f) => !isDataFile(f) || named(f.path))) return "asks-again";
+  // A name a disk may read as another file's (an 8.3 short name, a stream, a trailing dot or space) counts as code.
+  if (touched.some((f) => !isDataFile(f) || named(f.path) || aliasName(f.path))) return "asks-again";
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";

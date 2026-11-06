@@ -2,9 +2,9 @@
 // Owner: lane C.
 //
 // A core fence keeps bots' tools, and agents' commands through their own sandboxes, away from the files that hold
-// settings, levels, credentials and bots' user layers, on every OS. The plugins folder and routine files are not
-// fenced: bots write plugins and routines as files, and the app asks before loading a plugin or running a routine at
-// a raised level. The fence judges only what models drive (a bot's tools, an agent's requests, a plugin's `files`
+// settings, levels, credentials and bots' user layers, on every OS. The installed plugins folder is fenced too (#197):
+// bots get plugins in through `plugin.install`'s OK card and develop them in development folders. Routine files are
+// not fenced: bots write routines as files, and the app asks before running a routine at a raised level. The fence judges only what models drive (a bot's tools, an agent's requests, a plugin's `files`
 // calls); the user's own actions never ask it.
 //
 // One Fence per computer: each computer fences its own home, and the folder tree asks the fence of the computer that
@@ -32,12 +32,16 @@ export const FENCED_KINDS = [
   "adult-confirmation",
   /** Development folders themselves (§5.6): they reload on every change without asking. */
   "dev-folders",
-  /** The bot driver's state per session, `<home>/sessions-runtime/` (A-M3), which a turn resumes from. */
+  /** The bot driver's state per session, `<home>/sessions-runtime/` (A-M3), which a turn resumes from. Write-denied, and
+   *  read-denied too (#197's check 4): a session reads only its own state, `sessions-runtime/<sessionId>…`, through
+   *  `forCaller`; the user's surfaces and the core, which the fence doesn't judge, read all of it. */
   "sessions-runtime",
-  /** Each bot's memory, `<home>/bots/<bot>/memory/`, one item per bot with `deny: "caller"` (the owner's decision):
-   *  through `forCaller`, the owning bot's own sessions (its main conversation and side threads) read and write it, and
-   *  every other caller is refused both, other bots, the user's coding sessions, and ACP or delegated agents, that
-   *  bot's own included. A check with no caller refuses it too. */
+  /** Each bot's memory, `<home>/bots/<bot>/memory/` (the owner's decision). The rule is by pattern, not by the list of
+   *  bots (#197's check 4): any `bots/<x>/memory/…`, for a bot not made yet, one synced from elsewhere before the list
+   *  catches up, or a removed bot's leftover folder, is reachable only by the bot whose id folds equal to `<x>` (a
+   *  child's `/` written `--`), through its main conversation or side threads (`forCaller`); every other caller is
+   *  refused both, a check with no caller included. `bots/<x>` and `bots/` themselves are never deleted, moved or
+   *  written over, as they hold memory. `fencedSet` lists the known bots' items (`deny: "caller"`); the pattern rules. */
   "bot-memory",
   /** The installed plugins folder, `<home>/plugins/` (#197's check 2): bots, agents and plugin code get a plugin in only
    *  through `plugin.install`'s OK card, and develop plugins in development folders, so nothing they write there loads
@@ -99,6 +103,10 @@ export type FenceVerdict =
 export interface SandboxPolicy {
   /** Commands may write here: the home and temp folders (§9.1), less `denyWrite`. */
   allowWrite: string[];
+  /** Paths, and the pattern items' globs, in which a `*` segment is any one name (`<home>/bots/` then `*` then
+   *  `/memory`): every bot's memory,
+   *  known or not, and every session's runtime state, are denied to every runner (#197's check 4). A bot's memory is
+   *  its main conversation's and side threads' through their file tools (`check`), never a command runner's. */
   denyWrite: string[];
   denyRead: string[];
   /** Programs that would hand work to an unfenced process: `open`, `launchctl` and `osascript` on macOS,
@@ -116,6 +124,8 @@ export interface SandboxPolicy {
 export interface FenceContext {
   memoryOf?: string;
   user?: boolean;
+  /** The calling session, which reads its own runtime state (`sessions-runtime`). */
+  sessionId?: string;
 }
 
 /** The `bot-memory` reach of a caller (`Fence.forCaller`), the owner's decision: a bot's main conversation and side
@@ -123,17 +133,53 @@ export interface FenceContext {
  *  sessions, ACP and delegated agents (the bot's own included), plugins and peers. */
 export function fenceContextFor(caller: Caller): FenceContext {
   if (caller.kind === "user" || caller.kind === "core") return { user: true };
-  if (caller.kind === "session" && (caller.sessionKind === "bot" || caller.sessionKind === "side-thread") && caller.bot !== undefined) {
-    return { memoryOf: caller.bot };
+  if (caller.kind !== "session") return {};
+  const own = { sessionId: caller.sessionId };
+  if ((caller.sessionKind === "bot" || caller.sessionKind === "side-thread") && caller.bot !== undefined) return { ...own, memoryOf: caller.bot };
+  return own;
+}
+
+/** A path's segments with `.` and `..` resolved (the fence judges canonical paths; this keeps a pattern rule from
+ *  being walked around). */
+function segmentsOf(path: string): string[] {
+  const out: string[] = [];
+  for (const seg of path.replace(/\\/g, "/").split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
   }
-  return {};
+  return out;
+}
+
+/** Where a path sits against the `bot-memory` and `sessions-runtime` patterns under the Clover home. */
+export function patternItemAt(path: string, cloverHome: string, os?: Os):
+  | { kind: "bot-memory"; folder: string; root: string; inside: boolean }
+  | { kind: "sessions-runtime"; name: string | undefined; root: string }
+  | undefined {
+  const home = segmentsOf(cloverHome);
+  const segs = segmentsOf(path);
+  const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
+  if (segs.length < home.length + 1 || !home.every((h, i) => same(h, segs[i]!))) return undefined;
+  const [area, x, sub] = segs.slice(home.length);
+  const base = `/${home.join("/")}`;
+  if (same(area!, "sessions-runtime")) return { kind: "sessions-runtime", name: x, root: `${base}/sessions-runtime` };
+  if (!same(area!, "bots")) return undefined;
+  if (x === undefined) return { kind: "bot-memory", folder: "", root: `${base}/bots`, inside: false };
+  if (sub === undefined) return { kind: "bot-memory", folder: x, root: `${base}/bots/${x}`, inside: false };
+  return same(sub, "memory") ? { kind: "bot-memory", folder: x, root: `${base}/bots/${x}/memory`, inside: true } : undefined;
+}
+
+/** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
+export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
+  if (ctx?.user) return true;
+  return ctx?.memoryOf !== undefined && foldName(ctx.memoryOf.replace("/", "--"), os) === foldName(folder, os);
 }
 
 /** Whether a caller reaches a `caller` item. */
 export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: FenceContext | undefined, os?: Os): boolean {
   if (item.deny !== "caller") return true;
   if (ctx?.user) return true;
-  return ctx?.memoryOf !== undefined && item.bot !== undefined && foldName(ctx.memoryOf, os) === foldName(item.bot, os);
+  return item.bot !== undefined && reachesMemoryFolder(item.bot.replace("/", "--"), ctx, os);
 }
 
 /** A fence bound to one caller: the same rules, with its `bot-memory` reach. */
@@ -161,7 +207,8 @@ export interface Fence {
   checkAgentRoot(root: string): FenceVerdict;
   /** The fence as one caller meets it (#197's check 3, and the owner's decision on `bot-memory`). */
   forCaller(caller: Caller): CallerFence;
-  /** The arrays for one command runner: a `caller` item the runner's caller doesn't reach is read- and write-denied. */
+  /** The arrays for one command runner. The pattern items (`bot-memory`, `sessions-runtime`) are denied whoever the
+   *  runner is for. */
   policy(ctx?: FenceContext): SandboxPolicy;
   /** The set changed: a development folder was added or removed, or a plugin's data folder appeared. */
   watch(fn: () => void): Unsubscribe;
@@ -254,13 +301,25 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
   const inside = (p: string, r: string) => isInsideFolded(p, r, o.os);
   if (o.os === "windows") for (const path of paths) if (windowsAlias(path) !== undefined) return { allowed: false, reason: "alias", path };
   for (const path of paths) {
+    // The pattern items first (#197's check 4): by where the path is, whatever list of bots or sessions is known.
+    const pattern = o.cloverHome === undefined ? undefined : patternItemAt(path, o.cloverHome, o.os);
+    if (pattern?.kind === "bot-memory") {
+      // `bots/` and `bots/<x>` hold memory: never deleted, moved or written over. Inside `bots/<x>/memory`, only its bot.
+      if (!pattern.inside && writes) return { allowed: false, reason: "bot-memory", path: pattern.root };
+      if (pattern.inside) {
+        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
+        if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
+      }
+    } else if (pattern?.kind === "sessions-runtime") {
+      const own = pattern.name !== undefined && o.caller?.sessionId !== undefined
+        && foldName(pattern.name.replace(/\.[^.]*$/, ""), o.os) === foldName(o.caller.sessionId, o.os);
+      if (writes || !(o.caller?.user || own)) return { allowed: false, reason: "sessions-runtime", path: pattern.root };
+    }
     for (const item of set) {
+      if (item.deny === "caller") continue; // judged by its pattern above
       if (writes) {
-        // A `caller` item its caller reaches may be written inside, never deleted or moved itself or by an ancestor.
-        const reached = item.deny === "caller" && callerReaches(item, o.caller, o.os);
-        const within = inside(path, item.path) && !(reached && foldPath(path, o.os) !== foldPath(item.path, o.os));
-        if (within || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
-      } else if ((item.deny === "read-write" || (item.deny === "caller" && !callerReaches(item, o.caller, o.os))) && inside(path, item.path)) {
+        if (inside(path, item.path) || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
+      } else if (item.deny === "read-write" && inside(path, item.path)) {
         return { allowed: false, reason: item.kind, path: item.path };
       }
     }

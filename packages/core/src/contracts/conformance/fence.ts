@@ -13,7 +13,20 @@ export type FenceHarness = Pick<FakeFence, keyof FakeFence>;
 /** Builds the implementation under test from the options the fake takes. */
 export type FenceFactory = (...args: ConstructorParameters<typeof FakeFence>) => FenceHarness;
 
-export function runFenceConformance(make: FenceFactory): void {
+/** Cases an implementation can run as todo: `real-paths`, an agent root judged by its real path through a real
+ *  symlink (the fake compares strings; lane C's real fence must pass it). */
+export type FencePendingCase = "real-paths";
+
+/** A real folder and real symlinks, for the `real-paths` case (the suites import no file system of their own). */
+export interface FenceDisk {
+  /** A new empty folder, by its real path. */
+  folder(): string;
+  /** A new symlink to `target`, by its path. */
+  link(target: string): string;
+}
+
+export function runFenceConformance(make: FenceFactory, opts: { pending?: readonly FencePendingCase[]; disk?: FenceDisk } = {}): void {
+  const pendingOr = (key: FencePendingCase) => (opts.pending?.includes(key) || !opts.disk ? test.todo : test);
   const HOME = "/Users/me";
   const CLOVER = `${HOME}/.clover`;
   const AGENT = "/opt/homebrew/lib/node_modules/@zed-industries/codex-acp";
@@ -59,7 +72,7 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(f.checkAgentRoot(`${HOME}/Library`).allowed).toBe(false); // it holds fenced items
     });
 
-    test("bot-memory: only the owning bot's own sessions read and write its memory (the owner's decision)", () => {
+    test("bot-memory: only the owning bot's own sessions read and write its memory, listed bot or not (the owner's decision; #197's check 4)", () => {
       const f = make({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", bots: ["luna", "alpha", "pack/tarot"] });
       const mem = (bot: string) => `${CLOVER}/bots/${bot}/memory`;
       expect(f.fencedSet().filter((i) => i.kind === "bot-memory")).toEqual([
@@ -67,41 +80,72 @@ export function runFenceConformance(make: FenceFactory): void {
         { kind: "bot-memory", path: mem("alpha"), deny: "caller", bot: "alpha" },
         { kind: "bot-memory", path: mem("pack--tarot"), deny: "caller", bot: "pack/tarot" },
       ]);
-      const reach = (caller: Parameters<typeof f.forCaller>[0], bot: string) => {
-        const c = f.forCaller(caller);
-        return [c.check({ op: "read", path: `${mem(bot)}/MEMORY.md` }).allowed, c.check({ op: "write", path: `${mem(bot)}/MEMORY.md` }).allowed];
+      const reach = (caller: Parameters<typeof f.forCaller>[0] | undefined, path: string) => {
+        const c = caller === undefined ? { check: (op: Parameters<typeof f.check>[0]) => f.check(op) } : f.forCaller(caller);
+        return [c.check({ op: "read", path }).allowed, c.check({ op: "write", path }).allowed];
       };
-      const main = { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" } as const;
-      const side = { kind: "session", sessionId: "s_side", sessionKind: "side-thread", bot: "luna" } as const;
-      const agent = { kind: "session", sessionId: "s_agent", sessionKind: "agent", bot: "luna" } as const;
-      const coding = { kind: "session", sessionId: "s_code", sessionKind: "coding" } as const;
-      expect(reach(main, "luna")).toEqual([true, true]);
-      expect(reach(side, "luna")).toEqual([true, true]);
-      expect(reach(main, "alpha")).toEqual([false, false]);
-      expect(reach(agent, "luna")).toEqual([false, false]); // a delegated or ACP agent, the bot's own included
-      expect(reach(coding, "luna")).toEqual([false, false]);
-      expect(reach({ kind: "plugin", pluginId: "tarot" }, "luna")).toEqual([false, false]);
-      expect(reach({ kind: "peer", device: "desk0000000000000001", sessionId: "s_r", bot: "luna" }, "luna")).toEqual([false, false]);
-      expect(reach({ kind: "session", sessionId: "s_t", sessionKind: "bot", bot: "pack/tarot" }, "pack--tarot")).toEqual([true, true]);
-      // With no caller, the check refuses it; the rest of the bot's folder is not memory.
-      expect(f.check({ op: "read", path: `${mem("luna")}/MEMORY.md` })).toEqual({ allowed: false, reason: "bot-memory", path: mem("luna") });
-      expect(f.forCaller(agent).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(true);
-      // The owner never deletes or moves the folder itself.
-      expect(f.forCaller(main).check({ op: "delete", path: mem("luna") }).allowed).toBe(false);
+      const session = (bot: string | undefined, sessionKind: "bot" | "side-thread" | "agent" | "coding") =>
+        ({ kind: "session", sessionId: `s_${sessionKind}`, sessionKind, ...(bot ? { bot } : {}) }) as const;
+      const main = session("luna", "bot");
+      expect(reach(main, `${mem("luna")}/MEMORY.md`)).toEqual([true, true]);
+      expect(reach(session("luna", "side-thread"), `${mem("luna")}/MEMORY.md`)).toEqual([true, true]);
+      expect(reach(main, `${mem("alpha")}/MEMORY.md`)).toEqual([false, false]);
+      expect(reach(session("luna", "agent"), `${mem("luna")}/MEMORY.md`)).toEqual([false, false]); // its own agents too
+      expect(reach(session(undefined, "coding"), `${mem("luna")}/MEMORY.md`)).toEqual([false, false]);
+      expect(reach({ kind: "plugin", pluginId: "tarot" }, `${mem("luna")}/MEMORY.md`)).toEqual([false, false]);
+      expect(reach({ kind: "peer", device: "desk0000000000000001", sessionId: "s_r", bot: "luna" }, `${mem("luna")}/MEMORY.md`)).toEqual([false, false]);
+      expect(reach(undefined, `${mem("luna")}/MEMORY.md`)).toEqual([false, false]);
+      expect(reach(session("pack/tarot", "bot"), `${mem("pack--tarot")}/MEMORY.md`)).toEqual([true, true]);
+      // A bot the fence doesn't list (not made yet, synced before the list catches up, or removed): the same rule, so
+      // a coding session can't seed a future bot's memory.
+      expect(reach(session(undefined, "coding"), `${mem("newbot")}/MEMORY.md`)).toEqual([false, false]);
+      expect(reach(undefined, `${mem("newbot")}/n.md`)).toEqual([false, false]);
+      expect(reach(session("newbot", "bot"), `${mem("newbot")}/n.md`)).toEqual([true, true]);
+      // Spellings: case, folding and `..` reach the same folder.
+      expect(reach(main, `${CLOVER}/bots/ALPHA/Memory/n.md`)).toEqual([false, false]);
+      expect(reach(main, `${CLOVER}/bots/luna/../alpha/memory/n.md`)).toEqual([false, false]);
+      expect(reach(main, `${CLOVER}/bots/LUNA/MEMORY/n.md`)).toEqual([true, true]);
+      // bots/ and bots/<x> hold memory: never deleted, moved or written over; the memory folder itself neither.
+      for (const op of [{ op: "delete", path: `${CLOVER}/bots/luna` }, { op: "move", path: `${CLOVER}/bots/luna`, to: `${CLOVER}/bots/x` }, { op: "delete", path: `${CLOVER}/bots` }, { op: "delete", path: mem("luna") }, { op: "write", path: `${CLOVER}/bots/newbot` }] as const) {
+        expect([op, f.forCaller(main).check(op).allowed]).toEqual([op, false]);
+      }
       expect(f.forCaller(main).check({ op: "move", path: `${mem("luna")}/a.md`, to: `${mem("alpha")}/a.md` }).allowed).toBe(false);
-      // A runner's arrays follow the same reach.
-      const p = f.forCaller(main).policy();
-      expect(p.denyWrite).not.toContain(mem("luna"));
-      expect(p.denyRead).not.toContain(mem("luna"));
-      expect(p.denyRead).toContain(mem("alpha"));
-      expect(f.forCaller(coding).policy().denyRead).toEqual(expect.arrayContaining([mem("luna"), mem("alpha")]));
-      expect(f.forCaller(main).context).toEqual({ memoryOf: "luna" });
+      // The rest of a bot's folder isn't memory.
+      expect(f.forCaller(session("luna", "agent")).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(true);
+      // Every runner is denied every bot's memory, known or not (a bot uses its file tools for its own).
+      for (const c of [main, session(undefined, "coding")]) {
+        const p = f.forCaller(c).policy();
+        expect(p.denyRead).toContain(`${CLOVER}/bots/*/memory`);
+        expect(p.denyWrite).toContain(`${CLOVER}/bots/*/memory`);
+      }
+      expect(f.touches([`${mem("newbot")}/a`])).toMatchObject({ kind: "bot-memory", path: mem("newbot") });
+      expect(f.forCaller(main).context).toEqual({ sessionId: "s_bot", memoryOf: "luna" });
     });
 
-    test("sessions-runtime is write-denied, reads allowed", () => {
+    pendingOr("real-paths")("an agent root is judged by its real path: a symlink to the home, or into the Clover home, is refused (#197's check 4)", () => {
+      const disk = opts.disk!;
+      const home = disk.folder();
+      const f = make({ os: "macos", home, cloverHome: `${home}/.clover`, temp: "/tmp" });
+      expect(f.checkAgentRoot(disk.link(home)).allowed).toBe(false);
+      const intoClover = disk.link(`${home}/.clover`);
+      // A root that doesn't exist yet is judged by its nearest existing ancestor's real path.
+      expect(f.checkAgentRoot(`${intoClover}/plugins/new-plugin`).allowed).toBe(false);
+      expect(f.checkAgentRoot(`${disk.link(disk.folder())}/project`).allowed).toBe(true);
+    });
+
+    test("sessions-runtime: write-denied; a session reads only its own state (#197's check 4)", () => {
       const f = fence("macos");
-      expect(f.check({ op: "write", path: `${CLOVER}/sessions-runtime/s_1.json` })).toEqual({ allowed: false, reason: "sessions-runtime", path: `${CLOVER}/sessions-runtime` });
-      expect(f.check({ op: "read", path: `${CLOVER}/sessions-runtime/s_1.json` }).allowed).toBe(true);
+      const RT = `${CLOVER}/sessions-runtime`;
+      const own = { kind: "session", sessionId: "s_1", sessionKind: "bot", bot: "luna" } as const;
+      const other = { kind: "session", sessionId: "s_2", sessionKind: "coding" } as const;
+      expect(f.check({ op: "write", path: `${RT}/s_1.json` })).toEqual({ allowed: false, reason: "sessions-runtime", path: RT });
+      expect(f.forCaller(own).check({ op: "write", path: `${RT}/s_1.json` }).allowed).toBe(false);
+      expect(f.forCaller(own).check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(true);
+      expect(f.forCaller(own).check({ op: "read", path: `${RT}/s_1/state.json` }).allowed).toBe(true);
+      expect(f.forCaller(other).check({ op: "read", path: `${RT}/s_1.json` })).toEqual({ allowed: false, reason: "sessions-runtime", path: RT });
+      expect(f.check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(false);
+      expect(f.forCaller({ kind: "user", client: "app" }).check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(true);
+      expect(f.policy().denyRead).toContain(RT);
     });
 
     test("reads are free except in the run folder (and the secrets files off macOS)", () => {
@@ -215,7 +259,7 @@ export function runFenceConformance(make: FenceFactory): void {
         expect(f.check({ op: "write", path: `${CLOVER}/plugins-state/\u00F6ks/x.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
         expect(f.check({ op: "read", path: `${CLOVER}/\u0455ettings/settings.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
         // Where Clover doesn't name things (a bot's notes, a routine's files), any name is the user's own.
-        expect(f.check({ op: "write", path: `${CLOVER}/bots/luna/memory/\u65E5\u8A18.md` }).allowed).toBe(true);
+        expect(f.check({ op: "write", path: `${CLOVER}/bots/luna/agents/\u65E5\u8A18.md` }).allowed).toBe(true);
         expect(f.check({ op: "write", path: `${CLOVER}/routines/alpha/caf\u00E9.md` }).allowed).toBe(true);
         expect(f.check({ op: "write", path: `${HOME}/\u017Fettings.json` }).allowed).toBe(true);
       }

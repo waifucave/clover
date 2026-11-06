@@ -258,7 +258,8 @@ describe("the registry opens unsigned only in tests (#197's check 3)", () => {
         else if (/\.(ts|tsx|js|mjs)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name)) {
           const text = readFileSync(abs, "utf8");
           // A file that opens the registry and says `unsigned:` (only open.ts may, documenting it).
-          if (/openPluginRegistry|registry\.open/.test(text) && /\bunsigned\s*:/.test(text)) hits.push(abs.slice(repo.length + 1));
+          // `unsigned: …` or the shorthand `{ unsigned }` (#197's check 4).
+          if (/openPluginRegistry|registry\.open/.test(text) && /\bunsigned\s*[:,}]/.test(text)) hits.push(abs.slice(repo.length + 1));
         }
       }
     };
