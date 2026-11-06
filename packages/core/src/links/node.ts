@@ -5,7 +5,8 @@
 // J's computer node takes its `transport` and `registry` (`computerNodeLinks`); lane D's bot side reads `main`.
 //
 // What depends on the account (items 79-81): a device without one publishes to n0's address lookup (the relay URL
-// only) and keeps pair credentials at the handshake; a signed-in one does neither.
+// only) and keeps pair credentials at the handshake; a signed-in one does neither. The lookup follows sign-in and
+// sign-out while running (m10 of H-M1's review).
 import type { Clock } from "../contracts/clock";
 import type { Unsubscribe } from "../contracts/common";
 import type { SecretMeta, SecretStore } from "../contracts/secret-store";
@@ -38,8 +39,8 @@ export interface DeviceLinksOptions {
   self: FileDeviceRegistryOptions["self"];
   /** The wire to use: a test's in-memory endpoint. Without it, the link sidecar is started (`sidecar`). */
   wire?: (key: DeviceKey) => WireEndpoint | Promise<WireEndpoint>;
-  /** The sidecar's options. `n0Lookup` defaults to "no account" (item 81); tests set it false so nothing leaves the
-   *  machine. */
+  /** The sidecar's options. `n0Lookup` defaults to "no account" (item 81) and then follows the account's sign-in;
+   *  set, it stays as set (tests set it false so nothing leaves the machine). */
   sidecar?: Omit<SidecarWireOptions, "key" | "n0Lookup"> & { n0Lookup?: boolean };
   /** Where peers are, in place of the handshake's directory (tests; later the LAN's discovery). */
   directory?: PeerDirectory;
@@ -118,6 +119,11 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   }
   const offs: Unsubscribe[] = [];
   if (sidecar) offs.push(followRegistry(sidecar, registry));
+  // Signing in or out switches the n0 lookup on the running sidecar (m10).
+  if (sidecar && o.account && o.sidecar?.n0Lookup === undefined) {
+    const s = sidecar;
+    offs.push(o.account.watch((v) => s.setN0Lookup(!v.signedIn)));
+  }
 
   let mapping: NatMapping = "unknown";
   let local: { relay?: string; direct: string[] } = { direct: [] };
@@ -305,6 +311,8 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     if (driver) await driver.networkChanged();
     else await refresh();
   };
+  // A restarted sidecar (§8.3) binds afresh, maybe on another port: read the net report again and tell the pairs.
+  if (sidecar) offs.push(sidecar.onRestart(() => void refresh()));
   return {
     key, boxKey, registry, wire, transport, pairing, ...(directory ? { directory } : {}),
     ...(accountDirectory ? { accountDirectory } : {}), ...(driver ? { driver } : {}), ...(main ? { main } : {}), clock: sharedClock,
