@@ -7,7 +7,7 @@
 // replaced atomically and a link at the target is replaced without being followed. A consumer that walks a folder
 // instead guards it with `refuseLinksIn`.
 import { randomBytes } from "node:crypto";
-import { closeSync, fsyncSync, lstatSync, readdirSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, fsyncSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, win32 } from "node:path";
 import { isInsideFolded, type CallerFence } from "../contracts/fence";
 import { foldPath } from "./fold";
@@ -118,27 +118,53 @@ export function writeOwnFile(caller: CallerFence, path: string, data: string | U
  *  and the rename): `.tmp-` plus 16 hex digits. */
 const TEMP_SUFFIX = /\.tmp-[0-9a-f]{16}$/;
 
-/** Removes leftover temp files from the caller's own folders, for when the bot starts: nothing else may reuse the
- *  name. Walks without following links and removes regular files only; links, folders and everything else stay. */
-export function sweepOwnTempFiles(caller: CallerFence): void {
-  for (const root of new Set(ownRoots(caller, true))) {
-    let st: ReturnType<typeof lstatSync> | undefined;
-    try { st = lstatSync(root); } catch { continue; } // missing: nothing to sweep
-    if (st === undefined || !st.isDirectory() || st.isSymbolicLink()) continue;
-    const stack = [root];
-    while (stack.length > 0) {
-      const at = stack.pop()!;
-      let entries: string[];
-      try { entries = readdirSync(at); } catch { continue; }
-      for (const name of entries) {
-        const p = join(at, name);
-        let s: ReturnType<typeof lstatSync> | undefined;
-        try { s = lstatSync(p); } catch { continue; }
-        if (s.isSymbolicLink()) continue; // never follow, never remove
-        if (s.isDirectory()) { stack.push(p); continue; }
-        if (s.isFile() && TEMP_SUFFIX.test(name)) { try { unlinkSync(p); } catch { /* busy: the next start sweeps it */ } }
+/** Removes leftover temp files under the given folders, for when the bot starts: nothing else may reuse the name.
+ *  Every folder is read through a handle opened `O_DIRECTORY|O_NOFOLLOW` — a link is never followed — and the
+ *  handle's device and inode must still match the path when the folder is listed and again when the walk ends, so a
+ *  folder swapped for a link mid-walk is never walked (a mismatch refuses). Only regular files are removed. */
+export function sweepOwnTempFiles(roots: readonly string[]): void {
+  const O_DIRECTORY = (constants as Record<string, number>).O_DIRECTORY ?? 0;
+  const O_NOFOLLOW = (constants as Record<string, number>).O_NOFOLLOW ?? 0;
+  for (const root of new Set(roots)) {
+    let dfd: number;
+    try { dfd = openSync(root, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW); }
+    catch { continue; } // missing, a link, or unreadable: never walked
+    let key: string;
+    try {
+      const s = fstatSync(dfd);
+      key = `${s.dev}:${s.ino}`;
+    } catch { try { closeSync(dfd); } catch { /* gone */ } continue; }
+    const same = (): boolean => {
+      try {
+        const l = lstatSync(root);
+        return l.isDirectory() && !l.isSymbolicLink() && `${l.dev}:${l.ino}` === key;
+      } catch { return false; }
+    };
+    if (!same()) { try { closeSync(dfd); } catch { /* gone */ } continue; }
+    try {
+      const stack = [root];
+      while (stack.length > 0) {
+        const at = stack.pop()!;
+        let fd: number;
+        try { fd = openSync(at, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW); }
+        catch { continue; } // a link, or unreadable: never walked
+        try {
+          const o = fstatSync(fd);
+          const l = lstatSync(at);
+          if (!l.isDirectory() || l.isSymbolicLink() || l.dev !== o.dev || l.ino !== o.ino) continue; // swapped: never listed
+          for (const name of readdirSync(at)) {
+            const p = join(at, name);
+            let s: ReturnType<typeof lstatSync> | undefined;
+            try { s = lstatSync(p); } catch { continue; }
+            if (s.isSymbolicLink()) continue; // never follow, never remove
+            if (s.isDirectory()) { stack.push(p); continue; }
+            if (s.isFile() && TEMP_SUFFIX.test(name)) { try { unlinkSync(p); } catch { /* busy: the next start sweeps it */ } }
+          }
+        } catch { /* unreadable mid-walk */ }
+        finally { try { closeSync(fd); } catch { /* gone */ } }
       }
-    }
+      if (!same()) throw new FenceRefused({ allowed: false, reason: "clover-home", path: root }, root);
+    } finally { try { closeSync(dfd); } catch { /* gone */ } }
   }
 }
 

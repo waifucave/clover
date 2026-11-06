@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner } from "../../src/fence/fenced-process";
+import { fencedSpawner, ownRepoHooks } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
@@ -49,7 +49,7 @@ describe("the macOS profile, as text", () => {
   test("Clover home default-deny first; holder folders; outside naming; specific fenced denies", () => {
     // Policy matching the real fence: Clover home in denyWrite/denyRead for default-deny,
     // plus specific fenced items, one of them outside the home.
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me", "/tmp/x"],
       denyWrite: ["/U/me/.clover/settings.json", "/U/me/.clover/plugins-state/oks", "/U/me/.clover", "/U/me/Library/LaunchAgents/com.waifucave.clover.core.plist"],
       denyRead: ["/U/me/.clover/run", "/U/me/.clover"],
@@ -87,7 +87,7 @@ describe("the macOS profile, as text", () => {
 
   test("naming allows come before the home deny in effect, and never reach inside it", () => {
     // A fenced item directly under /U would make /U a naming folder that contains the home: skipped.
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover", "/U/x"], denyRead: ["/U/me/.clover"],
       closedDoors: [], blockedAddresses: [], network: "none" } });
     expect(p).not.toContain('(regex #"^/U/[^/]")');
@@ -96,7 +96,7 @@ describe("the macOS profile, as text", () => {
 
   test("the caller's rules: its own folders read and write after the denies; the home stays denied otherwise", () => {
     const caller = callerPlaces("/U/me/.clover", "macos", { sessionId: "s1", memoryOf: "luna" });
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, caller, policy: {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, caller, policy: {
       allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover"], denyRead: ["/U/me/.clover"],
       closedDoors: [], blockedAddresses: [], network: "none" } });
     const at = (s: string) => p.indexOf(s);
@@ -115,7 +115,7 @@ describe("the macOS profile, as text", () => {
     // No plugin-data allow: this runner is no plugin.
     expect(p).not.toContain("plugin-data");
     // A runner that is a coding session gets its outputs, and no bot folder, memory, scratch or routines.
-    const someoneElse = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+    const someoneElse = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me"], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" },
       caller: callerPlaces("/U/me/.clover", "macos", { sessionId: "c1" }) });
     expect(someoneElse).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.clover/outputs/c1/"))');
@@ -154,7 +154,11 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           join(home, "Library", "LaunchAgents"),
           join(home, ".ssh"), join(home, "bin"), join(home, ".local", "bin"),
           join(home, ".config", "git"), join(home, ".config", "fish", "conf.d"),
-          join(home, ".config", "environment.d"), join(home, ".config", "plasma-workspace", "env")];
+          join(home, ".config", "environment.d"), join(home, ".config", "plasma-workspace", "env"),
+          join(home, ".vim"), join(home, ".config", "nvim"), join(home, ".gnupg"),
+          join(home, ".config", "pip"), join(home, ".bun", "bin"), join(home, ".cargo", "bin"),
+          join(home, ".oh-my-zsh", "custom"), join(home, "Library", "Preferences"), join(home, "Library", "Scripts"),
+          join(home, "project", ".git", "hooks")];
         for (const d of dirs) mkdirSync(d, { recursive: true });
         const files: Record<string, string> = {
           [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
@@ -167,7 +171,7 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
         const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp: join(root, "tmp") });
         const ctx = fenceContextFor(caller);
         const policy = fence.policy(ctx);
-        const profile = macFenceProfile({ policy, cloverHome: clover, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx) });
+        const profile = macFenceProfile({ policy, cloverHome: clover, home, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx) });
         type Probe = { shell: string; op: "read" | "write" | "unlink"; path: string };
         const P: Probe[] = [
           { shell: `cat '${join(clover, "settings.json")}'`, op: "read", path: join(clover, "settings.json") },
@@ -212,6 +216,22 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           { shell: `echo x > '${join(home, ".config", "environment.d", "evil.conf")}'`, op: "write", path: join(home, ".config", "environment.d", "evil.conf") },
           { shell: `echo x > '${join(home, ".config", "plasma-workspace", "env", "evil.sh")}'`, op: "write", path: join(home, ".config", "plasma-workspace", "env", "evil.sh") },
           { shell: `echo x > '${join(home, "Library", "LaunchAgents", "evil.plist")}'`, op: "write", path: join(home, "Library", "LaunchAgents", "evil.plist") },
+          { shell: `echo x > '${join(home, ".vimrc")}'`, op: "write", path: join(home, ".vimrc") },
+          { shell: `echo x > '${join(home, ".vim", "evil.vim")}'`, op: "write", path: join(home, ".vim", "evil.vim") },
+          { shell: `echo x > '${join(home, ".config", "nvim", "evil.lua")}'`, op: "write", path: join(home, ".config", "nvim", "evil.lua") },
+          { shell: `echo x > '${join(home, ".emacs")}'`, op: "write", path: join(home, ".emacs") },
+          { shell: `echo x > '${join(home, ".gnupg", "gpg.conf")}'`, op: "write", path: join(home, ".gnupg", "gpg.conf") },
+          { shell: `echo x > '${join(home, ".config", "pip", "evil.conf")}'`, op: "write", path: join(home, ".config", "pip", "evil.conf") },
+          { shell: `echo x > '${join(home, ".bunfig.toml")}'`, op: "write", path: join(home, ".bunfig.toml") },
+          { shell: `echo x > '${join(home, ".bun", "bin", "evil")}'`, op: "write", path: join(home, ".bun", "bin", "evil") },
+          { shell: `echo x > '${join(home, ".npmrc")}'`, op: "write", path: join(home, ".npmrc") },
+          { shell: `echo x > '${join(home, ".cargo", "bin", "evil")}'`, op: "write", path: join(home, ".cargo", "bin", "evil") },
+          { shell: `echo x > '${join(home, ".cargo", "config.toml")}'`, op: "write", path: join(home, ".cargo", "config.toml") },
+          { shell: `echo x > '${join(home, ".bash_aliases")}'`, op: "write", path: join(home, ".bash_aliases") },
+          { shell: `echo x > '${join(home, ".oh-my-zsh", "custom", "evil.zsh")}'`, op: "write", path: join(home, ".oh-my-zsh", "custom", "evil.zsh") },
+          { shell: `echo x > '${join(home, "Library", "Preferences", "com.apple.loginwindow.plist")}'`, op: "write", path: join(home, "Library", "Preferences", "com.apple.loginwindow.plist") },
+          { shell: `echo x > '${join(home, "Library", "Scripts", "evil.sh")}'`, op: "write", path: join(home, "Library", "Scripts", "evil.sh") },
+          { shell: `echo x > '${join(home, "project", ".git", "config")}'`, op: "write", path: join(home, "project", ".git", "config") },
         ];
         const script = P.map((pr, i) => `{ ${pr.shell}; } >/dev/null 2>&1; echo "${i}:$?";`).join("\n");
         const proc = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, "/bin/sh", "-c", script], { stdout: "pipe", stderr: "pipe" });
@@ -295,6 +315,34 @@ describe("the Linux sandbox's mounts, as arguments", () => {
   });
 });
 
+describe("the session's own repo", () => {
+  test("ownRepoHooks finds the repo holding the cwd, without following links; elsewhere null", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-repo-")));
+    const home = join(root, "home");
+    mkdirSync(join(home, "project", "sub"), { recursive: true });
+    mkdirSync(join(home, "project", ".git", "hooks"), { recursive: true });
+    try {
+      expect(ownRepoHooks(join(home, "project", "sub"), home)).toBe(join(home, "project", ".git", "hooks"));
+      expect(ownRepoHooks(join(home, "project"), home)).toBe(join(home, "project", ".git", "hooks"));
+      expect(ownRepoHooks(join(home, "elsewhere"), home)).toBeNull();
+      expect(ownRepoHooks(join(root, "outside"), home)).toBeNull();
+      symlinkSync(join(home, "project"), join(home, "linked"));
+      expect(ownRepoHooks(join(home, "linked", "sub"), home)).toBeNull(); // the link itself isn't climbed through
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("the Linux sandbox's mounts bind the session repo's hooks read-only", () => {
+    const dirs = new Set(["/h", "/h/p", "/h/p/.git", "/h/p/.git/hooks"]);
+    const fs = {
+      kind: (p: string) => (dirs.has(p) ? "dir" as const : null),
+      list: (d: string) => [...dirs].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+    };
+    const s = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, repoHooks: "/h/p/.git/hooks", policy: {
+      allowWrite: ["/h"], denyWrite: ["/h/.clover"], denyRead: ["/h/.clover"], closedDoors: [], blockedAddresses: [], network: "none" } }).join(" ");
+    expect(s).toContain("--ro-bind /h/p/.git/hooks /h/p/.git/hooks");
+  });
+});
+
 describe("a folder held for a fenced file that isn't there yet (accepted for now, the controller's ruling)", () => {
   test("the plan names it, and a read-only refusal there is explained: which file, a subfolder, or ask the user", () => {
     const dirs = new Set(["/h", "/h/.clover", "/t"]);
@@ -361,6 +409,27 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run(`echo x > '${join(w.home, ".config", "fish", "conf.d", "evil.fish")}'`))).toBe(false);
       mkdirSync(join(w.home, ".config", "environment.d"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, ".config", "environment.d", "evil.conf")}'`))).toBe(false);
+      // Editors, package managers and the loginwindow plist: none of it is planted either.
+      mkdirSync(join(w.home, ".vim"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "nvim"), { recursive: true });
+      mkdirSync(join(w.home, ".gnupg"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "pip"), { recursive: true });
+      mkdirSync(join(w.home, ".bun", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".cargo", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".oh-my-zsh", "custom"), { recursive: true });
+      mkdirSync(join(w.home, "Library", "Preferences"), { recursive: true });
+      mkdirSync(join(w.home, "Library", "Scripts"), { recursive: true });
+      for (const f of [join(w.home, ".vimrc"), join(w.home, ".vim", "evil.vim"), join(w.home, ".config", "nvim", "evil.lua"), join(w.home, ".emacs"),
+        join(w.home, ".gnupg", "gpg.conf"), join(w.home, ".config", "pip", "evil.conf"), join(w.home, ".bunfig.toml"),
+        join(w.home, ".bun", "bin", "evil"), join(w.home, ".npmrc"), join(w.home, ".cargo", "bin", "evil"),
+        join(w.home, ".cargo", "config.toml"), join(w.home, ".bash_aliases"), join(w.home, ".oh-my-zsh", "custom", "evil.zsh"),
+        join(w.home, "Library", "Preferences", "com.apple.loginwindow.plist"), join(w.home, "Library", "Scripts", "evil.sh")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      // A hook in any repo under the home: planting fails too.
+      mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
+      expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
     } else {
       // The systemd user unit, an autostart entry, and the shell startup files: a bot's session plants none.
       expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "clover-core.service")}'`))).toBe(false);
@@ -381,6 +450,24 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
         mkdirSync(d, { recursive: true });
         expect(ok(await w.run(`echo x > '${join(d, d.endsWith(".ssh") ? "config" : "evil")}'`))).toBe(false);
       }
+      // Editors, package managers, fish and the desktop entries: none of it is planted either.
+      mkdirSync(join(w.home, ".vim"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "nvim"), { recursive: true });
+      mkdirSync(join(w.home, ".gnupg"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "pip"), { recursive: true });
+      mkdirSync(join(w.home, ".bun", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".cargo", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "fish", "conf.d"), { recursive: true });
+      for (const f of [join(w.home, ".vimrc"), join(w.home, ".vim", "evil.vim"), join(w.home, ".config", "nvim", "evil.lua"),
+        join(w.home, ".gnupg", "gpg.conf"), join(w.home, ".config", "pip", "evil.conf"), join(w.home, ".bunfig.toml"),
+        join(w.home, ".npmrc"), join(w.home, ".cargo", "config.toml"), join(w.home, ".config", "fish", "conf.d", "evil.fish"),
+        join(w.home, ".gitconfig"), join(w.home, ".config", "mimeapps.list")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      // A hook in any repo under the home: planting fails too.
+      mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
+      expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
     }
     // A fenced file that isn't there yet can't be made either.
     expect(ok(await w.run(`echo '{}' > '${join(w.clover, "trust.json")}'`))).toBe(false);
@@ -520,7 +607,9 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
   test("ordinary work runs: a shell pipeline, git init and commit in the project, mktemp", async () => {
     const w = world();
-    const r = await w.run(`printf 'a\\nb\\n' | sort -r | head -1 && git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x && git log --oneline | wc -l | tr -d ' ' && TMPDIR='${w.temp}' mktemp >/dev/null && echo done`);
+    // Hooks are unwritable by design, so init installs no samples from the template dir; planting one is refused
+    // (see the hooks probes above). The empty template keeps ordinary git work running.
+    const r = await w.run(`printf 'a\\nb\\n' | sort -r | head -1 && mkdir -p empty-templates && GIT_TEMPLATE_DIR="$PWD/empty-templates" git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x && git log --oneline | wc -l | tr -d ' ' && TMPDIR='${w.temp}' mktemp >/dev/null && echo done`);
     expect(r).toMatchObject({ kind: "exited", code: 0, shell: "sh" });
     expect(r.kind === "exited" && r.stdout).toBe("b\n1\ndone\n");
   }, 60_000);

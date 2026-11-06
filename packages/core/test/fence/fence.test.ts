@@ -170,6 +170,36 @@ describe("the real fence on a real disk", () => {
     expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions")]);
   });
 
+  test("python user site folders are fenced by the folders on the disk", () => {
+    const { home, clover, fence } = make("macos");
+    mkdirSync(join(home, ".local", "lib", "python3.12", "site-packages"), { recursive: true });
+    mkdirSync(join(home, ".local", "lib", "other"), { recursive: true });
+    const kinds = fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path);
+    expect(kinds).toContain(join(home, ".local", "lib", "python3.12", "site-packages"));
+    expect(kinds).not.toContain(join(home, ".local", "lib", "other"));
+    expect(kinds).toContain(join(home, "Library", "Python"));
+    expect(fence.check({ op: "write", path: join(home, ".local", "lib", "python3.12", "site-packages", "evil.py") })).toMatchObject({ allowed: false, reason: "login-start" });
+    void clover;
+  });
+
+  test("git hooks in any repo under the home are login-start, for every caller", () => {
+    const { home, clover, fence } = make();
+    mkdirSync(join(home, "project", ".git", "hooks"), { recursive: true });
+    const hooks = join(home, "project", ".git", "hooks");
+    const hook = join(hooks, "post-checkout");
+    for (const f of [fence, fence.forCaller(session("luna", "bot", "s1")), fence.forCaller(session(undefined, "coding", "c1")), fence.forCaller({ kind: "plugin", pluginId: "tarot" })]) {
+      expect(f.check({ op: "write", path: hook })).toEqual({ allowed: false, reason: "login-start", path: hooks });
+      expect(f.check({ op: "delete", path: hook })).toMatchObject({ allowed: false, reason: "login-start" });
+      expect(f.check({ op: "move", path: hook, to: join(hooks, "pre-commit") })).toMatchObject({ allowed: false, reason: "login-start" });
+    }
+    expect(fence.touches([hook])).toMatchObject({ kind: "login-start", path: hooks });
+    // `.git/config` stays writable: normal git use writes it, so it is no fenced item.
+    expect(fence.check({ op: "write", path: join(home, "project", ".git", "config") })).toEqual({ allowed: true });
+    // Like every fenced kind, hooks stay shut for user-context writes too; the user's own surfaces bypass earlier.
+    expect(fence.forCaller({ kind: "user", client: "app" }).check({ op: "write", path: hook })).toMatchObject({ allowed: false, reason: "login-start" });
+    void clover;
+  });
+
   test("the home default-deny: every runner denied the whole home, each caller its own ways back in", () => {
     const { home, clover, fence } = make();
     const main = session("luna", "bot", "s_1");

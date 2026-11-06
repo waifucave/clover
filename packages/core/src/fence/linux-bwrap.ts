@@ -18,8 +18,10 @@
 //     session (no TIOCSTI), and the user's D-Bus hidden (`systemd-run --user` and the rest of the closed doors).
 //
 // Notes for the runner (a bot's Bash under here): a denied part of the home looks absent, not "permission denied"
-// (the tmpfs view holds nothing there: no listing, no stat), and a write into the view fails as a read-only file
-// system (the view is remounted read-only around the bound-back own folders).
+// (the tmpfs view holds nothing there: no listing, no stat), a write into the view fails as a read-only file
+// system (the view is remounted read-only around the bound-back own folders), `pip install --user` is refused (the
+// user site folders are fenced: bots use virtual environments), and `git init` installs no templates (its hooks
+// folder is read-only: plant nothing there, and the fence judges every tool call that reaches another repo's).
 import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
@@ -37,6 +39,9 @@ export interface BwrapInput {
   readonly seccompFd?: number;
   /** The runner's caller: its own folders are the only ways back into the Clover home's view. */
   readonly caller?: CallerPlaces;
+  /** The session's own repo's `.git/hooks`, when it is there: bound read-only. Other repos under the home are a
+   *  known limit on Linux (bwrap can't match patterns): the fence still judges every tool call that reaches them. */
+  readonly repoHooks?: string | null;
 }
 
 const realFs = {
@@ -113,6 +118,11 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
   }
 
+  // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): the session's own
+  // repo's hooks are bound read-only (other repos under the home are the known limit, above).
+  if (input.repoHooks !== null && input.repoHooks !== undefined && fs.kind(input.repoHooks) === "dir") {
+    a.push("--ro-bind", input.repoHooks, input.repoHooks);
+  }
   // The Clover home as a tmpfs view holding only the caller's own folders (the home default-deny, for runners).
   // Without a caller every own folder is absent: the view holds nothing.
   if (fs.kind(cloverHome) === "dir") {

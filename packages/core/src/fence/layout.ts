@@ -89,38 +89,51 @@ export function pendingFenced(o: {
   };
 }
 
-/** The login-start places (B's contract `login-start`): everything a command run for a session could plant to run
- *  later outside the sandbox (spec item 1116) — Clover's own login item first, then every folder and startup file
- *  that part 1's `pendingFenced` listed:
- *  macOS: its LaunchAgents plist and its parked copy, the LaunchAgents, LaunchDaemons and StartupItems folders, the
- *  login-items storage, the shell startup files and fish's config;
- *  Linux: the systemd user units, autostart entries, environment files and session scripts, plus the shell startup files;
- *  Windows: the Startup folder, the shell folders and startup files (the Run keys are the Windows lane's). */
+/** The login-start places (B's contract `login-start`): every folder and file a planted write could run later,
+ *  outside the sandbox (spec item 1116, the controller's ruling) — Clover's own login item first, then the shells
+ *  and their logout scripts, SSH and git config, the folders that come ahead on PATH, editors, package managers,
+ *  and the desktop's autostart, systemd, application and session-script folders. The gnupg entries are only its
+ *  config files (gpg writes its trustdb and random seed in normal use), and `.git/config` stays writable (git
+ *  writes it in normal use; setting risky keys through it is the reviewer's call) — only `.git/hooks` is fenced,
+ *  as a pattern (any repo under the home), enforced by the fence, the macOS regex and the Linux cwd-repo bind.
+ *  macOS also fences the loginwindow plist and `~/Library/Scripts`. */
 export function loginStartPaths(home: string, cloverHome: string, os: Os): string[] {
   const p = pathFor(os, home);
   const u = (...parts: string[]) => p.join(home, ...parts);
   const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
     ".bash_logout", ".zlogout", ".logout"];
   // Places a planted file runs later, outside the sandbox (spec item 1116, the controller's ruling): shells and
-  // their logout scripts, SSH and git config, and the folders that come ahead on PATH.
+  // their logout scripts, SSH and git config, the folders that come ahead on PATH, editors and package managers.
+  // The gnupg entries are only its config files: gpg writes its trustdb and random seed in normal use.
   const shells = [...shell.map((f) => u(f)), u(".config", "fish")];
   const pathAhead = [u(".local", "bin"), u("bin")];
   const sshGit = [u(".ssh"), u(".gitconfig"), u(".config", "git")];
+  const editors = [u(".vimrc"), u(".vim"), u(".config", "nvim"), u(".emacs"), u(".emacs.d")];
+  const packageManagers = [u(".bunfig.toml"), u(".bun", "bin"), u(".npmrc"), u(".cargo", "bin"),
+    u(".cargo", "config.toml"), u(".cargo", "config"), u(".config", "pip"), u(".pip")];
   if (os === "macos") {
     return [
       u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), p.join(cloverHome, "login"),
       u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"), u("Library", "StartupItems"),
       u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
-      ...shells, ...pathAhead, ...sshGit,
+      u("Library", "Preferences", "com.apple.loginwindow.plist"), u("Library", "Scripts"),
+      ...shells, ...pathAhead, ...sshGit, ...editors, ...packageManagers,
+      u("Library", "Python"),
+      u(".bash_aliases"), u(".oh-my-zsh", "custom"),
+      u(".gnupg", "gpg.conf"), u(".gnupg", "gpg-agent.conf"), u(".gnupg", "dirmngr.conf"),
       u(".config", "environment.d"),
     ];
   }
   if (os === "linux") {
     return [
-      u(".config", "systemd", "user"), u(".config", "autostart"), u(".local", "share", "systemd", "user"),
+      u(".config", "systemd"), u(".local", "share", "systemd", "user"),
+      u(".config", "autostart"), u(".local", "share", "applications"), u(".config", "mimeapps.list"),
       u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".xsessionrc"), u(".xinitrc"),
       u(".config", "autostart-scripts"), u(".config", "plasma-workspace", "env"), u(".config", "plasma-workspace", "shutdown"),
-      ...shells, ...pathAhead, ...sshGit,
+      ...shells, ...pathAhead, ...sshGit, ...editors, ...packageManagers,
+      u("Library", "Python"),
+      u(".bash_aliases"), u(".oh-my-zsh", "custom"),
+      u(".gnupg", "gpg.conf"), u(".gnupg", "gpg-agent.conf"), u(".gnupg", "dirmngr.conf"),
     ];
   }
   return [

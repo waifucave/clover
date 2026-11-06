@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
@@ -48,7 +48,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
       run: (r) => {
         const ctx = fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
-        const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
+        const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
         return runCommand(r, { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
       },
     };
@@ -93,7 +93,13 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
             try { mkdirSync(p, { recursive: true, mode: 0o700 }); }
             catch (e) { return { kind: "refused", reason: `a fenced process can't be started here: its own folder ${p} can't be made (${e instanceof Error ? e.message : String(e)})` }; }
           }
-          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
+          // The session's own repo's hooks, when the run starts inside a repo under the home: made when missing
+          // (best effort: a read-only checkout stays as it is) and bound read-only, so no run plants a hook that
+          // fires later outside the sandbox. Other repos under the home are the known limit (bwrap can't match
+          // patterns); the fence judges every tool call that reaches them.
+          const repoHooks = ownRepoHooks(r.cwd, o.fence.home);
+          if (repoHooks !== null) { try { mkdirSync(repoHooks, { recursive: true, mode: 0o700 }); } catch { /* stays unbound */ } }
+          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks });
           const result = await runCommand(r, { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
           const note = heldFolderNote(result.stderr, plan.held);
@@ -109,6 +115,24 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
 }
 
 const BWRAP = "/usr/bin/bwrap";
+
+/** The session's own repo's `.git/hooks`, when `cwd` sits inside a repo under `home`: the folder a planted hook
+ *  would fire from. Climbs without following links — a link on the way up stops the climb — and stays under the
+ *  home; null outside a repo, outside the home, or through a link. */
+export function ownRepoHooks(cwd: string, home: string): string | null {
+  const under = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
+  let at = cwd;
+  for (;;) {
+    let me: ReturnType<typeof lstatSync> | undefined;
+    try { me = lstatSync(at); } catch { me = undefined; }
+    if (me === undefined || me.isSymbolicLink()) return null; // never climb through a link
+    let st: ReturnType<typeof lstatSync> | undefined;
+    try { st = lstatSync(join(at, ".git")); } catch { st = undefined; }
+    if (st !== undefined && !st.isSymbolicLink()) return join(at, ".git", "hooks");
+    if (at === home || !under(at, home) || dirname(at) === at) return null;
+    at = dirname(at);
+  }
+}
 
 function closed(reason: string): FencedSpawner {
   return { available: false, run: async () => ({ kind: "refused", reason: `a fenced process can't be started here: ${reason}` }) };

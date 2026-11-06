@@ -20,6 +20,8 @@ export interface MacProfileInput {
   readonly policy: SandboxPolicy;
   /** The Clover home: its top level is where Clover names things. */
   readonly cloverHome: string;
+  /** The user's home folder: a hook planted in any repo under it runs later, outside the sandbox. */
+  readonly home: string;
   /** macOS's per-user temp folder (`getconf DARWIN_USER_TEMP_DIR`): `mktemp` writes there whatever TMPDIR says. */
   readonly perUserTemp?: string | null;
   /** Programs' real paths for `closedDoors` (default: where macOS keeps them). */
@@ -125,6 +127,9 @@ export function macFenceProfile(input: MacProfileInput): string {
     }
     if (c.ownBot !== null) lines.push(`(allow file-read* (regex #"^${rx(c.ownBot)}(/|$)"))`);
   }
+  // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): refused everywhere
+  // under it, after the caller's own allows (a runner's own folders may hold a repo too).
+  lines.push(`(deny file-write* (regex #"^${rx(input.home)}/.*/\\.git/hooks(/|$)"))`);
   // No network (the daemon's socket included); `filtered` comes with the escape floor's ports.
   lines.push("(deny network*)");
   return `${lines.join("\n")}\n`;
