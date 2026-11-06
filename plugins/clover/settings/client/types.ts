@@ -75,6 +75,9 @@ export interface SettingsModalProps {
   /** One of Clover's own sections, or an added one's id. */
   section: SettingsSection | string;
   onSection: (section: SettingsSection | string) => void;
+  /** A row to bring into view and mark: a device's id on Devices, a plugin's id on Plugins, a computer's name on
+   *  Levels, a bot's id on Bots. Other sections have nothing to mark. */
+  item?: string;
   onClose: () => void;
   values: SettingsValues;
   /** One door for every plain change: a dotted path into `values` (`appearance.theme`) and the new value. */

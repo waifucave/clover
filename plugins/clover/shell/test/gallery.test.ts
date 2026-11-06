@@ -101,8 +101,8 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(39);
-    expect(M2_SCREENS).toHaveLength(10);
+    expect(screenStories.length).toBe(40);
+    expect(M2_SCREENS).toHaveLength(11);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
     for (const story of tabScreens) {
@@ -158,7 +158,7 @@ describe("the gallery", () => {
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
-    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([16, 1, 17]);
+    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([17, 1, 17]);
   });
 
   test("a bot's slim column shows its agents, and one opens in the panel with its own composer and model picker", () => {
@@ -241,6 +241,8 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     const devices = frame("settings-devices").querySelector(".cl-window__dialog .cl-settings")!;
     expect(devices.querySelector('[aria-label="Make Laptop the main computer"]')).toBeTruthy();
     expect(devices.querySelector('[aria-label="Pair a device"]')).toBeTruthy();
+    const atItem = frame("settings-device-item").querySelector(".cl-window__dialog .cl-settings")!;
+    expect([...atItem.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.textContent)).toEqual([expect.stringContaining("Laptop")]);
   });
 
   test("an agent's live tab: its status over its composer", () => {

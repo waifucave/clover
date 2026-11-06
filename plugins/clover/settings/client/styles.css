@@ -215,6 +215,26 @@
   border-bottom: 1px solid var(--clover-color-hairline);
 }
 
+/* The row a place opened Settings at (lane E's useOpen; the island's Devices tab opens it at a device): tinted with
+   the accent while it stays the item, with a ring that fades as it comes into view. */
+.cl-settings__row[data-marked] {
+  margin-inline: calc(-1 * var(--clover-space-m));
+  padding-inline: var(--clover-space-m);
+  border-radius: var(--clover-radius-medium);
+  border-bottom-color: transparent;
+  background: var(--clover-color-accent-soft);
+  animation: cl-settings-mark 1.6s ease-out;
+}
+
+@keyframes cl-settings-mark {
+  from {
+    box-shadow: inset 0 0 0 2px var(--clover-color-focus);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+
 .cl-settings__text {
   display: flex;
   flex: 1 1 auto;
@@ -440,6 +460,7 @@
   .cl-settings *,
   .cl-languages * {
     transition: none;
+    animation: none;
   }
 }
 

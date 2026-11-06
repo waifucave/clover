@@ -110,6 +110,21 @@ describe("the settings window", () => {
     expect(screen.getByText("Usage today")).toBeTruthy();
   });
 
+  test("an item marks its row on each page that has rows: a device, a plugin, a computer, a bot", () => {
+    const h = setup({ section: "devices", item: "d2" });
+    const marked = () => [...document.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.dataset.item);
+    expect(marked()).toEqual(["d2"]);
+    expect(screen.getByText("Laptop").closest(".cl-settings__row")!.getAttribute("aria-current")).toBe("true");
+    h.rerender(<SettingsModal {...h.props} section="plugins" item={VALUES.plugins[1]!.id} />);
+    expect(marked()).toEqual([VALUES.plugins[1]!.id]);
+    h.rerender(<SettingsModal {...h.props} section="levels" item="Cloud computer" />);
+    expect(marked()).toEqual(["Cloud computer"]);
+    h.rerender(<SettingsModal {...h.props} section="bots" item="alpha" />);
+    expect(marked()).toEqual(["alpha"]);
+    h.rerender(<SettingsModal {...h.props} section="bots" item="nobody" />);
+    expect(marked()).toEqual([]);
+  });
+
   test("devices: make another computer the main one, and pair a device by a code or by joining one", () => {
     const onMakeMain = mock((_id: string) => undefined);
     const onPairBegin = mock(() => undefined);

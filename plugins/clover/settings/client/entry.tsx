@@ -19,8 +19,10 @@ import type { ExtraSection, Language, SettingsSection, SettingsValues } from "./
 
 export interface SettingsEntryProps {
   route?: string;
-  /** The section to open on: one of Clover's, an added one's id, or `languages` for the language chooser. */
-  params?: { section?: string };
+  /** The section to open on: one of Clover's, an added one's id, or `languages` for the language chooser; and an item
+   *  in it to bring into view and mark (lane E's `useOpen`: a device's id on Devices, a plugin's id on Plugins, a
+   *  computer's name on Levels, a bot's id on Bots). */
+  params?: { section?: string; item?: string };
   navigate?: (route: { route: string; params: Record<string, string> }) => void;
   close?: () => void;
 }
@@ -124,6 +126,13 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const start = props.params?.section;
   const [section, setSection] = useState<SettingsSection | string>(start && start !== "languages" ? start : "appearance");
   const [picking, setPicking] = useState(start === "languages");
+  const [item, setItem] = useState<string | undefined>(props.params?.item);
+  // A place can open Settings again while it is open (the island's Devices tab at another device).
+  useEffect(() => {
+    if (start === "languages") setPicking(true);
+    else if (start) setSection(start);
+    setItem(props.params?.item);
+  }, [start, props.params?.item]);
   const [logs, setLogs] = useState<{ name: string; lines: string[] } | undefined>(undefined);
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [revision, setRevision] = useState(0);
@@ -235,7 +244,9 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       onSection={(s) => {
         setLogs(undefined);
         setSection(s);
+        setItem(undefined);
       }}
+      {...(item !== undefined ? { item } : {})}
       onClose={() => props.close?.()}
       values={values}
       onChange={onChange}

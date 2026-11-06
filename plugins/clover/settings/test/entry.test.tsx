@@ -17,7 +17,7 @@ const PLUGINS = [
 ];
 const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => pluginDetail(p, { capabilities, networkHosts });
 
-async function mount(params: { section?: string } = {}, extra: { component?: EntryComponent } = {}) {
+async function mount(params: { section?: string; item?: string } = {}, extra: { component?: EntryComponent } = {}) {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: PLUGINS }),
     "plugin.get": ({ id }) => ({ plugin: detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []) }),
@@ -49,13 +49,19 @@ async function mount(params: { section?: string } = {}, extra: { component?: Ent
     entries: extra.component ? [{ pluginId: "tarot-panel", id: "settings", spot: "settings.section", component: "Section", fields: { title: "Tarot" }, source: "installed", enabledAt: 1 }] : [],
     component: () => extra.component,
   });
-  render(
+  const tree = (at: typeof params) => (
     <UiRuntimeProvider runtime={runtime}>
-      <SettingsEntry props={{ route: "settings", params, navigate: (r) => routes.push(r), close: () => closed++ }} />
-    </UiRuntimeProvider>,
+      <SettingsEntry props={{ route: "settings", params: at, navigate: (r) => routes.push(r), close: () => closed++ }} />
+    </UiRuntimeProvider>
   );
+  const { rerender } = render(tree(params));
   await act(() => settle());
-  return { core, api, routes, closed: () => closed };
+  /** A place opens Settings again while it is open (lane E's `useOpen`). */
+  const reopen = async (at: typeof params) => {
+    rerender(tree(at));
+    await act(() => settle());
+  };
+  return { core, api, routes, closed: () => closed, reopen };
 }
 
 describe("settings on the runtime", () => {
@@ -142,6 +148,31 @@ describe("settings on the runtime", () => {
       ["device.pair.join", { code: "ZZ9" }],
     ]);
     expect(screen.getByRole("status").textContent).toContain("amber · river · lantern · moss");
+  });
+
+  test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {
+    const shown: string[] = [];
+    const scroll = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      shown.push(this.dataset.item ?? "");
+    };
+    try {
+      const { reopen } = await mount({ section: "devices", item: "d2" });
+      const marked = () => [...document.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => [el.dataset.item, el.getAttribute("aria-current")]);
+      // The devices arrive after the page: the row is shown once it is there, and only once.
+      expect(marked()).toEqual([["d2", "true"]]);
+      expect(shown).toEqual(["d2"]);
+      await reopen({ section: "devices", item: "d3" });
+      expect(marked()).toEqual([["d3", "true"]]);
+      await reopen({ section: "levels", item: "Laptop" });
+      expect(screen.getByRole("region", { name: "Levels" })).toBeTruthy();
+      expect(marked()).toEqual([["Laptop", "true"]]);
+      expect(shown).toEqual(["d2", "d3", "Laptop"]);
+      fireEvent.click(within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Plugins" }));
+      expect(marked()).toEqual([]);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = scroll;
+    }
   });
 
   test("pairing follows lane H's pairing_changed: a card waits, then the device is added, or it ends with why", async () => {

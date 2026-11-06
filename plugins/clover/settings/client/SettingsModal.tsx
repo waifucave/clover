@@ -30,10 +30,14 @@ export function sectionsMatching(query: string): SettingsSection[] {
   return SECTIONS.filter((s) => S.section[s].toLowerCase().includes(q) || INDEX[s].some((label) => label.toLowerCase().includes(q)));
 }
 
-function Row({ label, detail, children }: { label: string; detail?: string; children: ReactNode }) {
+/** What marks the row a place opened Settings at. */
+const marks = (item: string | undefined, id: string) =>
+  ({ "data-item": id, ...(item === id ? { "data-marked": true, "aria-current": true } : {}) }) as const;
+
+function Row({ label, detail, mark, children }: { label: string; detail?: string; mark?: ReturnType<typeof marks>; children: ReactNode }) {
   const id = useId();
   return (
-    <div className="cl-settings__row" role="group" aria-labelledby={id}>
+    <div className="cl-settings__row" role="group" aria-labelledby={id} {...mark}>
       <div className="cl-settings__text">
         <span className="cl-settings__label" id={id}>
           {label}
@@ -216,7 +220,7 @@ function Page({ props }: { props: SettingsModalProps }) {
           <h3 className="cl-settings__subhead">{S.plugins}</h3>
           <p className="cl-settings__note">{S.pluginsDetail}</p>
           {values.plugins.map((p) => (
-            <div key={p.id} className="cl-settings__row cl-settings__plugin" role="group" aria-label={p.name} data-state={p.state}>
+            <div key={p.id} className="cl-settings__row cl-settings__plugin" role="group" aria-label={p.name} data-state={p.state} {...marks(props.item, p.id)}>
               <div className="cl-settings__text">
                 <span className="cl-settings__label">
                   {p.name}
@@ -254,7 +258,7 @@ function Page({ props }: { props: SettingsModalProps }) {
             const name = (id: string) => values.levelOptions.find((o) => o.id === id)?.label ?? id;
             const asked = l.requested && l.requested !== l.level ? l.requested : undefined;
             return (
-              <Row key={l.computer} label={l.computer} detail={[l.here ? S.thisDevice : "", asked ? S.levelAsked(name(asked)) : ""].filter(Boolean).join(" · ") || undefined}>
+              <Row key={l.computer} label={l.computer} mark={marks(props.item, l.computer)} detail={[l.here ? S.thisDevice : "", asked ? S.levelAsked(name(asked)) : ""].filter(Boolean).join(" · ") || undefined}>
                 <select
                   className="cl-settings__select"
                   aria-label={S.levelFor(l.computer)}
@@ -283,7 +287,7 @@ function Page({ props }: { props: SettingsModalProps }) {
           <h3 className="cl-settings__subhead">{S.devices}</h3>
           <p className="cl-settings__note">{S.devicesDetail}</p>
           {values.devices.map((d) => (
-            <Row key={d.id} label={d.name} detail={[d.here ? S.thisDevice : "", d.main ? S.mainDevice : ""].filter(Boolean).join(" · ") || undefined}>
+            <Row key={d.id} label={d.name} mark={marks(props.item, d.id)} detail={[d.here ? S.thisDevice : "", d.main ? S.mainDevice : ""].filter(Boolean).join(" · ") || undefined}>
               {d.kind === "computer" && !d.main && props.onMakeMain && (
                 <button type="button" className="cl-settings__button" aria-label={S.makeMain(d.name)} onClick={() => props.onMakeMain?.(d.id)}>
                   {S.makeMainLabel}
@@ -306,7 +310,7 @@ function Page({ props }: { props: SettingsModalProps }) {
             <h3 className="cl-settings__subhead">{S.botsTitle}</h3>
             <p className="cl-settings__note">{S.botsDetail}</p>
             {values.bots.map((b) => (
-              <Row key={b.id} label={b.name}>
+              <Row key={b.id} label={b.name} mark={marks(props.item, b.id)}>
                 {props.onEditBot && (
                   <button type="button" className="cl-settings__button" aria-label={S.editBot(b.name)} onClick={() => props.onEditBot?.(b.id)}>
                     {S.edit}
@@ -337,8 +341,24 @@ export function SettingsModal(props: SettingsModalProps) {
   const { section, onSection, onClose } = props;
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
+  const page = useRef<HTMLElement>(null);
   const titleId = useId();
   useEffect(() => search.current?.focus(), []);
+  // The marked row is brought into view once per section and item; its rows may arrive after the page, so this looks
+  // again on each render until the row is there.
+  const shownItem = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (props.item === undefined) {
+      shownItem.current = undefined;
+      return;
+    }
+    const key = `${section}\n${props.item}`;
+    if (shownItem.current === key) return;
+    const row = [...(page.current?.querySelectorAll<HTMLElement>("[data-item]") ?? [])].find((el) => el.dataset.item === props.item);
+    if (!row) return;
+    shownItem.current = key;
+    row.scrollIntoView?.({ block: "center" });
+  });
   const shown = sectionsMatching(query);
   const q = query.trim().toLowerCase();
   const extras = (props.extraSections ?? []).filter((x) => q.length === 0 || x.title.toLowerCase().includes(q));
@@ -393,7 +413,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown.length === 0 && extras.length === 0 && <li className="cl-settings__note">{S.noMatch}</li>}
           </ul>
         </nav>
-        <section className="cl-settings__page" aria-label={title}>
+        <section className="cl-settings__page" aria-label={title} ref={page}>
           <h3 className="cl-settings__page-title">{title}</h3>
           <Page props={props} />
         </section>
