@@ -23,10 +23,12 @@ const diskRoot = realpathSync(mkdtempSync(join(tmpdir(), "fence-conformance-")))
 afterEach(() => { for (const name of ["d", "l"] as const) { try { rmSync(join(diskRoot, name), { recursive: true, force: true }); } catch { /* gone */ } } });
 let diskN = 0;
 const canonicalForSuite = (p: string) => {
-  // The suite's fictional world (`/Users/me`, `/tmp`) compares as written, the way the fake compares it; real disk
-  // paths resolve through their links. (`/tmp` is a link to `/private/tmp` on macOS.)
-  if (p === "/tmp" || p.startsWith("/tmp/") || p === "/Users/me" || p.startsWith("/Users/me/")) return posix.normalize(p);
-  try { return canonicalPath(p); } catch { return posix.normalize(p); }
+  // The suite's fictional world (`/Users/me`, `/tmp`, install paths) compares as written, the way the fake
+  // compares it; real disk paths (under this run's disk root) resolve through their links, for `real-paths`.
+  if (p === diskRoot || p.startsWith(`${diskRoot}/`)) {
+    try { return canonicalPath(p); } catch { return posix.normalize(p); }
+  }
+  return posix.normalize(p);
 };
 runFenceConformance((opts) => new CloverFence({ ...opts, canonical: canonicalForSuite, enforceAhead: false }), {
   disk: {

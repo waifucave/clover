@@ -6,7 +6,7 @@
 //            (AppArmor's restriction on Ubuntu without bwrap's profile) the door says so and refuses
 //   Windows  not yet: the door says so and refuses
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
@@ -76,7 +76,14 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         const fd = openSync(file, "r");
         try {
           const ctx = fenceContextFor(r.who.caller);
-          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller: callerPlaces(o.fence.cloverHome, os, ctx) });
+          const caller = callerPlaces(o.fence.cloverHome, os, ctx);
+          // The runner's own folders exist before the sandbox hides everything else: a first write lands on the
+          // disk, the way the macOS profile's allows do. What can't be made stays unbound: fail closed.
+          for (const p of [caller.ownOutputs, caller.ownScratch, caller.ownRoutines, caller.ownPluginData, caller.ownMemory, caller.ownBot]) {
+            if (p === null) continue;
+            try { mkdirSync(p, { recursive: true }); } catch { /* unbound below */ }
+          }
+          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
           const result = await runCommand(r, { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
           const note = heldFolderNote(result.stderr, plan.held);

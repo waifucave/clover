@@ -344,8 +344,8 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     if (here === "linux") {
       // The tmpfs view holds only its own folder (the folder name is there, nothing of any other bot).
       expect(ok(await w.run(`test "$(ls -A '${b()}')" = luna`, owner))).toBe(true);
-      // Its own outputs, scratch and routines read and write there too.
-      for (const d of [join(w.clover, "outputs", "s1"), join(w.clover, "scratch", "luna"), join(w.clover, "routines", "luna")]) mkdirSync(d, { recursive: true });
+      // Its own outputs, scratch and routines read and write there too (made for it on first run).
+      for (const d of [join(w.clover, "outputs", "s1"), join(w.clover, "scratch", "luna")]) mkdirSync(d, { recursive: true });
       expect(ok(await w.run(`echo o > '${join(w.clover, "outputs", "s1", "r.md")}' && echo s > '${join(w.clover, "scratch", "luna", "n.md")}' && echo r > '${join(w.clover, "routines", "luna", "m.md")}'`, owner))).toBe(true);
       // Its plugin-data doesn't open for it; another plugin's neither opens for anyone else.
       expect(ok(await w.run(`echo x > '${join(w.clover, "plugin-data", "tarot", "d.json")}'`, { caller: { kind: "plugin", pluginId: "tarot" } }))).toBe(true);
