@@ -19,7 +19,8 @@
 //                          holds them
 //   dev-folders            wherever the user keeps them
 //
-// Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review), so not yet in
+// Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review; `plugins` by the
+// controller's ruling on B's registry review; `sessions-runtime` and `bot-memory` from A-M3's review), so not yet in
 // `fencedSet()`: `pendingFenced` below.
 import { posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
@@ -64,6 +65,12 @@ export function pendingFenced(o: {
    *  to sessions and agents, so none can swap in a new copy of itself or of another agent. */
   agentInstalls?: readonly string[];
 }): Record<string, string[]> {
+  // `plugins`: the installed plugins folder (spec §2), write-denied to sessions, agents and plugin code, reads
+  // allowed. A bot's plugin comes in only through `plugin.install`'s OK card, and is made in a dev folder, which the
+  // fence follows by its real path (`followDevFolders`).
+  // `sessions-runtime`: the bot driver's state per session (A-M3), which a turn resumes from.
+  // `bot-memory`: each bot's folder, `bots/<bot>/` (its memory and its agents); memory changes go only through the
+  // memory tool, never a bot's Bash.
   const p = pathFor(o.os);
   const u = (...parts: string[]) => p.join(o.home, ...parts);
   const loginStart: Record<Os, string[]> = {
@@ -80,5 +87,8 @@ export function pendingFenced(o: {
     "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
     "login-start": loginStart[o.os],
     "agent-installs": [...(o.agentInstalls ?? [])],
+    plugins: [p.join(o.cloverHome, "plugins")],
+    "sessions-runtime": [p.join(o.cloverHome, "sessions-runtime")],
+    "bot-memory": [p.join(o.cloverHome, "bots")],
   };
 }

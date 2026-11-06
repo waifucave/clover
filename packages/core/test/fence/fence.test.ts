@@ -7,6 +7,7 @@ import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
 import { pendingFenced } from "../../src/fence/layout";
+import { FENCED_SPAWN_NOT_YET } from "../../src/fence/spawn";
 import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
 
 // C-M2: the real fence. B's conformance suite runs against it with the suite's own fictional paths (no disk), then
@@ -118,13 +119,23 @@ describe("the real fence on a real disk", () => {
     expect(f.policy().blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES]); // read each time: the ports change with the browser
   });
 
-  test("the pending kinds' paths: transcripts, usage, the browser's partitions, login-start places and OK'd agents' installs", () => {
+  test("the pending kinds' paths: transcripts, usage, the browser's partitions, login-start places, OK'd agents' installs, the plugins folder, the bot driver's state and bots' memory", () => {
     const p = pendingFenced({ home: "/Users/me", cloverHome: "/Users/me/.clover", os: "macos", userData: "/Users/me/Library/Application Support/Clover",
       agentInstalls: ["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"] });
     expect(p.transcripts).toEqual(["/Users/me/.clover/transcripts"]);
     expect(p["browser-profiles"]).toEqual(["/Users/me/Library/Application Support/Clover/Partitions"]);
     expect(p["login-start"]).toContain("/Users/me/Library/LaunchAgents");
     expect(p["agent-installs"]).toEqual(["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"]);
+    expect(p.plugins).toEqual(["/Users/me/.clover/plugins"]);
+    expect(p["sessions-runtime"]).toEqual(["/Users/me/.clover/sessions-runtime"]);
+    expect(p["bot-memory"]).toEqual(["/Users/me/.clover/bots"]);
+    expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" }).plugins).toEqual(["C:\\Users\\me\\.clover\\plugins"]);
+  });
+
+  test("the fenced spawn door (a hook's command, A-M3) is closed until the fenced process lands: refused, never run outside", async () => {
+    expect(FENCED_SPAWN_NOT_YET.available).toBe(false);
+    const r = await FENCED_SPAWN_NOT_YET.run({ command: "touch /tmp/never", cwd: "/", env: {}, timeoutMs: 1000, who: { sessionId: "s1", pluginId: "p", hook: "h" } });
+    expect(r.kind).toBe("refused");
   });
 
   test("development folders follow the plugin registry's list (B's PluginFolders, #197)", () => {
