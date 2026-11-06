@@ -3,8 +3,8 @@
 //
 // Each message draws through a renderer keyed like the `conversation.message` spot (spec §5.5), each
 // tool result through `renderToolResult` (the `tool.result` spot) and the add-ons under a message
-// through `renderMessageExtra` (`conversation.message.extra`). In M2 those three become <Spot>s;
-// nothing else here changes.
+// through `renderMessageExtra` (`conversation.message.extra`). The runtime entry (`entry.tsx`) points
+// all three at <Spot>s, each falling back to this view's own drawing.
 //
 // Nothing in this view may overlap the conversation's own content: an approval card's sealed buttons
 // count a click only while nothing covers them (spec §5.5), so the "Jump to latest" pill lives in a
@@ -89,7 +89,8 @@ export interface ConversationViewProps extends ConversationActions {
   hasEarlier?: boolean;
   onLoadEarlier?: () => void;
   renderers?: Partial<MessageRenderers>;
-  renderToolResult?: (call: ToolCall) => ReactNode | undefined;
+  /** The `tool.result` spot: a replacement for a call's result, or `undefined` for the default (`standard`). */
+  renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
   renderMessageExtra?: (item: MessageItem) => ReactNode;
   /** Start at the bottom, following new output (the default), or at the top. */
   initialFollow?: boolean;
@@ -127,7 +128,7 @@ function MessageUnit({
   ctx: MessageContext;
   expanded: boolean;
   onToggle: () => void;
-  renderToolResult?: (call: ToolCall) => ReactNode | undefined;
+  renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
 }) {
   if (unit.type === "tools") {
     const Tool = renderers.tool;

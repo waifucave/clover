@@ -17,6 +17,7 @@ export const CATALOG_TOKENS = [
   "color.text",
   "color.text.muted",
   "color.text.placeholder",
+  "color.text.secondary",
   "font.line.body",
   "font.mono",
   "font.sans",

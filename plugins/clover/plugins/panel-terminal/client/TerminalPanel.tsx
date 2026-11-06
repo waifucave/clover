@@ -4,7 +4,9 @@
 //
 // Input has two doors. Key presses go through `onInput`, as the bytes a terminal sends. A paste goes
 // through `onPaste`, never `onInput`, so the host can bracket it for the shell and ask before a paste
-// of several lines runs: ⌘V on macOS, Ctrl+V or Ctrl+Shift+V on Windows and Linux. The terminal keeps
+// of several lines runs: ⌘V on macOS, Ctrl+V or Ctrl+Shift+V on Windows and Linux. On the runtime both go
+// as the events themselves (`onEvent`, lane B's `TerminalApi.input`): the app derives what reaches the shell
+// from a trusted event, never from what the component says. The terminal keeps
 // Tab for the shell, so F6 leaves it (Shift+F6 goes back the other way), and it says so (WCAG 2.1.2).
 // It belongs to a code session: it runs in that session's folder, on the computer that holds it.
 import { useId, useLayoutEffect, useRef } from "react";
@@ -49,7 +51,7 @@ export function TerminalTabs({ tabs, active, onSelect, onNew, onClose }: Termina
   );
 }
 
-export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, platform = currentPlatform() }: TerminalPanelProps) {
+export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, onEvent, platform = currentPlatform() }: TerminalPanelProps) {
   const screen = useRef<HTMLPreElement>(null);
   const hintId = useId();
   const tab = tabs.find((t) => t.id === active);
@@ -74,15 +76,20 @@ export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, platform
             focusPast(e.currentTarget, e.shiftKey);
             return;
           }
-          if (!onInput) return;
+          if (!onInput && !onEvent) return;
           const data = keyToData(e, platform);
           if (data === undefined) return;
           e.preventDefault();
-          onInput(data);
+          if (onEvent) onEvent(e.nativeEvent);
+          else onInput?.(data);
         }}
         onPaste={(e) => {
           // Never typed into the shell as keys: the host decides how a paste goes in.
           e.preventDefault();
+          if (onEvent) {
+            onEvent(e.nativeEvent);
+            return;
+          }
           const text = e.clipboardData?.getData?.("text/plain") ?? "";
           if (onPaste && text.length > 0) onPaste(text);
         }}

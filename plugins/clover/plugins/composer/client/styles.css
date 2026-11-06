@@ -114,7 +114,7 @@
   padding: 0;
   border: none;
   border-radius: var(--clover-radius-round);
-  background: var(--clover-color-accent);
+  background: var(--clover-color-accent-fill);
   color: var(--clover-color-accent-contrast);
   cursor: pointer;
 }

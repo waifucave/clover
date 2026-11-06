@@ -1,7 +1,8 @@
-// The panel plugin's client entry: the toggles, the host that holds the panels (each fills `panel`, keyed
-// by its id), and the session column. It imports no CSS: `client.css` lists the stylesheet (lane B).
-export { belongsIn, CODE_ONLY, PANEL_VIEWS, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
-export { PanelHost } from "./PanelHost";
+// The panel plugin's client entry: the column beside the conversation. `SessionColumn` fills the shell's `panel` keyed
+// `session` (a coding session's or an agent's column) and `BotColumn` fills `bot.side` (a bot's slim column); the plain
+// `SessionView` takes mocked props. The panel host and its toggles are the shell's, which declares `panel`. It imports
+// no CSS: `client.css` lists the stylesheet (lane B).
+export { BotColumn, SessionColumn, type ColumnProps } from "./entry";
 export { SessionView } from "./SessionView";
 export { TOKENS } from "./tokens";
 export type * from "./types";
