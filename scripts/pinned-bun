@@ -1,0 +1,94 @@
+#!/bin/bash
+# pinned-bun: the Bun a checkout pins in `.bun-version`, kept beside any other Bun on the machine. A Mac can need
+# two at once (Homebrew's for another project, the pinned one here), so this never installs over or changes another
+# Bun: each pinned version gets its own folder in the user cache.
+#
+#   scripts/pinned-bun <bun args...>   run the pinned Bun, its folder first on PATH, so a `bun` a package script
+#                                      runs is the same one (`scripts/pinned-bun run build:daemon`)
+#   scripts/pinned-bun --dir           print the folder that holds it (scripts/heavy puts it first on PATH)
+#
+# The version is `.bun-version` at the top of the git checkout you run it in, or else in this script's checkout.
+# On first use it is fetched from Bun's GitHub release (tag bun-v<version>). The zip's SHA-256 must match the
+# release's SHASUMS256.txt, and the binary must print the pinned version, or nothing is installed. It lands in
+# ~/Library/Caches/clover-bun/<version>/bun on macOS and ${XDG_CACHE_HOME:-~/.cache}/clover-bun/<version>/bun on
+# Linux. CLOVER_BUN_CACHE sets the cache folder; CLOVER_BUN_RELEASES the download base (both for tests).
+set -euo pipefail
+
+say() { echo "pinned-bun: $*" >&2; }
+die() { say "$*"; exit 1; }
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+pin=""
+top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$top" ] && [ -f "$top/.bun-version" ] && pin="$top/.bun-version"
+[ -z "$pin" ] && [ -f "$here/../.bun-version" ] && pin="$here/../.bun-version"
+[ -n "$pin" ] || die "no .bun-version in this checkout or in $here/.."
+version="$(tr -d ' \t\r\n' < "$pin")"
+case "$version" in ''|*[!0-9.]*) die "$pin does not hold a version (\"$version\")" ;; esac
+
+if [ -n "${CLOVER_BUN_CACHE:-}" ]; then
+  cache="$CLOVER_BUN_CACHE"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  cache="$HOME/Library/Caches/clover-bun"
+else
+  cache="${XDG_CACHE_HOME:-$HOME/.cache}/clover-bun"
+fi
+dir="$cache/$version"
+bin="$dir/bun"
+
+# The release asset for this machine, as Bun's own install script picks it.
+asset() {
+  local os arch
+  case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; *) die "no Bun release for $(uname -s): install Bun $version yourself" ;; esac
+  case "$(uname -m)" in arm64|aarch64) arch=aarch64 ;; x86_64|amd64) arch=x64 ;; *) die "no Bun release for $(uname -m)" ;; esac
+  if [ "$os-$arch" = "darwin-x64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = "1" ]; then
+    arch=aarch64 # a Rosetta shell on Apple silicon: the native binary
+  fi
+  local name="bun-$os-$arch"
+  if [ "$os" = "linux" ] && { ldd --version 2>&1 || true; } | grep -qi musl; then name="$name-musl"; fi
+  if [ "$arch" = "x64" ]; then
+    if [ "$os" = "darwin" ]; then
+      case "$(sysctl -n machdep.cpu.leaf7_features 2>/dev/null || true)" in *AVX2*) ;; *) name="$name-baseline" ;; esac
+    else
+      grep -q avx2 /proc/cpuinfo 2>/dev/null || name="$name-baseline"
+    fi
+  fi
+  echo "$name"
+}
+
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+
+fetch() {
+  local name base tmp want got
+  name="$(asset)"
+  base="${CLOVER_BUN_RELEASES:-https://github.com/oven-sh/bun/releases/download}/bun-v$version"
+  mkdir -p "$dir"
+  tmp="$(mktemp -d "$dir/.fetch.XXXXXX")"
+  trap 'rm -rf "$tmp"' EXIT
+  say "fetching Bun $version ($name) into $dir"
+  curl -fsSL --retry 3 -o "$tmp/$name.zip" "$base/$name.zip" || die "could not download $base/$name.zip"
+  curl -fsSL --retry 3 -o "$tmp/SHASUMS256.txt" "$base/SHASUMS256.txt" || die "could not download $base/SHASUMS256.txt"
+  want="$(awk -v f="$name.zip" '$2 == f { print $1 }' "$tmp/SHASUMS256.txt")"
+  got="$(sha256 "$tmp/$name.zip")"
+  [ -n "$want" ] || die "SHASUMS256.txt of Bun $version lists no $name.zip; nothing installed"
+  [ "$want" = "$got" ] || die "$name.zip has SHA-256 $got, but the release lists $want; nothing installed"
+  unzip -q "$tmp/$name.zip" -d "$tmp/x" || die "could not unzip $name.zip"
+  [ -x "$tmp/x/$name/bun" ] || die "$name.zip holds no $name/bun"
+  got="$("$tmp/x/$name/bun" --version 2>/dev/null || true)"
+  [ "$got" = "$version" ] || die "the downloaded bun prints \"$got\", not $version; nothing installed"
+  # A rename within one folder is atomic: two fetches at once both leave a whole binary.
+  mv "$tmp/x/$name/bun" "$dir/.bun.$$"
+  mv -f "$dir/.bun.$$" "$bin"
+  # Removed here, not by the trap alone: the `exec` below runs no EXIT trap.
+  rm -rf "$tmp"; trap - EXIT
+  say "Bun $version is $bin (SHA-256 of $name.zip matches the release)"
+}
+
+[ -x "$bin" ] || fetch
+
+if [ "${1:-}" = "--dir" ]; then
+  [ $# -eq 1 ] || die "--dir takes no other argument"
+  echo "$dir"
+  exit 0
+fi
+PATH="$dir:$PATH" exec "$bin" "$@"

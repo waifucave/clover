@@ -53,6 +53,7 @@ import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
 import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { runScriptLine } from "./build-daemon";
+import { bunPinProblem } from "./bun-pin";
 import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devDaemonPlan, devDaemonRequirement, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -146,6 +147,9 @@ async function main(): Promise<void> {
     for (const line of describeDevDaemonPlan(plan)) console.log(line);
     process.exit(0);
   }
+  // release.ts's check: the dev daemon is compiled by, and runs on, the Bun CI tests (`.bun-version`).
+  const pin = bunPinProblem(REPO_ROOT);
+  if (pin !== null) die(`${pin} — run it with the pinned Bun: scripts/pinned-bun run dev:daemon`);
   const binary = join(REPO_ROOT, ...plan.binary.split("/"));
   const home = plan.home;
   if (plan.build !== undefined) build(plan.build, binary);

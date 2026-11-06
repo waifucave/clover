@@ -76,7 +76,7 @@ describe("the VRM avatar", () => {
     const { container } = render(<VrmAvatar src={bytes()} name="Alpha" portrait="portrait.svg" createRenderer={fake.create} frames={frames.clock} onReady={onReady} />);
     expect(screen.getByRole("status").textContent).toContain("Getting Alpha ready");
     expect(container.querySelector(".clvr-portrait")!.getAttribute("src")).toBe("portrait.svg");
-    await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
+    await waitFor(() => { expect(onReady).toHaveBeenCalledTimes(1); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
     expect(container.querySelector("figure")!.getAttribute("data-state")).toBe("ready");
     expect(screen.getByText(/Alpha \(placeholder model\) · by Clover contributors · VRM Public License 1.0/)).toBeTruthy();
     // Alive: a frame loop, drawing.
@@ -124,7 +124,7 @@ describe("the VRM avatar", () => {
       const frames = fakeFrames();
       const onReady = mock((_: VrmMeta) => {});
       const { container } = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} onReady={onReady} />);
-      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      await waitFor(() => { expect(onReady).toHaveBeenCalled(); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
       const figure = container.querySelector("figure")!;
       expect(frames.pending).toBe(1);
       // Scrolled away.
@@ -172,7 +172,7 @@ describe("the VRM avatar", () => {
     const frames = fakeFrames();
     const onReady = mock((_: VrmMeta) => {});
     const view = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} speech={speech} onReady={onReady} />);
-    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    await waitFor(() => { expect(onReady).toHaveBeenCalled(); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
     // Frames stamped for when they will be heard: half a second of "a" from 10.2 s on.
     act(() => speech.push(speechFrames(vowel("a", 0.5), 48000, 10.2)));
     frames.run(100);
@@ -196,7 +196,7 @@ describe("the VRM avatar", () => {
     const frames = fakeFrames(8);
     const onReady = mock((_: VrmMeta) => {});
     render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} speech={speech} onReady={onReady} />);
-    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    await waitFor(() => { expect(onReady).toHaveBeenCalled(); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
     let before = fake.calls.render;
     frames.run(1000);
     expect(fake.calls.render - before).toBeLessThanOrEqual(31);
