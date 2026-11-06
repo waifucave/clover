@@ -1,6 +1,7 @@
 # Clover's desktop app, packaged by electron-builder (lane M owns this file). `bun run dist` builds the unsigned,
 # unpacked app on each OS (CI's app job). `scripts/build-packages.ts` builds the Linux packages (deb, rpm, AppImage)
-# with the daemon inside; the dmg and the Windows installer come with E-M1's app, signing and updates in M2.
+# with the daemon and its link sidecar inside; the dmg and the Windows installer come with E-M1's app, signing and
+# updates in M2.
 appId: com.waifucave.clover
 productName: Clover
 copyright: Copyright © 2026 waifucave
@@ -12,15 +13,15 @@ files:
   - out/renderer/**
   - package.json
 asar: true
-# The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it: scripts/build-packages.ts stages
-# the package target's binary in out/daemon first. A plain `bun run dist` has none, and packages the app alone.
+# The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
+# clover-link (native/link), beside it, where the daemon starts that: scripts/build-packages.ts stages the package
+# target's two binaries in out/daemon first. A plain `bun run dist` has neither, and packages the app alone.
 extraResources:
   - from: out/daemon
     to: daemon
     filter:
       - clover-core
       - clover-core.exe
-      # The link sidecar ships beside the daemon (lane M's ask, E-M3): the daemon aims for it by name (§8.2).
       - clover-link
       - clover-link.exe
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.

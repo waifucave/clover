@@ -33,6 +33,8 @@ export const PILL = {
   hoverScale: 1.03,
   /** Between the stacked layers: cards, child pills, the main pill. */
   stackGap: 8,
+  /** The tallest a menu above the pill grows before its rows scroll inside it. */
+  menuMaxHeight: 300,
   childPillGap: 6,
   /** A chip's own chrome (its padding, glyph and stop button) takes about 82 points; this leaves its title a few
    *  letters even beside a "+n" circle (the review saw names cut to one letter at 72). */
@@ -148,6 +150,13 @@ export function barLook(expanded: boolean, running: boolean, draft: string, card
   const circle: CircleRole = running ? "stop" : canSend ? "send" : "voice";
   const shownPlaceholder = draft.length === 0 && !working ? (running ? verb : placeholder) : null;
   return { working, circle, placeholder: shownPlaceholder };
+}
+
+/** A menu's height before the page has measured it: its padding, its rows and its hairlines, at most `menuMaxHeight`.
+ *  The pill uses the measured height (`getBoundingClientRect`) as soon as there is one. */
+export function estimatedMenuHeight(rows: number, dividers: number): number {
+  if (rows <= 0) return 0;
+  return Math.min(PILL.menuMaxHeight, 12 + 34 * rows + 2 * (rows - 1 + dividers) + 9 * dividers);
 }
 
 /** The panel's canvas: the main pill, what floats above it, and the shadow margin. */

@@ -1,20 +1,23 @@
 // The Linux packages (plan §4 M1): the deb and the rpm, the main ones, which install the AppArmor profile Electron's
-// sandbox needs on Ubuntu, and the AppImage, the fallback (spec §4). Each holds the desktop app and the daemon,
-// clover-core, in its resources/daemon/, where E-M1's app starts it. The dmg and the Windows installer come with E-M1's app; signing and updates are M2.
+// sandbox needs on Ubuntu, and the AppImage, the fallback (spec §4). Each holds the desktop app, and the daemon,
+// clover-core, with its link sidecar, clover-link (native/link, lane H), beside it in its resources/daemon/, where
+// E-M1's app starts the daemon and the daemon its sidecar. The dmg and the Windows installer come with E-M1's app;
+// signing and updates are M2.
 //
 //   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run]
 //
 // Linux only: electron-builder makes the deb and the rpm with fpm, and the rpm needs rpmbuild (`apt-get install rpm`).
-// Both architectures build on an x64 machine. For each architecture it:
-//   1. builds the daemon for linux-<arch> (scripts/build-daemon.ts)
-//   2. stages it in apps/desktop/out/daemon/, where electron-builder.yml's extraResources picks it up
+// An architecture builds on its own machine (CI runs one job per architecture): clover-link is Rust with ring's C,
+// and cargo builds it for the machine it is on. It:
+//   1. builds the daemon for linux-<arch> (scripts/build-daemon.ts) and clover-link (`cargo build --release --locked`)
+//   2. stages both in apps/desktop/out/daemon/, where electron-builder.yml's extraResources picks them up
 //   3. builds the app (apps/desktop's `build`) once, and packages it: electron-builder --linux <formats> --<arch>
-//   4. with --check, opens each package and checks it holds the daemon, the AppArmor profile and packaging/linux's
-//      scripts, with sound file modes: the app and the daemon root's and 0755, nothing world-writable, nothing
-//      set-user-ID (`checkPackage`)
+//   4. with --check, opens each package and checks it holds the daemon, the sidecar, the AppArmor profile and
+//      packaging/linux's scripts, with sound file modes: the app, the daemon and the sidecar root's and 0755, nothing
+//      world-writable, nothing set-user-ID (`checkPackage`)
 // Output: apps/desktop/out/dist/. Nothing is signed, published or installed.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
@@ -38,7 +41,8 @@ function listOf<T extends string>(flag: string, value: string | undefined, allow
   return [...new Set(list as T[])];
 }
 
-/** `hostArch` is this machine's (`process.arch`), passed in so the parse stays pure. */
+/** `hostArch` is this machine's (`process.arch`), passed in so the parse stays pure. Another machine's architecture
+ *  is refused but for --dry-run: clover-link builds for the machine it is on. */
 export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string): BuildPackagesArgs {
   let arches: LinuxArch[] | undefined;
   let formats: LinuxFormat[] = [...LINUX_FORMATS];
@@ -57,16 +61,13 @@ export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string
     if (!LINUX_ARCHES.includes(hostArch as LinuxArch)) throw new Error(`this machine is ${hostArch}: name an architecture with --arch`);
     arches = [hostArch as LinuxArch];
   }
+  const foreign = arches.filter((a) => a !== hostArch);
+  if (!dryRun && foreign.length > 0) throw new Error(`this machine is ${hostArch}: build ${foreign.join(", ")} on ${foreign.length === 1 ? "a machine" : "machines"} of ${foreign.length === 1 ? "that architecture" : "those architectures"} (clover-link, the link sidecar, builds for the machine it is on)`);
   return { arches, formats, check, dryRun };
 }
 
 export function daemonTargetFor(arch: LinuxArch): DaemonTarget {
   return arch === "x64" ? "linux-x64" : "linux-arm64";
-}
-
-/** Cargo's directory name for a daemon target's link build (bun's own spelling differs). */
-export function archTargetDir(target: DaemonTarget): string {
-  return target === "linux-x64" ? "x86_64-unknown-linux-gnu" : "aarch64-unknown-linux-gnu";
 }
 
 /** Debian's and RPM's names for an architecture, as electron-builder writes them into file names. */
@@ -79,15 +80,18 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
   return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never"];
 }
 
-/** What a package must hold: the daemon and the AppArmor profile in the app's resources, with the link sidecar
- *  (lane M's ask, E-M3): the daemon starts `clover-link` for the links (§8.2), so it ships beside the daemon. */
+/** The link sidecar's build (native/link), relative to the repo root: one for this machine. */
+export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
+export const LINK_OUTPUT = "native/link/target/release/clover-link";
+
+/** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
 export const REQUIRED_FILES = [
   "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
 ] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
 
-/** What the app's and the daemon's executables run as root's files (`rwxr-xr-x root root`). */
+/** The executables a package runs as root's files: the app, the daemon and the sidecar, `rwxr-xr-x root root`. */
 export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link"] as const;
 
 export interface PackageEntry {
@@ -117,8 +121,8 @@ const isRoot = (name: string): boolean => name === "root" || name === "0";
 
 /**
  * The problems with one package, from its long file listing (`dpkg-deb -c`, `rpm -qlvp`) and its scripts (`dpkg-deb -I …
- * postinst`, `rpm -qp --scripts`). An empty list is a good package: it holds the daemon and the AppArmor profile, the
- * app and the daemon are `rwxr-xr-x` and root's, nothing is world-writable (links aside), and nothing is set-user-ID
+ * postinst`, `rpm -qp --scripts`). An empty list is a good package: it holds the daemon, the sidecar and the AppArmor
+ * profile, the app, the daemon and the sidecar are `rwxr-xr-x` and root's, nothing is world-writable (links aside), and nothing is set-user-ID
  * or set-group-ID (chrome-sandbox gets its set-user-ID bit from the after-install script, only where it needs one).
  */
 export function checkPackage(format: "deb" | "rpm", listing: string, scripts: string): string[] {
@@ -181,12 +185,14 @@ export function main(argv: readonly string[], root: string): number {
   const desktop = join(root, "apps", "desktop");
   const staged = join(desktop, "out", "daemon");
   const outDir = join(desktop, "out", "dist");
-  // `stage`: this architecture's daemon and its link sidecar go where electron-builder.yml's extraResources reads
-  // them, just before packaging (lane M's ask: `clover-link` ships beside the daemon; §8.2).
-  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [{ say: "the app", cmd: ["bun", "run", "build"], cwd: desktop }];
+  // `stage`: this architecture's daemon and sidecar go where electron-builder.yml's extraResources reads them, just
+  // before packaging.
+  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [
+    { say: "the app", cmd: ["bun", "run", "build"], cwd: desktop },
+    { say: "the link sidecar, clover-link", cmd: [...LINK_BUILD], cwd: root },
+  ];
   for (const arch of args.arches) {
     steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch)], cwd: root });
-    steps.push({ say: `the link sidecar for linux-${arch}`, cmd: ["cargo", "build", "--release", "--locked", "--target", archTargetDir(daemonTargetFor(arch)), "--manifest-path", "native/link/Cargo.toml"], cwd: root });
     steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
@@ -200,9 +206,8 @@ export function main(argv: readonly string[], root: string): number {
       rmSync(staged, { recursive: true, force: true });
       mkdirSync(staged, { recursive: true });
       copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
-      // The link sidecar, beside the daemon (lane M's ask): the staged rust target's binary, made by the step above.
-      const linkOut = join(root, "native", "link", "target", archTargetDir(daemonTargetFor(s.stage)), "release", "clover-link");
-      copyFileSync(linkOut, join(staged, "clover-link"));
+      copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
+      chmodSync(join(staged, "clover-link"), 0o755);
     }
     const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
@@ -212,7 +217,7 @@ export function main(argv: readonly string[], root: string): number {
     const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
     for (const p of problems) console.error(`build-packages: ${p}`);
     if (problems.length > 0) return 1;
-    console.log("build-packages: every package holds the daemon, the AppArmor profile and packaging/linux's scripts");
+    console.log("build-packages: every package holds the daemon, the link sidecar, the AppArmor profile and packaging/linux's scripts");
   }
   return 0;
 }
