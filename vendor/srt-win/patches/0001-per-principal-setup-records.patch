@@ -6,6 +6,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -47,8 +48,14 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
  2 files changed, 240 insertions(+), 37 deletions(-)
 
+ src/cli.rs     | 116 ++++++++++++++++++++++++++------
+ src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  26 ++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 292 insertions(+), 43 deletions(-)
+
 diff --git a/src/cli.rs b/src/cli.rs
-index 8e616e2..f46b64a 100644
+index 8e616e2..cdbb36a 100644
 --- a/src/cli.rs
 +++ b/src/cli.rs
 @@ -181,6 +181,13 @@ enum Cmd {
@@ -157,7 +164,7 @@ index 8e616e2..f46b64a 100644
              let user_note = if keep_user {
                  // Ambient write-deny stamps key on the ACCOUNT, not
                  // the sublayer, and this uninstall may be tearing
-@@ -1697,12 +1731,22 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1697,12 +1731,26 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
                          }
                      }
                  }
@@ -165,8 +172,13 @@ index 8e616e2..f46b64a 100644
 -                    .as_ref()
 -                    .map(|s| s.sandbox_user.clone())
 -                    .unwrap_or_else(|| user::SANDBOX_USER.into());
+-                user::deprovision(&name).context("deprovision sandbox user")?;
+-                srt_win::install::clear_setup().context("clear credential + setup marker")?;
 +                // With --user the target is that principal, never
-+                // the global record's account.
++                // the global record's account. The shared sandbox group
++                // (and its logon denials) survives while other pool
++                // members are still installed; only the last one out
++                // takes it down.
 +                let name = match &for_user {
 +                    Some(want) => want.clone(),
 +                    None => recorded
@@ -174,8 +186,8 @@ index 8e616e2..f46b64a 100644
 +                        .map(|s| s.sandbox_user.clone())
 +                        .unwrap_or_else(|| user::SANDBOX_USER.into()),
 +                };
-                 user::deprovision(&name).context("deprovision sandbox user")?;
--                srt_win::install::clear_setup().context("clear credential + setup marker")?;
++                let drop_group = !srt_win::install::other_principals_remain(&name).unwrap_or(false);
++                user::deprovision(&name, drop_group).context("deprovision sandbox user")?;
 +                if for_user.is_some() {
 +                    srt_win::install::clear_principal(&name)
 +                        .context("clear this principal's credential + setup marker")?;
@@ -185,7 +197,7 @@ index 8e616e2..f46b64a 100644
                  "Sandbox user, credential, and setup marker removed."
              };
              // Migration: best-effort remove the legacy
-@@ -1726,7 +1770,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1726,7 +1774,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              println!(
                  "{}",
                  json!({
@@ -194,7 +206,7 @@ index 8e616e2..f46b64a 100644
                      "wfp": wfp_status(&sl)?,
                      "ambient": ambient_status_json()?,
                  })
-@@ -1735,9 +1779,9 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1735,9 +1783,9 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
  
          // ─── user ──────────────────────────────────────────────────
          Cmd::User {
@@ -206,7 +218,7 @@ index 8e616e2..f46b64a 100644
          }
          Cmd::User {
              sub: UserCmd::ReadCred,
-@@ -2740,6 +2784,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -2740,6 +2788,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              allow_loopback,
              deny_read,
              deny_read_except,
@@ -214,7 +226,7 @@ index 8e616e2..f46b64a 100644
              held_by,
              deny_write,
              env,
-@@ -2753,9 +2798,12 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -2753,9 +2802,12 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              // Credential + setup read happens FIRST so the
              // exit-15 fast-fail (not provisioned / stale cred)
              // fires before any WFP/ACL work.
@@ -230,7 +242,7 @@ index 8e616e2..f46b64a 100644
                  Ok((c, s.sandbox_user_sid))
              }) {
                  Ok(v) => v,
-@@ -3387,7 +3435,7 @@ mod tests {
+@@ -3387,7 +3439,7 @@ mod tests {
          assert!(matches!(
              with.cmd,
              Cmd::User {
@@ -239,7 +251,7 @@ index 8e616e2..f46b64a 100644
              }
          ));
          // Standalone shape: no sentinel.
-@@ -3396,7 +3444,7 @@ mod tests {
+@@ -3396,7 +3448,7 @@ mod tests {
          assert!(matches!(
              without.cmd,
              Cmd::User {
@@ -248,7 +260,7 @@ index 8e616e2..f46b64a 100644
              }
          ));
          // The sentinel is NOT a clap flag — without the strip, it
-@@ -3405,6 +3453,28 @@ mod tests {
+@@ -3405,6 +3457,28 @@ mod tests {
          assert!(
              Cli::try_parse_from(["srt-win.exe", SRT_WIN_DISPATCH_ARG1, "user", "status",]).is_err()
          );
@@ -278,7 +290,7 @@ index 8e616e2..f46b64a 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..49a8079 100644
+index ba0ac37..ce6a825 100644
 --- a/src/install.rs
 +++ b/src/install.rs
 @@ -49,19 +49,83 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
@@ -466,7 +478,7 @@ index ba0ac37..49a8079 100644
      crate::reg::delete_subtree(crate::reg::CA_SUBKEY)?;
      if let Some(base) = crate::reg::Key::open(crate::reg::BASE, true)? {
          for v in [
-@@ -636,6 +734,41 @@ pub fn clear_setup() -> Result<()> {
+@@ -636,6 +734,51 @@ pub fn clear_setup() -> Result<()> {
              crate::reg::delete_value(&base, v)?;
          }
      }
@@ -481,6 +493,16 @@ index ba0ac37..49a8079 100644
 +        clear_principal_record(&name)?;
 +    }
 +    Ok(())
++}
++
++/// True when per-principal install records other than `name` exist.
++/// The sandbox group is shared by every install, so an uninstall that
++/// leaves pool members behind must keep the group (and its logon
++/// denials); only the last one out removes them.
++pub fn other_principals_remain(name: &str) -> Result<bool> {
++    Ok(crate::reg::Key::subkey_names(USERS_SUBKEY)?
++        .iter()
++        .any(|n| n != name))
 +}
 +
 +/// Remove one principal's Users subkey and Cred blob. Idempotent:
@@ -508,6 +530,80 @@ index ba0ac37..49a8079 100644
      Ok(())
  }
  
+diff --git a/src/reg.rs b/src/reg.rs
+index 68ff089..9d67cda 100644
+--- a/src/reg.rs
++++ b/src/reg.rs
+@@ -319,6 +319,32 @@ pub fn set_key_dacl_from_sddl(path: &str, sddl: &str) -> Result<()> {
+     crate::util::win32_ok(r, &format!("SetNamedSecurityInfoW(HKLM\\{path})"))
+ }
+ 
++/// Direct child subkey names. Missing key reads as empty.
++pub fn subkey_names(path: &str) -> Result<Vec<String>> {
++    use windows::core::PWSTR;
++    use windows::Win32::Foundation::ERROR_NO_MORE_ITEMS;
++    use windows::Win32::System::Registry::RegEnumKeyExW;
++    let Some(key) = Key::open(path, false)? else {
++        return Ok(Vec::new());
++    };
++    let mut out = Vec::new();
++    let mut index = 0u32;
++    loop {
++        let mut buf = vec![0u16; 256];
++        let mut len = buf.len() as u32;
++        // RegEnumKeyExW writes at most `len` chars and sets `len` to
++        // the count actually written (no NUL).
++        let r = unsafe { RegEnumKeyExW(key.0, index, PWSTR(buf.as_mut_ptr()), &mut len, None, None, None, None) };
++        if r == ERROR_NO_MORE_ITEMS {
++            break;
++        }
++        r.ok()?;
++        out.push(String::from_utf16_lossy(&buf[..len as usize]));
++        index += 1;
++    }
++    Ok(out)
++}
++
+ /// Delete the whole `HKLM\SOFTWARE\sandbox-runtime` tree
+ /// (uninstall). No-op when absent.
+ pub fn delete_tree() -> Result<()> {
+diff --git a/src/user.rs b/src/user.rs
+index d2a89e6..5be4c50 100644
+--- a/src/user.rs
++++ b/src/user.rs
+@@ -137,13 +137,17 @@ pub fn provision(name: &str, we_own_it: bool) -> Result<ProvisionedUser> {
+ }
+ 
+ /// Delete `name`'s roaming/local profile (best-effort), the account
+-/// itself, [`SANDBOX_GROUP`], and the Winlogon hide value.
+-/// Idempotent — every step tolerates already-absent state.
+-pub fn deprovision(name: &str) -> Result<()> {
++/// itself, and the Winlogon hide value. Idempotent — every step
++/// tolerates already-absent state. The shared [`SANDBOX_GROUP`] (and
++/// its logon denials) is removed only when `delete_group` holds:
++/// pool members share the one group, so only the last uninstall
++/// takes it down.
++pub fn deprovision(name: &str, delete_group: bool) -> Result<()> {
+     // LSA account-rights entries would linger in the policy DB after
+     // the group SID is deleted; strip them first. Best-effort — the
+     // group may already be gone on a re-run.
+-    if let Ok(gsid) = sid::lookup_account_sid(SANDBOX_GROUP)
++    if delete_group
++        && let Ok(gsid) = sid::lookup_account_sid(SANDBOX_GROUP)
+         && let Err(e) = remove_logon_denials(&gsid)
+     {
+         eprintln!("srt-win: warning: removing logon denials: {e:#}");
+@@ -165,7 +169,9 @@ pub fn deprovision(name: &str) -> Result<()> {
+     if rc != 0 && rc != NERR_UserNotFound {
+         return Err(anyhow!("NetUserDel({name}): {rc}"));
+     }
+-    sam::delete_local_group(SANDBOX_GROUP)?;
++    if delete_group {
++        sam::delete_local_group(SANDBOX_GROUP)?;
++    }
+     // Best-effort: the key may never have been created.
+     let _ = set_logon_ui_hidden(name, false);
+     Ok(())
 -- 
 2.50.1 (Apple Git-155)
 
