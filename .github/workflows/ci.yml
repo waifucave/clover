@@ -373,8 +373,9 @@ jobs:
   #    ink-testing-library and has ~30 pre-existing failures on main; widen back to a bare `bun test` the moment that
   #    suite is fixed). Their package.json says `cloverCi.ownJob`, so the other packages' tests stay independent of
   #    the `winter` binary: a broken platform package must not hold them up. CLOVER_RUNTIME_REQUIRE_BINARY=1 is the
-  #    point of the binary: without it, every test that needs a real `winter` child SKIPS, and CI would go green by
-  #    proving nothing.
+  #    point of the binary: without it, every test that needs a real `winter` child SKIPS (core's real-child projector
+  #    test, cli's session tests in client.test.ts), and CI would go green by proving nothing. Since A-M1 core's session
+  #    tests run on the embedded runtime; those two still spawn the binary.
   #  - the repo's own scripts' tests (`scripts/**/*.test.ts`): the layout's conventions, the build, dev and release
   #    tools' pure halves, the held scripts, the limiter, the rename's codemod. None builds an app or starts a
   #    daemon. `embed-runtimes.test.ts` stages the agent runtime's binary from dist/.
@@ -430,7 +431,6 @@ jobs:
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-          CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
         # The suite runs as 3 sequential native shards (`bun test --shard=K/3`, so discovery is bun's
         # own). They began as a guard against Bun 1.3.14's intermittent Worker use-after-free
         # ("Segmentation fault at address 0xA", exit 133, in one long process after ~70 Workers); on
@@ -451,7 +451,6 @@ jobs:
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-          CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
         run: bun test test/*.ts
 
       - name: Scripts · test
