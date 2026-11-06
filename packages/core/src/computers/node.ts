@@ -22,6 +22,10 @@ import type { AnswerAsker, PeerReviewer } from "../tree/judge";
 import { LocalTerminals, serveTerminals, TerminalRouter, type ShellLauncher } from "../tree/terminals";
 import { CoreTree } from "../tree/tree";
 import { FolderWatches } from "../tree/watch";
+import type { PluginHost } from "../contracts/plugin-host";
+import type { PluginRegistry } from "../contracts/plugin-registry";
+import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
+import { CloudPoint, pluginProviders } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
@@ -69,6 +73,16 @@ export interface ComputerNodeOptions {
   };
   /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
   terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
+  /** Cloud computers (§9.2): the plugin registry's `computer` folders and `computerProviders` handlers, run on the
+   *  main computer only. `confirm` shows the user a card (lane C's broker); `userData` is the official image's
+   *  cloud-init (`image.ts`, with lane H's join ticket and lane M's release pins); `makeMain` is lane H's election. */
+  cloud?: {
+    plugins: PluginRegistry;
+    host: PluginHost;
+    confirm: (card: CloudCard) => Promise<boolean>;
+    userData: (o: { name: string; token: string }) => string;
+    makeMain?: (name: string) => Promise<void>;
+  };
   log?: (line: string) => void;
 }
 
@@ -92,6 +106,8 @@ export interface ComputerNode {
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
+  /** Cloud computers (with `cloud`): kept in line with their folders while this computer is the main one. */
+  cloud: CloudPoint | undefined;
   close(): void;
 }
 
@@ -247,8 +263,31 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       make();
     });
   }
+  // Cloud computers: the main computer alone makes, resizes and deletes VMs, so two computers never act on one folder.
+  let cloud: CloudPoint | undefined;
+  let offCloud: (() => void) | undefined;
+  let offMain = () => {};
+  if (o.cloud) {
+    const c = o.cloud;
+    const vms = new CloudComputers({
+      clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host),
+      confirm: c.confirm, userData: c.userData, ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
+    });
+    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active: () => registry.self().isMain, ...(o.log ? { log: o.log } : {}) });
+    cloud = point;
+    const follow = () => {
+      const main = registry.self().isMain;
+      if (main && !offCloud) offCloud = point.start();
+      else if (!main && offCloud) {
+        offCloud();
+        offCloud = undefined;
+      }
+    };
+    follow();
+    offMain = registry.watch(follow);
+  }
   return {
-    registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter,
+    registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter, cloud,
     terminalCount: () => localTerminals.count,
     mirror: (server, config, computers, session) => mirror({
       transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,
@@ -256,6 +295,8 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     }),
     treeRootReady: () => rootReady,
     close: () => {
+      offMain();
+      offCloud?.();
       offRoot();
       terminals.dispose();
       offMirror();

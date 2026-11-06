@@ -68,10 +68,14 @@ export class CloudPoint {
   readonly #registry: PluginRegistry;
   readonly #cloud: CloudComputers;
   readonly #log: ((line: string) => void) | undefined;
+  readonly #active: () => boolean;
   #running: Promise<ReconcileResult> | undefined;
   #again = false;
 
-  constructor(o: { registry: PluginRegistry; cloud: CloudComputers; log?: (line: string) => void }) {
+  /** `active`: whether this computer acts on cloud computers now (the main computer alone); a sync on any other does
+   *  nothing. */
+  constructor(o: { registry: PluginRegistry; cloud: CloudComputers; active?: () => boolean; log?: (line: string) => void }) {
+    this.#active = o.active ?? (() => true);
     this.#registry = o.registry;
     this.#cloud = o.cloud;
     this.#log = o.log;
@@ -86,14 +90,16 @@ export class CloudPoint {
 
   /** One reconcile, after the one in flight (and only one more, however many changes came meanwhile). */
   sync(): Promise<ReconcileResult> {
+    if (!this.#active()) return Promise.resolve({ created: [], resized: [], deleted: [], declined: [], failed: [] });
     if (this.#running) {
       this.#again = true;
       return this.#running;
     }
     const run = async (): Promise<ReconcileResult> => {
-      let last: ReconcileResult;
+      let last: ReconcileResult = { created: [], resized: [], deleted: [], declined: [], failed: [] };
       do {
         this.#again = false;
+        if (!this.#active()) break;
         const { folders, held } = cloudFolders(this.#registry);
         last = await this.#cloud.reconcile(folders, held);
         for (const f of last.failed) this.#log?.(`cloud computer ${f.name} not changed: ${f.reason}`);
