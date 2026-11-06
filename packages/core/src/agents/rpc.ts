@@ -26,6 +26,7 @@ export type AgentMethod = (params: unknown, ctx: { caller: Caller }) => Promise<
 
 export const BACKEND_NAMES: Readonly<Record<string, string>> = {
   cursor: "Cursor", antigravity: "Antigravity CLI", "claude-code": "Claude Code", codex: "Codex", grok: "Grok", gemini: "Gemini CLI", deepseek: "DeepSeek Harness", devin: "Devin", "devin-cloud": "Devin (cloud)",
+  "clover-code": "Clover's coding agent",
 };
 
 function parse<S extends MethodSpec>(spec: S, raw: unknown): z.output<S["params"]> {

@@ -43,6 +43,7 @@ import { hookShimCommand } from "./claude-code/hook-shim";
 import { placeInClaudeCode } from "./claude-code/placement";
 import type { PluginPartsSource } from "./placement";
 import { QUIRKS, READ_ONLY_MODES } from "./quirks";
+import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 import { StallWatchdog } from "./watchdog";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
@@ -60,6 +61,8 @@ export { agentPaths } from "./paths";
 export { agentRecordPath, readAgentRecord, type DaemonAgentRecord } from "./records";
 export { buildAgentEnv, launchContained } from "./process/launch";
 export { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, READ_ONLY_MODES } from "./quirks";
+export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
+export { inProcessBridgeServer } from "./bridge/in-process";
 export { UserSelections } from "./acp/selections";
 export { agentMethods, BACKEND_NAMES } from "./rpc";
 export { agentToolDefs, type CoreToolDef } from "./tools";
@@ -89,6 +92,9 @@ export interface AgentsOptions {
   levelOf?: (computer: string) => Level | undefined;
   /** The pause switch (lane D's gate): paused, delegated agents are held. */
   pause?: AgentPauseGate;
+  /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
+   *  (`embeddedSessionOptions`, `fillProvider`) and the user's default model. Without it the backend isn't offered. */
+  cloverCode?: Pick<CloverCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
   log?: (line: string) => void;
 }
 
@@ -118,10 +124,13 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const place = { "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() }) } as const;
   // One record of the user's own selections for every backend, in the daemon's fenced run folder.
   const selections = new UserSelections(join(o.home, "run", "agents", "selections"));
-  backends = o.backends?.(wire) ?? Object.entries(QUIRKS).map(([id, quirks]) => new AcpAgentBackend({
-    id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, selections, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
-    ...(READ_ONLY_MODES[id] ? { readOnlyMode: READ_ONLY_MODES[id] } : {}),
-  }));
+  backends = o.backends?.(wire) ?? [
+    ...Object.entries(QUIRKS).map(([id, quirks]) => new AcpAgentBackend({
+      id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, selections, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
+      ...(READ_ONLY_MODES[id] ? { readOnlyMode: READ_ONLY_MODES[id] } : {}),
+    })),
+    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })] : []),
+  ];
   const clover = bridgeCloverParts(tokens, manager.bridgeHandlers());
   return {
     manager, clover, tokens, backends: () => backends,
