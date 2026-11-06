@@ -184,6 +184,16 @@ export const DEVIN_QUIRKS: AgentQuirks = {
   auth: { methods: [], requiredError: { code: -32000 } },
 };
 
+/** Devin's cloud (`devin acp --cloud`): the same CLI relays ACP to cloud Devin sessions over Devin's WebSocket, and
+ *  needs a Devin account (`devin auth login`); `--model` and `--agent-type` apply only to the local agent. Listed with
+ *  cloud placement, which the manager doesn't start until the two §9.3 questions are settled (the bridge, the root). */
+export const DEVIN_CLOUD_QUIRKS: AgentQuirks = {
+  ...DEVIN_QUIRKS,
+  launch: { ...DEVIN_QUIRKS.launch, command: { macos: ["devin", "acp", "--cloud"], linux: ["devin", "acp", "--cloud"], windows: ["devin.exe", "acp", "--cloud"] } },
+  config: { modelOption: null, effortOption: null, effortInModel: false, choicePersists: false },
+  placement: "cloud",
+};
+
 /** The table, by backend id (an `agentBackends` entry's id). */
 export const QUIRKS: Readonly<Record<string, AgentQuirks>> = {
   cursor: CURSOR_QUIRKS,
@@ -194,6 +204,7 @@ export const QUIRKS: Readonly<Record<string, AgentQuirks>> = {
   gemini: GEMINI_QUIRKS,
   deepseek: DEEPSEEK_QUIRKS,
   devin: DEVIN_QUIRKS,
+  "devin-cloud": DEVIN_CLOUD_QUIRKS,
 };
 
 /** Where each row comes from: measured by spike S5, or read from docs, `--help` and code (S5 §3) and still to be
@@ -207,6 +218,7 @@ export const QUIRK_SOURCES: Readonly<Record<string, "measured (S5)" | "docs and 
   gemini: "docs and code (S5 §3)",
   deepseek: "docs and code (S5 §3)",
   devin: "docs and code (S5 §3)",
+  "devin-cloud": "docs and code (S5 §3)",
 };
 
 /** The read-only mode of each agent that acts without asking (`unasked-actions`), by backend id: the config option

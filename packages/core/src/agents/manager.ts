@@ -217,7 +217,12 @@ export class AgentManager {
   async start(req: AgentRequest): Promise<{ sessionId: string; transcript: string }> {
     const backend = this.#o.backends().find((b) => b.id === req.backend);
     if (!backend) throw new ContractError("not_installed", `no agent backend named ${req.backend}`);
-    if (backend.quirks.placement !== "local") throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which comes with K-M3`);
+    // Spec §9.3 "Cloud placement": whether the stdio bridge reaches a cloud session, and what the root folder means
+    // there, are settled before a cloud backend ships, by the agent suite's live gates. Until then it is listed, never
+    // started.
+    if (backend.quirks.placement !== "local") {
+      throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
+    }
     const computer = req.computer ?? this.#o.computer;
     if (computer !== this.#o.computer) {
       throw new ContractError("refused", `placing an agent on ${computer} comes with K-M3; for now an agent runs on ${this.#o.computer}`);

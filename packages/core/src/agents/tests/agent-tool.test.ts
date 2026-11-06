@@ -17,6 +17,7 @@ import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
+import { QUIRKS } from "../quirks";
 import { agentMethods } from "../rpc";
 import { FAKE_AGENT_PATH, fakeLaunch } from "../testing/harness";
 import { agentToolDefs } from "../tools";
@@ -152,6 +153,21 @@ describe("Agent", () => {
     expect(isContractError(await err(w.delegate("x", { computer: "Desk" })), "refused")).toBe(true);
     expect(isContractError(await err(w.delegate("x", { backend: "nope" })), "not_installed")).toBe(true);
     expect(w.host.list({ kind: "agent" })).toEqual([]);
+  });
+
+  test("a cloud backend (Devin's cloud) is listed but never started until its bridge and root are settled", async () => {
+    const w = make({ quirks: { ...WELL_BEHAVED_QUIRKS, placement: "cloud" } });
+    const e = await w.delegate("x").then(() => undefined, (x: unknown) => x);
+    expect(isContractError(e, "refused")).toBe(true);
+    expect(String((e as Error).message)).toContain("bridge");
+    expect(w.report("started")).toEqual([]);
+    expect(w.host.list({ kind: "agent" })).toEqual([]);
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio" });
+    const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: { protocol: string; placement: string }[] };
+    expect(view.backends[0]).toMatchObject({ protocol: "acp", placement: "cloud" });
+    expect(QUIRKS["devin-cloud"]!.placement).toBe("cloud");
+    expect(QUIRKS["devin-cloud"]!.launch.command.macos).toEqual(["devin", "acp", "--cloud"]);
+    expect(QUIRKS["devin"]!.placement).toBe("local");
   });
 });
 
