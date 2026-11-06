@@ -281,6 +281,35 @@
 }
 
 /* An output in the right panel: an image fits the panel's width. */
+/* A file's preview (the output view, and an image or a plugin's preview in the viewer): its own scrolling column, the
+   text set in from the edges, a long line wrapping rather than running off. */
+.cl-files__preview {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-files__preview .cl-files__code {
+  padding: var(--clover-space-s) var(--clover-space-m);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-files__preview > .cl-files__warning {
+  align-self: flex-start;
+  margin: var(--clover-space-s) var(--clover-space-m) 0;
+}
+
+.cl-files--output > .cl-files__note,
+.cl-files__preview > .cl-files__note {
+  margin: 0;
+  padding: var(--clover-space-m);
+  color: var(--clover-color-text-muted);
+}
+
 .cl-files__image {
   display: block;
   max-width: 100%;
