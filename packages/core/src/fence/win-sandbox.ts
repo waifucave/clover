@@ -100,9 +100,10 @@ export function setupArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAY
 }
 
 /** `srt-win uninstall`: undoes everything (`--keep-user` is never passed: remove removes all of it).
- *  Exits 0 when nothing is left. */
-export function removeArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER, principal: string = sandboxPrincipal()): readonly string[] {
-  return [launcher, "uninstall", "--sandbox-user", principal, "--sublayer-guid", sublayer];
+ *  Exits 0 when nothing is left. Takes no `--sandbox-user`: the 0.0.81 uninstall removes whatever account
+ *  the install marker names under the sublayer; naming a user is a usage error (exit 2). */
+export function removeArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER): readonly string[] {
+  return [launcher, "uninstall", "--sublayer-guid", sublayer];
 }
 
 /** `srt-win status`: one line of JSON `{user, wfp}`; never elevates. */

@@ -83,7 +83,7 @@ describe("the sandbox command's args", () => {
   });
 
   test("remove undoes everything; status never elevates", () => {
-    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sandbox-user", "clover-sb-", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
     expect(statusArgs("srt-win.exe")).toEqual(["srt-win.exe", "status", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
   });
 

@@ -1713,7 +1713,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       }
       {
         // Full remove (principal + filters), from the protected copy or the per-user install alike.
-        const { code, out } = await run([...removeArgs(launcher, CLOVER_WFP_SUBLAYER, principal)]);
+        const { code, out } = await run([...removeArgs(launcher, CLOVER_WFP_SUBLAYER)]);
         if (code !== 0) {
           console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
           process.exitCode = 1;
