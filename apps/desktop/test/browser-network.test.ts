@@ -26,6 +26,7 @@ describe("addresses", () => {
     expect(policyFor({ kind: "bot", bot: "alpha" })).toEqual(BOT_POLICY);
     expect(policyFor({ kind: "session", session: "s1" })).toEqual(SESSION_POLICY);
     expect(policyFor({ kind: "user" })).toEqual(PERSON_POLICY);
+    expect(policyFor({ kind: "plugin", plugin: "acme/tool" })).toEqual(BOT_POLICY);
     const row = (p: AddressPolicy) => ["93.184.216.34", "127.0.0.1", "192.168.1.1", "fd00::1", "169.254.1.1", "169.254.169.254", "0.0.0.0", "224.0.0.1"].map((ip) => addressAllowed(ip, p));
     expect(row(BOT_POLICY)).toEqual([true, false, false, false, false, false, false, false]);
     expect(row(SESSION_POLICY)).toEqual([true, true, false, false, false, false, false, false]);

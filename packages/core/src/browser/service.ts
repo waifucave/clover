@@ -6,10 +6,10 @@
 //
 // What the core decides, before anything reaches the app:
 // * who may touch a tab: a bot's session only its bot's tabs, a session without a bot only its own, the person's
-//   only with their OK for that session (ruling R10: a card per session, never the default), the person and plugins
-//   acting on their own any tab;
-// * while the person holds a tab in the view, an agent's commands on it are refused (the control lease, §12.1), except
-//   looking at it (`tabs`, `screenshot`);
+//   only with their OK for that session (ruling R10: a card per session, never the default), a plugin acting as
+//   itself only its own partition's (B-M1's contract review S1), the person (a layer acting for them) any tab;
+// * while the person holds a tab in the view, every command on it but theirs is refused (the control lease, §12.1),
+//   except looking at it (`tabs`, `screenshot`, DevTools events);
 // * the DevTools allow list, the URL rule, and a point from a picture taken at another size;
 // * a tab that stopped drawing gives an error, never an old picture.
 import { randomBytes } from "node:crypto";
@@ -159,20 +159,20 @@ export class BrowserService {
   }
 
   async close(caller: BrowserCaller, id: string): Promise<void> {
-    const entry = this.entry(caller, id, { agentWhileHeld: false });
+    const entry = this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "close" });
     this.forget(entry.view.id);
   }
 
   async navigate(caller: BrowserCaller, id: string, url: string): Promise<TabView> {
-    this.entry(caller, id, { agentWhileHeld: false });
+    this.entry(caller, id, { lookOnly: false });
     this.checkUrl(url);
     await this.command(id, { kind: "navigate", url });
     return this.view(id);
   }
 
   async show(caller: BrowserCaller, id: string, view: string, viewport: Viewport): Promise<TabView> {
-    this.entry(caller, id, { agentWhileHeld: false });
+    this.entry(caller, id, { lookOnly: false });
     checkViewport(viewport);
     if (view.length === 0 || view.length > 128) throw new BrowserError("bad_viewport", "a view's name is 1–128 characters");
     await this.command(id, { kind: "place", place: "shown", view, viewport });
@@ -180,7 +180,7 @@ export class BrowserService {
   }
 
   async hide(caller: BrowserCaller, id: string): Promise<TabView> {
-    const entry = this.entry(caller, id, { agentWhileHeld: false });
+    const entry = this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "place", place: "headless", viewport: AGENT_VIEWPORT });
     // Whoever held it in the view lets go when it leaves the view.
     return this.update(entry.view.id, { place: "headless", viewport: { ...AGENT_VIEWPORT }, heldByUser: false });
@@ -195,7 +195,7 @@ export class BrowserService {
   }
 
   async screenshot(caller: BrowserCaller, id: string, opts: { format?: ScreenshotFormat; quality?: number } = {}): Promise<Screenshot> {
-    const entry = this.entry(caller, id, { agentWhileHeld: true });
+    const entry = this.entry(caller, id, { lookOnly: true });
     if (entry.stalledSince !== undefined) {
       throw new BrowserError("stalled", `the tab stopped drawing ${Math.round((this.now() - entry.stalledSince) / 1000)} s ago, so there's no fresh picture of it`);
     }
@@ -208,7 +208,7 @@ export class BrowserService {
   }
 
   async cdp(caller: BrowserCaller, id: string, method: string, params?: Record<string, unknown>, opts: { viewport?: Viewport } = {}): Promise<unknown> {
-    const entry = this.entry(caller, id, { agentWhileHeld: false });
+    const entry = this.entry(caller, id, { lookOnly: false });
     checkCdpMethod(method);
     checkPoint(method, opts.viewport, entry.view.viewport);
     return this.command(id, { kind: "cdp", method, ...(params !== undefined ? { params } : {}) });
@@ -216,7 +216,7 @@ export class BrowserService {
 
   /** `browser.onCdpEvent`: the tab's allowlisted DevTools events, for as long as the tab lives. */
   onCdpEvent(caller: BrowserCaller, id: string, listener: CdpListener): () => void {
-    const entry = this.entry(caller, id, { agentWhileHeld: true });
+    const entry = this.entry(caller, id, { lookOnly: true });
     entry.listeners.add(listener);
     return () => entry.listeners.delete(listener);
   }
@@ -327,27 +327,32 @@ export class BrowserService {
     }
   }
 
-  private entry(caller: BrowserCaller, id: string, opts: { agentWhileHeld: boolean }): Entry {
+  private entry(caller: BrowserCaller, id: string, opts: { lookOnly: boolean }): Entry {
     const entry = this.entries.get(id);
     if (entry === undefined || !this.mayTouch(caller, entry.view.owner)) throw noTab(id);
-    // Spec §12.1: while the person holds a tab, the agent's commands on it are refused. The person (a layer acting
-    // for them, like the browser view's own back button) and a plugin's own code are not an agent.
-    if (entry.view.heldByUser && caller.kind === "agent" && !opts.agentWhileHeld) {
+    // Spec §12.1: while the person holds a tab, every command on it is refused but the person's own (a layer acting on
+    // their input, like the browser view's back button; B-M1's contract review S1). An agent, a plugin's own code and
+    // the core may still look at it.
+    if (entry.view.heldByUser && caller.kind !== "user" && !opts.lookOnly) {
       throw new BrowserError("held", "the person is using this tab in the browser view; try again once they let go of it");
     }
     return entry;
   }
 
   /** A bot's session: its bot's tabs. A session without a bot: its own. The person's tabs: only a session they said
-   *  yes to (R10). The person and plugins' own code: any. */
+   *  yes to (R10). A plugin acting as itself: only its own partition's (B-M1's contract review S1). The person (a layer
+   *  acting for them) and the core: any. */
   private mayTouch(caller: BrowserCaller, owner: TabOwner): boolean {
+    if (caller.kind === "plugin") return owner.kind === "plugin" && owner.plugin === caller.pluginId;
     if (caller.kind !== "agent") return true;
     if (owner.kind === "user") return caller.session !== undefined && this.opts.grants?.has(caller.session) === true;
+    if (owner.kind === "plugin") return false;
     if (caller.bot !== undefined) return owner.kind === "bot" && owner.bot === caller.bot;
     return owner.kind === "session" && caller.session !== undefined && owner.session === caller.session;
   }
 
   private notYours(caller: BrowserCaller): BrowserError {
+    if (caller.kind === "plugin") return new BrowserError("not_yours", `a plugin acting as itself opens tabs only in its own partition: owner { kind: "plugin", plugin: "${caller.pluginId}" }`);
     const whose = caller.kind === "agent" && caller.bot !== undefined ? `${caller.bot}'s` : "its own";
     return new BrowserError("not_yours", `a session opens tabs only as ${whose}`);
   }

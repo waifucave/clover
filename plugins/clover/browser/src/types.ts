@@ -12,7 +12,7 @@
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot has
  *  a partition of its own (ruling R10); `session` is proposed to lane B, as in the core's mirror. */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
+export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "plugin"; plugin: string } | { kind: "user" };
 
 /** `headless` drawing offscreen at the agent's 1280×800, `shown` in a browser view at the view's size, `resting` not
  *  drawing until a bot's next command. */

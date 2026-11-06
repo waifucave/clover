@@ -8,6 +8,7 @@
 // * A bot's tabs: no loopback, private (RFC 1918, ULA, shared CGNAT space), link-local or cloud metadata address. A
 //   per-bot setting that allows the LAN is L-M2.
 // * A coding session's tabs: loopback too (its dev servers), never the metadata address.
+// * A plugin's own tabs (a plugin acting as itself): as a bot's.
 // * The person's own tabs: their own network, never the metadata address.
 // * Nobody: the unspecified, multicast and reserved ranges, and this proxy's own ports.
 //
@@ -28,7 +29,7 @@ export const SESSION_POLICY: AddressPolicy = Object.freeze({ loopback: true, pri
 export const PERSON_POLICY: AddressPolicy = Object.freeze({ loopback: true, privateNetworks: true, linkLocal: true });
 
 export function policyFor(owner: TabOwner): AddressPolicy {
-  return owner.kind === "bot" ? BOT_POLICY : owner.kind === "session" ? SESSION_POLICY : PERSON_POLICY;
+  return owner.kind === "session" ? SESSION_POLICY : owner.kind === "user" ? PERSON_POLICY : BOT_POLICY;
 }
 
 export type AddressKind = "public" | "loopback" | "private" | "link-local" | "metadata" | "unspecified" | "multicast" | "reserved";

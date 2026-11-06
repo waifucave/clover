@@ -86,6 +86,8 @@ describe("partitions", () => {
     expect(partitionFor(alpha)).toBe("persist:bot-alpha");
     expect(partitionFor({ kind: "bot", bot: "pack/luna" })).toBe("persist:bot-pack--luna");
     expect(partitionFor(user)).toBe("persist:user");
+    expect(partitionFor({ kind: "plugin", plugin: "clover/browser-view" })).toBe("persist:plugin-clover--browser-view");
+    expect(() => partitionFor({ kind: "plugin", plugin: "../x" })).toThrow(BrowserError);
     // A session without a bot: its own, named by a hash of its id (no id ever spells a folder name).
     const own = partitionFor({ kind: "session", session: "sess_1" });
     expect(own).toMatch(/^persist:session-[0-9a-f]{32}$/);
@@ -169,6 +171,22 @@ describe("opening and owning tabs", () => {
     expect(service.tabs({ kind: "agent", session: "sess_code" })).toEqual([]);
   });
 
+  test("a plugin acting as itself opens and touches tabs only in its own partition (B-M1's contract review S1)", async () => {
+    const { service } = setup();
+    const plugin = { kind: "plugin", pluginId: "acme/tool" } as const;
+    const botTab = await service.open(asAlpha, { owner: alpha });
+    for (const owner of [alpha, user, { kind: "session", session: "s1" }, { kind: "plugin", plugin: "other" }] as const) {
+      expect(await code(service.open(plugin, { owner }))).toBe("not_yours");
+    }
+    const own = await service.open(plugin, { owner: { kind: "plugin", plugin: "acme/tool" } });
+    expect(own.partition).toBe("persist:plugin-acme--tool");
+    expect(service.tabs(plugin).map((t) => t.id)).toEqual([own.id]);
+    expect(await code(service.navigate(plugin, botTab.id, "https://a.example/"))).toBe("no_tab");
+    // No session reaches a plugin's tabs either; the person sees them all.
+    expect(service.tabs(asAlpha).map((t) => t.id)).toEqual([botTab.id]);
+    expect(service.tabs(person).map((t) => t.id).sort()).toEqual([botTab.id, own.id].sort());
+  });
+
   test("a plugin's call while it serves a tool call is that session's, never the plugin's (R7)", () => {
     const plugin = { kind: "plugin", pluginId: "clover/browser" } as const;
     expect(browserCallerOf(plugin)).toEqual({ kind: "plugin", pluginId: "clover/browser" });
@@ -248,7 +266,10 @@ describe("the person holding a tab", () => {
     app.answers.screenshot = { format: "png", data: "", width: 1280, height: 800, takenAt: 1 };
     expect(await code(service.screenshot(asAlpha, tab.id))).toBeUndefined();
     expect(await code(service.navigate(person, tab.id, "https://b.example/"))).toBeUndefined();
-    expect(await code(service.cdp({ kind: "plugin", pluginId: "clover/browser-view" }, tab.id, "Page.getNavigationHistory"))).toBeUndefined();
+    // Only the person passes a hold (B-M1's contract review S1): a plugin's own code and the core are refused too.
+    expect(await code(service.cdp({ kind: "plugin", pluginId: "clover/browser-view" }, tab.id, "Page.getNavigationHistory"))).toBe("no_tab");
+    expect(await code(service.navigate({ kind: "core" }, tab.id, "https://d.example/"))).toBe("held");
+    expect(await code(service.screenshot({ kind: "core" }, tab.id))).toBeUndefined();
     service.hold(tab.id, false);
     expect(await code(service.navigate(asAlpha, tab.id, "https://c.example/"))).toBeUndefined();
   });
