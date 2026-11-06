@@ -7,7 +7,11 @@
 //
 // Encoding: an object is `{"$obj": {...}}` (so a `__proto__` key survives as data), `undefined` is
 // `{"$undefined": true}`, non-finite numbers and -0 are `{"$num": "NaN" | "Infinity" | "-Infinity" | "-0"}`.
-// The answers (the error texts especially) depend on Bun's YAML parser; recorded under Bun 1.3.14.
+// The answers (the error texts especially) depend on Bun's YAML parser. Recorded under Bun 1.3.14, re-recorded under
+// Bun 1.4.4 (A-M1, the pin's move): 77 of the 2018 rows read differently there, every one in Bun.YAML itself. Tab
+// indentation is now a parse error ("YAML Parse error: Unexpected token") where 1.3.14 accepted it, and an empty
+// block scalar (`key: >`, `key: |`) reads as "" where 1.3.14 read the indicator itself. The runtime's own reading
+// moves with it, since the embedded runtime runs on the daemon's Bun.
 import { expect, test } from "bun:test";
 import { claudeFrontmatterSplit, parseClaudeFrontmatter, strictFrontmatterBlock } from "../../../../src/runtime-sdk/host/run-home/claude-frontmatter";
 import corpus from "./__corpus__/claude-frontmatter.json";
