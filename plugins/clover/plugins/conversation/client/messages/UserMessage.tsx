@@ -42,7 +42,7 @@ export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext
         <div className="cl-conv-user__images">
           {images.map((a) => {
             const src = safeAsset(a.previewUrl);
-            const body = src ? (
+            const standard = src ? (
               <img className="cl-conv-user__thumb" src={src} alt={a.name} />
             ) : (
               <span className="cl-conv-user__chip">
@@ -50,6 +50,8 @@ export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext
                 {a.name}
               </span>
             );
+            // A plugin that previews this type draws it instead, in its own part (`file.preview`).
+            const body = ctx.preview ? ctx.preview(a.path, standard) : standard;
             // An attachment opens like any file the conversation names (review: they couldn't be opened).
             const open = ctx.actions.onOpenFile;
             return open ? (

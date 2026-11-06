@@ -104,6 +104,8 @@
     "clover.conversation.aTool": "a tool",
     "clover.conversation.allowed": "Allowed",
     "clover.conversation.denied": "Denied",
-    "clover.conversation.turnError": "The turn ended with an error."
+    "clover.conversation.turnError": "The turn ended with an error.",
+    "clover.conversation.messageMenu": "More for this message",
+    "clover.conversation.menuFrom": "{title} ({plugin})"
   }
 }

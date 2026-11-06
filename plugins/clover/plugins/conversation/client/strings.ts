@@ -69,6 +69,10 @@ export const S = {
   get copied() {
     return t("clover.conversation.copied");
   },
+  get messageMenu() {
+    return t("clover.conversation.messageMenu");
+  },
+  menuFrom: (title: string, plugin: string) => t("clover.conversation.menuFrom", { title, plugin }),
   get copyMessage() {
     return t("clover.conversation.copyMessage");
   },

@@ -14,9 +14,13 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { ConversationView, DEFAULT_RENDERERS, type ConversationViewProps, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
+import { FilePreview } from "./preview";
 import { project, type CoreEvent } from "./project";
 import { plain } from "../../shell/runtime/views";
-import { Spot, useCore, usePluginApi } from "./sdk";
+import { Spot, useCore, useMenu, usePluginApi, useSpotEntries } from "./sdk";
+import { S } from "./strings";
+import type { MenuItem } from "../../shell/runtime/ui";
+import type { CoreClient } from "../../shell/runtime/types";
 import type { ConversationItem, QuestionAnswer, SharedTime } from "./types";
 
 export interface ConversationEntryProps {
@@ -99,6 +103,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   }, [conv, core, archived, props.session]);
 
   const { names, here } = useNames(api);
+  const onMessageMenu = useMessageMenu(core, { bot: props.bot, session: props.session });
   const { items, turn } = useMemo(() => project(events, { name: (kind, id) => names[`${kind}:${id}`] }), [events, names]);
   const at = { bot: props.bot, session: props.session };
 
@@ -121,6 +126,8 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
               <Spot name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
             ),
             renderMessageExtra: (item: Parameters<NonNullable<ConversationViewProps["renderMessageExtra"]>>[0]) => <Spot name="conversation.message.extra" props={{ ...at, item, ctx: {} }} />,
+            onMessageMenu,
+            renderFilePreview: (path: string, standard: ReactNode) => <FilePreview path={path} standard={standard} at={at} />,
           })}
       onAnswerQuestion={archived ? undefined : (callId: string, answer: QuestionAnswer) => conv?.answer?.(props.session, callId, answer.answers)}
       onOpenAgent={props.onOpenAgent}
@@ -128,6 +135,58 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       onCopy={(text) => void navigator.clipboard?.writeText(text)}
     />
   );
+}
+
+type MenuMessage = Parameters<NonNullable<ConversationViewProps["onMessageMenu"]>>[0];
+
+/** A message's menu (`menu.message`): Copy, then each plugin's item, drawn by the app (lane E's `useMenu`). An item
+ *  runs its plugin's command (`command.run`, the entry's `command`) with the message's id and role, and its text only
+ *  when the plugin declares `conversation.read` (the controller's ruling: content never goes to a plugin that hasn't
+ *  asked for it). A third-party item says whose it is, so none reads as Clover's own. */
+function useMessageMenu(core: CoreClient | undefined, at: { bot: { id: string; name: string }; session: string }) {
+  const show = useMenu();
+  const entries = useSpotEntries("menu.message", undefined, at).entries;
+  const [reads, setReads] = useState<Record<string, boolean>>({});
+  const ids = [...new Set(entries.map((e) => e.pluginId))].sort().join(",");
+  useEffect(() => {
+    if (!core || !ids) return;
+    let live = true;
+    void Promise.all(
+      ids.split(",").map((id) =>
+        core.call("plugin.get", { id }).then(
+          (r) => {
+            const caps = (r.plugin.manifest as { capabilities?: unknown }).capabilities;
+            return [id, Array.isArray(caps) && caps.includes("conversation.read")] as const;
+          },
+          () => [id, false] as const,
+        ),
+      ),
+    ).then((pairs) => live && setReads(Object.fromEntries(pairs)));
+    return () => {
+      live = false;
+    };
+  }, [core, ids]);
+  return (item: MenuMessage, point: { x: number; y: number }) => {
+    const refOf = (e: (typeof entries)[number]) => `${e.pluginId}#${(e as { id?: string }).id ?? ""}`;
+    const titleOf = (e: (typeof entries)[number]) => {
+      const title = typeof e.fields?.title === "string" ? e.fields.title : e.pluginId;
+      const bundled = (e as { bundled?: boolean }).bundled ?? (e.pluginId === "clover" || e.pluginId.startsWith("clover/"));
+      return bundled ? title : S.menuFrom(title, (e as { pluginName?: string }).pluginName ?? e.pluginId);
+    };
+    const runnable = entries.filter((e) => typeof e.fields?.command === "string");
+    const items: MenuItem[] = [
+      { id: "copy", label: S.copyMessage },
+      ...(runnable.length > 0 ? [{ type: "separator" as const }] : []),
+      ...runnable.map((e) => ({ id: refOf(e), label: titleOf(e) })),
+    ];
+    void show(items, point).then((picked) => {
+      if (picked === "copy") return void navigator.clipboard?.writeText(item.text).catch(() => undefined);
+      const e = runnable.find((x) => refOf(x) === picked);
+      if (!e || !core) return;
+      const args = { message: item.id, role: item.kind === "user" ? "user" : "bot", session: at.session, ...(reads[e.pluginId] === true ? { text: item.text } : {}) };
+      void core.call("command.run", { name: e.fields!.command as string, args }).catch(() => undefined);
+    });
+  };
 }
 
 /** Display names for the bots, agents and devices a transcript mentions, by `<kind>:<id>`. */

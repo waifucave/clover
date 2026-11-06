@@ -66,8 +66,20 @@ export interface UiRuntime {
   sealed?: SealedRenderers;
   /** The host's OS, for `when.os`. */
   os?: string;
+  /** A menu the app draws for a part, natively (lane E's `useMenu`): resolves with the id picked, or null. */
+  menu?(items: readonly MenuItem[], at: { x: number; y: number }): Promise<string | null>;
   /** The app's messages to this document (lane E's `useLayerMessage`): its commands, such as `open-settings`. */
   messages?: { subscribe(listener: (m: LayerCommand) => void): Unsubscribe };
+}
+
+/** An item of a menu the app draws for a part (lane E's `MenuItem`): data only. */
+export interface MenuItem {
+  id?: string;
+  label?: string;
+  enabled?: boolean;
+  checked?: boolean;
+  type?: "normal" | "separator" | "checkbox";
+  submenu?: MenuItem[];
 }
 
 /** One of the app's commands to a window (lane E's `LayerMessage` of type `command`). */
@@ -115,6 +127,8 @@ export interface Ui {
   /** Which entries a spot would show here, for a part that lays them out itself (a list spot's buttons). */
   useSpotEntries(name: string, spotKey?: string, props?: Record<string, unknown>): Resolved;
   useLayerMessage(listener: (m: LayerCommand) => void): void;
+  /** Shows a menu the app draws (lane E's `useMenu`); with no app around it, nothing is picked. */
+  useMenu(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null>;
 }
 
 const built = new WeakMap<object, Ui>();
@@ -252,7 +266,12 @@ export function uiFor(react: ReactLike): Ui {
     useEffect(() => runtime?.messages?.subscribe((m) => ref.current(m)), [runtime]);
   }
 
-  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries, useLayerMessage };
+  function useMenu() {
+    const runtime = useRuntime();
+    return (items: readonly MenuItem[], at: { x: number; y: number }) => runtime?.menu?.(items, at) ?? Promise.resolve(null);
+  }
+
+  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries, useLayerMessage, useMenu };
   built.set(react, ui);
   return ui;
 }
