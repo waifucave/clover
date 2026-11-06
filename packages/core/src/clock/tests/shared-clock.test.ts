@@ -43,6 +43,24 @@ describe("the shared clock", () => {
     expect(st.accuracyMs).toBeLessThan(25);
   });
 
+  test("a reference far from this device's own clock is followed only when public time bears it out", async () => {
+    const c = await makeLinkCluster(["Studio", "Laptop"], { clock: new SystemClock() });
+    stops.push(() => c.close());
+    const studio = c.devices.get("Studio")!;
+    const laptop = c.devices.get("Laptop")!;
+    // The studio says it's ten minutes later than the laptop thinks.
+    const s = new SharedClock({ self: studio.id, base: offClock(600_000), transport: studio.transport, reference: () => studio.id });
+    const l = new SharedClock({ self: laptop.id, base: offClock(0), transport: laptop.transport, reference: () => studio.id });
+    stops.push(() => s.close(), () => l.close());
+    expect(await l.measure()).toBeUndefined();
+    expect(l.status().synced).toBe(false);
+    // With public time here agreeing, it's followed.
+    const l2 = new SharedClock({ self: laptop.id, base: offClock(0), transport: laptop.transport, reference: () => studio.id, publicTime: publicAt(600_000) });
+    stops.push(() => l2.close());
+    expect(await l2.measure()).toBeDefined();
+    expect(Math.abs(l2.status().offsetMs - 600_000)).toBeLessThan(100);
+  });
+
   test("shared time never steps back for a reader when a correction goes down", async () => {
     const c = await makeLinkCluster(["Studio"], { clock: new SystemClock() });
     stops.push(() => c.close());

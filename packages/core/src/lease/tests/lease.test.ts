@@ -11,6 +11,34 @@ import { MainLeaseHarness, MemoryLeaseService, memoryLease } from "../testing";
 runLeaseConformance(((opts: ConstructorParameters<typeof MainLeaseHarness>[0]) => new MainLeaseHarness(opts)) as unknown as LeaseFactory);
 
 describe("MainLease beyond the contract", () => {
+  test("the fencing token is (scope, epoch): a new scope counts afresh, and a scope this device left is an earlier lease", async () => {
+    const clock = new FakeClock();
+    let scope = "group:g1";
+    const epochs: Record<string, number> = { "group:g1": 7, account: 1 };
+    const lease = new MainLease({
+      self: "studio", clock,
+      scope: () => ({
+        id: scope,
+        read: async () => ({ holder: null, holderRaw: "k", epoch: epochs[scope]!, expiresAt: clock.now() + 30_000 }),
+        op: async () => { throw new Error("not here"); },
+      }),
+    });
+    await lease.refresh();
+    expect(lease.fence()).toEqual({ scope: "group:g1", epoch: 7 });
+    // Signing in moves the lease to the account's record, whose count starts at 1.
+    scope = "account";
+    lease.scopeChanged();
+    await lease.refresh();
+    expect(lease.fence()).toEqual({ scope: "account", epoch: 1 });
+    expect(lease.isStale(1, "account")).toBe(false);
+    expect(lease.isStale(1)).toBe(false);
+    // What the old group's main does is from an earlier lease, whatever its epoch.
+    expect(lease.isStale(7, "group:g1")).toBe(true);
+    expect(lease.isStale(99, "group:g1")).toBe(true);
+    // A scope this device hasn't reached yet isn't judged here.
+    expect(lease.isStale(1, "group:g2")).toBe(false);
+  });
+
   test("a lease held by a group member this computer doesn't know reads as held, by no device it can name, never as lapsed", async () => {
     const clock = new FakeClock();
     const lease = new MainLease({

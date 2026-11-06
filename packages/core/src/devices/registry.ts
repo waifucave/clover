@@ -127,7 +127,9 @@ export interface AnswerKeyRotation {
   signature: string;
 }
 
-const MAX_ROTATIONS = 16;
+/** Long enough that a peer away for years of rotations still follows the chain (H-M1's review); a peer that can't
+ *  re-anchors by pairing again. */
+const MAX_ROTATIONS = 256;
 
 const NAME_RE = /^[^\u0000-\u001f\u007f]{1,63}$/u;
 const KINDS: readonly DeviceKind[] = ["desktop", "server", "cloud", "phone", "browser"];

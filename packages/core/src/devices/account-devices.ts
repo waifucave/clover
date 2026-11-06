@@ -102,7 +102,13 @@ export async function revokeDevice(o: RevokeOptions, id: string, reason?: string
   const steps: RevokeStep[] = [];
   if (pair) steps.push("handshake-pair");
   if (group && memberKey) steps.push("handshake-group");
-  if (o.account && (await o.account.accountId()) !== null) steps.push("account", "hooks", "push", "handshake-account");
+  // A service that isn't configured has nothing to be told: its step isn't added (H-M1's review).
+  if (o.account && (await o.account.accountId()) !== null) {
+    steps.push("account");
+    if (o.services?.hooks) steps.push("hooks");
+    if (o.services?.push) steps.push("push");
+    if (o.services?.handshake) steps.push("handshake-account");
+  }
   o.registry.addPendingRevoke({
     device: id, steps, ...(pair ? { pair: pair.pairId } : {}), ...(group && memberKey ? { group: { id: group.id, member: memberKey } } : {}),
   });
@@ -161,7 +167,8 @@ async function runRevokeSteps(o: RevokeOptions, id: string): Promise<RevokeOutco
     await run("account", () => account.revokeDevice(id));
     const fetcher = o.fetch ?? ((req: Request) => fetch(req));
     const del = async (svc: DeviceService | undefined, path: string) => {
-      if (!svc) throw new ContractError("refused", "the service isn't configured");
+      // A step kept from before the service was unconfigured: nothing to tell, so it's done.
+      if (!svc) return;
       const token = await account.tokens.current(svc.audience);
       if (!token) throw new ContractError("refused", "no account token");
       const res = await fetcher(new Request(`${svc.url.replace(/\/+$/, "")}${path}`, { method: "DELETE", headers: { authorization: `Bearer ${token.value.reveal()}` } }));

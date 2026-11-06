@@ -50,12 +50,14 @@ export interface SessionRecordSyncOptions {
   transport: Pick<LinkTransport, "connect" | "handle" | "links" | "watch">;
   registry: Pick<FileDeviceRegistry, "get" | "list">;
   host: SessionHostForSync;
-  /** The lease's fencing token (lease.ts `isStale`). */
-  isStale?(epoch: number): boolean;
+  /** The lease's fencing token, (scope, epoch) (lease.ts `isStale`). */
+  isStale?(epoch: number, scope?: string): boolean;
+  /** The lease record this computer is on (lease.ts `scopeId`): stamped on what it sends, beside each record's epoch. */
+  scope?(): string;
   log?(line: string): void;
 }
 
-type Entry = { seq: number; epoch: number; ts: number; device: string; payload: { record: SessionRecord; view?: SessionView } };
+type Entry = { seq: number; epoch: number; scope?: string; ts: number; device: string; payload: { record: SessionRecord; view?: SessionView } };
 
 export class SessionRecordSync {
   readonly #o: SessionRecordSyncOptions;
@@ -220,14 +222,15 @@ export class SessionRecordSync {
       records.push(r);
       next++;
     }
-    const late = records.some((r) => this.#o.isStale?.(r.epoch ?? 0) ?? false);
+    const late = entries.some((e) => this.#o.isStale?.(e.payload.record.epoch ?? 0, typeof e.scope === "string" ? e.scope : undefined) ?? false);
     const v = entries.find((e) => e.payload?.view)?.payload.view ?? view;
     this.#o.host.ingest(v, records, { from, late });
     return { ok: true, head: next - 1 };
   }
 
   #entry(record: SessionRecord, view: SessionView | undefined): Entry {
-    return { seq: record.seq, epoch: record.epoch ?? 0, ts: record.ts, device: this.#o.self, payload: { record, ...(view ? { view } : {}) } };
+    const scope = this.#o.scope?.();
+    return { seq: record.seq, epoch: record.epoch ?? 0, ...(scope ? { scope } : {}), ts: record.ts, device: this.#o.self, payload: { record, ...(view ? { view } : {}) } };
   }
 
   #isComputer(id: string): boolean {

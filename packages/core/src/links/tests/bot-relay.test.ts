@@ -37,6 +37,18 @@ describe("the bot relay over the link", () => {
     expect(isContractError(await link.request("link.session.deliver", { id: "b_alpha", input: { from: "user", text: "pretend" } }).catch((e: unknown) => e), "invalid")).toBe(true);
   });
 
+  test("a message stamped with an earlier lease's fence is refused, not taken late", async () => {
+    const c = await makeLinkCluster(["Studio", "Laptop"], { clock });
+    stops.push(() => c.close());
+    const studio = c.devices.get("Studio")!;
+    const laptop = c.devices.get("Laptop")!;
+    stops.push(mountSessionDelivery(studio.transport, studio.registry, async () => ({ disposition: "folded", seq: 1 }), { isStale: (e, s) => s === "group:old" || e < 3 }));
+    const old = linkBotRelay({ transport: laptop.transport, registry: laptop.registry, fence: () => ({ scope: "group:old", epoch: 9 }) });
+    expect(isContractError(await old.deliver("Studio", "b_alpha", { from: "bot", bot: "beta", session: "b_beta", text: "x" }).catch((e: unknown) => e), "not_main")).toBe(true);
+    const now = linkBotRelay({ transport: laptop.transport, registry: laptop.registry, fence: () => ({ scope: "group:new", epoch: 3 }) });
+    expect(await now.deliver("Studio", "b_alpha", { from: "bot", bot: "beta", session: "b_beta", text: "x" })).toEqual({ disposition: "folded", seq: 1 });
+  });
+
   test("with the runner out of reach the message is refused bot_asleep", async () => {
     const c = await makeLinkCluster(["Studio", "Laptop"], { clock, transport: { failFastMs: 200, dialTimeoutMs: 300 } });
     stops.push(() => c.close());

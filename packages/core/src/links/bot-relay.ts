@@ -11,12 +11,14 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { DeliveredInput, Disposition } from "../contracts/session-host";
 import type { FileDeviceRegistry } from "../devices/registry";
+import { type CallFence, fenceOf } from "./peer-call";
 import { relayUserMessage, type RelayParams } from "./relay";
 
 /** The link's own request for another session's message to a session on the receiving computer. */
 export const SESSION_DELIVER = "link.session.deliver";
 
-const DELIVERED_FROM = new Set(["bot", "agent", "task-notification", "routine", "plugin", "note"]);
+/** What `link.session.deliver` takes (B's #187): a bot's, an agent's, a routine's message, or a task notification. */
+const DELIVERED_FROM = new Set(["bot", "agent", "task-notification", "routine"]);
 
 /** D's `BotRelay` (bots/service.ts), structurally. */
 export interface LinkBotRelay {
@@ -30,7 +32,8 @@ export function deviceOfComputer(registry: Pick<FileDeviceRegistry, "list">, com
   return registry.list().find((d) => d.runsCore && d.computer?.toLowerCase() === lower)?.id;
 }
 
-export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; registry: Pick<FileDeviceRegistry, "list"> }): LinkBotRelay {
+/** `fence`: this computer's lease token (`MainLease.fence()`), stamped on every message it delivers for its bots. */
+export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; registry: Pick<FileDeviceRegistry, "list">; fence?: () => CallFence }): LinkBotRelay {
   const device = (computer: string): string => {
     const id = deviceOfComputer(o.registry, computer);
     if (!id) throw new ContractError("bot_asleep", `${computer} isn't a paired computer`);
@@ -47,7 +50,8 @@ export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; reg
     async deliver(computer, session, input) {
       try {
         const link = await o.transport.connect(device(computer));
-        return await link.request<{ disposition: Disposition; seq: number }>(SESSION_DELIVER, { id: session, input });
+        const fence = o.fence?.();
+        return await link.request<{ disposition: Disposition; seq: number }>(SESSION_DELIVER, { id: session, input, ...(fence ? { fence } : {}) });
       } catch (e) {
         return asleep(computer, e);
       }
@@ -60,12 +64,16 @@ export function mountSessionDelivery(
   transport: Pick<LinkTransport, "handle">,
   registry: Pick<FileDeviceRegistry, "get">,
   deliver: (session: string, input: DeliveredInput, from: string) => Promise<{ disposition: Disposition; seq: number }>,
+  opts: { isStale?(epoch: number, scope?: string): boolean } = {},
 ): Unsubscribe {
   return transport.handle(SESSION_DELIVER, async (raw, from) => {
     const d = registry.get(from);
     if (!d || d.revokedAt !== undefined || !d.runsCore) throw new ContractError("refused", "only a paired computer delivers a session's message");
     const p = raw as { id?: unknown; input?: { from?: unknown; text?: unknown } } | undefined;
     if (typeof p?.id !== "string" || typeof p.input !== "object" || p.input === null) throw new ContractError("invalid", "link.session.deliver takes a session and an input");
+    // An old main's message is refused, not taken late (H-M2's review).
+    const fence = fenceOf(raw);
+    if (fence && opts.isStale?.(fence.epoch, fence.scope)) throw new ContractError("not_main", "the message comes from a main computer that has since lost the lease", { fence });
     // Never the user's: a user's message comes only through `peer.session.send`, with its device's signature.
     if (typeof p.input.from !== "string" || !DELIVERED_FROM.has(p.input.from) || typeof p.input.text !== "string") throw new ContractError("invalid", "not a session's message");
     return deliver(p.id, p.input as DeliveredInput, from);

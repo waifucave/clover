@@ -15,7 +15,7 @@
 //   POST   /v1/devices           {device, t, sig}   registers this device (sig over `registerStatement`)
 //   GET    /v1/devices                               {devices: [...]}, revoked ones with `revokedAt`
 //   DELETE /v1/devices/:id                           revokes a device of the account
-//   POST   /v1/tokens            {aud, dev, t, sig} {token, expiresAt} (sig over `mintStatement`)
+//   POST   /v1/tokens            {aud, dev, t, sig} {token, expiresAt} (sig over `mintStatement`, which names the account)
 //   GET    /.well-known/jwks.json                    the keys tokens are checked against
 // Each takes the Supabase access token as `Authorization: Bearer`.
 import { createHash } from "node:crypto";
@@ -35,8 +35,9 @@ export type AccountProvider = "email" | "discord" | "google";
  *  as another. */
 export const registerStatement = (account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array =>
   encode(["clover-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
-export const mintStatement = (audience: string, device: string, t: number): Uint8Array =>
-  utf8(["clover-account-v1 mint", audience, device, String(t)].join("\n"));
+/** What a device signs to have a token minted: the account it's on too, as the register statement names it (lane I). */
+export const mintStatement = (account: string, audience: string, device: string, t: number): Uint8Array =>
+  utf8(["clover-account-v1 mint", account, audience, device, String(t)].join("\n"));
 
 export interface AccountConfig {
   /** The Supabase project URL. */
@@ -202,9 +203,10 @@ export class AccountClient {
 
   /** An account token for one audience (a host), from the account service. */
   async mint(audience: string): Promise<{ value: Secret; expiresAt: number } | null> {
-    if (!(await this.#load())) return null;
+    const session = await this.#load();
+    if (!session) return null;
     const t = Math.floor(this.#o.clock.now());
-    const body = { aud: audience, dev: this.#o.device.id, t, sig: toBase64Url(this.#o.device.sign(mintStatement(audience, this.#o.device.id, t))) };
+    const body = { aud: audience, dev: this.#o.device.id, t, sig: toBase64Url(this.#o.device.sign(mintStatement(session.user.id, audience, this.#o.device.id, t))) };
     const res = await this.#service("POST", "/v1/tokens", body);
     const out = (await res.json()) as { token?: unknown; expiresAt?: unknown };
     if (typeof out.token !== "string" || typeof out.expiresAt !== "number") throw new ContractError("failed", "the account service answered without a token");

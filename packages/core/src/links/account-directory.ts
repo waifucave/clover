@@ -65,10 +65,11 @@ export class AccountDirectory implements PeerDirectory {
     this.#o = o;
   }
 
-  /** Whether `device` is found this way: a device of the account (not an account-less pair). */
+  /** Whether `device` is found this way: a device on the account's device list, whether it came in by the account or
+   *  was paired by code first (the list gave it its box key, `syncAccountDevices`), not an account-less pair. */
   covers(device: string): boolean {
     const d = this.#o.registry.get(device);
-    return d !== undefined && d.revokedAt === undefined && d.addedBy === "account";
+    return d !== undefined && d.revokedAt === undefined && d.id !== this.#o.registry.self().id && (d.addedBy === "account" || this.#o.registry.boxKey(d.id) !== undefined);
   }
 
   async target(device: string): Promise<DialTarget | undefined> {
@@ -199,7 +200,7 @@ export class AccountDirectory implements PeerDirectory {
 
   #peers(): DeviceRecord[] {
     const self = this.#o.registry.self().id;
-    return this.#o.registry.list().filter((d) => d.id !== self && d.addedBy === "account");
+    return this.#o.registry.list().filter((d) => d.id !== self && this.covers(d.id));
   }
 
   async #token(): Promise<string> {

@@ -113,6 +113,9 @@ export interface SharedClockOptions {
   publicEveryMs?: number;
   /** Samples kept; the shortest round trip among them wins. */
   keep?: number;
+  /** The most a reference may move this device's time from its own wall clock (2 minutes) unless public time, asked
+   *  here, agrees with it (H-M2's review: a paired computer can't set another's time without bound). */
+  maxOffsetMs?: number;
   log?(line: string): void;
 }
 
@@ -198,6 +201,10 @@ export class SharedClock implements Clock {
       this.#o.log?.(`[clock] measuring ${ref} failed: ${err instanceof Error ? err.message : String(err)}`);
       return undefined;
     }
+    if (ref !== "public" && Math.abs(s.offsetMs) > (this.#o.maxOffsetMs ?? 120_000) && !(await this.#publicAgrees(s))) {
+      this.#o.log?.(`[clock] ${ref} is ${Math.round(s.offsetMs / 1000)} s from this device's clock and public time doesn't bear it out: not followed`);
+      return undefined;
+    }
     this.#samples.push(s);
     const keep = this.#o.keep ?? 8;
     if (this.#samples.length > keep) this.#samples.splice(0, this.#samples.length - keep);
@@ -212,6 +219,17 @@ export class SharedClock implements Clock {
     this.#closed = true;
     if (this.#timer) this.#o.base.clearTimeout(this.#timer);
     this.#off();
+  }
+
+  /** Whether public time puts this device's clock about where the reference does (within 2 s and both round trips). */
+  async #publicAgrees(s: Sample): Promise<boolean> {
+    if (!this.#o.publicTime) return false;
+    try {
+      const p = await this.#o.publicTime.sample();
+      return Math.abs(p.offsetMs - s.offsetMs) <= 2_000 + p.rttMs / 2 + s.rttMs / 2;
+    } catch {
+      return false;
+    }
   }
 
   async #ping(peer: string): Promise<Sample> {

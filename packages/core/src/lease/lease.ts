@@ -9,9 +9,11 @@
 // * **The spec's exceptions to fencing** (`mayOutlast`): past its deadline, a holder that can't renew keeps acting
 //   only while no other computer could take over, or while it has a live link to each one that could. The
 //   coordinator answers that from the links (coordinator.ts).
-// * **The fencing token.** The epoch only rises; `highestEpoch` is the newest this device has seen, and
-//   `isStale(epoch)` tells a receiver to refuse an act stamped with an older one (PROTOCOL.md: "peers refuse acts with
-//   an epoch older than the newest they have seen").
+// * **The fencing token is (scope, epoch)** (H-M2's review): epochs count within one lease record (the account's, a
+//   group's, or this computer's own), so a sign-in or a merge starts a new count. `fence()` is what an act is stamped
+//   with; `isStale(epoch, scope)` tells a receiver to refuse an act from an earlier lease: an older epoch in the
+//   current scope, or a scope this device has left. A scope it hasn't reached yet is never judged stale (PROTOCOL.md:
+//   "peers refuse acts with an epoch older than the newest they have seen").
 //
 // What it leaves to the coordinator: when to renew, when to read, when to take over, and choosing the main.
 //
@@ -57,7 +59,9 @@ export class MainLease implements Lease {
   readonly #listeners = new Listeners<LeaseState>();
   /** The last record the service gave, by any answer or push. */
   #known: ScopeLease = { holder: null, holderRaw: null, epoch: 0, expiresAt: null };
-  #highest = 0;
+  /** The newest epoch seen, per scope id; and the scopes in the order this device was in them. */
+  readonly #highest = new Map<string, number>();
+  readonly #scopes: string[] = [];
   #reachable = true;
   /** On the monotonic clock: when this device stops acting on its lease, unless an exception holds. */
   #deadline: number | null = null;
@@ -112,7 +116,7 @@ export class MainLease implements Lease {
     if (!scope) {
       if (!opts.byUser) throw new ContractError("refused", "with no account and no account-less pair there is no handshake: taking over is the user's own action");
       this.#local = { epoch: (this.#local?.epoch ?? this.#known.epoch) + (this.#local ? 0 : 1) };
-      this.#highest = Math.max(this.#highest, this.#local.epoch);
+      this.#raise(this.#local.epoch);
       this.#changed();
       return this.state();
     }
@@ -138,7 +142,7 @@ export class MainLease implements Lease {
     this.#deadline = null;
     if (this.#local) {
       this.#local = null;
-      this.#known = { ...this.#known, epoch: Math.max(this.#known.epoch, this.#highest) };
+      this.#known = { ...this.#known, epoch: Math.max(this.#known.epoch, this.highestEpoch()) };
       this.#changed();
       return;
     }
@@ -186,12 +190,32 @@ export class MainLease implements Lease {
 
   /** The newest epoch this device has seen: the fencing token's high-water mark. */
   highestEpoch(): number {
-    return this.#highest;
+    return this.#highest.get(this.scopeId()) ?? 0;
   }
 
-  /** Whether an act stamped with `epoch` comes from an earlier lease than one this device has seen, and is refused. */
-  isStale(epoch: number): boolean {
-    return epoch < this.#highest;
+  /** The lease record this device is on now: the scope's id, or `local` for a lone computer's own lease. */
+  scopeId(): string {
+    return this.#o.scope()?.id ?? "local";
+  }
+
+  /** What an act of this computer's is stamped with. */
+  fence(): { scope: string; epoch: number } {
+    return { scope: this.scopeId(), epoch: this.state().epoch };
+  }
+
+  /** Whether an act stamped with `epoch` (and `scope`) comes from an earlier lease than one this device has seen, and
+   *  is refused. Without `scope`, the current one. */
+  isStale(epoch: number, scope?: string): boolean {
+    const now = this.scopeId();
+    if (scope === undefined || scope === now) return epoch < (this.#highest.get(now) ?? 0);
+    // A scope this device has left is an earlier lease; one it hasn't reached yet isn't judged here.
+    return this.#scopes.includes(scope);
+  }
+
+  #raise(epoch: number): void {
+    const id = this.scopeId();
+    if (!this.#scopes.includes(id)) this.#scopes.push(id);
+    this.#highest.set(id, Math.max(this.#highest.get(id) ?? 0, epoch));
   }
 
   /** Whether this device holds the lease by the last record (whether or not it may act on it now). */
@@ -237,6 +261,10 @@ export class MainLease implements Lease {
 
   /** The scope changed (a sign-in, a sign-out, a group merge): what was known about the old one no longer holds. */
   scopeChanged(): void {
+    // The new scope counts from its own record; the old one is now a scope this device has left.
+    const id = this.scopeId();
+    if (!this.#scopes.includes(id)) this.#scopes.push(id);
+    else this.#scopes.push(...this.#scopes.splice(this.#scopes.indexOf(id), 1));
     this.#deadline = null;
     this.#known = { holder: null, holderRaw: null, epoch: 0, expiresAt: null };
     this.#local = null;
@@ -298,7 +326,7 @@ export class MainLease implements Lease {
     // Never step back to an older record (a read that crossed a newer push).
     if (r.epoch < this.#known.epoch) return;
     this.#known = { ...r };
-    this.#highest = Math.max(this.#highest, r.epoch);
+    this.#raise(r.epoch);
     if (r.holder !== this.self) this.#deadline = null;
     this.#armLapse();
   }
