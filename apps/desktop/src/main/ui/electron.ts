@@ -84,10 +84,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
   // copy of the card's sealed content. What runs in it is the page's own check (IOv2 in E-M3's next piece); its
   // answers go over the preload's own channel (`clover:sealed-answer`). Nothing in production relaxes `isTrusted`
-  // or the open-delay: there is no `trust` knob.
+  // or the open-delay: there is no `trust` knob. Serving is single-use per token (the store marks it); the token
+  // itself is 20 crypto-random bytes, so no header gate is needed.
   ses.protocol.handle(SEALED_SCHEME, (request) => {
-    // Only a real iframe load takes the token: a stray top-level or resource fetch never serves a frame's page (S7).
-    if (request.headers.get("sec-fetch-dest") !== "iframe") return forbidden();
     const url = new URL(request.url);
     if (url.pathname !== "/" && !url.pathname.startsWith("/card/")) return notFound();
     const token = url.searchParams.get("token");
@@ -265,6 +264,10 @@ export interface IpcHooks {
    *  computer-use gate first, in the main process (B3). `senderKey` is the sender frame's own key, checked against the
    *  mint's binding (B4). */
   sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string }>;
+  /** A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
+   *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
+   *  token was served to. */
+  sealedVisible(token: string, visible: boolean): void;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -525,11 +528,21 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     return hooks.sealedAnswer(token, option, key, ch);
   });
   // A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
-  // a card's buttons show (§5.5's fallback rule).
+  // a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
+  // token was served to, on the channel the mint bound (a part's document frame, the fallback's main frame).
   on("clover:sealed-visible", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
     const token = str(a.token, 128);
     const visible = typeof a.visible === "boolean" ? a.visible : undefined;
     if (token === undefined || visible === undefined) throw new LayerError("bad sealed visibility");
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed visibility");
+    const key = f.parent !== null && !f.parent.detached
+      ? `p:${f.parent.processId}:${f.parent.routingId}`
+      : `m:${f.processId}:${f.routingId}`;
+    const bound = runtime.boundOf(token);
+    if (bound === undefined || bound !== key) throw new LayerError("bad sealed visibility");
     return hooks.sealedVisible(token, visible);
   });
   // The root's own calls: only from a window's main frame on the core's origin.

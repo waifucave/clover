@@ -6,8 +6,8 @@
 // signer, so the tests drive it under Bun.
 //
 // What never happens here: a plugin reads the sealed fields (the events on the layer's role carry ids only
-// (`card_pending`), a plugin's page carries no field's url, the sealed pages' contents go nowhere (each scheme serve
-// reads `Sec-Fetch-Dest: iframe` and marks the token served once), and nothing signs except the answer key. A part's
+// (`card_pending`), a plugin's page carries no field's url, each token serves once (the store marks it served),
+// and nothing signs except the answer key. A part's
 // token is bound to its own document's frame (the mint holds it; the answer's sender's parent must match), the
 // fallback's `own` channel to its window's main frame. The channel's lifetime covers the *serve* alone: an answer
 // self-expires with a mint's own band (a reader takes their time), and the core's own `card.answer` decides the
@@ -156,8 +156,8 @@ export class SealedFrames {
     return { token, card };
   }
 
-  /** The scheme's single serve of a frame's page: once, on `Sec-Fetch-Dest: iframe`'s own load, before its ttl runs.
-   *  The answer's channel stays (S7's fix: only a real iframe load takes the token). */
+  /** The scheme's single serve of a frame's page: once, before its ttl runs. The token is 20 crypto-random bytes
+   *  and single-use, so no header gate is needed. The answer's channel stays. */
   serve(token: string): { card: SealedCard; element: string; windowId?: number; tokens?: Readonly<Record<string, TokenValue>> } | undefined {
     const ch = this.channels.get(token);
     if (ch === undefined || ch.served === true || this.now() - ch.at > SERVE_TTL_MS) return undefined;
@@ -182,17 +182,26 @@ export class SealedFrames {
     else this.visible.delete(token);
   }
 
-  /** Whether every `button:*` channel of a card has reported itself visible (the fallback rule: only show the
-   *  fallback when no plugin has both buttons on screen and visible within 2 s). */
+  /** Whether a card's approve and deny buttons both show (the fallback rule: only show the fallback when no
+   *  plugin has both buttons on screen and visible within 2 s). Matched to the card's own options: at least one
+   *  visible button channel for an approve option, and at least one for a deny option. A plugin that places only
+   *  Approve never cancels the fallback alone. */
   buttonsVisible(cardId: string): boolean {
-    let any = false;
+    const card = this.cards.get(cardId);
+    if (card === undefined) return false;
+    const approveIds = new Set(card.options.filter((o) => o.kind === "approve").map((o) => o.id));
+    const denyIds = new Set(card.options.filter((o) => o.kind === "deny").map((o) => o.id));
+    if (approveIds.size === 0 || denyIds.size === 0) return false;
+    let approveSeen = false;
+    let denySeen = false;
     for (const [t, ch] of this.channels) {
-      if (ch.cardId === cardId && ch.element.startsWith("button:")) {
-        any = true;
-        if (!this.visible.has(t)) return false;
-      }
+      if (ch.cardId !== cardId || !ch.element.startsWith("button:")) continue;
+      if (!this.visible.has(t)) continue;
+      const optionId = ch.element.slice("button:".length);
+      if (approveIds.has(optionId)) approveSeen = true;
+      if (denyIds.has(optionId)) denySeen = true;
     }
-    return any;
+    return approveSeen && denySeen;
   }
 
   /** Binds a channel to a frame key after the page has loaded (the fallback's own window's main frame isn't known at

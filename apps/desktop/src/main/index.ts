@@ -182,13 +182,20 @@ async function ready(): Promise<void> {
       sealed.confirmedAnswer(out.card.id, true);
       return { accepted: true };
     },
-    // A sealed frame's page reports its own visibility (IOv2). When all of a card's buttons are visible, the
-    // fallback's timer is disarmed (§5.5: only show the fallback when no plugin has both buttons visible within 2 s).
-    sealedVisible: (token, visible) => {
+    // A sealed frame's page reports its own visibility (IOv2). When a card's approve and deny buttons both show,
+    // the fallback's timer is disarmed (§5.5: only show the fallback when no plugin has both buttons visible within
+    // 2 s). When either stops being visible, the timer starts again.
+    sealedVisible: (token: string, visible: boolean) => {
       sealed.markVisible(token, visible === true);
+      const cardId = sealed.cardOf(token);
+      if (cardId === undefined) return;
       if (visible === true) {
-        const cardId = sealed.cardOf(token);
-        if (cardId !== undefined && sealed.buttonsVisible(cardId)) disarmFallback(cardId);
+        if (sealed.buttonsVisible(cardId)) disarmFallback(cardId);
+      } else {
+        const own = fallbacks.get(cardId);
+        if (own?.win === undefined || (own.win !== undefined && own.win.isDestroyed())) {
+          if (sealed.get(cardId) !== undefined) void armFallback(cardId);
+        }
       }
     },
     userSend: async (windowId, to, message) => {
@@ -286,6 +293,19 @@ async function showFallbackCard(cardId: string): Promise<void> {
     const own = fallbacks.get(cardId);
     if (own?.win === win) fallbacks.delete(cardId);
   });
+  // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within
+  // the cursor's display's work area before showing it, never after, so it never appears first in its default place.
+  try {
+    const cursor = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursor);
+    const area = display.workArea;
+    const bounds = win.getBounds();
+    const awayX = cursor.x < area.x + area.width / 2 ? area.x + area.width - bounds.width - 16 : area.x + 16;
+    const awayY = Math.min(Math.max(cursor.y - bounds.height - 32, area.y + 16), area.y + area.height - bounds.height - 16);
+    const placedX = Math.min(Math.max(awayX, area.x), area.x + Math.max(0, area.width - bounds.width));
+    const placedY = Math.min(Math.max(awayY, area.y), area.y + Math.max(0, area.height - bounds.height));
+    win.setBounds({ x: Math.round(placedX), y: Math.round(placedY), width: bounds.width, height: bounds.height });
+  } catch { /* best effort */ }
   // Bind the fallback's channel to its window's main frame once the page loads (B3): a plugin can't guess the
   // window's frame ids, and a frame from another window can't answer with this token.
   win.loadURL(url).then(() => {
@@ -293,13 +313,6 @@ async function showFallbackCard(cardId: string): Promise<void> {
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
     if (!win.isDestroyed()) win.showInactive();
-    // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3).
-    try {
-      const cursor = screen.getCursorScreenPoint();
-      const bounds = win.getBounds();
-      const awayX = cursor.x > 0 ? Math.max(0, cursor.x - bounds.width - 200) : cursor.x + 200;
-      win.setBounds({ x: awayX, y: Math.max(0, cursor.y - 200), width: bounds.width, height: bounds.height });
-    } catch { /* best effort */ }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
@@ -1210,7 +1223,8 @@ async function smoke(): Promise<void> {
     }
     // The sealed UI test's click: once everything has drawn, click the named sealed frame's button so its answer
     // rides `card.answer` to the fake daemon (unpackaged runs only). Driven with `webContents.sendInputEvent` at the
-    // button's real coordinates, which produces trusted events (no `trust` knob in production).
+    // button's real coordinates, which produces trusted events (no `trust` knob in production). The sealed iframe
+    // sits inside the plugin's layer frame, not the root document, so offsets are summed up through each frame.
     if (drawn && !sealedClicked) {
       const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
       if (spec !== undefined) {
@@ -1220,11 +1234,12 @@ async function smoke(): Promise<void> {
           } = JSON.parse(spec) as {
             cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean;
           };
-          const frame = win.webContents.mainFrame.framesInSubtree.find((f) =>
+          const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
             (cardId === undefined || f.url.includes(cardId)) &&
             (element === undefined || f.url.includes(element)));
           if (frame !== undefined) {
+            log(`sealed-click: frame found ${frame.url.slice(0, 80)}`);
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             if (cover === true) {
               await frame.executeJavaScript(`(() => {
@@ -1246,24 +1261,73 @@ async function smoke(): Promise<void> {
             }
             // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms).
             await new Promise((r) => setTimeout(r, 350));
-            const buttonRect = await frame.executeJavaScript<{ x: number; y: number; width: number; height: number } | null>(
-              `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true);
-            const frameRect = await win.webContents.executeJavaScript<{ x: number; y: number } | null>(
-              `(() => { const f = document.querySelector('iframe[src*="clover-sealed://"]'); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.x, y: r.y }; })()`, true);
-            if (buttonRect !== null && frameRect !== null) {
-              const centerX = Math.round(frameRect.x + buttonRect.x + buttonRect.width / 2);
-              const centerY = Math.round(frameRect.y + buttonRect.y + buttonRect.height / 2);
-              const press = (kind: "down" | "up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
-              press("down");
-              press("up");
+            const buttonRaw = await frame.executeJavaScript(
+              `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
+            const buttonRect = buttonRaw !== null && typeof buttonRaw === "object" && typeof (buttonRaw as { x?: unknown }).x === "number" ? buttonRaw as { x: number; y: number; width: number; height: number } : null;
+            // Sum the iframe offsets from the sealed frame up to the main frame: the sealed iframe lives in the
+            // plugin's layer document, which itself lives in the root document.
+            let offsetX = 0;
+            let offsetY = 0;
+            let chainOk = true;
+            // Build the chain from the live frame tree: sealed frame, then each parent up to the main frame.
+            let cursor: { parent: unknown } | null | undefined = frame as unknown as { parent: unknown } | null;
+            const ordered: Electron.WebFrameMain[] = [frame];
+            while (cursor !== null && cursor !== undefined && (cursor as { parent?: unknown }).parent !== null && (cursor as { parent?: unknown }).parent !== undefined) {
+              const parent = (cursor as { parent: Electron.WebFrameMain }).parent;
+              if ((parent as unknown as { detached?: boolean }).detached === true) break;
+              ordered.push(parent);
+              if (parent === win.webContents.mainFrame) break;
+              cursor = parent as unknown as { parent: unknown } | null;
+              if (ordered.length > 8) break;
+            }
+            ordered.reverse();
+            for (let i = 0; i + 1 < ordered.length; i++) {
+              const parent = ordered[i]!;
+              const child = ordered[i + 1]!;
+              const childUrl: string = child.url;
+              let token = childUrl;
+              try { token = new URL(childUrl).searchParams.get("token") ?? childUrl; } catch { /* use full url */ }
+              const base = (() => { try { return new URL(childUrl).origin + new URL(childUrl).pathname; } catch { return childUrl.split("?")[0] ?? childUrl; } })();
+              const probe = `(() => {
+                const want = ${JSON.stringify(token)};
+                const baseWant = ${JSON.stringify(base)};
+                const frames = [...document.querySelectorAll('iframe')];
+                let el = frames.find((f) => f.src.includes(want));
+                if (!el && baseWant !== "") el = frames.find((f) => f.src.includes(baseWant));
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.x, y: r.y };
+              })()`;
+              const rectRaw = await parent.executeJavaScript(probe, true).catch(() => null) as { x: number; y: number } | null;
+              if (rectRaw === null || typeof rectRaw !== "object" || typeof (rectRaw as { x?: unknown }).x !== "number" || typeof (rectRaw as { y?: unknown }).y !== "number") { chainOk = false; break; }
+              const rect = rectRaw as { x: number; y: number };
+              offsetX += rect.x;
+              offsetY += rect.y;
+            }
+            if (!chainOk) log(`sealed-click: no offset chain for ${frame.url.slice(0, 80)}`);
+            // Report how the label renders, so the markup case proves text, not HTML (check 3).
+            const labelRaw = await frame.executeJavaScript(
+              `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
+            if (labelRaw !== null && typeof labelRaw === "object") log(`sealed-click: label html=${String((labelRaw as { html?: unknown }).html ?? "")} hasBold=${String((labelRaw as { hasBold?: unknown }).hasBold ?? "")}`);
+            if (buttonRect !== null && chainOk) {
+              const centerX = Math.round(offsetX + buttonRect.x + buttonRect.width / 2);
+              const centerY = Math.round(offsetY + buttonRect.y + buttonRect.height / 2);
+              const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
+              log(`sealed-click: press sent at ${centerX},${centerY}`);
+              press("Down");
+              press("Up");
               if (doubleClick === true) {
                 // A second press while the first answer is still in flight must not land (should-fix 3).
                 await new Promise((r) => setTimeout(r, 300));
-                press("down");
-                press("up");
+                press("Down");
+                press("Up");
               }
+              sealedClicked = true;
+            } else {
+              log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
             }
-            sealedClicked = true;
+          } else {
+            log(`sealed-click: no sealed frame`);
           }
         } catch { /* bad spec: no click */ }
       }
@@ -1274,15 +1338,18 @@ async function smoke(): Promise<void> {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
         if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
+        log(`sealed-click: fallback frame found ${w.webContents.getURL().slice(0, 80)}`);
         const frame = w.webContents.mainFrame;
-        const buttonRect = await frame.executeJavaScript<{ x: number; y: number; width: number; height: number } | null>(
-          `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true);
+        const fallbackRaw = await frame.executeJavaScript(
+          `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
+        const buttonRect = fallbackRaw !== null && typeof fallbackRaw === "object" && typeof (fallbackRaw as { x?: unknown }).x === "number" ? fallbackRaw as { x: number; y: number; width: number; height: number } : null;
         if (buttonRect !== null) {
           const bounds = w.getBounds();
           const centerX = Math.round(bounds.x + buttonRect.x + buttonRect.width / 2);
           const centerY = Math.round(bounds.y + buttonRect.y + buttonRect.height / 2);
-          void w.webContents.sendInputEvent({ type: "mousedown", x: centerX, y: centerY, button: "left" });
-          void w.webContents.sendInputEvent({ type: "mouseup", x: centerX, y: centerY, button: "left" });
+          log(`sealed-click: fallback press sent at ${centerX},${centerY}`);
+          void w.webContents.sendInputEvent({ type: "mouseDown", x: centerX, y: centerY, button: "left" });
+          void w.webContents.sendInputEvent({ type: "mouseUp", x: centerX, y: centerY, button: "left" });
         }
         break;
       }

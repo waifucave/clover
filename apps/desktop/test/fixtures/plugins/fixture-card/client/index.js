@@ -8,7 +8,6 @@ export function CardEntry({ props, tokens, entry }) {
   void props;
   void tokens;
   void entry;
-  void cards;
   const approve = useRef(null);
   const deny = useRef(null);
   return h("div", { style: { position: "fixed", inset: 0 } },

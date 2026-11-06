@@ -169,12 +169,13 @@ export function ownCardPage(input: {
   const script = `(() => {
   const b = window.cloverSealed;
   if (b === undefined) return;
-  // About a second after the page is shown (showInactive), reset on any move, and require the pointer to have
-  // entered the window after it showed: a timed "click here" prompt can't land on Approve (S3).
+  // About a second after the page is shown (showInactive): the 1 s wait restarts when the window is shown or moved,
+  // never on mouse movement, and the pointer must have entered the window after it showed, so a timed "click here"
+  // prompt can't land on Approve (S3, check 3). The page is placed before it is shown, so shown is load time here.
   let openedAt = Date.now();
   let pointerEntered = false;
-  window.addEventListener("mousemove", () => { openedAt = Date.now(); }, { passive: true });
-  window.addEventListener("mouseenter", () => { pointerEntered = true; }, { once: true, passive: true });
+  document.addEventListener("pointerover", () => { pointerEntered = true; }, { once: true, passive: true });
+  document.addEventListener("mouseover", () => { pointerEntered = true; }, { once: true, passive: true });
   document.addEventListener("click", (e) => {
     if (!pointerEntered) return;
     if (Date.now() - openedAt < 1000) return;

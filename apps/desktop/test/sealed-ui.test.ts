@@ -181,16 +181,22 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
 
   test("a covered press does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", cover: true } });
+    expect(r.output).toContain("sealed-click: frame found");
+    expect(r.output).toContain("sealed-click: press sent at");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
   test("a semi-transparent (opacity) cover does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", opacity: 0 } });
+    expect(r.output).toContain("sealed-click: frame found");
+    expect(r.output).toContain("sealed-click: press sent at");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
   test("a press while computer use is acting does not land (B3)", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" }, acting: true });
+    expect(r.output).toContain("sealed-click: frame found");
+    expect(r.output).toContain("sealed-click: press sent at");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
@@ -201,6 +207,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
 
   test("the fallback card's answer lands", async () => {
     const r = await runApp({ fallback: true, withFixture: false, card: CARD });
+    expect(r.output).toContain("sealed-click: fallback frame found");
+    expect(r.output).toContain("sealed-click: fallback press sent at");
     const answers = answerCallsOf(r.home);
     expect(answers, r.output).toHaveLength(1);
     const answer = answers[0]!;
@@ -211,6 +219,10 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
 
   test("a markup label renders as text", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" }, card: CARD_MARKUP });
+    expect(r.output).toContain("sealed-click: frame found");
+    expect(r.output).toContain("sealed-click: press sent at");
+    expect(r.output).toContain("hasBold=false");
+    expect(r.output).toContain("&lt;b&gt;");
     const answers = answerCallsOf(r.home);
     expect(answers, r.output).toHaveLength(1);
     const answer = answers[0]!;

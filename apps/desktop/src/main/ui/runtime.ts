@@ -942,6 +942,11 @@ export class UiRuntime {
     return url;
   }
 
+  /** Who a sealed token's channel belongs to, for the sender's binding check (E-M3 check 3). */
+  boundOf(token: string): string | undefined {
+    return this.sealed?.boundOf(token);
+  }
+
   /** The scheme's serving: the page's own HTML for one token, once (the store marks it), with its own headers. */
   serveSeal(token: string): { html: string; headers: Readonly<Record<string, string>> } | undefined {
     if (this.sealed === undefined) return undefined;
