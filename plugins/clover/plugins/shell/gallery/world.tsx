@@ -308,9 +308,8 @@ const coreHandlers: Handlers = {
   "session.interrupt": () => ({ ok: true }),
   "session.stop": () => ({ ok: true }),
   "session.setModel": () => ({ ok: true }),
-  "session.changes": ({ id }) => (SESSIONS.find((s) => s.id === id)?.kind === "coding" && SESSION_COLUMN.changes ? { label: SESSION_COLUMN.changes.label, added: SESSION_COLUMN.changes.added, removed: SESSION_COLUMN.changes.removed, files: SESSION_COLUMN.changes.files, prs: SESSION_COLUMN.changes.prs ?? [] } : null),
+  "session.changes": ({ id }) => (SESSIONS.find((s) => s.id === id)?.kind === "coding" && SESSION_COLUMN.changes ? { label: SESSION_COLUMN.changes.label, added: SESSION_COLUMN.changes.added, removed: SESSION_COLUMN.changes.removed, files: SESSION_COLUMN.changes.files } : null),
   "session.diff": () => ({ base: "main", target: "working tree", targets: ["last commit"], files: FILES, notice: "Large files start folded. Open one to see it whole." }),
-  "session.createPr": () => ({ ok: true }),
   "session.outputs": ({ id }) =>
     id === "s_alpha"
       ? { items: [{ id: "b1", name: "This week in the clover repo", kind: "page" }, { id: "b2", name: "garden-beds.csv", kind: "file" }], more: 0 }

@@ -49,8 +49,5 @@ export interface SessionViewProps {
     removed: number;
     files: number;
     onOpenDiff?: () => void;
-    onCreatePr?: () => void;
-    prs: { id: string; title: string; repo: string; number: number; state: "open" | "draft" | "merged" }[];
-    onOpenPr?: (id: string) => void;
   };
 }

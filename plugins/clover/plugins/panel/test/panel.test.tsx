@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SessionView } from "../client/SessionView";
 import { BOT_COLUMN, SESSION } from "../gallery/fixtures";
 
@@ -42,18 +42,13 @@ describe("the session column", () => {
     expect(screen.getByText(/28,000 of 200,000/)).toBeTruthy();
   });
 
-  test("outputs open; changes show their stat, create a PR, and list the PRs", () => {
+  test("outputs open; changes show their stat and open the diff; no pull requests (no basis in the spec)", () => {
     const onOpen = mock((_id: string) => undefined);
-    const onCreatePr = mock(() => undefined);
-    render(<SessionView {...SESSION} outputs={{ ...SESSION.outputs!, onOpen }} changes={{ ...SESSION.changes!, onCreatePr }} />);
+    render(<SessionView {...SESSION} outputs={{ ...SESSION.outputs!, onOpen }} />);
     fireEvent.click(screen.getByRole("button", { name: /Panel layout review/ }));
     expect(onOpen).toHaveBeenCalledWith("o1");
     expect(screen.getByRole("button", { name: "lane/f-m1: 41 files, 2844 added, 365 removed" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Create PR" }));
-    expect(onCreatePr).toHaveBeenCalledTimes(1);
-    const prs = screen.getByText("F-M1: the conversation parts").closest("ul") as HTMLElement;
-    expect(within(prs).getByText("clover #155 · Open")).toBeTruthy();
-    expect(within(prs).getByText("clover #152 · Merged")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create PR" })).toBeNull();
   });
 
   test("there is no Save: a session's setup isn't kept from here", () => {

@@ -22,11 +22,10 @@ const SESSIONS = [
 
 function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void) => ReactNode) {
   const core = fakeCore({
-    "session.changes": () => ({ label: "lane/f-m2", added: 120, removed: 30, files: 9, prs: [{ id: "p1", title: "F-M2", repo: "clover", number: 170, state: "open" }] }),
+    "session.changes": () => ({ label: "lane/f-m2", added: 120, removed: 30, files: 9 }),
     "session.outputs": () => ({ items: [{ id: "o1", name: "Shell screens", kind: "page" }], more: 0 }),
     "session.context": () => ({ used: 0.2, tokens: 40_000, window: 200_000 }),
     "session.connectors": () => ({ total: 3, needSignIn: 1 }),
-    "session.createPr": () => ({ ok: true }),
   });
   const api = fakeApi({
     conversation: { get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
@@ -40,7 +39,7 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
 
 describe("the session column", () => {
   test("a coding session's: its agents, where it runs, context, connectors, outputs and changes", async () => {
-    const { core, routes, opened } = mount((navigate, open) => <SessionColumn props={{ session: "code-1", sessionKind: "coding", navigate, onOpenAgent: open }} />);
+    const { routes, opened } = mount((navigate, open) => <SessionColumn props={{ session: "code-1", sessionKind: "coding", navigate, onOpenAgent: open }} />);
     await act(() => settle());
     expect(screen.getByText("This computer")).toBeTruthy();
     expect(screen.getByText("Level: Ask when risky")).toBeTruthy();
@@ -51,10 +50,8 @@ describe("the session column", () => {
     expect(screen.getByRole("button", { name: "lane/f-m2: 9 files, 120 added, 30 removed" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Lint/ }));
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create PR" }));
     expect(opened).toEqual(["sub-1"]);
     expect(routes).toEqual([{ route: "settings", params: { section: "levels" } }]);
-    expect(core.calls.filter((c) => c.method === "session.createPr").map((c) => c.params)).toEqual([{ id: "code-1" }]);
   });
 
   test("an agent's column has no changes: only a coding session's are read", async () => {

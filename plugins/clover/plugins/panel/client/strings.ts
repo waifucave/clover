@@ -41,9 +41,6 @@ export const S = {
   diffStat: (added: number, removed: number) => `+${added} −${removed}`,
   diffStatLabel: (files: number, added: number, removed: number) =>
     `${n(files, "1 file", "# files")}, ${added} added, ${removed} removed`,
-  createPr: "Create PR",
-  prState: { open: "Open", draft: "Draft", merged: "Merged" } as const,
-  pr: (repo: string, number: number) => `${repo} #${number}`,
   agentStatus: {
     running: "Running",
     "needs-you": "Needs you",

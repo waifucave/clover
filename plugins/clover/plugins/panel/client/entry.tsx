@@ -122,7 +122,7 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
       {...(data.context ? { context: contextOf(data.context)! } : {})}
       {...(data.connectors ? { connectors: data.connectors } : {})}
       {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined, ...(data.outputs.more ? { more: data.outputs.more, onShowMore: () => undefined } : {}) } } : {})}
-      {...(data.changes ? { changes: { ...data.changes, ...(core ? { onCreatePr: () => void core.call("session.createPr", { id: s.id }) } : {}) } } : {})}
+      {...(data.changes ? { changes: data.changes } : {})}
     />
   );
 }

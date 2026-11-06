@@ -18,7 +18,6 @@ import {
   IconImage,
   IconLevel,
   IconPage,
-  IconPullRequest,
 } from "./icons";
 import { S } from "./strings";
 import type { SessionViewProps } from "./types";
@@ -191,31 +190,7 @@ export function SessionView(props: SessionViewProps) {
               <span className="cl-session__added">+{changes.added}</span>
               <span className="cl-session__removed">−{changes.removed}</span>
             </button>
-            {changes.onCreatePr && (
-              <button type="button" className="cl-session__button" onClick={changes.onCreatePr}>
-                {S.createPr}
-              </button>
-            )}
           </div>
-          {changes.prs.length > 0 && (
-            <ul className="cl-session__list">
-              {changes.prs.map((pr) => (
-                <li key={pr.id}>
-                  <button type="button" className="cl-session__row cl-session__pr" onClick={() => changes.onOpenPr?.(pr.id)} title={pr.title}>
-                    <span className="cl-session__pr-icon" data-state={pr.state}>
-                      <IconPullRequest />
-                    </span>
-                    <span className="cl-session__pr-text">
-                      <span className="cl-session__name">{pr.title}</span>
-                      <span className="cl-session__meta">
-                        {S.pr(pr.repo, pr.number)} · {S.prState[pr.state]}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
         </Section>
       )}
     </div>
