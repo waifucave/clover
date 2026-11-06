@@ -25,17 +25,17 @@ describe("documents and headers (S9, decision 94)", () => {
   test("layers reach only their own origin until hosts are declared; frames only from layer origins", () => {
     const csp = layerCsp();
     for (const d of ["default-src 'none'", "connect-src 'self'", "frame-src clover-plugin:", "form-action 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp).toContain(d);
-    expect(connectionAllowlist()).toBe("(response-origin)");
-    expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" response-origin)');
+    expect(connectionAllowlist()).toBe('("clover-sealed://card/*" response-origin)');
+    expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" "clover-sealed://card/*" response-origin)');
     // A document names each installed layer by its label, never a `*` host: Chromium matches its DNS lookups against
-    // the list by host alone (the E-M1 review's B1).
-    expect(connectionAllowlist([], ["clover", "fixture-composer"])).toBe('("clover-plugin://clover/*" "clover-plugin://fixture-composer/*" response-origin)');
-    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("clover-plugin://ok/*" response-origin)');
+    // the list by host alone (the E-M1 review's B1). The sealed frames' origin rides along always (E-M3).
+    expect(connectionAllowlist([], ["clover", "fixture-composer"])).toBe('("clover-plugin://clover/*" "clover-plugin://fixture-composer/*" "clover-sealed://card/*" response-origin)');
+    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("clover-plugin://ok/*" "clover-sealed://card/*" response-origin)');
     const doc = layerHeaders("text/html; charset=utf-8", [], ["clover", "alpha"]);
-    expect(doc).toMatchObject({ "Connection-Allowlist": '("clover-plugin://clover/*" "clover-plugin://alpha/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
+    expect(doc).toMatchObject({ "Connection-Allowlist": '("clover-plugin://clover/*" "clover-plugin://alpha/*" "clover-sealed://card/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
     expect(doc["Connection-Allowlist"]).not.toContain("://*");
-    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe("(response-origin)");
-    expect(layerHeaders("text/javascript; charset=utf-8", [], ["clover"])["Connection-Allowlist"]).toBe("(response-origin)");
+    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe('("clover-sealed://card/*" response-origin)');
+    expect(layerHeaders("text/javascript; charset=utf-8", [], ["clover"])["Connection-Allowlist"]).toBe('("clover-sealed://card/*" response-origin)');
     expect(layerHeaders("image/png")["Connection-Allowlist"]).toBeUndefined();
     expect(CORE_CSP).toContain("connect-src 'none'");
     expect(CORE_CSP).toContain("frame-ancestors 'none'");
