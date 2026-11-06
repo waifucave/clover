@@ -31,7 +31,8 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
-import { createCloverServer, type CloverServer } from "./ipc/clover";
+import { createCloverServer, laneMethodHandlers, type CloverServer } from "./ipc/clover";
+import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
@@ -3129,6 +3130,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
+    // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
+    ...(opts.modelPluginHost !== undefined ? { handlers: laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })) } : {}),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,

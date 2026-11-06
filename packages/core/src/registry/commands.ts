@@ -4,9 +4,11 @@
 // doesn't fit answers `invalid_args` with the failing JSON Pointer and keyword, never the value, and the handler
 // never sees it.
 import { validateArgs } from "@waifucave/clover-plugin-sdk";
-import type { Caller } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
+import type { PluginRegistry } from "../contracts/plugin-registry";
+import { handler, type MethodHandler } from "../rpc/handler";
 
 /** A command as the registry knows it: `<namespace>.<name>`, its plugin, its handler and its declared `args` schema. */
 export interface RunnableCommand {
@@ -34,4 +36,21 @@ export async function runCommand(o: CommandRunnerOptions, params: { name: string
   }
   const result = await o.host.invoke({ pluginId: command.pluginId, handler: command.handler, args: params.args ?? {}, caller });
   return { result };
+}
+
+/** The active command of that full name in the registry (`<namespace>.<name>`, the registry's `entryId`). */
+export function registryCommand(registry: Pick<PluginRegistry, "entries">, name: string): RunnableCommand | undefined {
+  const c = registry.entries("commands").find((e) => e.state === "active" && e.entryId === name);
+  if (c === undefined) return undefined;
+  const v = c.value as { handler: string; args?: Record<string, unknown> };
+  return { name, pluginId: c.pluginId, handler: v.handler, ...(v.args === undefined ? {} : { args: v.args }) };
+}
+
+/** `command.run` on Clover's connections: every caller's call goes through `runCommand`, the args check first. */
+export function commandMethods(deps: { registry: Pick<PluginRegistry, "entries">; host: Pick<PluginHost, "invoke"> }): Record<string, MethodHandler> {
+  const M = PLUGINS_METHODS;
+  const o: CommandRunnerOptions = { find: (name) => registryCommand(deps.registry, name), host: deps.host };
+  return {
+    [M.commandRun.name]: handler(M.commandRun, (p, ctx) => runCommand(o, { name: p.name, ...(p.args === undefined ? {} : { args: p.args }) }, ctx.caller)),
+  };
 }
