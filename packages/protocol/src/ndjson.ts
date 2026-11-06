@@ -16,8 +16,8 @@ export function encodeLine(msg: unknown): Uint8Array {
  *  at a time costs neither a quadratic re-copy nor a per-chunk object. (The first shape re-merged and
  *  re-scanned the whole partial line on every chunk: a 7 MB request in 8 KB chunks spent over a
  *  second in this loop alone.) A buffer that grew past `SHRINK_ABOVE` is released once its line
- *  completes. Semantics are unchanged: blank lines are skipped, and a PARTIAL line held past
- *  `maxLine` resets the decoder and throws (a complete line in one chunk is not measured). */
+ *  completes. Blank lines are skipped, and a line longer than `maxLine`, complete or still partial,
+ *  resets the decoder and throws: a complete line that arrived in one chunk is measured too. */
 export class LineDecoder {
   private buf: Uint8Array = new Uint8Array(0);
   private len = 0;
@@ -52,6 +52,11 @@ export class LineDecoder {
       if (this.len > 0) {
         this.append(tail);
         line = this.buf.subarray(0, this.len);
+      }
+      if (line.length > this.maxLine) {
+        this.len = 0;
+        this.buf = new Uint8Array(0);
+        throw new Error(`ndjson: line too long (> ${this.maxLine} bytes)`);
       }
       // Blank lines are skipped: NDJSON has no use for them in JSON-RPC and JSON.parse("") throws downstream.
       if (line.length > 0) lines.push(this.decoder.decode(line));

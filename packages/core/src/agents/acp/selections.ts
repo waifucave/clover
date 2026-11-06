@@ -7,7 +7,8 @@
 //   one's choice, not the user's.
 // * The record outlives a crash or a daemon restart (a file in the daemon's run folder, which the fence denies to
 //   every bot and agent). When the last holder ends without a live session to set it back through (its process
-//   crashed), the record stays, and the next delegation that ends sets it back.
+//   crashed), the record stays, and the next session of that agent to open sets it back at once (`leftover`), whether
+//   or not it changes the option itself (check 2's minor 4).
 // * A record left by a crash gives way to a newer choice of the user's: when the next delegation finds the option at
 //   a value Clover didn't set, the user changed it since, and that value is captured instead.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -41,6 +42,21 @@ export class UserSelections {
     }
     holders.add(holder);
     this.#holders.set(key, holders);
+  }
+
+  /** A session opened and found the option at `current`: the user's value to set back now, when a record was left
+   *  with no holder and the value is still the one Clover set. */
+  leftover(backend: string, option: string, current: string | undefined): string | undefined {
+    const key = keyOf(backend, option);
+    if ((this.#holders.get(key)?.size ?? 0) > 0) return undefined;
+    const r = this.#read(key);
+    if (!r || current === undefined) return undefined;
+    if (r.ours !== current) {
+      // The user changed it since: their choice stands, and the record goes.
+      this.restored(backend, option);
+      return undefined;
+    }
+    return r.user;
   }
 
   /** `holder` set the option to `value`. */

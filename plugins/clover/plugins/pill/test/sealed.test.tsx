@@ -156,7 +156,7 @@ describe("the frames take the pill's own tokens", () => {
     const src = PILL_CARD_SOURCES["card.approve.text"]!;
     expect("token" in src && src.token).toBe("pill.accept.text");
     const font = PILL_CARD_SOURCES["card.font.family"]!;
-    expect("token" in font && font.token).toBe("font.sans");
+    expect("token" in font && font.token).toBe("card.font.family");
     const unresolved = resolveCardTokens(PILL_CARD_SOURCES, () => "system");
     for (const [key, source] of Object.entries(PILL_CARD_SOURCES)) if ("token" in source) expect(unresolved[key], key).toBe(source.fallback);
   });
