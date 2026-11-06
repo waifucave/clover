@@ -121,6 +121,11 @@ async function ready(): Promise<void> {
   powerMonitor.on("shutdown", () => {
     shuttingDown = true;
   });
+  // A laptop suspends: the lease goes without leaving, so the bots are taken while this computer sleeps (§6.4,
+  // lane H's ask). The daemon decides who takes them; on a wake this machine takes them back itself.
+  powerMonitor.on("suspend", () => {
+    if (!shuttingDown) void pair?.handOver().then((took) => log(`pair: main.handOver at suspend: ${took ? "ok" : "no"}`));
+  });
   await hardenSession(session.defaultSession, log);
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);

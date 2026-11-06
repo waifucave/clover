@@ -171,6 +171,9 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         reply({ ok: true });
         resolveQuit({ handOver: params.handOver === true });
         return;
+      // The app's laptop suspends: the lease goes without leaving (§6.4), and nobody takes the bots from this fake.
+      case "main.handOver":
+        return reply({ to: null });
       case "plugin.ui":
         return reply({ plugins: opts.ui ?? [] });
       case "ui.settings":

@@ -289,6 +289,16 @@ describe("the daemon's proof before the hello (lane C's protocol.prove, on the s
     expect(readCalls(home).filter((c) => c.method === "protocol.prove").length).toBeGreaterThanOrEqual(Pair.PROVE_TRIES);
   });
 
+  test("a laptop suspends: the app releases the lease without leaving (lane H's ask)", async () => {
+    const home = tempHome();
+    fakes.push(await startFakeDaemon({ home }));
+    const { pair } = pairFor(home, fakeLauncher(home), { prove: true });
+    await pair.start();
+    expect(await pair.handOver()).toBe(true);
+    expect(pair.state.kind).toBe("connected");
+    expect(readCalls(home).some((c) => c.event === "request" && c.method === "main.handOver")).toBe(true);
+  });
+
   test("the proof is lane C's: an HMAC under the app token over the nonce and the pid", () => {
     expect(daemonProof("token", "nonce", 42)).toBe(createHmac("sha256", "token").update("clover-daemon-proof\u0000nonce\u000042").digest("base64url"));
   });

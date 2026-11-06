@@ -303,6 +303,20 @@ export class Pair {
     }
   }
 
+  /** Releases the lease without leaving: the computer suspends (a laptop's sleep), so another computer takes the bots
+   *  until this one wakes (§3.1, §6.4). The daemon takes it back through its own clock and heartbeat. */
+  async handOver(): Promise<boolean> {
+    const client = this.client;
+    if (client === undefined) return false;
+    try {
+      await client.request("main.handOver", {}, 10_000);
+      return true;
+    } catch (err) {
+      this.log(`pair: main.handOver failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
   /** The app leaves on purpose (an update, a restart into safe mode): it tells the daemon first, so the daemon
    *  doesn't restart it (§3.1). */
   async exiting(reason: "quit" | "update" | "restart"): Promise<void> {
