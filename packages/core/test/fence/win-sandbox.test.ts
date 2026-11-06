@@ -490,9 +490,9 @@ describe("the icacls/cmd shapes (measured on the VM)", () => {
     expect(icaclsDeleteDenyArgs("C:\\m", sid)).toEqual(["icacls", "C:\\m", "/deny", `*${sid}:(D)`]);
     expect(icaclsRemoveDenyArgs("C:\\s", sid)).toEqual(["icacls", "C:\\s", "/remove:d", `*${sid}`]);
   });
-  test("mkdir avoids cmd /s quote-stripping and stays idempotent", () => {
+  test("mkdir uses powershell (cmd /c quoting breaks spaced paths under Bun.spawn)", () => {
     const a = mkdirArgs("C:\\Users\\x\\Startup");
-    expect(a.slice(0, 3)).toEqual(["cmd", "/d", "/c"]);
-    expect(a[3]).toContain('if not exist "C:\\Users\\x\\Startup"');
+    expect(a.slice(0, 5)).toEqual(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command"]);
+    expect(a[5]).toContain('New-Item -ItemType Directory -Force -Path "C:\\Users\\x\\Startup"');
   });
 });

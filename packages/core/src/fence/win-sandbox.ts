@@ -263,10 +263,12 @@ export function icaclsRemoveDenyArgs(path: string, sid: string): readonly string
   return ["icacls", path, "/remove:d", `*${sid}`];
 }
 
-/** `mkdir` a folder without a shell (cmd's mkdir is the one Windows always has). No `/s`: that switch strips
- *  the outer quotes and breaks quoted paths; `if not exist` keeps the step idempotent with a real exit code. */
+/** `powershell New-Item`: create a folder, parents included, succeeding when it already exists. cmd's
+ *  `mkdir` is avoided: under `Bun.spawn` its `/c` quoting breaks on spaced paths ("The filename, directory
+ *  name, or volume label syntax is incorrect"), while `powershell -Command` quotes survive. */
 export function mkdirArgs(path: string): readonly string[] {
-  return ["cmd", "/d", "/c", `if not exist "${path}" mkdir "${path}"`];
+  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
+    `New-Item -ItemType Directory -Force -Path "${path}" | Out-Null`];
 }
 
 /** A step of setup/remove: its argv, optional stdin, and whether its failure fails the whole run. */
@@ -293,8 +295,10 @@ export function principalResetPlan(o: {
   return [
     { name: "unload-hive", argv: ["reg", "unload", `HKU\\${o.sid}`], required: false },
     { name: "remove-profile-key", argv: ["reg", "delete", profileKey, "/f"], required: true },
-    { name: "remove-profile-dir", argv: ["cmd", "/d", "/c", `rmdir /s /q "${o.profileRoot}"`], required: true },
-    { name: "remove-leftover-dirs", argv: ["cmd", "/d", "/c", `for /d %d in ("${win32.join(users, `${prefix}*`)}") do @rmdir /s /q "%d" 2>nul & exit 0`], required: false },
+    { name: "remove-profile-dir", argv: ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
+      `Remove-Item -Recurse -Force -Path "${o.profileRoot}"`], required: true },
+    { name: "remove-leftover-dirs", argv: ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
+      `Get-ChildItem -Directory -Path "${users}" -Filter "${prefix}*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue`], required: false },
   ];
 }
 

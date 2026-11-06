@@ -34,7 +34,7 @@ export {
   protectedCopyPath, isProtectedCopy, profileLaunchCheck, sandboxHomeEnv,
   setDescriptionArgs, getDescriptionArgs, descriptionMatches, parseWhoamiSid,
   warmUpArgs, profileQueryArgs, parseProfileImagePath, startupFolders,
-  mkdirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs,
+  mkdirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs, isTemporaryProfile,
   type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
 } from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";

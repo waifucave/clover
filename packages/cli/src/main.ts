@@ -1653,6 +1653,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     getDescriptionArgs,
     descriptionMatches,
     profileLaunchCheck,
+    isTemporaryProfile,
   } = await import("@waifucave/clover-core");
   const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
   if (process.platform !== "win32") {
@@ -1829,10 +1830,12 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
           return;
         }
         // Undo what setup did outside srt-win (best effort: the uninstall already took the account).
-        if (profileRoot !== null && principalSid !== null) {
+        // A temporary profile is shared and keyless: never delete it or its (absent) key.
+        if (profileRoot !== null && principalSid !== null && !isTemporaryProfile(profileRoot)) {
           await run(["reg", "unload", `HKU\\${principalSid}`]);
           await run(["reg", "delete", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${principalSid}`, "/f"]);
-          await run(["cmd", "/d", "/s", "/c", `rmdir /s /q "${profileRoot}"`]);
+          await run(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
+            `Remove-Item -Recurse -Force -Path "${profileRoot}"`]);
           const realUserProfile = process.env.USERPROFILE ?? "";
           const programData = process.env.ProgramData ?? "C:\\ProgramData";
           const startups = startupFolders({ profileRoot, realUserProfile: realUserProfile || profileRoot, commonStartup: `${programData}\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp` });
