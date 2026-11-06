@@ -85,9 +85,17 @@ export class BridgeTokens {
     if (g.revoked) return { ok: false, reason: "revoked" };
     const rows = await this.#table().catch(() => []);
     if (!isDescendant(rows, peerPid, agentPid)) return { ok: false, reason: "not-the-agent" };
+    // Checked again after the last await: a revoke (or the expiry) while the table was read wins (review 5).
+    if (g.revoked || this.#bySession.get(sessionId) !== g) return { ok: false, reason: "revoked" };
     if (g.live !== undefined) return { ok: false, reason: "in-use" };
     g.live = ++this.#connSeq;
     return { ok: true, sessionId, connection: g.live };
+  }
+
+  /** Whether a connection `accept` let in still holds the session's live token (the endpoint asks on every request). */
+  isLive(sessionId: string, connection: number): boolean {
+    const g = this.#bySession.get(sessionId);
+    return g !== undefined && !g.revoked && g.live === connection;
   }
 
   /** The bridge's connection closed: the token may be used again from the same tree. */

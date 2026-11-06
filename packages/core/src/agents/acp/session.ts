@@ -16,8 +16,15 @@
 // * **How a turn ends**: a refusal that ends the turn with no reply (Antigravity reports `end_turn`) is `refusal`; the
 //   final text is the agent's text after its last tool call, unchanged; usage is passed on where the agent reports it.
 // * **Model and effort** through `session/set_config_option`. Where a choice persists into the user's own settings
-//   (Cursor, S5 edit 11), `stop` sets the user's selection back.
-// * **Progress** for the stall watchdog: any message from the agent, stamped on the session's clock.
+//   (Cursor, S5 edit 11), the backend's one record of the user's own selection (`UserSelections`) is set back when the
+//   last delegation that changed it ends, after a crash or a restart too (review 10).
+// * **Read-only** (spec §9.3 [P], item 78): an agent that acts without asking starts in its read-only mode (Cursor's
+//   `ask` or `plan`), or not at all.
+// * **Progress** for the stall watchdog: any message from the agent, stamped on the session's clock. While a
+//   permission request waits on the user, the session is waiting on them, not stalled (review 3).
+// * **A hostile agent's limits** (review 12): at most `MAX_OPEN_ASKS` permission requests at once (more are refused
+//   without a card), a `rawInput` over `MAX_RAW_INPUT_CHARS` is cut to a preview, and requests during a replay are
+//   cancelled.
 //
 // The client advertises neither `fs` nor `terminal`: agents use their own tools, inside their own sandbox (§9.3).
 // Reaching the folder tree and Bash under the fence through those doors comes with Gemini CLI, which uses them (M2).
@@ -29,6 +36,7 @@ import type { AgentPermissionOption } from "../../contracts/approval-broker";
 import type { Clock } from "../../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer, type JsonRpcMessage } from "./jsonrpc";
+import { UserSelections } from "./selections";
 import {
   ACP_PROTOCOL_VERSION, type AgentCaps, type ConfigOption, type StdioMcpServer, at, isAuthRequired, obj, pathsOf, readCaps,
   readConfigOptions, readPermissionOptions, readToolStatus, str, textOf, type Obj, type ToolStatus,
@@ -77,7 +85,17 @@ export interface OpenOptions {
   clientInfo?: { name: string; version: string };
   /** How long `initialize` and `session/new` may take. */
   startTimeoutMs?: number;
+  /** The backend's record of the user's own selections, where a choice persists (`choicePersists`). */
+  selections?: { keeper: UserSelections; backend: string };
+  /** Start in this read-only mode: the config option, and its values in order of preference. The session fails
+   *  `refused` when the agent offers none of them. */
+  readOnly?: { option: string; values: readonly string[] };
 }
+
+/** The most permission requests one agent may have open at once; more are refused without a card. */
+export const MAX_OPEN_ASKS = 8;
+/** A tool call's `rawInput` longer than this, as JSON, is kept as a preview. */
+export const MAX_RAW_INPUT_CHARS = 256 * 1024;
 
 export const CLIENT_INFO = { name: "clover", title: "Clover", version: "0.0.0" };
 const DEFAULT_START_TIMEOUT_MS = 120_000;
@@ -104,9 +122,11 @@ export class AcpAgentSession implements AgentSession {
   #state: AgentSessionState = "starting";
   #caps: AgentCaps | undefined;
   #config: ConfigOption[] = [];
-  /** The user's own model selection, kept to set back on stop where a choice persists (S5 edit 11). */
-  #userModel: string | undefined;
-  #modelChanged = false;
+  /** The backend's record of the user's own selections, and the options this session changed. */
+  readonly #selections: { keeper: UserSelections; backend: string };
+  readonly #held = new Set<string>();
+  /** Permission requests waiting on their answer. */
+  #asking = 0;
   #permission: ((ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>) | undefined;
   #turn: Turn | undefined;
   #turnDone: Promise<unknown> | undefined;
@@ -124,6 +144,7 @@ export class AcpAgentSession implements AgentSession {
     this.#clock = opts.clock;
     this.#proc = opts.process;
     this.#lastProgress = opts.clock.now();
+    this.#selections = opts.selections ?? { keeper: new UserSelections(), backend: "agent" };
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -139,6 +160,8 @@ export class AcpAgentSession implements AgentSession {
     this.#proc.onData((chunk) => this.#peer.feed(chunk));
     void this.#proc.exited.then(() => {
       this.#exited = true;
+      // No live session to set the user's selection back through: the record stays for the next delegation.
+      if (!this.#stopping) this.#release(false);
       this.#peer.close(new ContractError("closed", "the agent's process exited"));
       if (!this.#stopping && this.#state !== "stopped") this.#state = "failed";
     });
@@ -193,6 +216,11 @@ export class AcpAgentSession implements AgentSession {
     return this.#lastProgress;
   }
 
+  /** A permission request is waiting on its answer (a card, for the user): the watchdog doesn't count the wait. */
+  waitingOnUser(): boolean {
+    return this.#asking > 0;
+  }
+
   onPermission(fn: (ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>): void {
     this.#permission = fn;
   }
@@ -239,6 +267,14 @@ export class AcpAgentSession implements AgentSession {
       this.#agentSessionId = id;
     }
     this.#config = readConfigOptions(obj(result)?.["configOptions"]) ?? this.#config;
+    if (opts.readOnly) {
+      const option = this.#config.find((c) => c.id === opts.readOnly!.option);
+      const value = opts.readOnly.values.find((v) => option?.values.includes(v));
+      if (!option || value === undefined) {
+        throw new ContractError("refused", "this agent acts without asking and offers no read-only mode, so it can't start at read-only");
+      }
+      if (option.currentValue !== value) await this.#setOption(option.id, value);
+    }
     if (opts.model !== undefined) await this.setConfig("model", opts.model);
     if (opts.effort !== undefined && !this.#quirks.config.effortInModel) await this.setConfig("effort", opts.effort);
     this.#state = "ready";
@@ -343,23 +379,41 @@ export class AcpAgentSession implements AgentSession {
     if (id === null) {
       throw new ContractError("refused", `this agent takes no ${option} option${option === "effort" && q.effortInModel ? "; its effort is part of the model" : ""}`);
     }
-    if (option === "model" && q.choicePersists && !this.#modelChanged) {
-      this.#userModel = this.#config.find((c) => c.id === id)?.currentValue;
+    await this.#setOption(id, value);
+  }
+
+  async #setOption(id: string, value: string): Promise<void> {
+    const persists = this.#quirks.config.choicePersists;
+    const { keeper, backend } = this.#selections;
+    if (persists && !this.#held.has(id)) {
+      keeper.begin(backend, id, this, this.#config.find((c) => c.id === id)?.currentValue);
+      this.#held.add(id);
     }
     const result = await this.#call("session/set_config_option", { sessionId: this.#agentSessionId, configId: id, value }, CONFIG_TIMEOUT_MS);
-    if (option === "model") this.#modelChanged = true;
+    if (persists) keeper.set(backend, id, value);
     this.#config = readConfigOptions(result) ?? this.#config;
+  }
+
+  /** Lets go of the options this session changed; the last holder sets the user's own value back when it can. */
+  #release(canRestore: boolean): Promise<void>[] {
+    const { keeper, backend } = this.#selections;
+    const sets: Promise<void>[] = [];
+    for (const id of this.#held) {
+      const user = keeper.end(backend, id, this, canRestore);
+      if (user === undefined || !canRestore) continue;
+      sets.push(this.#peer.request("session/set_config_option", { sessionId: this.#agentSessionId, configId: id, value: user }, { timeoutMs: 5_000 })
+        .then(() => keeper.restored(backend, id), () => {}));
+    }
+    this.#held.clear();
+    return sets;
   }
 
   async stop(): Promise<void> {
     if (this.#state === "stopped") return;
     this.#stopping = true;
     if (this.#state === "prompting") await this.cancel();
-    // A delegation's choice became the user's own selection: set it back (S5 edit 11).
-    const q = this.#quirks.config;
-    if (q.choicePersists && this.#modelChanged && this.#userModel !== undefined && q.modelOption && !this.#exited) {
-      await this.#peer.request("session/set_config_option", { sessionId: this.#agentSessionId, configId: q.modelOption, value: this.#userModel }, { timeoutMs: 5_000 }).catch(() => {});
-    }
+    // A delegation's choice became the user's own selection: the last one to end sets it back (S5 edit 11).
+    await Promise.all(this.#release(!this.#exited));
     this.#peer.close(new ContractError("closed", "the agent's session was stopped"));
     await this.#proc.stop();
     this.#state = "stopped";
@@ -397,16 +451,29 @@ export class AcpAgentSession implements AgentSession {
       paths: pathsOf(record.fields, record.rawInput),
     };
     let answer: AgentPermissionAnswer = { outcome: "cancelled" };
-    if (this.#permission && turn && !turn.abort.signal.aborted && !this.#replaying) {
+    if (this.#asking >= MAX_OPEN_ASKS) {
+      // A flood: refused without a card (review 12).
+      const reject = options.find((o) => o.kind === "reject_once");
+      answer = reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    } else if (this.#permission && turn && !turn.abort.signal.aborted && !this.#replaying) {
       const cancelled = new Promise<AgentPermissionAnswer>((resolve) => {
         turn.abort.signal.addEventListener("abort", () => resolve({ outcome: "cancelled" }), { once: true });
       });
-      answer = await Promise.race([this.#permission(ask).catch((): AgentPermissionAnswer => ({ outcome: "cancelled" })), cancelled]);
+      this.#asking++;
+      try {
+        answer = await Promise.race([this.#permission(ask).catch((): AgentPermissionAnswer => ({ outcome: "cancelled" })), cancelled]);
+      } finally {
+        this.#asking--;
+        // The stall window starts again from the answer: the wait was the user's, not the agent's.
+        this.#lastProgress = this.#clock.now();
+      }
       if (turn.abort.signal.aborted) answer = { outcome: "cancelled" };
     }
     answer = onceOnly(answer, options);
     const kind = answer.outcome === "selected" ? options.find((o) => o.optionId === answer.optionId)?.kind : undefined;
     record.decision = answer.outcome === "cancelled" ? "cancelled" : kind === "allow_once" ? "allowed" : "refused";
+    // An allowed command starts now, for the watchdog's command limit.
+    if (record.decision === "allowed") record.startedAtWall = Date.now();
     if (turn) turn.endedOnRefusal = record.decision !== "allowed";
     return answer;
   }
@@ -481,7 +548,7 @@ export class AcpAgentSession implements AgentSession {
     if (title) r.title = title;
     const status = readToolStatus(src["status"]);
     if (status) r.status = status;
-    if (src["rawInput"] !== undefined && !(isEmptyObject(src["rawInput"]) && r.rawInput !== undefined)) r.rawInput = src["rawInput"];
+    if (src["rawInput"] !== undefined && !(isEmptyObject(src["rawInput"]) && r.rawInput !== undefined)) r.rawInput = capRawInput(src["rawInput"]);
     for (const key of ["locations", "content"]) if (src[key] !== undefined) r.fields[key] = src[key];
     return r;
   }
@@ -499,6 +566,18 @@ export class AcpAgentSession implements AgentSession {
   #emit(event: AgentEvent): void {
     this.#events.emit(event);
   }
+}
+
+/** A `rawInput` too long to keep whole becomes a preview of its JSON (review 12); with no `command` left, a card for
+ *  it offers no "always". */
+export function capRawInput(v: unknown): unknown {
+  let json: string;
+  try {
+    json = JSON.stringify(v) ?? "";
+  } catch {
+    return { clover_unreadable: true };
+  }
+  return json.length <= MAX_RAW_INPUT_CHARS ? v : { clover_truncated: json.slice(0, 4096), length: json.length };
 }
 
 function isEmptyObject(v: unknown): boolean {

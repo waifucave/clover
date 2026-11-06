@@ -172,6 +172,12 @@ export class BridgeEndpoint {
     if (method === "protocol.hello") return this.#hello(socket, params);
     if (!s.sessionId) throw new RpcError(CLOVER_ERR.ROLE_REFUSED, "say protocol.hello first");
     if (!BRIDGE_METHODS.has(method)) throw new RpcError(CLOVER_ERR.ROLE_REFUSED, `the bridge role may not call ${method}`);
+    // Every request, not just the hello: a token revoked since (TaskStop, the agent's exit) is closed here even if the
+    // revoke's close hasn't reached this socket yet (review 5).
+    if (s.connection === undefined || !this.#opts.tokens.isLive(s.sessionId, s.connection)) {
+      this.#close(socket);
+      throw new RpcError(CLOVER_ERR.ROLE_REFUSED, "this bridge's token was revoked");
+    }
     const h = this.#opts.handlers;
     const id = s.sessionId;
     switch (method) {

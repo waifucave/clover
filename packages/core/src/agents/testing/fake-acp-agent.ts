@@ -23,10 +23,18 @@ import { RpcPeer, RpcError } from "../acp/jsonrpc";
 /** B's steps, plus two only a real process can play. */
 export type FakeAcpStep =
   | AgentStep
-  /** Calls a tool on one of the MCP servers it was given, asking first unless `ask` is false. */
+  /** Calls a tool on one of the MCP servers it was given, asking first unless `ask` is false. `$bridge` names the
+   *  bridge, whose name is new for each session. */
   | { mcp: { server: string; tool: string; input?: unknown; ask?: boolean } }
   /** Runs a real `sleep` as an `execute` call, for the stall watchdog and the stop sequence. */
-  | { exec: { seconds: number; id?: string } };
+  | { exec: { seconds: number; id?: string } }
+  /** A hostile agent (review 12): calls a client method Clover didn't offer (`fs/*`, `terminal/*`), and reports how
+   *  it was answered. */
+  | { clientCall: { method: string; params?: unknown } }
+  /** Opens this many permission requests at once and reports each answer. */
+  | { flood: number }
+  /** Says the bridge's token, as read from its server entry at `session/new`. */
+  | { sayBridgeToken: true };
 
 export interface FakeAcpConfig {
   quirks: AgentQuirks;
@@ -38,6 +46,10 @@ export interface FakeAcpConfig {
   report: string;
   /** The "user's own settings": where a persisting model choice lands. */
   selection: string;
+  /** A `mode` config option with these values (Cursor's `agent`, `plan`, `ask`), the first one current. */
+  modes?: string[];
+  /** Asks a permission while it replays a `session/load`'s history, and reports the answer. */
+  askDuringReplay?: boolean;
 }
 
 const [configPath, mode] = process.argv.slice(2);
@@ -55,6 +67,8 @@ report({ type: "started", pid: process.pid, env: Object.keys(process.env).sort()
 let sessionSeq = 0;
 let toolSeq = 0;
 let sessionId = "";
+let bridgeToken = "";
+let bridgeName = "";
 const mcp = new Map<string, { child: ChildProcess; peer: RpcPeer; ready?: Promise<void> }>();
 
 interface TurnState {
@@ -100,9 +114,10 @@ function configOptions(): unknown[] {
   }
   if (q.config.modelOption) out.push({ id: q.config.modelOption, name: "Model", category: "model", type: "select", currentValue: current.model ?? sel.model ?? "fake-model-a", options: [{ value: "fake-model-a", name: "A" }, { value: "fake-model-b", name: "B" }] });
   if (q.config.effortOption) out.push({ id: q.config.effortOption, name: "Effort", category: "thought_level", type: "select", currentValue: current.effort ?? "medium", options: ["low", "medium", "high"].map((v) => ({ value: v, name: v })) });
+  if (cfg.modes?.length) out.push({ id: "mode", name: "Mode", category: "mode", type: "select", currentValue: current.mode ?? cfg.modes[0], options: cfg.modes.map((v) => ({ value: v, name: v })) });
   return out;
 }
-const current: { model?: string; effort?: string } = {};
+const current: { model?: string; effort?: string; mode?: string } = {};
 
 function startMcpServers(servers: unknown): void {
   for (const s of Array.isArray(servers) ? servers : []) {
@@ -114,6 +129,11 @@ function startMcpServers(servers: unknown): void {
     if (q.mcp.passesEnvironment) Object.assign(env, process.env);
     else for (const k of ["PATH", "HOME", "TMPDIR"]) if (process.env[k]) env[k] = process.env[k]!;
     for (const kv of e.env ?? []) env[kv.name] = kv.value;
+    for (const kv of e.env ?? []) {
+      if (kv.name !== "CLOVER_BRIDGE_TOKEN") continue;
+      bridgeToken = kv.value;
+      bridgeName = e.name;
+    }
     const child = spawn(e.command, e.args ?? [], { env, stdio: ["pipe", "pipe", "inherit"] });
     child.on("error", () => report({ type: "mcp-error", server: e.name }));
     const p = new RpcPeer({ write: (line) => child.stdin?.write(line) });
@@ -162,7 +182,7 @@ async function handle(method: string, params: Record<string, unknown>): Promise<
     case "session/new": {
       if (cfg.signedIn === false) throw new RpcError(q.auth.requiredError.code ?? -32603, "Authentication required. Run 'cursor-agent login' first.");
       sessionId = `fake-session-${++sessionSeq}`;
-      report({ type: "session", how: "new", sessionId, meta: params["_meta"] ?? null, servers: names(params["mcpServers"]) });
+      report({ type: "session", how: "new", sessionId, meta: params["_meta"] ?? null, servers: names(params["mcpServers"]), cwd: params["cwd"] ?? null });
       startMcpServers(params["mcpServers"]);
       return { sessionId, configOptions: configOptions() };
     }
@@ -179,14 +199,18 @@ async function handle(method: string, params: Record<string, unknown>): Promise<
           replayed++;
         }
       }
-      report({ type: "session", how: method === "session/load" ? "load" : "resume", sessionId, replayed, servers: names(params["mcpServers"]) });
+      if (cfg.askDuringReplay && replays) {
+        const res = (await ask("session/request_permission", { sessionId, toolCall: { toolCallId: "replay-ask", title: "edit", kind: "edit", status: "pending" }, options: [{ optionId: "allow_once", name: "allow", kind: "allow_once" }, { optionId: "reject_once", name: "reject", kind: "reject_once" }] })) as { outcome?: unknown };
+        report({ type: "replay-answer", answer: res.outcome ?? null });
+      }
+      report({ type: "session", how: method === "session/load" ? "load" : "resume", sessionId, replayed, servers: names(params["mcpServers"]), cwd: params["cwd"] ?? null });
       startMcpServers(params["mcpServers"]);
       return { configOptions: configOptions() };
     }
     case "session/set_config_option": {
       const id = String(params["configId"]);
       const value = String(params["value"]);
-      const option = id === q.config.modelOption ? "model" : id === q.config.effortOption ? "effort" : undefined;
+      const option = id === q.config.modelOption ? "model" : id === q.config.effortOption ? "effort" : id === "mode" && cfg.modes?.length ? "mode" : undefined;
       if (!option) throw new RpcError(-32602, `no config option ${id}`);
       current[option] = value;
       report({ type: "config", option, value });
@@ -257,6 +281,24 @@ async function runTurn(params: Record<string, unknown>): Promise<unknown> {
   for (const step of steps) {
     if (t.cancelled) return finish("cancelled");
     if ("say" in step) update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: step.say } });
+    else if ("sayBridgeToken" in step) update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `my token is ${bridgeToken}` } });
+    else if ("clientCall" in step) {
+      try {
+        const result = await peer.request(step.clientCall.method, step.clientCall.params ?? { sessionId }, { timeoutMs: 10_000 });
+        report({ type: "client-call", method: step.clientCall.method, result });
+      } catch (err) {
+        report({ type: "client-call", method: step.clientCall.method, error: err instanceof RpcError ? err.code : String(err) });
+      }
+    } else if ("flood" in step) {
+      const asks = Array.from({ length: step.flood }, (_, i) => {
+        const id = `flood-${i}`;
+        update({ sessionUpdate: "tool_call", toolCallId: id, title: `edit ${i}`, kind: "edit", status: "pending" });
+        return askPermission(id, "edit", `edit ${i}`);
+      });
+      const answers = await Promise.all(asks);
+      report({ type: "flood", allowed: answers.filter((a) => a.allowed).length, cancelled: t.cancelled });
+      if (t.cancelled) return finish("cancelled");
+    }
     else if ("think" in step) update({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: step.think } });
     else if ("usage" in step) usage = step.usage;
     else if ("wait" in step) {
@@ -279,7 +321,8 @@ async function runTurn(params: Record<string, unknown>): Promise<unknown> {
       open.delete(id);
       update({ sessionUpdate: "tool_call_update", toolCallId: id, status: "completed" });
     } else if ("mcp" in step) {
-      const { server, tool, input } = step.mcp;
+      const { tool, input } = step.mcp;
+      const server = step.mcp.server === "$bridge" ? bridgeName : step.mcp.server;
       const id = `call-${++toolSeq}`;
       open.add(id);
       update({ sessionUpdate: "tool_call", toolCallId: id, title: "MCP: tool", kind: "other", status: "pending", rawInput: {} });

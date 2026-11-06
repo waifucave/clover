@@ -14,6 +14,7 @@ import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/sessio
 import { FakeTree } from "../../contracts/fakes/tree";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import type { SessionRecord } from "../../contracts/session-host";
+import { UserSelections } from "../acp/selections";
 import { AcpAgentBackend } from "../backend";
 import { BridgeEndpoint } from "../bridge/endpoint";
 import { bridgeCommand } from "../bridge/main";
@@ -34,6 +35,13 @@ export interface WorldOptions {
   /** The watchdog's wall clock, to age a running command past its limit. */
   wallNow?: () => number;
   table?: ProcessTableReader;
+  /** False: no test-only OK for an agent that isn't sandboxed (true by default, since M1 sandboxes none). */
+  unsandboxedOk?: boolean;
+  /** The scripted agent's `mode` option values, and the backend's read-only mode. */
+  modes?: string[];
+  readOnlyMode?: { option: string; values: readonly string[] };
+  askDuringReplay?: boolean;
+  selections?: UserSelections;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -87,18 +95,24 @@ export class World {
     this.tokens = new BridgeTokens(o.table ? { table: o.table } : {});
     this.watchdog = new StallWatchdog({ clock: this.clock, ...(o.wallNow ? { wallNow: o.wallNow } : {}), ...(o.table ? { table: o.table } : {}) });
     const quirks = fakeLaunch(o.quirks ?? WELL_BEHAVED_QUIRKS);
-    this.agent = writeFakeAgent(join(this.root, "agent"), { quirks, script: o.script ?? [], ...(o.history ? { history: o.history } : {}), version: "fake-agent 1.0.0" });
+    this.agent = writeFakeAgent(join(this.root, "agent"), {
+      quirks, script: o.script ?? [], ...(o.history ? { history: o.history } : {}), version: "fake-agent 1.0.0",
+      ...(o.modes ? { modes: o.modes } : {}), ...(o.askDuringReplay ? { askDuringReplay: true } : {}),
+    });
     const sock = socketPath(this.root);
     let manager!: AgentManager;
     this.backend = new AcpAgentBackend({
       id: "fake", pluginId: "clover/agent-fake", quirks, clock: this.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
+      ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
     manager = new AgentManager({
       home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
+      levelOf: () => this.level,
+      ...(o.unsandboxedOk === false ? {} : { startUnsandboxedForTests: true }),
     });
     this.manager = manager;
     this.endpoint = new BridgeEndpoint({ socketPath: sock, tokens: this.tokens, handlers: manager.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });

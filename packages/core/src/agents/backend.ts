@@ -3,17 +3,20 @@
 //
 // * `detect` never trusts a command name on PATH (S5 edit 1: `agent` is both Cursor's and Grok's). It resolves the
 //   program to its real path, runs its version command with an allow-listed environment and a time limit, matches the
-//   output against the quirks' pattern, and on macOS checks the code signature's team where the quirks name one.
+//   output against the quirks' pattern, and on macOS verifies the code signature (`codesign --verify --strict`) with
+//   a requirement naming the publisher's team, where the quirks name one.
 // * `start` launches one contained process per delegation in the root folder (process/launch.ts), hands it the
-//   bridge as its one stdio MCP server, and opens the ACP session (acp/session.ts).
-// * Its own sandbox, and the user's OK for an agent with none, come in K-M2 (plan §4 K): `detect` reports
-//   `sandboxed: false` until then, and Settings marks it.
+//   bridge as its one stdio MCP server, and opens the ACP session (acp/session.ts). At read-only, an agent that acts
+//   without asking starts in its read-only mode (`readOnlyMode`), or `start` refuses it.
+// * Its own sandbox comes in K-M2 (plan §4 K): `detect` reports `sandboxed: false` until then, and the agent manager
+//   refuses to start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK.
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
+import { UserSelections } from "./acp/selections";
 import { AcpAgentSession, type WireTap } from "./acp/session";
 import type { StdioMcpServer } from "./acp/types";
 import { buildAgentEnv, launchContained } from "./process/launch";
@@ -43,6 +46,17 @@ export interface AcpBackendOptions {
   table?: ProcessTableReader;
   versionTimeoutMs?: number;
   startTimeoutMs?: number;
+  /** The record of the user's own selections where the agent saves a session's choice as theirs (review 10); one per
+   *  backend instance in memory by default. */
+  selections?: UserSelections;
+  /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
+  readOnlyMode?: { option: string; values: readonly string[] };
+}
+
+/** `AgentStartSpec`, plus what lane K's own backends read. */
+export interface AcpStartSpec extends AgentStartSpec {
+  /** The session runs at read-only: an agent that acts without asking must start in its read-only mode. */
+  readOnly?: boolean;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -62,12 +76,14 @@ export class AcpAgentBackend implements AgentBackend {
   readonly pluginId: string;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
+  readonly #selections: UserSelections;
 
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
     this.quirks = opts.quirks;
     this.#opts = opts;
+    this.#selections = opts.selections ?? new UserSelections();
   }
 
   /** The command for this OS: the override, or the quirks' own. */
@@ -96,10 +112,9 @@ export class AcpAgentBackend implements AgentBackend {
     let identityOk = m !== null;
     let reason: string | undefined = identityOk ? undefined : `${path} doesn't answer ${id.versionArgs.join(" ")} as ${this.id} does`;
     if (identityOk && id.signer && (this.#opts.os ?? currentOs()) === "macos") {
-      const team = await signingTeam(path);
-      if (team !== id.signer) {
+      if (!(await signedByTeam(path, id.signer))) {
         identityOk = false;
-        reason = `${path} isn't signed by ${this.id}'s publisher`;
+        reason = `${path} isn't signed by ${this.id}'s publisher, or its signature doesn't verify`;
       }
     }
     const versionOk = version !== undefined && versionSatisfies(version, this.quirks.launch.versions);
@@ -110,11 +125,13 @@ export class AcpAgentBackend implements AgentBackend {
     };
   }
 
-  async start(spec: AgentStartSpec): Promise<AcpAgentSession> {
+  async start(spec: AcpStartSpec): Promise<AcpAgentSession> {
     const d = await this.detect();
     if (!d.installed || !d.path) throw new ContractError("not_installed", d.reason ?? `${this.id} isn't installed on this computer`);
     if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${d.path} isn't ${this.id}'s program`);
     if (!this.quirks.mcp.transports.includes("stdio")) throw new ContractError("refused", `${this.id} takes no stdio MCP server, so the bridge can't reach it`);
+    const readOnly = spec.readOnly === true && this.quirks.marks.includes("unasked-actions");
+    if (readOnly && !this.#opts.readOnlyMode) throw new ContractError("refused", `${this.id} acts without asking and has no read-only mode, so it can't start at read-only`);
     const cmd = this.command()!;
     const wire = this.#opts.wire?.(spec.sessionId) ?? {};
     const proc = launchContained({
@@ -137,6 +154,8 @@ export class AcpAgentBackend implements AgentBackend {
       ...(spec.effort === undefined ? {} : { effort: spec.effort }),
       ...(wire.tap ? { tap: wire.tap } : {}),
       ...(this.#opts.clientInfo ? { clientInfo: this.#opts.clientInfo } : {}),
+      selections: { keeper: this.#selections, backend: this.id },
+      ...(readOnly ? { readOnly: this.#opts.readOnlyMode! } : {}),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }
@@ -181,17 +200,15 @@ function runCapture(cmd: string, args: string[], env: Record<string, string>, ti
   });
 }
 
-/** macOS: the code signature's TeamIdentifier, or undefined when unsigned. */
-async function signingTeam(path: string): Promise<string | undefined> {
-  const out = await new Promise<string>((resolve) => {
-    const c = spawn("/usr/bin/codesign", ["-dv", "--verbose=2", path], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
-    let err = "";
-    c.stderr.setEncoding("utf8");
-    c.stderr.on("data", (x: string) => (err += x));
-    c.on("close", () => resolve(err));
-    c.on("error", () => resolve(""));
+/** macOS: whether the signature verifies (`--strict`) and its leaf certificate is the team's, an Apple-issued one. */
+async function signedByTeam(path: string, team: string): Promise<boolean> {
+  if (!/^[A-Z0-9]{10}$/.test(team)) return false;
+  const requirement = `=anchor apple generic and certificate leaf[subject.OU] = "${team}"`;
+  return new Promise<boolean>((resolve) => {
+    const c = spawn("/usr/bin/codesign", ["--verify", "--strict", "-R", requirement, path], { stdio: "ignore", windowsHide: true });
+    c.on("close", (code) => resolve(code === 0));
+    c.on("error", () => resolve(false));
   });
-  return /^TeamIdentifier=(\S+)$/m.exec(out)?.[1];
 }
 
 /** Dotted numeric versions: `2026.10.22-27dcf5f` reads as 2026.10.22. */

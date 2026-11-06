@@ -5,8 +5,9 @@
 //   too (a command run under a terminal often starts its own session). On Windows the containment is a job object,
 //   which needs lane C's native code; until it lands, `stop` ends the tree with `taskkill /T` (untested here).
 // * Its environment comes from an allow-list (edit 4): a small base set every program needs, plus the names the
-//   backend's quirks allow and set. Nothing named `CLOVER_*` passes, so no home path or token leaks to the agent; the
-//   bridge's token goes only in the bridge entry's `env` at `session/new`.
+//   backend's quirks allow and set. Nothing named `CLOVER_*` from the daemon's own environment passes. The bridge
+//   entry's `env` at `session/new` is the one place Clover's names reach the agent: the token, the session id, and the
+//   bridge socket's path, which names the Clover home's run folder (the fence denies that folder to the agent).
 // * Nothing it runs may open a window: `windowsHide`, and its stdio are pipes. Its stderr goes to the transcript,
 //   which redacts the bridge's token.
 // * Stop: the caller cancels first (`session/cancel`); then SIGTERM to the group, a grace period, SIGKILL. Both agents

@@ -10,6 +10,8 @@
 //   coalesced into runs of at most a quarter second, tool calls and their updates as they come. That log is the live
 //   transcript a client follows (`session.attach`); `acp.ndjson` is the raw wire.
 // * The user's interrupt is ACP's `session/cancel`; `stop` cancels, then ends the agent's process group.
+// * Everything recorded and the turn's final text pass `redact` first (review 9): the bridge's token must not reach the
+//   session's log through the agent's own words or a tool call's input.
 import type { AgentEvent, AgentSession } from "../contracts/agent-backend";
 import { isContractError } from "../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../contracts/session-host";
@@ -24,6 +26,8 @@ export interface AgentDriverOptions {
   ended?(): void;
   /** How long text may wait before it is recorded. */
   coalesceMs?: number;
+  /** Applied to every record and to each turn's text before they leave the driver. */
+  redact?: <T>(value: T) => T;
 }
 
 /** What the driver records in the session's log. */
@@ -85,6 +89,15 @@ export class AgentDriver implements SessionDriver {
   }
 
   async turn(input: TurnInput, ctl: TurnControl): Promise<TurnEnd> {
+    const end = await this.#turn(input, ctl);
+    return this.#opts.redact && end.text !== undefined ? { ...end, text: this.#opts.redact(end.text) } : end;
+  }
+
+  #record(ctl: TurnControl, e: AgentLogEvent): void {
+    ctl.record(this.#opts.redact ? this.#opts.redact(e) : e);
+  }
+
+  async #turn(input: TurnInput, ctl: TurnControl): Promise<TurnEnd> {
     if (this.#stopping) return { reason: "stopped" };
     this.#origin = ctl.origin;
     this.#signal = ctl.signal;
@@ -92,13 +105,13 @@ export class AgentDriver implements SessionDriver {
     try {
       const fresh = !this.#session;
       session = await this.#ensure();
-      if (fresh) ctl.record({ type: "agent_started", agentSessionId: session.agentSessionId } satisfies AgentLogEvent);
+      if (fresh) this.#record(ctl, { type: "agent_started", agentSessionId: session.agentSessionId });
     } catch (err) {
       this.#origin = undefined;
       this.#signal = undefined;
       return this.#fail(err);
     }
-    const flusher = new TextRuns((e) => ctl.record(e), this.#opts.coalesceMs ?? 250);
+    const flusher = new TextRuns((e) => this.#record(ctl, e), this.#opts.coalesceMs ?? 250);
     const off = session.onEvent((e) => flusher.push(e));
     const onAbort = () => {
       if (!this.#stopping) void session.cancel();
@@ -170,6 +183,15 @@ export class AgentDriver implements SessionDriver {
   async stop(): Promise<void> {
     this.#stopping = true;
     await this.#shutdown();
+  }
+
+  /** The daemon is closing: the agent's process ends, and the session isn't ended (no `ended`), so a later daemon
+   *  can reattach it. */
+  async detach(): Promise<void> {
+    this.#stopping = true;
+    this.#ended = true;
+    const s = this.#session ?? (await this.#starting?.catch(() => undefined));
+    await s?.stop().catch(() => {});
   }
 
   async #shutdown(): Promise<void> {
