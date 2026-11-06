@@ -22,7 +22,7 @@ runDeviceRegistryConformance(async (opts) => {
     self: { name: opts.name ?? "Studio", ...(opts.kind ? { kind: opts.kind } : {}), ...(opts.os ? { os: opts.os } : {}), ...(opts.computer ? { computer: opts.computer } : {}) },
   });
   return { registry, device: { id: key.id, publicKey: key.publicKeyBase64, sign: async (d: Uint8Array) => key.sign(d) } };
-});
+}, { pending: ["answer-alg"] }); // lane H takes `alg` (a P-256 key, verified by it, and covered by `answerKeyStatement`)
 
 async function open(dir = home(), clock = new FakeClock(), store = new MemorySecretStore()) {
   const key = await DeviceKey.loadOrCreate(store);

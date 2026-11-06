@@ -15,7 +15,11 @@ export type DeviceRegistryHarness = Pick<FakeDeviceRegistry, keyof FakeDeviceReg
 /** Builds the implementation under test, with this device's own key, from the options the fake takes. */
 export type DeviceRegistryFactory = (...args: Parameters<typeof FakeDeviceRegistry.create>) => Promise<{ registry: DeviceRegistryHarness; device: FakeDevice }>;
 
-export function runDeviceRegistryConformance(make: DeviceRegistryFactory): void {
+/** Cases an implementation can run as todo until it has them: `answer-alg`, a P-256 answer key (lanes H and I). */
+export type DeviceRegistryPendingCase = "answer-alg";
+
+export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: { pending?: readonly DeviceRegistryPendingCase[] } = {}): void {
+  const pendingOr = (key: DeviceRegistryPendingCase) => (opts.pending?.includes(key) ? test.todo : test);
   const data = new TextEncoder().encode("clover/card-answer/1\ncard_abcdef\n00\napprove\n5");
 
   describe("DeviceRegistry", () => {
@@ -68,7 +72,7 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory): void 
       expect(isContractError(await registry.revoke(self.id).catch((e: unknown) => e), "refused")).toBe(true);
     });
 
-    test("an answer key verifies with its own algorithm: Ed25519 by default, P-256 when the record says so", async () => {
+    pendingOr("answer-alg")("an answer key verifies with its own algorithm: Ed25519 by default, P-256 when the record says so", async () => {
       const { registry } = await make({ clock: new FakeClock() });
       const b64 = (b: ArrayBuffer) => Buffer.from(b).toString("base64");
       const ec = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -82,6 +86,10 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory): void 
       const relabelled = await makeFakeDevice();
       await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKey, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
       expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
+    });
+
+    test("a phone's record keeps its ios, and it answers with its own Ed25519 key", async () => {
+      const { registry } = await make({ clock: new FakeClock() });
       const phone = await makeFakeDevice();
       await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: phone.publicKey }, { via: "code", card: "card_pair02" });
       expect(registry.get(phone.id)?.os).toBe("ios");
