@@ -6,12 +6,14 @@
 // revision 13): fenced on macOS, and run as the user on Windows and Linux, where code the user installs is trusted.
 // Until the fenced process lands on macOS that door says it is closed (`available: false`) and refuses every run with
 // the reason, so a caller skips the hook and reports it rather than running it outside the fence.
+import { existsSync } from "node:fs";
+import { win32 } from "node:path";
 import { AgentJob } from "../platform/win-job";
 import type { Os } from "@waifucave/clover-protocol";
 
 export interface FencedRun {
-  /** A shell command line, run by the platform's shell: `/bin/sh -c` on macOS and Linux, `cmd.exe /d /s /c` on
-   *  Windows. */
+  /** A shell command line, run by the platform's shell: `/bin/sh -c` on macOS and Linux; on Windows Git Bash
+   *  (`bash -c`) from its standard install, else `cmd.exe /d /s /c` (`windowsHookShell`). */
   readonly command: string;
   readonly cwd: string;
   /** The child's whole environment: nothing is inherited past this. */
@@ -24,9 +26,12 @@ export interface FencedRun {
   readonly who: { readonly sessionId: string; readonly bot?: string; readonly pluginId?: string; readonly hook?: string };
 }
 
+/** The shell that ran the command, for the hook's record. */
+export type RunShell = "sh" | "git-bash" | "cmd";
+
 export type FencedRunResult =
-  | { readonly kind: "exited"; readonly code: number; readonly stdout: string; readonly stderr: string }
-  | { readonly kind: "timeout"; readonly stdout: string; readonly stderr: string }
+  | { readonly kind: "exited"; readonly code: number; readonly stdout: string; readonly stderr: string; readonly shell: RunShell }
+  | { readonly kind: "timeout"; readonly stdout: string; readonly stderr: string; readonly shell: RunShell }
   | { readonly kind: "refused"; readonly reason: string };
 
 export interface FencedSpawner {
@@ -57,13 +62,25 @@ export function hookSpawner(os: Os, fenced: FencedSpawner = FENCED_SPAWN_NOT_YET
   return os === "macos" ? fenced : RUN_AS_USER;
 }
 
+/** Windows: Git Bash from its two standard installs (for all users, then for this user), for hooks written for
+ *  Claude Code; never found through PATH, which a bot's Bash could change. Else `cmd` (the controller's ruling). */
+export function windowsHookShell(env: Readonly<Record<string, string | undefined>> = process.env, exists: (path: string) => boolean = existsSync): { shell: RunShell; argv: (command: string) => string[] } {
+  const places = [env.ProgramFiles && win32.join(env.ProgramFiles, "Git", "bin", "bash.exe"), env.LOCALAPPDATA && win32.join(env.LOCALAPPDATA, "Programs", "Git", "bin", "bash.exe")];
+  const bash = places.find((p): p is string => typeof p === "string" && exists(p));
+  if (bash) return { shell: "git-bash", argv: (command) => [bash, "-c", command] };
+  const cmd = env.SystemRoot ? win32.join(env.SystemRoot, "System32", "cmd.exe") : "cmd.exe";
+  return { shell: "cmd", argv: (command) => [cmd, "/d", "/s", "/c", `"${command}"`] };
+}
+
 async function runAsUser(r: FencedRun): Promise<FencedRunResult> {
   if (r.signal?.aborted) return { kind: "refused", reason: "cancelled before it started" };
   const win = process.platform === "win32";
-  const argv = win ? [r.env.ComSpec ?? r.env.COMSPEC ?? "cmd.exe", "/d", "/s", "/c", `"${r.command}"`] : ["/bin/sh", "-c", r.command];
+  const winShell = win ? windowsHookShell() : null;
+  const shell: RunShell = winShell?.shell ?? "sh";
+  const argv = winShell ? winShell.argv(r.command) : ["/bin/sh", "-c", r.command];
   let proc: ReturnType<typeof Bun.spawn<"pipe", "pipe", "pipe">>;
   try {
-    proc = Bun.spawn(argv, { cwd: r.cwd, env: { ...r.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: !win, windowsHide: true, ...(win ? { windowsVerbatimArguments: true } : {}) });
+    proc = Bun.spawn(argv, { cwd: r.cwd, env: { ...r.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: !win, windowsHide: true, ...(shell === "cmd" ? { windowsVerbatimArguments: true } : {}) });
   } catch (err) {
     return { kind: "refused", reason: `it couldn't start: ${err instanceof Error ? err.message : String(err)}` };
   }
@@ -103,6 +120,6 @@ async function runAsUser(r: FencedRun): Promise<FencedRunResult> {
   if (job) job.close();
   else try { process.kill(-proc.pid, "SIGKILL"); } catch { /* nothing left */ }
   const stdout = got.stdout.slice(0, OUTPUT_CAP), stderr = got.stderr.slice(0, OUTPUT_CAP);
-  if (timedOut) return { kind: "timeout", stdout, stderr };
-  return { kind: "exited", code, stdout, stderr };
+  if (timedOut) return { kind: "timeout", stdout, stderr, shell };
+  return { kind: "exited", code, stdout, stderr, shell };
 }

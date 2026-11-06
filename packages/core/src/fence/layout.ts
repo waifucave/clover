@@ -95,9 +95,10 @@ export function pendingFenced(o: {
   };
 }
 
-/** The bots' folders a session of `bot` may not read (the controller's ruling on A-M3's review): every bot's folder
- *  under `<home>/bots/` but its own bot's. `folders` are the folder names there now (`botFolders`); a session with
- *  no bot (a coding session, an agent) gets none here, so reads stay as the kind's default. */
+/** The bots' folders a caller of `bot` may not read (the controller's rulings on A-M3's review): a bot's sessions,
+ *  and the agents it delegates, read only their own bot's folder under `<home>/bots/`. `folders` are the folder names
+ *  there now (`botFolders`). A coding session the user drives (no bot) may read every bot's memory: the user owns it.
+ *  B's `Fence.forCaller(caller)` is where this applies. */
 export function botMemoryReadDenied(o: { cloverHome: string; os: Os; bot?: string; folders: readonly string[] }): string[] {
   if (o.bot === undefined) return [];
   const p = pathFor(o.os);
