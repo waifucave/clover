@@ -119,7 +119,7 @@ export const PILL_CARD_SOURCES: Readonly<Record<string, CardTokenSource>> = {
   "card.approve.text": { token: "pill.accept.text", fallback: "#FFFFFF" },
   "card.deny.background": { token: "pill.send", fallback: "#FFFFFF" },
   "card.deny.text": { token: "pill.send.glyph", fallback: "#000000" },
-  "card.font.family": { token: "font.sans", fallback: "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif" },
+  "card.font.family": { token: "card.font.family", fallback: "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif" },
   "card.font.size": { token: "font.size.large", fallback: "15px" },
   "card.radius": { value: "0px" },
   "card.padding": { value: "0px" },
