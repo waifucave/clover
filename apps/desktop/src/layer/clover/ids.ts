@@ -15,6 +15,7 @@ export const modules = [
   "clover/bot-editor",
   "clover/plugin-index",
   "clover/island",
+  "clover/live2d",
   "clover/pill",
   "clover/vrm",
 ] as const;

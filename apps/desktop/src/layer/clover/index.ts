@@ -9,6 +9,7 @@ import * as browserView from "@clover-child/browser-view";
 import * as composer from "@clover-child/composer";
 import * as conversation from "@clover-child/conversation";
 import * as island from "@clover-child/island";
+import * as live2d from "@clover-child/live2d";
 import * as panel from "@clover-child/panel";
 import * as panelDiff from "@clover-child/panel-diff";
 import * as panelFiles from "@clover-child/panel-files";
@@ -19,7 +20,7 @@ import * as settings from "@clover-child/settings";
 import * as shell from "@clover-child/shell";
 import * as sidebar from "@clover-child/sidebar";
 import * as vrm from "@clover-child/vrm";
-import { IslandHosted, PillHosted } from "./hosts";
+import { IslandHosted, Live2dAvatarHosted, PillHosted, VrmAvatarHosted } from "./hosts";
 import type { CloverChildId } from "./ids";
 
 export const modules: Record<CloverChildId, Record<string, unknown>> = {
@@ -38,5 +39,7 @@ export const modules: Record<CloverChildId, Record<string, unknown>> = {
   "clover/plugin-index": pluginIndex,
   "clover/island": { ...island, IslandApp: IslandHosted },
   "clover/pill": { ...pill, PillApp: PillHosted },
-  "clover/vrm": vrm,
+  // The avatars hear the app's language only through their installed translator (lane G's ask).
+  "clover/vrm": { ...vrm, VrmAvatar: VrmAvatarHosted },
+  "clover/live2d": { ...live2d, Live2dAvatarEntry: Live2dAvatarHosted },
 };
