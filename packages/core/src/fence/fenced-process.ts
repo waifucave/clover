@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { CloverFence } from "./fence";
-import { bwrapArgs, unixSocketFilter } from "./linux-bwrap";
+import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
 import { macFenceProfile } from "./macos-profile";
 import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedSpawner } from "./spawn";
@@ -74,8 +74,11 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         const fd = openSync(file, "r");
         try {
           const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
-          const args = bwrapArgs({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
-          return await runCommand(r, { shell: "sh", argv: [bwrap, ...args, "/bin/sh", "-c", r.command], extraFds: [fd] });
+          const plan = bwrapPlan({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
+          const result = await runCommand(r, { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
+          if (result.kind === "refused") return result;
+          const note = heldFolderNote(result.stderr, plan.held);
+          return note === null ? result : { ...result, stderr: result.stderr + note };
         } finally {
           closeSync(fd);
           rmSync(dir, { recursive: true, force: true });

@@ -44,6 +44,15 @@ const inside = (p: string, root: string) => p === root || p.startsWith(root.ends
 
 /** bwrap's arguments, the command's own after them. */
 export function bwrapArgs(input: BwrapInput): string[] {
+  return bwrapPlan(input).args;
+}
+
+/** A folder held read-only for new names because a fenced item in it isn't there yet. */
+export interface HeldFolder { readonly folder: string; readonly because: string }
+
+/** The arguments, and the folders held for missing fenced items (for the refusal's explanation). */
+export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder[] } {
+  const held: HeldFolder[] = [];
   const fs = input.fs ?? realFs;
   const { policy, cloverHome } = input;
   const writable = policy.allowWrite.filter((w) => fs.kind(w) === "dir");
@@ -66,7 +75,10 @@ export function bwrapArgs(input: BwrapInput): string[] {
     if (fs.kind(d) !== null) continue;
     let p = dirname(d);
     while (fs.kind(p) === null && p !== dirname(p)) p = dirname(p);
-    if (writable.some((w) => inside(p, w))) naming.add(p);
+    if (writable.some((w) => inside(p, w))) {
+      if (!naming.has(p) && !inside(p, cloverHome)) held.push({ folder: p, because: d });
+      naming.add(p);
+    }
   }
   // Folders between a writable root and a fenced item (or the Clover home), outside the naming set: mount points.
   const holders = new Set<string>();
@@ -130,7 +142,15 @@ export function bwrapArgs(input: BwrapInput): string[] {
   }
   if (input.seccompFd !== undefined) a.push("--seccomp", String(input.seccompFd));
   a.push("--chdir", input.cwd);
-  return a;
+  return { args: a, held };
+}
+
+/** What a refused write in a held folder means, for the command's stderr (the controller's ruling: say which fenced
+ *  file holds the folder, and offer a subfolder or asking the user). Null when nothing in `stderr` looks like it. */
+export function heldFolderNote(stderr: string, held: readonly HeldFolder[]): string | null {
+  if (held.length === 0 || !/Read-only file system|EROFS/.test(stderr)) return null;
+  const lines = held.map((h) => `clover: ${h.folder} takes no new names under the fence, because ${h.because} is fenced and isn't there yet; write in a subfolder of it, or ask the user`);
+  return `${lines.join("\n")}\n`;
 }
 
 /** The seccomp filter (classic BPF, `struct sock_filter[]`): `socket(AF_UNIX, …)` and `io_uring_setup` fail with EPERM,

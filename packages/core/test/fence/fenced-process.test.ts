@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CloverFence } from "../../src/fence/fence";
 import { fencedSpawner } from "../../src/fence/fenced-process";
-import { bwrapArgs, unixSocketFilter } from "../../src/fence/linux-bwrap";
+import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import type { FencedRun, FencedRunResult } from "../../src/fence/spawn";
 
@@ -76,6 +76,20 @@ describe("the Linux sandbox's mounts, as arguments", () => {
   });
 });
 
+describe("a folder held for a fenced file that isn't there yet (accepted for now, the controller's ruling)", () => {
+  test("the plan names it, and a read-only refusal there is explained: which file, a subfolder, or ask the user", () => {
+    const dirs = new Set(["/h", "/h/.clover", "/t"]);
+    const fs = { kind: (p: string) => (dirs.has(p) ? "dir" as const : p === "/h/.bashrc" ? "file" as const : null), list: () => [] as string[] };
+    const { held } = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h", uid: 1, fs, policy: {
+      allowWrite: ["/h", "/t"], denyWrite: ["/h/.bashrc", "/h/.zshrc", "/h/.clover/settings.json"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
+    expect(held).toEqual([{ folder: "/h", because: "/h/.zshrc" }]);
+    const note = heldFolderNote("sh: 1: cannot create /h/new.txt: Read-only file system\n", held)!;
+    expect(note).toContain("/h takes no new names under the fence, because /h/.zshrc is fenced");
+    expect(note).toMatch(/subfolder.*ask the user/);
+    expect(heldFolderNote("permission denied", held)).toBeNull();
+  });
+});
+
 describe("the Linux seccomp filter", () => {
   test("nine instructions: the architecture, io_uring_setup, socket(AF_UNIX) refused; anything else allowed", () => {
     const f = unixSocketFilter("x64")!;
@@ -136,6 +150,9 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run("/bin/launchctl print system >/dev/null"))).toBe(false);
     } else {
       expect(ok(await w.run(`test -z "$(ls -A /run/user/${process.getuid!()} 2>/dev/null)"`))).toBe(true); // the user's bus is hidden
+      // The home takes no new names while a fenced start file (.zshrc) isn't there, and the refusal says why.
+      const held = await w.run(`echo x > '${join(w.home, "new-top-level.txt")}'`);
+      expect(held.kind === "exited" && held.code !== 0 && held.stderr.includes(`because ${join(w.home, ".zshrc")} is fenced`)).toBe(true);
       // Its own pid namespace: a handful of its own processes, and not the daemon's.
       expect(ok(await w.run(`test $(ls /proc | grep -c '^[0-9]') -lt 10 && test ! -e /proc/${process.pid}/cmdline`))).toBe(true);
     }
