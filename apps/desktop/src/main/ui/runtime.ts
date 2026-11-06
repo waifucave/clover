@@ -907,6 +907,11 @@ export class UiRuntime {
     }
   }
 
+  /** A message to a window's core root only (the core's own pages). */
+  rootMessage(windowId: number, message: LayerMessage): void {
+    for (const m of this.mounts.values()) if (m.windowId === windowId && m.kind === "root" && m.frame !== undefined) this.post(m.id, message);
+  }
+
   /** Tells a window's documents the focus came back after the core's own overlay. */
   focusReturned(windowId: number): void {
     for (const m of this.mounts.values()) if (m.windowId === windowId && m.frame !== undefined) this.post(m.id, { type: "focus-returned" });

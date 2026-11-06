@@ -9,3 +9,27 @@ body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: v
 #clover-banner button, .clover-core-note button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: default; }
 .clover-core-note { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; padding: 24px; background: var(--clover-color-canvas, Canvas); color: var(--clover-color-text, CanvasText); }
 .clover-core-note p { margin: 0; max-width: 46ch; }
+
+/* The core's own pages (pages.ts): a dialog over the window, in the system's own look. */
+#clover-page { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 48px 24px 24px; background: color-mix(in srgb, Canvas 70%, transparent); }
+#clover-page[hidden] { display: none; }
+.clover-page { width: min(560px, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; border-radius: 12px; background: var(--clover-color-float, Canvas); color: var(--clover-color-text, CanvasText); border: 1px solid var(--clover-color-hairline, color-mix(in srgb, CanvasText 15%, transparent)); box-shadow: 0 12px 40px rgb(0 0 0 / 0.18); }
+.clover-page__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.clover-page h1 { margin: 0; font-size: 17px; font-weight: 600; }
+.clover-page h2 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.clover-page p { margin: 0; }
+.clover-page__body, .clover-page__list { display: flex; flex-direction: column; gap: 10px; }
+.clover-page__item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; border: 1px solid var(--clover-color-hairline, color-mix(in srgb, CanvasText 12%, transparent)); }
+.clover-page__note { color: var(--clover-color-text-muted, GrayText); font-size: 12px; }
+.clover-page__terms { margin: 0; padding: 8px 10px; max-height: 120px; overflow: auto; font-size: 12px; border-left: 3px solid var(--clover-color-hairline, GrayText); white-space: pre-wrap; }
+.clover-page__check, .clover-page__field { display: flex; align-items: center; gap: 8px; }
+.clover-page__field { flex-direction: column; align-items: stretch; gap: 4px; font-size: 12px; }
+.clover-page__field input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--clover-color-hairline, GrayText); background: var(--clover-color-control, Field); color: inherit; }
+.clover-page__auth, .clover-page__row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.clover-page__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.clover-page__status:empty { display: none; }
+.clover-page__ok { color: var(--clover-color-success, #1E7F47); font-weight: 600; }
+.clover-page button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--clover-color-hairline, GrayText); background: var(--clover-color-control, ButtonFace); color: inherit; cursor: default; }
+.clover-page button:disabled { opacity: 0.55; }
+.clover-page__primary { background: var(--clover-color-accent, AccentColor) !important; color: var(--clover-color-accent-contrast, AccentColorText) !important; border-color: transparent !important; }
+.clover-page__link { border: none !important; background: none !important; padding: 0 !important; color: var(--clover-color-accent-text, LinkText) !important; text-decoration: underline; align-self: flex-start; }

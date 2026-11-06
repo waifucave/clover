@@ -8,7 +8,7 @@
 // A headless run (`--clover-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,7 @@ import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, type DaemonClient } from "./protocol/client";
+import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
@@ -134,6 +135,7 @@ async function ready(): Promise<void> {
       if (name === "restart-normally") void restart(false);
       if (name === "restart-safe-mode") void restart(true);
     },
+    rootCall: (_id, name, params) => pageCall(name, params, pageDeps),
     surface: (id, request) => steerSurface(id, request),
     surfaceEnvironment: (id) => surfaceEnvironment(id),
     open: (pluginId, target) => openFor(pluginId, target),
@@ -159,8 +161,8 @@ async function ready(): Promise<void> {
   pair = makePair();
   setMenu();
   if (!headless) {
-    tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s) }, log);
-    tray.show({ safeMode });
+    tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
+    tray.show({ safeMode, strings: runtime.coreStrings() });
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
   if (start.by === "user" || headless) void openMainWindow();
@@ -257,12 +259,63 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   syncSurfaces();
   await client.request("events.subscribe", { areas: ["plugins", "app"] }).catch(() => undefined);
   log(`layers: ${plugins.length} plugin(s) with UI`);
+  void maybeWelcome(client);
+}
+
+// ------------------------------------------------------------------------------------------------
+// The core's own pages in the main window's root: the welcome setup guide and safe mode's plugin manager (§5.8)
+// ------------------------------------------------------------------------------------------------
+
+let corePage: CorePage | null = null;
+const welcomeFlag = () => join(app.getPath("userData"), "welcome-done");
+
+const pageDeps = {
+  client: () => pair?.client,
+  lang: () => runtime.language,
+  openExternal: async (url: string) => {
+    // A headless run opens nothing on the screen.
+    if (headless) log(`open: would open a page in the browser (${new URL(url).host})`);
+    else await shell.openExternal(url);
+  },
+  welcomeDone: () => {
+    try {
+      mkdirSync(dirname(welcomeFlag()), { recursive: true });
+      writeFileSync(welcomeFlag(), `${new Date().toISOString()}\n`);
+    } catch (err) {
+      log(`welcome: couldn't note it's done: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  },
+  page: () => corePage,
+  closePage: () => {
+    corePage = null;
+  },
+};
+
+/** Shows one of the core's pages in the main window (opening it if need be). */
+async function openPage(page: CorePage): Promise<void> {
+  corePage = page;
+  const win = await openMainWindow();
+  if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page", page });
+}
+
+/** The welcome guide opens by itself on a start with no model provider signed in, until it is done or skipped. */
+async function maybeWelcome(client: DaemonClient): Promise<void> {
+  if (runtime.safeMode || corePage !== null || existsSync(welcomeFlag())) return;
+  try {
+    const providers = await listProviders(client, runtime.language);
+    if (anyReady(providers)) return;
+  } catch {
+    // A daemon that can't list them (an older one, the fake): no guide.
+    return;
+  }
+  log("welcome: no model provider is signed in; the guide opens");
+  await openPage("welcome");
 }
 
 function stateChanged(s: PairState): void {
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
   const status = s.kind === "reconnecting" ? "Reconnecting to Clover…" : s.kind === "unavailable" ? "Clover isn't running" : s.kind === "starting-daemon" ? "Starting Clover…" : undefined;
-  tray?.show({ safeMode: runtime.safeMode, ...(status !== undefined ? { status } : {}) });
+  tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
 }
 
 /** The daemon asks the app to open a window or a place in it (§3.1, lane B's `app.show`), checked against its schema. */
@@ -724,7 +777,7 @@ async function smoke(): Promise<void> {
     insetTop: getComputedStyle(document.documentElement).getPropertyValue("--clover-frame-inset-top").trim(),
     sheets: document.querySelectorAll("style[data-clover-sheet]").length,
     themed: getComputedStyle(document.documentElement).textRendering,
-    text: (document.body.innerText || "").slice(0, 200),
+    text: (document.body.innerText || "").slice(0, location.protocol === "clover-core:" ? 2000 : 200),
   }))()`;
   type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; sheets: number; themed: string; text: string };
   type Probed = Probe & { url: string; osPid: number };
@@ -752,6 +805,12 @@ async function smoke(): Promise<void> {
   // Texts the run waits for, all of them (`|` between).
   const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
   let hung = false;
+  // The UI test's user on the core's own pages (unpackaged runs only): a page to open once everything has drawn, and
+  // steps in the root, one a turn, each once its element is there (a click, a tick, text typed into a field).
+  const smokePage = process.env.CLOVER_SMOKE_PAGE;
+  let pageOpened = false;
+  type Step = { click?: string; check?: string; fill?: string; value?: string };
+  const steps: Step[] = !app.isPackaged ? (JSON.parse(process.env.CLOVER_SMOKE_ROOT_STEPS ?? "[]") as Step[]) : [];
   while (Date.now() < deadline) {
     frames = await probeWindow(win);
     surfaceFacts = [];
@@ -780,6 +839,21 @@ async function smoke(): Promise<void> {
           if (!target.isDestroyed()) target.webContents.emit("unresponsive");
         }, 500);
       }
+    }
+    if (drawn && smokePage !== undefined && !pageOpened && (smokePage === "welcome" || smokePage === "plugins")) {
+      pageOpened = true;
+      void openPage(smokePage);
+    }
+    if (drawn && steps.length > 0) {
+      const step = steps[0]!;
+      const sel = JSON.stringify(step.click ?? step.check ?? step.fill ?? "");
+      const js = step.fill !== undefined
+        ? `(() => { const e = document.querySelector(${sel}); if (!e || e.disabled) return false; e.value = ${JSON.stringify(step.value ?? "")}; e.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`
+        : step.check !== undefined
+          ? `(() => { const e = document.querySelector(${sel}); if (!e) return false; e.checked = true; e.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`
+          : `(() => { const e = document.querySelector(${sel}); if (!e || e.disabled) return false; e.click(); return true; })()`;
+      const done = await win.webContents.mainFrame.executeJavaScript(js, true).catch(() => false);
+      if (done === true) steps.shift();
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
     // press in each window, which the menu gate counts as the user's input.

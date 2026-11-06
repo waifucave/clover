@@ -147,6 +147,9 @@ export type LayerMessage =
   /** The themes' sheets for this document changed (a theme, a style entry, a part placed). */
   | { type: "sheets"; sheets: readonly ThemeSheet[] }
   | { type: "strings"; strings: StringTable }
+  /** The core root only: one of the core's own pages to show over the window (the welcome guide, safe mode's plugin
+   *  manager), or none. */
+  | { type: "core-page"; page: "welcome" | "plugins" | null }
   /** A child frame's layer stopped; the parent shows a placeholder with a reload. */
   | { type: "child-gone"; child: string; reason: string }
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it

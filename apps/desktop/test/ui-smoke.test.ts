@@ -60,14 +60,15 @@ function env(h: string, registry: string, extra: Record<string, string> = {}): N
   return e;
 }
 
-function smoke(executable: string, args: string[], registry: string, extra: Record<string, string> = {}): { status: number | null; facts: Smoke | undefined; output: string; home: string; netlog: string } {
+function smoke(executable: string, args: string[], registry: string, extra: Record<string, string> = {}): { status: number | null; facts: Smoke | undefined; output: string; all: string; home: string; netlog: string } {
   const h = home();
   const out = join(h, "smoke.json");
   // Every run records a net log: what it sent off the machine is asserted (none of it beyond loopback).
   const netlog = join(h, "net.json");
   const r = spawnSync(executable, [...args, "--clover-smoke", `--log-net-log=${netlog}`], { env: env(h, registry, { CLOVER_SMOKE_OUT: out, ...extra }), encoding: "utf8", timeout: 100_000 });
   const facts = existsSync(out) ? (JSON.parse(readFileSync(out, "utf8")) as Smoke) : undefined;
-  return { status: r.status, facts, output: `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`.slice(-6000), home: h, netlog };
+  const all = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
+  return { status: r.status, facts, output: all.slice(-6000), all, home: h, netlog };
 }
 
 /** Nothing left the machine: no lookup, socket or request beyond loopback (and `allowed`, the probe's control). */
@@ -81,10 +82,10 @@ function expectQuiet(r: ReturnType<typeof smoke>, allowed: Parameters<typeof off
   return activity;
 }
 
-function expectShell(r: ReturnType<typeof smoke>): Frame {
+function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } = {}): Frame {
   expect(r.facts, r.output).toBeDefined();
   const f = r.facts!;
-  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.clover", name: "Clover", visibleWindows: 0, pair: "connected", safeMode: false });
+  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.clover", name: "Clover", visibleWindows: 0, pair: "connected", safeMode: opts.safeMode ?? false });
   // The main window, and one per surface (the island and the pill are clover's; they stay hidden).
   expect(f.windows).toBe(1 + (f.surfaces as unknown[]).length);
   const rootFrame = f.frames.find((x) => x.origin === "clover-core://app");
@@ -130,6 +131,10 @@ beforeAll(() => {
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
+  registries.welcome = join(work, "welcome.json");
+  writeFileSync(registries.welcome, JSON.stringify({ plugins: base, models: [{ id: "fixture-model", name: "Fixture Model", terms: "Use it kindly.", auth: [{ method: "api-key" }] }] }));
+  registries.manage = join(work, "manage.json");
+  writeFileSync(registries.manage, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer"))], listPlugins: true }));
   registries.web = join(work, "web.json");
   writeFileSync(registries.web, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-web"), 1005)] }));
   registries.spin = join(work, "spin.json");
@@ -203,6 +208,45 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const spin = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "spin");
     expect(spin?.frames.some((f) => f.text.includes("stopped drawing")), r.output).toBe(true);
     expect(r.facts!.safeMode).toBe(false);
+    expectBothStopped(r);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("the welcome guide opens on a first start with no provider signed in; its terms come first, and a key goes only to the sign-in", () => {
+    const key = "fixture-key-0123456789";
+    const steps = [
+      { check: '[data-clover-terms="fixture-model"]' },
+      { fill: '[data-clover-key="fixture-model#0"]', value: key },
+      { click: '[data-clover-save="fixture-model#0"]' },
+    ];
+    const r = smoke(electron(), [root], "welcome", { CLOVER_SMOKE_ROOT_STEPS: JSON.stringify(steps), CLOVER_SMOKE_WAIT_TEXT: "Saved. Clover keeps the key" });
+    expectShell(r);
+    expect(r.output).toContain("welcome: no model provider is signed in; the guide opens");
+    const rootFrame = r.facts!.frames.find((x) => x.origin === "clover-core://app")!;
+    expect(rootFrame.text).toContain("Welcome to Clover");
+    expect(rootFrame.text).toContain("Use it kindly.");
+    expect(rootFrame.text).toContain("Signed in");
+    const signIn = readCalls(r.home).find((c) => c.event === "request" && c.method === "plugin.auth.signIn");
+    expect(signIn?.params).toEqual({ id: "fixture-model", index: 0, key: `<${key.length} characters>` });
+    // The key reached the daemon's sign-in and nothing the app writes.
+    expect(r.all).not.toContain(key);
+    expectBothStopped(r);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("safe mode's plugin manager, from the core's own page: every plugin but the app's own, and one turned off", () => {
+    const steps = [{ click: '[data-clover-turn-off="fixture-composer"]' }];
+    const r = smoke(electron(), [root, "--safe-mode"], "manage", { CLOVER_SMOKE_PAGE: "plugins", CLOVER_SMOKE_ROOT_STEPS: JSON.stringify(steps), CLOVER_SMOKE_WAIT_TEXT: "fixture-composer · Off" });
+    expectShell(r, { safeMode: true });
+    const rootFrame = r.facts!.frames.find((x) => x.origin === "clover-core://app")!;
+    expect(rootFrame.text).toContain("Safe mode: only Clover's own plugins run.");
+    // The third-party plugin, now off, can still be removed; none of the app's own is listed.
+    expect(rootFrame.text).toContain("fixture-composer · Off");
+    expect(rootFrame.text).toContain("Remove");
+    expect(rootFrame.text).not.toContain("clover/");
+    expect(rootFrame.text).not.toContain("alpha");
+    const turnedOff = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.setEnabled").map((c) => c.params);
+    expect(turnedOff).toEqual([{ id: "fixture-composer", enabled: false }]);
     expectBothStopped(r);
     expectQuiet(r);
   }, 120_000);
@@ -293,7 +337,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
       await until(() => events().includes("daemon-quit"), 10_000, "the daemon stopped");
       expect(events().filter((x) => x === "autostart-start").length).toBe(2);
       // Nothing left the machine through the crash and the restart either.
-      expectQuiet({ status: code as number | null, facts: undefined, output, home: h, netlog });
+      expectQuiet({ status: code as number | null, facts: undefined, output, all: output, home: h, netlog });
     } finally {
       if (app.exitCode === null) app.kill("SIGKILL");
       try {

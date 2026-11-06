@@ -22,6 +22,17 @@ export interface FakeOptions {
   status?: Record<string, unknown>;
   /** Mint a token (default) or use this one. */
   token?: string;
+  /** Model providers, for the welcome guide (`point.list`, `plugin.get`, `plugin.auth.*`). */
+  models?: FakeModel[];
+  /** Answer `plugin.list` (and `plugin.setEnabled`, `plugin.remove`) from `ui`, for the plugin manager. */
+  listPlugins?: boolean;
+}
+
+export interface FakeModel {
+  id: string;
+  name: string;
+  terms?: string;
+  auth: { method: "api-key" | "oauth-pkce" }[];
 }
 
 export interface FakeDaemon {
@@ -74,6 +85,13 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
   let resolveQuit!: (p: { handOver: boolean }) => void;
   const quitRequested = new Promise<{ handOver: boolean }>((r) => (resolveQuit = r));
   const authed = new WeakSet<Socket>();
+  const signedIn = new Set<string>();
+  const off = new Set<string>();
+  const removed = new Set<string>();
+  const summary = (id: string, name: string, source: string) => ({
+    id, ...(id.includes("/") ? { parent: id.split("/")[0] } : {}), name, version: "1.0.0", state: "enabled", enabled: true, source, class: "code",
+    namespace: id.split("/")[0]!.replace(/-/g, "_"), scope: "everywhere", adult: false, children: [], dev: false,
+  });
 
   const send = (s: Socket, msg: unknown) => {
     if (!s.destroyed) s.write(`${JSON.stringify(msg)}\n`);
@@ -89,7 +107,9 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     const reply = (result: unknown) => id !== undefined && send(s, { jsonrpc: "2.0", id, result });
     const fail = (code: number, message: string) => id !== undefined && send(s, { jsonrpc: "2.0", id, error: { code, message } });
     const params = (msg.params ?? {}) as Record<string, unknown>;
-    record(opts.home, "request", { method, ...(method === "protocol.hello" ? { role: params.role } : { params }) });
+    // A key the app sends for a sign-in is never written down, here as in the daemon: only its length.
+    const logged = typeof params.key === "string" ? { ...params, key: `<${params.key.length} characters>` } : params;
+    record(opts.home, "request", { method, ...(method === "protocol.hello" ? { role: params.role } : { params: logged }) });
     if (method === "protocol.hello") {
       if (params.role !== "app" || params.token !== token) return fail(-32001, "unauthorized");
       authed.add(s);
@@ -113,6 +133,39 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         return reply({ picks: [], lists: [], ...opts.settings });
       case "layer.token":
         return reply({ token: `layer-${String(params.pluginId)}-${randomBytes(8).toString("hex")}` });
+      case "point.list":
+        if (opts.models === undefined) return fail(-32601, "no point.list");
+        return reply({ points: [{ name: "models", shape: "list", declaredBy: "core", spot: false, occupants: opts.models.map((m) => ({ pluginId: m.id, entry: "models" })), waiting: [], replacesShipped: false, private: false }] });
+      case "plugin.get": {
+        const m = opts.models?.find((x) => x.id === params.id);
+        if (m === undefined) return fail(-32004, "no such plugin");
+        return reply({ plugin: { ...summary(m.id, m.name, "index"), manifest: { contributes: { models: [{ provider: m.id, name: m.name, ...(m.terms !== undefined ? { terms: m.terms } : {}), catalog: [], auth: m.auth }] } }, provenance: { by: "user-app", at: 0 }, capabilities: [], networkHosts: [], helperPermissions: [], issues: [], logTail: [], pinned: false } });
+      }
+      case "plugin.auth.list": {
+        const m = opts.models?.find((x) => x.id === params.id);
+        return reply({ auth: (m?.auth ?? []).map((a, index) => ({ index, method: a.method, state: signedIn.has(`${m!.id}#${index}`) ? "signed-in" : "signed-out" })) });
+      }
+      case "plugin.auth.signIn": {
+        const m = opts.models?.find((x) => x.id === params.id);
+        const a = m?.auth[Number(params.index)];
+        if (m === undefined || a === undefined) return fail(-32004, "no such sign-in");
+        if (a.method === "api-key") {
+          if (typeof params.key !== "string" || params.key === "") return fail(-32602, "a key is needed");
+          signedIn.add(`${m.id}#${String(params.index)}`);
+          return reply({ state: "signed-in" });
+        }
+        return reply({ state: "signed-out", authorizeUrl: "https://auth.example/authorize?client_id=fixture" });
+      }
+      case "plugin.list":
+        if (opts.listPlugins !== true) return fail(-32601, "no plugin.list");
+        return reply({ plugins: (opts.ui ?? []).map((v) => v as { pluginId: string; name?: string; source?: string }).filter((v) => !removed.has(v.pluginId.split("/")[0]!)).map((v) => ({ ...summary(v.pluginId, v.name ?? v.pluginId, v.source === "bundled" ? "bundled" : "index"), enabled: !off.has(v.pluginId), state: off.has(v.pluginId) ? "disabled" : "enabled" })) });
+      case "plugin.setEnabled":
+        if (params.enabled === false) off.add(String(params.id));
+        else off.delete(String(params.id));
+        return reply({ applied: true });
+      case "plugin.remove":
+        removed.add(String(params.id));
+        return reply({ ok: true });
       default:
         return fail(-32601, `no ${method}`);
     }
@@ -241,13 +294,13 @@ async function main(argv: string[]): Promise<void> {
   }
   if (cmd === "daemon") {
     const uiFile = process.env.CLOVER_FAKE_UI;
-    const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown> }) : {};
+    const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown>; models?: FakeModel[]; listPlugins?: boolean }) : {};
     let fake: FakeDaemon;
     // The pid first, so `daemon check-server` already names this process when an app dials the new endpoint.
     mkdirSync(fakeDir(home), { recursive: true });
     writeFileSync(join(fakeDir(home), "daemon.pid"), String(process.pid));
     try {
-      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}) });
+      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}) });
     } catch (err) {
       record(home, "listen-failed", { error: String(err) });
       process.exit(0);

@@ -88,10 +88,11 @@ export function cloverViews(): FakeView[] {
   }));
 }
 
-/** Alpha: a bot, data only so far (D's manifest comes in D-M1), with its tab's theme. */
+/** Alpha: a bot, data only, with its tab's theme (its folder is the plugin's, as the registry hands it over: the
+ *  theme's own paths are relative to it). */
 export function alphaView(): FakeView {
-  const tab = join(REPO, "plugins", "alpha", "tab");
-  return { pluginId: "alpha", treeHash: ZERO, layer: "alpha", assetBase: tab, ui: [], themes: existsSync(join(tab, "theme.json")) ? [{ id: "alpha", file: "theme.json" }] : [], locales: [], bots: "all", source: "bundled", enabledAt: 100, isBot: true, botTheme: "alpha", name: "Alpha" };
+  const dir = join(REPO, "plugins", "alpha");
+  return { pluginId: "alpha", treeHash: ZERO, layer: "alpha", assetBase: dir, ui: [], themes: existsSync(join(dir, "tab", "theme.json")) ? [{ id: "alpha", file: "tab/theme.json" }] : [], locales: [], bots: "all", source: "bundled", enabledAt: 100, isBot: true, botTheme: "alpha", name: "Alpha" };
 }
 
 /** A plugin folder of the tests' own, installed by the user. */

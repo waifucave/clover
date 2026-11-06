@@ -51,6 +51,8 @@ if (isRoot || isLayer) {
     contextBridge.exposeInMainWorld("cloverRoot", {
       frameMetrics: (m: { top: number; start: number; end: number }) => ipcRenderer.send("clover:frame-metrics", m),
       command: (name: string) => ipcRenderer.send("clover:root-command", { name }),
+      // The core's own pages (the welcome guide, the plugin manager): a fixed set of calls, by name.
+      call: (name: string, params?: unknown) => ipcRenderer.invoke("clover:root-call", { name, params }),
     });
   }
 }

@@ -223,6 +223,8 @@ export interface IpcHooks {
   frameMetrics(windowId: number, m: { top: number; start: number; end: number }): void;
   /** A command from the root (restart normally, open the plugin manager…). */
   rootCommand(windowId: number, name: string): void;
+  /** A call from one of the core's own pages in the root (core-pages.ts checks it). */
+  rootCall(windowId: number, name: string, params: unknown): Promise<unknown>;
   /** A surface window's own request: show or hide, its size or place, where it takes clicks. */
   surface(windowId: number, request: Record<string, unknown>): void;
   /** A surface window's environment: the OS, the display server, its display. */
@@ -421,7 +423,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
-  const fromRoot = (event: IpcMainEvent): number | undefined => {
+  const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
     const f = event.senderFrame;
     if (f === null || f.parent !== null || !f.url.startsWith(`${CORE_SCHEME}://app/`)) return undefined;
     return BrowserWindow.fromWebContents(event.sender)?.id;
@@ -436,9 +438,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const name = str(a.name, 64);
     if (id !== undefined && name !== undefined) hooks.rootCommand(id, name);
   });
+  handle("clover:root-call", (event, a) => {
+    const id = fromRoot(event);
+    const name = str(a.name, 64);
+    if (id === undefined || name === undefined) throw new LayerError("only the core's root calls that");
+    return hooks.rootCall(id, name, a.params);
+  });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame"]) ipcMain.removeAllListeners(c);
   };
 }

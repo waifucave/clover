@@ -59,6 +59,7 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.tray.open": "Open Clover",
   "clover.core.tray.quit": "Quit Clover",
   "clover.core.tray.safe-mode": "Restart in Safe Mode",
+  "clover.core.tray.restart-normally": "Restart Normally",
   "clover.core.tray.manage-plugins": "Manage Plugins…",
 };
 

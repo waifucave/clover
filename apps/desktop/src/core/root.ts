@@ -2,11 +2,13 @@
 // `app.root` (a surface window: its one `app.surface` entry) as a frame from that plugin's own layer, and owns what
 // the core draws around it: the safe-mode banner (§5.8), the note when nothing fills the window, and the placeholder
 // with a reload when the shell's layer stops (S9: detected by the main process's census).
+import { showPlugins, showWelcome } from "./pages";
 import { EMPTY_STRINGS, translate, type LayerBridge, type LayerMessage, type MountInfo, type SpotView, type StringTable } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 interface RootBridge {
   frameMetrics(m: { top: number; start: number; end: number }): void;
   command(name: string): void;
+  call(name: string, params?: unknown): Promise<unknown>;
 }
 
 declare global {
@@ -22,6 +24,7 @@ const bridge = window.cloverLayer as LayerBridge;
 const root = window.cloverRoot as RootBridge;
 const stage = document.getElementById("clover-stage")!;
 const banner = document.getElementById("clover-banner")!;
+const pageHost = document.getElementById("clover-page")!;
 
 function cssName(token: string): string {
   return `--clover-${token.replace(/-/g, "_").replace(/\./g, "-")}`;
@@ -102,7 +105,9 @@ function onMessage(m: LayerMessage): void {
     document.documentElement.lang = strings.lang;
     drawBanner();
     if (shown === undefined) void render();
+    if (page !== null) void showPage(page);
   }
+  if (m.type === "core-page") void showPage(m.page);
   if (m.type === "child-reload" && m.child === shown?.mount) {
     const frame = stage.querySelector("iframe");
     mount({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
@@ -133,11 +138,29 @@ function drawBanner(): void {
   if (!info.context.safeMode || info.context.surface !== undefined) return;
   banner.hidden = false;
   banner.textContent = t("safe.banner");
+  const manage = document.createElement("button");
+  manage.type = "button";
+  manage.textContent = t("safe.manage");
+  manage.addEventListener("click", () => void showPage("plugins"));
   const b = document.createElement("button");
   b.type = "button";
   b.textContent = t("safe.restart-normally");
   b.addEventListener("click", () => root.command("restart-normally"));
-  banner.append(b);
+  banner.append(manage, b);
+}
+
+/** The core's own page over the window, if any: the welcome guide, the plugin manager (core code; pages.ts). */
+let page: "welcome" | "plugins" | null = null;
+async function showPage(which: "welcome" | "plugins" | null): Promise<void> {
+  page = which;
+  if (which === null || info.context.surface !== undefined) {
+    pageHost.hidden = true;
+    pageHost.replaceChildren();
+    return;
+  }
+  const close = () => void showPage(null);
+  if (which === "welcome") await showWelcome(pageHost, t, root.call, close);
+  else await showPlugins(pageHost, t, root.call, close);
 }
 
 async function start(): Promise<void> {
@@ -148,6 +171,11 @@ async function start(): Promise<void> {
   document.documentElement.dataset.material = info.context.material;
   drawBanner();
   bridge.onMessage(onMessage);
+  // A page the main process wants shown before this document was ready (the welcome guide on a first start).
+  if (info.context.surface === undefined) void root.call("page.current").then((r) => {
+    const current = (r as { page?: unknown } | undefined)?.page;
+    if ((current === "welcome" || current === "plugins") && page === null) void showPage(current);
+  }, () => undefined);
   reportTitlebar();
   navigator.windowControlsOverlay?.addEventListener("geometrychange", reportTitlebar);
   await render();

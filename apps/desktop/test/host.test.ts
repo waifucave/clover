@@ -97,14 +97,18 @@ describe("the windows (decision 86)", () => {
 });
 
 describe("the tray", () => {
-  test("Open, safe mode one way or the other, and Quit", () => {
+  test("Open, safe mode one way or the other (with the plugin manager in it), and Quit", () => {
     const calls: string[] = [];
-    const actions = { open: () => calls.push("open"), quit: () => calls.push("quit"), restart: (s: boolean) => calls.push(`restart ${s}`) };
+    const actions = { open: () => calls.push("open"), quit: () => calls.push("quit"), restart: (s: boolean) => calls.push(`restart ${s}`), managePlugins: () => calls.push("plugins") };
     const menu = trayMenu({ safeMode: false, status: "Reconnecting to Clover…" }, actions);
     expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to Clover…", "separator", "Open Clover", "Restart in Safe Mode", "separator", "Quit Clover"]);
     for (const m of menu) (m.click as (() => void) | undefined)?.();
     expect(calls).toEqual(["open", "restart true", "quit"]);
-    expect(trayMenu({ safeMode: true }, actions).map((m) => m.label)).toContain("Restart Normally");
+    // In safe mode the core's plugin manager is there too (§5.8).
+    const safe = trayMenu({ safeMode: true }, actions);
+    expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Manage Plugins…", "Restart Normally", "separator", "Quit Clover"]);
+    // In the app's language.
+    expect(trayMenu({ safeMode: false }, actions, { lang: "fr", strings: { "clover.core.tray.quit": "Quitter Clover" } }).at(-1)?.label).toBe("Quitter Clover");
   });
 });
 
