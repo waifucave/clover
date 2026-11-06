@@ -58,6 +58,7 @@ const COMPONENTS: Record<string, EntryComponent> = {
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
   Browser: stub("panel:browser"),
+  TerminalTool: ({ props }) => <button type="button" data-stub="panel.view">{`clear ${String(props.view)} ${String(props.session)}`}</button>,
   Status: stub("status"),
 };
 
@@ -169,6 +170,16 @@ describe("the shell", () => {
     fireEvent.pointerDown(document.querySelector('.cl-panel__view[data-view="agent"]')!);
     expect(stubText("panel:browser")).toContain('"usedLast":false');
     expect(document.querySelector('.cl-panel__view[data-view="agent"]')!.hasAttribute("data-used-last")).toBe(true);
+  });
+
+  test("a plugin's controls for one panel view (`panel.view`, keyed by its id) sit in that view's header row only", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal", "browser"] }, [entry("tools", "panel.view", "TerminalTool", { key: "terminal", fields: { title: "Clear" } })]);
+    const head = (view: string) => document.querySelector(`.cl-panel__view[data-view="${view}"] .cl-panel__head`)!;
+    expect(head("terminal").querySelector('[data-stub="panel.view"]')?.textContent).toBe("clear terminal code-1");
+    expect(head("browser").querySelector('[data-stub="panel.view"]')).toBeNull();
+    expect(document.querySelectorAll('[data-stub="panel.view"]').length).toBe(1);
+    // Not in the view's body: the host draws it beside expand and close.
+    expect(document.querySelector('.cl-panel__view[data-view="terminal"] .cl-panel__body [data-stub="panel.view"]')).toBeNull();
   });
 
   test("the agent tab interrupts and stops through the core", async () => {

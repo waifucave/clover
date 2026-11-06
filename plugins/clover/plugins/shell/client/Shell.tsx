@@ -216,6 +216,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         .map((id) => ({
           id,
           title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : id === "output" ? (output?.path.split("/").pop() ?? S.output) : (S.views[id] ?? id),
+          // A plugin's controls for this view only (`panel.view`, keyed by the view's id: a toolbar button in Files),
+          // in the view's header row.
+          actions: <Spot name="panel.view" spotKey={id} props={{ view: id, ...(tabSession ? { session: tabSession } : {}) }} />,
           content: (header: HTMLElement | null, usedLast: boolean) => (
             <Spot
               name="panel"

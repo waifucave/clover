@@ -40,13 +40,11 @@ interface Loaded {
   connectors?: { total: number; needSignIn: number };
 }
 
-/** Where a session's outputs live, as the core says (`SessionView.outputs`, the tree path of its own `outputs/<session>`
- *  folder; asked of lanes B and D): neither the spec nor the tree names that path, so the part never makes one up. A
- *  session the core gives none to shows no outputs. */
-export const outputsFolder = (s: object): string | undefined => {
-  const path = (s as { outputs?: unknown }).outputs;
-  return typeof path === "string" && path !== "" ? path : undefined;
-};
+/** Where a session's outputs live: its own `outputs/<session>` folder in the Clover home of the computer it runs on,
+ *  read through the tree as the user's own surface. `home/<computer>/.clover/…` is the tree's name for that computer's
+ *  Clover home wherever it is on disk (`~/.clover`, `~/.clover-dev`, `CLOVER_HOME`): the holder maps it, and it is the
+ *  spec's own spelling (lane J, #225; review N5). */
+export const outputsFolder = (s: { id: string; computer: string }): string => `home/${s.computer}/.clover/outputs/${s.id}`;
 
 const PAGE = /\.(html?|md|markdown)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;

@@ -100,7 +100,7 @@
                 }
               }
             },
-            "doc": "The panel's contents."
+            "doc": "A panel view's own controls, keyed by the view's id (files, terminal, diff, browser, output, agent, or a plugin's own panel): a toolbar button for that view only, drawn in its header row."
           },
           "status": {
             "shape": "list",

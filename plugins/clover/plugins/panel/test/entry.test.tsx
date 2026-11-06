@@ -11,14 +11,13 @@ import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
-const s = (id: string, extra: Partial<SessionView>): SessionView =>
-  ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, outputs: `home/Studio/.clover/outputs/${id}`, ...extra }) as SessionView;
+const s = (id: string, extra: Partial<SessionView>): SessionView => ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 const SESSIONS = [
   s("code-1", { kind: "coding", root: "home/Studio/projects/clover", title: "The panels", backend: "Codex" }),
   s("sub-1", { parent: "code-1", backend: "OpenCode", title: "Lint", status: "prompting" }),
   s("s_alpha", { kind: "bot", bot: "alpha" }),
   s("agent-1", { parent: "s_alpha", backend: "Codex", title: "Fix the dates", status: "prompting" }),
-  s("task-1", { kind: "side-thread", parent: "s_alpha", title: "Weekly digest", status: "idle", outputs: undefined } as Partial<SessionView>),
+  s("task-1", { kind: "side-thread", parent: "s_alpha", title: "Weekly digest", status: "idle" }),
 ];
 
 const listed: string[] = [];
@@ -59,13 +58,6 @@ describe("the session column", () => {
     expect(screen.getByRole("button", { name: /e\.txt/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /a\.png/ }));
     expect(opened).toEqual(["home/Studio/.clover/outputs/code-1/a.png"]);
-  });
-
-  test("a session the core gives no outputs folder shows no outputs: the part never makes a path up", async () => {
-    listed.length = 0;
-    mount(() => <SessionColumn props={{ session: "task-1", sessionKind: "side-thread" }} />);
-    await act(() => settle());
-    expect(listed).toEqual([]);
   });
 
   test("a link planted in a session's outputs shows as a link that can't be opened, never followed", async () => {
