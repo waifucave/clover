@@ -8,5 +8,6 @@ Clover's per-OS helpers (plan §7), one area per folder. Each area is built by i
 | `input/` | the desktop app's native input helpers | E |
 | `mounts/` | the folder tree's mounts | J |
 | `link-sidecar/` | the link's transport, if Bun can't load iroh | H |
+| `link/` | `clover-link`, the link sidecar the core ships with (iroh, spike S1's choice) | H |
 
 Each area arrives with its lane; until then its folder may be missing or hold only its README.

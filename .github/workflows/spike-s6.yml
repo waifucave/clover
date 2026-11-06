@@ -17,6 +17,7 @@ name: Spike S6 · folder-tree mounts
 # [s6-win-tsc-probe] makes the Windows speed-tsc suite run ci/windows-tsc.ps1 instead of its
 # speed matrix, and [s6-win-netvol] measures tsc on the tree mounted as a network volume.
 # Manual runs (workflow_dispatch) run on the lane branch only; every job checks the ref.
+# The `tree` job J-M1 ran here is ci.yml's `tree` job now (R6).
 on:
   push:
     branches: [lane/j-m0]

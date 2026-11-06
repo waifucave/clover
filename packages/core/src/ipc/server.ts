@@ -4,6 +4,8 @@ import { CoworkWorkspaceService } from "../cowork/service";
 import { CoworkError } from "../cowork/types";
 import type { CoworkSessionDoor, CoworkSessionDrivers } from "../cowork/session-ports";
 import { chmodSync, realpathSync, statSync } from "node:fs";
+import { isPipe } from "../platform/transport";
+import { currentUserSid, lockPipeDacl } from "../platform/win-pipe";
 import { ComputerUseControlError, type ComputerUseControl } from "../computer-use/wiring";
 import { BrowserLinkRpcError, type BrowserLink } from "../computer-use/browser/cef-link/rpc";
 import { join } from "node:path";
@@ -175,6 +177,7 @@ import {
 import { loadManifest, requiredConsentClasses } from "../agent/plugin-manifest";
 import { pluginSkillsFor } from "../plugins/plugin-skills";
 import { sdkPluginsRoot, sdkSettingsPath } from "../agent/paths";
+import type { CloverConn, CloverServer } from "./clover";
 
 interface ConnState {
   /** Chat Slice D task 2: a process-unique id for this socket, minted at `open`. The first key of
@@ -202,6 +205,8 @@ interface ConnState {
   // SUCCESSFUL results only (a thrown RpcFailure is never stored), so a retry after a transient
   // failure still re-attempts.
   seenCommands: Map<string, unknown>;
+  /** C-M1: set by a Clover hello (`opts.cloverConnections`); every request on the connection then goes there. */
+  clover: CloverConn | null;
 }
 
 /** The engine's public surface the IPC layer still reads after the retirement (Task 17). */
@@ -236,6 +241,9 @@ export interface InternalSessionCreateInput {
 export type InternalSessionCreator = (input: InternalSessionCreateInput) => Promise<{ sessionId: string; trusted: boolean }>;
 
 export interface IpcServerOptions {
+  /** C-M1: Clover's connections (a hello at protocol version 1 or later; `ipc/clover.ts`). The inherited
+   *  protocol's roles keep their own path below. */
+  cloverConnections?: CloverServer;
   cowork?: CoworkWorkspaceService;
   coworkEvents?: CoworkWorkspaceEvents;
   /** Cowork session door (D1 spine): THE single activation switch for Cowork sessions. Absent — every production daemon
@@ -2053,7 +2061,11 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           writer: new ConnWriter(socket as unknown as WritableSocket),
           pluginId: null,
           seenCommands: new Map(),
+          clover: null,
         };
+        // Windows: a connection made before the pipe's DACL was locked down came in under the default
+        // DACL (Everyone may read); nothing is sent before a hello, but it is closed all the same (review M3).
+        if (opts.cloverConnections?.opened(socket)) socket.end();
       },
       drain(socket) {
         socket.data?.writer?.onDrain();
@@ -2062,6 +2074,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       close(socket) {
         if (!socket.data) return; // rejected at cap before data was set (sentinel null)
         connections--;
+        opts.cloverConnections?.closed(socket.data.clover, socket);
         opts.cowork?.closeConnection(socket.data.connId);
         if (socket.data.helloTimer) clearTimeout(socket.data.helloTimer);
         if (socket.data.hubClient) hub.detach(socket.data.hubClient);
@@ -2115,6 +2128,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             } catch {
               throw new RpcFailure(ERR.PARSE_ERROR, "parse error");
             }
+            // C-M1: a Clover client's answer to one of the daemon's requests (the app's heartbeat).
+            if (incoming.kind === "response" && socket.data.clover) { opts.cloverConnections!.response(socket.data.clover, incoming.msg); continue; }
             if (incoming.kind !== "request") continue; // Phase 0: ignore client notifications
             id = incoming.msg.id;
             // Remote Gateway SP1 Task 2: a flaky mobile link means a phone may resend a request
@@ -2157,12 +2172,42 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       },
     },
   });
-  chmodSync(opts.socketPath, 0o600);
+  // A Unix socket file is tightened to the owner (its run directory is the owner's too). A Windows
+  // named pipe has no file: its DACL becomes the user's and SYSTEM's alone (libuv already made the
+  // first instance with FILE_FLAG_FIRST_PIPE_INSTANCE, so the name was free). A pipe that can't be
+  // locked down fails the start rather than staying open to others. Between `Bun.listen` and the lock-down the
+  // pipe has Windows' default DACL, which lets Everyone read: a client that connected then is closed when its
+  // connection opens (review M3); nothing is ever sent before a hello.
+  if (!isPipe(opts.socketPath)) chmodSync(opts.socketPath, 0o600);
+  else {
+    const sid = currentUserSid();
+    if (sid === null || lockPipeDacl(opts.socketPath, sid) === 0) {
+      server.stop(true);
+      throw new Error("the daemon's pipe could not be made owner-only");
+    }
+    opts.cloverConnections?.lockedDown();
+  }
 
   async function handle(socket: { data: ConnState }, method: string, params: unknown): Promise<unknown> {
+    // C-M1: a Clover connection speaks only Clover's methods, through its role's gate.
+    if (socket.data.clover) return opts.cloverConnections!.handle(socket.data.clover, method, params);
+    // Before the hello: the app checks the daemon holds this run's app token (review S3), on this connection.
+    if (method === "protocol.prove" && socket.data.authedRole === null && opts.cloverConnections) {
+      return opts.cloverConnections.prove(socket, params);
+    }
     if (method === METHODS.hello) {
       if (socket.data.authedRole !== null) {
         throw new RpcFailure(ERR.INVALID_REQUEST, "already authenticated — open a new connection to change role");
+      }
+      if (opts.cloverConnections?.isCloverHello(params)) {
+        const writer = socket.data.writer;
+        const { conn, result } = await opts.cloverConnections.hello(socket, socket.data.connId, params, (bytes) => { writer.enqueue(bytes); }, () => { (socket as unknown as { end(): void }).end(); });
+        socket.data.clover = conn;
+        socket.data.authedRole = `clover:${conn.role}`;
+        socket.data.clientName = conn.clientName;
+        if (socket.data.helloTimer) { clearTimeout(socket.data.helloTimer); socket.data.helloTimer = null; }
+        socket.data.decoder = new LineDecoder(); // authed: default 8 MiB line cap
+        return result;
       }
       const p = parseParams(HelloParams, params);
       if (p.protocolVersion !== PROTOCOL_VERSION) {
