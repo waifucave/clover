@@ -57,6 +57,23 @@ export interface CodePluginTemplate {
 const keyHelp = (name: string): string => `Your ${name} API key. Clover keeps it in your credential store and adds it to ${name}'s requests itself; this plugin never sees it.`;
 
 /** The six providers whose adapter is their own, by provider id. */
+/** The AWS regions Bedrock answers in, as the bedrock plugin declares their hosts. */
+export const BEDROCK_REGIONS: readonly string[] = [
+  "us-east-1", "us-east-2", "us-west-1", "us-west-2", "us-gov-east-1", "us-gov-west-1", "ca-central-1", "ca-west-1", "mx-central-1", "sa-east-1",
+  "eu-central-1", "eu-central-2", "eu-west-1", "eu-west-2", "eu-west-3", "eu-north-1", "eu-south-1", "eu-south-2",
+  "ap-east-2", "ap-northeast-1", "ap-northeast-2", "ap-northeast-3", "ap-south-1", "ap-south-2",
+  "ap-southeast-1", "ap-southeast-2", "ap-southeast-3", "ap-southeast-4", "ap-southeast-5", "ap-southeast-7",
+  "me-central-1", "me-south-1", "il-central-1", "af-south-1",
+];
+
+/** The Google Cloud locations Vertex AI's generative models answer in, as the vertex plugin declares their hosts. */
+export const VERTEX_LOCATIONS: readonly string[] = [
+  "us-central1", "us-east1", "us-east4", "us-east5", "us-south1", "us-west1", "us-west4", "northamerica-northeast1", "southamerica-east1",
+  "europe-west1", "europe-west2", "europe-west3", "europe-west4", "europe-west6", "europe-west8", "europe-west9", "europe-north1", "europe-central2", "europe-southwest1",
+  "asia-east1", "asia-east2", "asia-northeast1", "asia-northeast3", "asia-south1", "asia-southeast1", "australia-southeast1",
+  "me-central1", "me-central2", "me-west1",
+];
+
 export const CODE_PLUGINS: Readonly<Record<string, CodePluginTemplate>> = {
   "azure-openai": {
     runtime: "bun",
@@ -81,15 +98,20 @@ export const CODE_PLUGINS: Readonly<Record<string, CodePluginTemplate>> = {
   },
   bedrock: {
     runtime: "node",
-    // The process reaches exactly `bedrock-runtime.<region>` and `bedrock.<region>` for the connection's region
-    // (`bedrockNetworkHosts`); the manifest can't name a host from a setting yet (the report's ask).
-    capabilities: ["network:*.amazonaws.com"],
+    // Exact hosts, never `*.amazonaws.com` (which covers every AWS customer's buckets and gateways): Bedrock's two,
+    // `bedrock-runtime.<region>` (turns) and `bedrock.<region>` (discovery), in each region of `BEDROCK_REGIONS`. Every
+    // request goes out through the plugin's `net.fetch`, so a region off the list is refused there (agent SDK 0.0.65's
+    // signing bridge; before it the signing adapter used the platform fetch). The manifest can't name a host from a
+    // setting yet (the report's ask), so the list is static: a new region is a line here.
+    capabilities: BEDROCK_REGIONS.flatMap((r) => [`network:bedrock-runtime.${r}.amazonaws.com`, `network:bedrock.${r}.amazonaws.com`]),
     auth: [{ method: "api-key", secret: "aws", help: "An AWS access key for Bedrock, as JSON ({\"kind\":\"aws\",\"accessKeyId\":…,\"secretAccessKey\":…}). Only this plugin's own process reads it, to sign each request." }],
   },
   vertex: {
     runtime: "node",
-    // `<location>-aiplatform.googleapis.com` and Google's token endpoint, for the connection's location.
-    capabilities: ["network:*.googleapis.com"],
+    // Exact hosts, never `*.googleapis.com`: `<location>-aiplatform.googleapis.com` for each location of
+    // `VERTEX_LOCATIONS`, and Google's token endpoint, where the service account's JWT is exchanged. As for Bedrock,
+    // every request goes out through the plugin's `net.fetch`, and a location off the list is refused there.
+    capabilities: [...VERTEX_LOCATIONS.map((l) => `network:${l}-aiplatform.googleapis.com`), "network:oauth2.googleapis.com"],
     auth: [{ method: "api-key", secret: "gcp-service-account", help: "A Google Cloud service account key for Vertex AI, as JSON. Only this plugin's own process reads it, to sign its token requests." }],
   },
 };

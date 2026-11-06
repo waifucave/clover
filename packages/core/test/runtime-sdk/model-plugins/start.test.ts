@@ -97,6 +97,16 @@ describe("a bundled model plugin's keys come from its provider's keychain slot",
     expect(refreshed).toEqual(["codex-oauth:default"]);
   });
 
+  test("every auth name a bundled plugin declares reads its provider's slot: xAI's custom signIn, Codex's chatgpt", async () => {
+    const store = new DaemonStore();
+    store.values.set("xai-oauth:default", JSON.stringify({ kind: "oauth", accessToken: "xai-token", refreshToken: "r" }));
+    store.values.set("codex-oauth:default", JSON.stringify({ kind: "oauth", accessToken: "codex-token" }));
+    const creds = keychainModelPluginCredentials({ registry: registryOf(), secrets: store });
+    expect(modelPluginSlotFor("xai-oauth").account).toBe("xai-oauth:default");
+    expect((await creds.tokens(modelPluginId("xai-oauth"), "signIn").current())?.value).toBe("xai-token");
+    expect((await creds.tokens(modelPluginId("codex-oauth"), "chatgpt").current())?.value).toBe("codex-token");
+  });
+
   test("a signing plugin's own secret is its provider's record, as stored", async () => {
     const store = new DaemonStore();
     const aws = JSON.stringify({ kind: "aws", accessKeyId: "AKIDEXAMPLE", secretAccessKey: "not-a-secret" });

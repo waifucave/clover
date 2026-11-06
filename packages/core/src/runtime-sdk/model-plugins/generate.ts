@@ -3,7 +3,7 @@
 //   scripts/pinned-bun packages/core/src/runtime-sdk/model-plugins/generate.ts          # check: exit 1 on a difference
 //   scripts/pinned-bun packages/core/src/runtime-sdk/model-plugins/generate.ts --write  # rewrite the folders
 //
-// `generate.test.ts` runs the check in the core suite, so CI fails while the committed plugins and the catalog
+// `test/runtime-sdk/model-plugins/bundled.test.ts` runs the check in the core suite, so CI fails while the committed plugins and the catalog
 // disagree. Only `clover.json` and `catalog.json` are generated; a code plugin's `host/`, `package.json` and the
 // rest are hand-written and left alone. A provider that leaves the catalog leaves a folder the check reports as
 // stale; `--write` removes its two generated files.

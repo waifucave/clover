@@ -4,6 +4,10 @@
 // the core serves these two calls to model plugins with lane A's reference keyed fetch (`createKeyedFetch`), which
 // lane B's `net.fetch` matches case for case (the conformance kit's `runKeyedFetchConformance`).
 //
+// It RELIES ON `guardApiRouter` (the plugin host contract) in front of it: the guard refuses a call whose plugin
+// doesn't run in the process it came from, which is what makes `call.pluginId` and `call.process` trustworthy here.
+// Never serve it to a host without the guard.
+//
 // * The fetch is built per plugin from its install record's manifest, never from anything the call says: its hosts
 //   are its `network:` capabilities; its keys are its `auth` entries (top-level and each model's), each placed where
 //   the entry says, from the closed list (`keyPlacementsFor`'s rule; a placement off it builds no fetch at all).
@@ -15,7 +19,7 @@ import { hostProcessFor, type ApiRouter } from "../../contracts/plugin-host";
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
-import { createKeyedFetch, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
+import { clampKeyedIdleTimeoutMs, createKeyedFetch, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
 
 export interface ModelPluginApiOptions {
   registry: Pick<PluginRegistry, "get">;
@@ -25,7 +29,7 @@ export interface ModelPluginApiOptions {
   secret(pluginId: string, name: string): Promise<string | undefined>;
   /** The platform fetch (a test seam). */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
-  /** The keyed fetch's idle limit (a test seam). */
+  /** The keyed fetch's idle limit (a test seam), held to the keyed fetch's own bounds (`clampKeyedIdleTimeoutMs`). */
   idleTimeoutMs?: number;
 }
 
@@ -72,14 +76,17 @@ function keyedInit(init: RequestInit | undefined): KeyedFetchInit {
 
 /** The interim router for a model plugin's `net.fetch` and `secrets.get` (see this file's header). */
 export function modelPluginApiRouter(opts: ModelPluginApiOptions): ApiRouter {
-  const fetches = new Map<string, { hash: string | undefined; fetch: KeyedFetch }>();
+  const fetches = new Map<string, { key: string; fetch: KeyedFetch }>();
   const fetchFor = (record: PluginRecord): KeyedFetch => {
+    // Keyed on everything the fetch is built from (the A-M2 review): a changed grant or `auth` entry builds a new
+    // fetch even when the tree hash is the same (a capability granted later, an override).
+    const key = JSON.stringify([record.treeHash ?? null, networkHostsOf(record), [...authEntriesOf(record)].map(([n, a]) => [n, a.method, a.placement ?? null])]);
     const held = fetches.get(record.id);
-    if (held !== undefined && held.hash === record.treeHash) return held.fetch;
+    if (held !== undefined && held.key === key) return held.fetch;
     const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
     for (const [name, a] of authEntriesOf(record)) auth[name] = { source: opts.tokens(record.id, name), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
-    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: opts.idleTimeoutMs } : {}) });
-    fetches.set(record.id, { hash: record.treeHash, fetch });
+    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    fetches.set(record.id, { key, fetch });
     return fetch;
   };
   return async (call) => {

@@ -43,7 +43,12 @@ function withoutSignal(req: TurnRequest): Omit<TurnRequest, "signal"> {
 /** The plugin's adapter as the core serves it to one session. */
 export function pluginHostModelAdapter(host: PluginHost, ref: PluginAdapterRef, opts: { caller: Caller; session?: string; countTokens?: boolean }): HostModelAdapter {
   const base = { pluginId: ref.pluginId, handler: ref.handler, caller: opts.caller, ...(opts.session !== undefined ? { session: opts.session } : {}) };
-  const callArgs = (ctx: HostModelAdapterContext) => ({ connection: ctx.connection, stallTimeoutMs: ctx.stallTimeoutMs });
+  // The A-M2 review: a connection's own `headers` (a user's gateway headers, for the core's generic adapters) never
+  // cross to a code plugin; none of the bundled ones reads them, and a header value can be a credential.
+  const callArgs = (ctx: HostModelAdapterContext) => {
+    const { headers: _headers, ...connection } = ctx.connection as typeof ctx.connection & { headers?: unknown };
+    return { connection, stallTimeoutMs: ctx.stallTimeoutMs };
+  };
   const adapter: HostModelAdapter = {
     streamTurn(req: TurnRequest, ctx: HostModelAdapterContext): AsyncIterable<ProviderEvent> {
       return host.stream<ProviderEvent, void>({ ...base, method: "streamTurn", args: { ...callArgs(ctx), req: withoutSignal(req) }, signal: ctx.signal, timeoutMs: MODEL_TURN_LIMIT_MS, ownLimit: true });

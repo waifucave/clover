@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { GENERIC_ADAPTER_IDS, catalogFromModelPlugins, loadCatalog, type ModelEntry, type WinterCatalog } from "@waifucave/clover-provider-catalog";
-import { createGenericAdapters, createKeyedFetch, createRegistry, spawnModelAdapterProcess, type AdapterContext, type CredentialMaterial, type KeyPlacement, type ModelAdapter, type ProviderContext, type ProviderEvent } from "@waifucave/clover-provider-runtime";
+import { createGenericAdapters, createKeyedFetch, createRegistry, runWithProviderTransport, spawnModelAdapterProcess, type AdapterContext, type CredentialMaterial, type KeyPlacement, type ModelAdapter, type ProviderContext, type ProviderEvent } from "@waifucave/clover-provider-runtime";
 import { MODEL_ADAPTER_CASES, formatConformanceReport, runModelAdapterConformance } from "@waifucave/clover-provider-conformance";
 import { anthropicFake, azureFake, bedrockFake, codexFake, geminiFake, openaiChatFake, openaiResponsesFake, startFake, stalledResponse, vertexFake, type FakeServer, type RecordedRequest } from "@waifucave/clover-provider-conformance/fakes";
 import { BUNDLED_CHILDREN_DIR, CODE_PLUGINS, modelPluginFolder, modelPluginId } from "../../../src/runtime-sdk/model-plugins/bundled";
@@ -46,6 +46,19 @@ async function genericFake(seen: Seen[]): Promise<FakeServer> {
   });
 }
 
+/**
+ * A session's connection for a provider, by the agent SDK's own rule (`connectionFrom` in the runtime's
+ * `provider/session-provider.ts`, not exported): a user's base URL wins; else an adapter that serves more than one
+ * provider gets the catalog's `defaultEndpoints.api`, stamped reviewed; else the adapter's own default.
+ */
+function sessionConnection(catalog: WinterCatalog, provider: WinterCatalog["providers"][number], userBase: string | undefined): ProviderContext["connection"] {
+  if (userBase !== undefined) return { providerId: provider.id, baseUrl: userBase, endpointOrigin: "user" };
+  const shares = catalog.providers.filter((p) => p.adapterId === provider.adapterId).length > 1;
+  const api = provider.defaultEndpoints["api"];
+  if (!shares || api === undefined || api.length === 0) return { providerId: provider.id };
+  return { providerId: provider.id, baseUrl: api, endpointOrigin: "reviewed", ...(provider.modelDiscovery === "local" ? { local: true } : {}) };
+}
+
 async function drainText(events: AsyncIterable<ProviderEvent>): Promise<string> {
   let out = "";
   for await (const e of events) {
@@ -56,7 +69,7 @@ async function drainText(events: AsyncIterable<ProviderEvent>): Promise<string> 
 }
 
 describe("conformance: every declarative model plugin, on its generic adapter", () => {
-  test(`all ${declarative.length} answer a turn at their declared endpoint, with the key where their manifest puts it`, async () => {
+  test(`all ${declarative.length}: each answers a turn at the endpoint a session's connection resolves, under its declared one, with the key where its manifest puts it (the one whose sign-in is the core's own is named)`, async () => {
     const seen: Seen[] = [];
     const fake = await genericFake(seen);
     try {
@@ -67,6 +80,7 @@ describe("conformance: every declarative model plugin, on its generic adapter", 
       const registry = createRegistry(catalog);
       for (const a of createGenericAdapters(catalog)) registry.register(a);
       const failures: string[] = [];
+      const coreSignIn: string[] = [];
       for (const { entry } of inputs) {
         const provider = catalog.providers.find((p) => p.id === entry.provider)!;
         const row = catalog.models.find((m) => m.providerId === provider.id && m.status !== "blocked" && (m.endpoints.includes("chat") || m.endpoints.includes("responses")));
@@ -76,20 +90,36 @@ describe("conformance: every declarative model plugin, on its generic adapter", 
           failures.push(`${provider.id}: ${resolved.code}`);
           continue;
         }
+        // The endpoint is the one a session's connection gets from the catalog (the review: never a base URL the test
+        // builds itself). Only a per-tenant template, which has no endpoint until a user names one, gets its declared
+        // template filled in, as a user's.
+        const templated = /\$\{setting:/.test(entry.endpoint!.baseUrl);
         const declared = entry.endpoint!.baseUrl.replace(/\$\{setting:[^}]+\}/g, "tenant");
-        const base = `${fake.url}${new URL(declared).pathname.replace(/\/$/, "")}`;
         const keyed = entry.auth.find((a) => a.method === "api-key");
         const material: CredentialMaterial | null = keyed === undefined ? null : { kind: "api-key", key: KEY };
+        // Every hop the adapter sends is recorded as it sent it, then answered by the loopback fake.
+        const sent: string[] = [];
+        const transport = (url: string, init: RequestInit): Promise<Response> => {
+          sent.push(url);
+          const u = new URL(url);
+          return fetch(`${fake.url}${u.pathname}${u.search}`, init);
+        };
         const ctx: ProviderContext = {
-          connection: { providerId: provider.id, baseUrl: base, local: true },
+          connection: sessionConnection(catalog, provider, templated ? declared : undefined),
           credentials: { get: async () => material, set: async () => {}, delete: async () => {} },
           authRef: material === null ? { kind: "none" } : { kind: "keychain", account: `${provider.id}:default` },
           stallTimeoutMs: 5000,
           log: () => {},
         };
+        // A remote provider whose only sign-in is a flow the core runs (`custom`, no `auth` entry: uncloseai) has no
+        // credential here, and the adapter refuses it without one, as a session would until the core signs it in.
+        if (keyed === undefined && provider.modelDiscovery !== "local" && provider.authKinds.includes("custom")) {
+          coreSignIn.push(provider.id);
+          continue;
+        }
         const before = seen.length;
         try {
-          const text = await drainText(resolved.adapter.streamTurn({ model: resolved.providerModelId, messages: [{ role: "user", content: "hi" }], maxOutputTokens: 64 }, ctx));
+          const text = await runWithProviderTransport(transport, () => drainText(resolved.adapter.streamTurn({ model: resolved.providerModelId, messages: [{ role: "user", content: "hi" }], maxOutputTokens: 64 }, ctx)));
           if (!text.startsWith("ok from")) failures.push(`${provider.id}: answered ${JSON.stringify(text)}`);
         } catch (err) {
           failures.push(`${provider.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -100,7 +130,14 @@ describe("conformance: every declarative model plugin, on its generic adapter", 
           failures.push(`${provider.id}: no request reached the fake`);
           continue;
         }
-        if (!req.path.startsWith(new URL(base).pathname)) failures.push(`${provider.id}: sent to ${req.path}, not under its declared ${new URL(base).pathname}`);
+        const target = sent.at(-1);
+        const want = new URL(declared);
+        if (target === undefined) failures.push(`${provider.id}: nothing went out through the transport`);
+        else {
+          const got = new URL(target);
+          if (got.origin !== want.origin || !got.pathname.startsWith(want.pathname.replace(/\/$/, ""))) failures.push(`${provider.id}: sent to ${got.origin}${got.pathname}, not under its declared ${want.origin}${want.pathname}`);
+          if (!templated && provider.defaultEndpoints["api"] !== entry.endpoint!.baseUrl) failures.push(`${provider.id}: the catalog's endpoint ${provider.defaultEndpoints["api"]} isn't the declared ${entry.endpoint!.baseUrl}`);
+        }
         const placement = (keyed as { placement?: KeyPlacement } | undefined)?.placement;
         if (keyed === undefined) {
           if (req.authorization !== null || req.xApiKey !== null) failures.push(`${provider.id}: a key-less plugin's request carried a credential header`);
@@ -111,6 +148,7 @@ describe("conformance: every declarative model plugin, on its generic adapter", 
         }
       }
       expect(failures).toEqual([]);
+      expect(coreSignIn).toEqual(["uncloseai"]);
     } finally {
       await fake.close();
     }

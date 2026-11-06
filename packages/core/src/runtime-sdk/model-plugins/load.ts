@@ -73,9 +73,20 @@ export interface ModelPluginSet extends CatalogFromModelPluginsResult {
 /** The catalog of the enabled model plugins. Its version names the digest of what it was built from. */
 export function buildModelPluginSet(read: ReadModelPlugins): ModelPluginSet {
   const sdk = loadCatalog();
-  const digest = createHash("sha256").update(canonicalJson(read.entries.map((e) => e.input))).digest("hex");
-  const built = catalogFromModelPlugins(read.entries.map((e) => e.input), { families: sdk.families, catalogVersion: `plugins.${digest.slice(0, 16)}`, upstream: sdk.upstream });
+  // The A-M2 review: a bundled provider's id (every provider of the SDK's catalog, which the bundled plugins are
+  // generated from) is the bundled tree's alone, whether or not its plugin is on. The core keeps a provider's key in
+  // a slot named by the provider (`groq:default`), so a third party taking the id would be handed the user's key for
+  // its own endpoint. Such an entry is refused alone, with the reason.
+  const bundledIds = new Set(sdk.providers.map((p) => p.id));
+  const reserved: ModelPluginRefusal[] = [];
+  const entries = read.entries.filter((e) => {
+    if (e.input.trusted === true || !bundledIds.has(e.input.entry.provider)) return true;
+    reserved.push({ pluginId: e.input.pluginId, ...(e.input.ref !== undefined ? { ref: e.input.ref } : {}), provider: e.input.entry.provider, code: "provider-reserved", message: `the provider id ${JSON.stringify(e.input.entry.provider)} is a bundled provider's; another plugin can't take it` });
+    return false;
+  });
+  const digest = createHash("sha256").update(canonicalJson(entries.map((e) => e.input))).digest("hex");
+  const built = catalogFromModelPlugins(entries.map((e) => e.input), { families: sdk.families, catalogVersion: `plugins.${digest.slice(0, 16)}`, upstream: sdk.upstream });
   const byProvider = new Map<string, ReadModelEntry>();
-  for (const e of read.entries) if (built.adapters.get(e.input.entry.provider)?.pluginId === e.input.pluginId) byProvider.set(e.input.entry.provider, e);
-  return { ...built, refused: [...read.unreadable, ...built.refused], byProvider, digest };
+  for (const e of entries) if (built.adapters.get(e.input.entry.provider)?.pluginId === e.input.pluginId) byProvider.set(e.input.entry.provider, e);
+  return { ...built, refused: [...read.unreadable, ...reserved, ...built.refused], byProvider, digest };
 }
