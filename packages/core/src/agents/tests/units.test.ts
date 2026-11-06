@@ -1,11 +1,12 @@
 // Unit checks for the Agent tool's small parts: the JSON-RPC peer, the environment allow-list, the process table,
 // version ranges, the "once" rule, the transcript's redaction, and the tokens' rules.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RpcError, RpcPeer, type JsonRpcMessage } from "../acp/jsonrpc";
-import { onceOnly } from "../acp/session";
+import { UserSelections } from "../acp/selections";
+import { MAX_RAW_INPUT_CHARS, capRawInput, onceOnly } from "../acp/session";
 import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "../acp/types";
 import { versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
@@ -13,7 +14,8 @@ import { buildAgentEnv } from "../process/launch";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
 import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
-import { AgentTranscript, REDACTED_TOKEN, botSegment, transcriptPaths } from "../transcript";
+import { agentPaths } from "../paths";
+import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
@@ -140,7 +142,7 @@ describe("the card's inputs", () => {
     expect(effectOf("execute")).toBe("execute");
     expect(effectOf("switch_mode")).toBe("other");
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "execute", title: "`ls`", rawInput: { command: "ls -la" }, options: [], paths: [] })).toBe("Agent(cursor):Bash(ls -la)");
-    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server: "blender", tool: "Render" }, options: [], paths: [] })).toBe("mcp__blender__Render");
+    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server: "blender", tool: "Render" }, options: [], paths: [] })).toBe("Agent(cursor):mcp__blender__Render");
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", options: [], paths: [] })).toBeUndefined();
     expect((await promptOf({ from: "bot", bot: "alpha", session: "s", text: "go on" })).text).toBe("go on");
     expect((await promptOf({ from: "note", label: "Fish", text: "hi", by: { kind: "core" } })).text).toBe("[Fish] hi");
@@ -220,6 +222,27 @@ describe("the bridge's tokens", () => {
     expect(await t.accept(token, "s1", 501)).toEqual({ ok: false, reason: "expired" });
   });
 
+  test("a revoke while the process table is read wins (review 5, the E2 probe); isLive follows the token", async () => {
+    let release!: () => void;
+    const slow = () => new Promise<ProcessRow[]>((r) => (release = () => r(tree)));
+    const t = new BridgeTokens({ table: slow, bindWaitMs: 50 });
+    const token = t.mint("s1");
+    t.bind("s1", 500);
+    const pending = t.accept(token, "s1", 501);
+    await new Promise((r) => setTimeout(r, 10));
+    t.revoke("s1");
+    release();
+    expect(await pending).toEqual({ ok: false, reason: "revoked" });
+    const t2 = new BridgeTokens({ table: table(tree) });
+    const tok = t2.mint("s2");
+    t2.bind("s2", 500);
+    const ok = (await t2.accept(tok, "s2", 501)) as { ok: true; connection: number };
+    expect(t2.isLive("s2", ok.connection)).toBe(true);
+    expect(t2.isLive("s2", ok.connection + 1)).toBe(false);
+    t2.revoke("s2");
+    expect(t2.isLive("s2", ok.connection)).toBe(false);
+  });
+
   test("minting again revokes the earlier token (a reattach)", async () => {
     const t = new BridgeTokens({ table: table(tree) });
     const a = t.mint("s1");
@@ -227,6 +250,91 @@ describe("the bridge's tokens", () => {
     t.bind("s1", 500);
     expect((await t.accept(a, "s1", 501)).ok).toBe(false);
     expect((await t.accept(b, "s1", 501)).ok).toBe(true);
+  });
+});
+
+describe("the user's own selections (review 10)", () => {
+  test("one record per backend: the first holder captures, the last one sets back, a crash keeps it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-k-sel-"));
+    try {
+      const sel = new UserSelections(dir);
+      const a = {};
+      const b = {};
+      sel.begin("cursor", "model", a, "user-model");
+      sel.set("cursor", "model", "bot-a");
+      // A second delegation at the same time reads the first one's choice: it captures nothing.
+      sel.begin("cursor", "model", b, "bot-a");
+      sel.set("cursor", "model", "bot-b");
+      expect(sel.end("cursor", "model", a, true)).toBeUndefined();
+      expect(sel.end("cursor", "model", b, true)).toBe("user-model");
+      sel.restored("cursor", "model");
+      expect(sel.record("cursor", "model")).toBeUndefined();
+      // A crash: nothing to set it back through, so the record stays, on disk, for the next daemon.
+      sel.begin("cursor", "model", a, "user-model");
+      sel.set("cursor", "model", "bot-a");
+      expect(sel.end("cursor", "model", a, false)).toBeUndefined();
+      const next = new UserSelections(dir);
+      expect(next.record("cursor", "model")).toEqual({ user: "user-model", ours: "bot-a" });
+      // The next delegation finds Clover's value still set: the old record stands.
+      next.begin("cursor", "model", b, "bot-a");
+      expect(next.end("cursor", "model", b, true)).toBe("user-model");
+      // Had the user changed it since, their new choice would be the one kept.
+      const later = new UserSelections(dir);
+      later.begin("cursor", "model", a, "user-model");
+      later.set("cursor", "model", "bot-a");
+      later.end("cursor", "model", a, false);
+      later.begin("cursor", "model", b, "user-new");
+      expect(later.end("cursor", "model", b, true)).toBe("user-new");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the paths the fence sees (review 8)", () => {
+  test("relative, ~ and file: paths resolve against the root; a path through a link adds its real path", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-paths-")));
+    try {
+      const root = join(dir, "project");
+      const clover = join(dir, ".clover");
+      mkdirSync(root);
+      mkdirSync(clover);
+      symlinkSync(clover, join(root, "link"));
+      expect(agentPaths(["notes.md"], root, dir)).toEqual([join(root, "notes.md")]);
+      expect(agentPaths(["../.clover/settings"], root, dir)).toEqual([join(clover, "settings")]);
+      expect(agentPaths(["~/.clover/settings", `file://${join(root, "a b")}`], root, dir)).toEqual([join(clover, "settings"), join(root, "a b")]);
+      expect(agentPaths(["link/settings"], root, dir)).toEqual([join(root, "link", "settings"), join(clover, "settings")]);
+      expect(agentPaths(["link/new/deep.txt"], root, dir)).toEqual([join(root, "link", "new", "deep.txt"), join(clover, "new", "deep.txt")]);
+      expect(agentPaths(["", "a\0b"], root, dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a hostile agent's sizes (review 12)", () => {
+  test("a rawInput past the cap becomes a preview; each transcript file stops at its cap and says so", () => {
+    expect(capRawInput({ command: "ls" })).toEqual({ command: "ls" });
+    const big = capRawInput({ command: "x".repeat(MAX_RAW_INPUT_CHARS + 1) }) as { clover_truncated: string; length: number };
+    expect(big.clover_truncated.length).toBe(4096);
+    expect(big.length).toBeGreaterThan(MAX_RAW_INPUT_CHARS);
+    const home = mkdtempSync(join(tmpdir(), "clover-k-cap-"));
+    try {
+      const t = new AgentTranscript(home, "agent_cap", "alpha", { "calls.ndjson": 200 });
+      for (let i = 0; i < 10; i++) t.call({ type: "permission", i, pad: "y".repeat(40) });
+      const lines = readFileSync(join(t.dir, "calls.ndjson"), "utf8").trim().split("\n");
+      expect(lines.length).toBeLessThan(10);
+      expect(JSON.parse(lines.at(-1)!)).toEqual({ clover: "truncated", cap: 200 });
+      t.call({ type: "after" });
+      expect(readFileSync(join(t.dir, "calls.ndjson"), "utf8").trim().split("\n").length).toBe(lines.length);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("redactDeep replaces the token in every string and key, at any depth", () => {
+    const tok: string = "tok_ABCDEFGHIJKLMNOP";
+    expect(redactDeep<unknown>({ a: [`x ${tok} y`, { [tok]: tok }], n: 1 }, [tok])).toEqual({ a: [`x ${REDACTED_TOKEN} y`, { [REDACTED_TOKEN]: REDACTED_TOKEN }], n: 1 });
   });
 });
 

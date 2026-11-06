@@ -8,7 +8,9 @@
 // so the limit is Clover's own: a per-computer maximum for one agent command, by default the same 10 minutes as a
 // bot's own `Bash` (the inherited maximum).
 //
-// It checks once a minute on the session's clock, only while a turn runs.
+// It checks once a minute on the session's clock, only while a turn runs, and never while a permission request waits
+// on its answer: a card waits for the user with no time limit (the broker's rule 6), and that wait isn't the agent's
+// stall (review 3). The session counts the answer as progress, so the 10 minutes start again from it.
 import { AGENT_STALL_MS } from "../contracts/agent-backend";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { descendantsOf, readProcessTable, type ProcessTableReader } from "./process/table";
@@ -27,6 +29,8 @@ export interface Watched {
   readonly pid: number;
   /** Execute calls still running, with their wall-clock start. */
   runningCommands(): { id: string; startedAtWall: number }[];
+  /** A permission request is waiting on its answer. */
+  waitingOnUser?(): boolean;
 }
 
 export interface StallWatchdogOptions {
@@ -79,7 +83,7 @@ export class StallWatchdog {
 
   /** Whether the session has stalled now. */
   async stalled(w: Watched): Promise<boolean> {
-    if (!w.busy()) return false;
+    if (!w.busy() || w.waitingOnUser?.() === true) return false;
     if (this.#clock.now() - w.lastProgressAt() < this.#stallMs) return false;
     const commands = w.runningCommands();
     if (commands.length === 0 || w.pid <= 0) return true;

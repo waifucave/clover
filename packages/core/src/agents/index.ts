@@ -3,14 +3,17 @@
 //
 // | Module              | What                                                                                   |
 // | :------------------ | :------------------------------------------------------------------------------------- |
-// | `acp/`              | the ACP client: a tolerant JSON-RPC peer, the wire shapes, one agent session            |
+// | `acp/`              | the ACP client: a tolerant JSON-RPC peer, the wire shapes, one agent session, and the  |
+// |                     | record of the user's own selections an agent saves (`selections.ts`)                  |
 // | `process/`          | launching an agent contained as a group, its environment allow-list, the process table |
 // | `quirks.ts`         | the quirks table: how each measured backend bends ACP (spike S5)                        |
 // | `backend.ts`        | `AcpAgentBackend`, the spine's `AgentBackend` for a local ACP agent                     |
 // | `bridge/`           | the bridge MCP server (its own process), its token, and the daemon's end of it          |
 // | `driver.ts`         | the session driver: the host runs an agent's turns through it                           |
-// | `manager.ts`        | `Agent`, `TaskStop`, `ListAgents`, the bridge's methods, reattaching after a restart   |
+// | `manager.ts`        | `Agent`, `TaskStop`, lane D's hooks, the bridge's methods, reattaching after a restart |
 // | `transcript.ts`     | `bots/<bot>/agents/<session>/`: the wire minus replays, Clover's own record, stderr    |
+// | `records.ts`        | the daemon's own record of each session, in the fenced run folder, for a reattach      |
+// | `paths.ts`          | a permission request's paths, resolved and real, for the fence                         |
 // | `watchdog.ts`       | the 10-minute stall watchdog                                                            |
 // | `sandbox/`          | which agents' own sandboxes hold the fence (S8), their writers, the OK for the rest     |
 // | `claude-code/`      | skills, agent definitions and shimmed hooks placed in Claude Code; the hook shim         |
@@ -21,12 +24,14 @@
 // clover-sdk's ACP package (plan §4 K) once that package exists; K-M3 adds the agent side there for the inherited
 // coding agent.
 import { join } from "node:path";
+import type { Level } from "@waifucave/clover-protocol";
 import type { AgentBackend } from "../contracts/agent-backend";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import type { Fence } from "../contracts/fence";
 import type { SessionHost } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
+import { UserSelections } from "./acp/selections";
 import { AcpAgentBackend } from "./backend";
 import { BridgeEndpoint } from "./bridge/endpoint";
 import { bridgeCommand } from "./bridge/main";
@@ -37,12 +42,12 @@ import { FileAgentOks } from "./sandbox/oks";
 import { hookShimCommand } from "./claude-code/hook-shim";
 import { placeInClaudeCode } from "./claude-code/placement";
 import type { PluginPartsSource } from "./placement";
-import { QUIRKS } from "./quirks";
+import { QUIRKS, READ_ONLY_MODES } from "./quirks";
 import { StallWatchdog } from "./watchdog";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
 export { RpcPeer, RpcError } from "./acp/jsonrpc";
-export { AcpAgentBackend, versionSatisfies, type AgentWire, type BackendCommand } from "./backend";
+export { AcpAgentBackend, versionSatisfies, type AcpStartSpec, type AgentWire, type BackendCommand } from "./backend";
 export { BridgeEndpoint, type BridgeHandlers } from "./bridge/endpoint";
 export { bridgeCommand, BRIDGE_MAIN_PATH } from "./bridge/main";
 export { peerPidOf } from "./bridge/peer";
@@ -50,12 +55,15 @@ export { BRIDGE_ENV, runBridge } from "./bridge/server";
 export { BridgeTokens } from "./bridge/tokens";
 export { BRIDGE_OWN_TOOLS, GLOSSARY, SEND_MESSAGE, bridgeInstructions, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 export { AgentDriver, type AgentLogEvent } from "./driver";
-export { AgentManager, effectOf, promptOf, ruleKeyOf, type AgentCaller, type AgentRequest } from "./manager";
+export { AgentManager, BRIDGE_SERVER_PREFIX, effectOf, promptOf, ruleKeyOf, type AgentCaller, type AgentRequest, type AgentSessionHooks } from "./manager";
+export { agentPaths } from "./paths";
+export { agentRecordPath, readAgentRecord, type DaemonAgentRecord } from "./records";
 export { buildAgentEnv, launchContained } from "./process/launch";
-export { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS } from "./quirks";
+export { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, READ_ONLY_MODES } from "./quirks";
+export { UserSelections } from "./acp/selections";
 export { agentMethods, BACKEND_NAMES } from "./rpc";
-export { agentToolDefs, describeSession, type CoreToolDef } from "./tools";
-export { AgentTranscript, botSegment, transcriptPaths } from "./transcript";
+export { agentToolDefs, type CoreToolDef } from "./tools";
+export { AgentTranscript, botSegment, redactDeep, TRANSCRIPT_CAPS, transcriptPaths } from "./transcript";
 export { NO_PARTS, type HookEvent, type PluginParts, type PluginPartsSource } from "./placement";
 export { placeInClaudeCode, matcherOf, shellQuote } from "./claude-code/placement";
 export { dropAllow, hookShimCommand, hookShimMain, runHook } from "./claude-code/hook-shim";
@@ -77,12 +85,15 @@ export interface AgentsOptions {
   backends?: (wire: AgentManager["wire"]) => AgentBackend[];
   pluginTools?: BridgeToolSource;
   pluginParts?: PluginPartsSource;
+  /** A computer's level, for the read-only mode of an agent that acts without asking; read-only when unknown. */
+  levelOf?: (computer: string) => Level | undefined;
   log?: (line: string) => void;
 }
 
 /** Wires the Agent tool for one daemon: the tokens, the bridge's endpoint at `<home>/run/bridge.sock`, the watchdog,
- *  the backends and the manager. `close` revokes every token and closes the endpoint. */
-export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoint: BridgeEndpoint; tokens: BridgeTokens; backends: () => AgentBackend[]; close(): void } {
+ *  the backends and the manager. `close` ends every agent's process (the sessions stay to be reattached), revokes
+ *  every token and closes the endpoint. */
+export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoint: BridgeEndpoint; tokens: BridgeTokens; backends: () => AgentBackend[]; close(): Promise<void> } {
   const tokens = new BridgeTokens();
   const socketPath = join(o.home, "run", "bridge.sock");
   let backends: AgentBackend[] = [];
@@ -94,19 +105,24 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoin
     oks: new FileAgentOks(o.home),
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
+    ...(o.levelOf ? { levelOf: o.levelOf } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
   const wire = (id: string) => manager.wire(id);
   // Claude Code reads its own skills, agents and hooks folders: the plugins' parts are placed there (§9.3).
   const place = { "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() }) } as const;
+  // One record of the user's own selections for every backend, in the daemon's fenced run folder.
+  const selections = new UserSelections(join(o.home, "run", "agents", "selections"));
   backends = o.backends?.(wire) ?? Object.entries(QUIRKS).map(([id, quirks]) => new AcpAgentBackend({
-    id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
+    id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, selections, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
+    ...(READ_ONLY_MODES[id] ? { readOnlyMode: READ_ONLY_MODES[id] } : {}),
   }));
   const endpoint = new BridgeEndpoint({ socketPath, tokens, handlers: manager.bridgeHandlers(), device: o.device, serverVersion: o.serverVersion, ...(o.log ? { log: o.log } : {}) });
   endpoint.listen();
   return {
     manager, endpoint, tokens, backends: () => backends,
-    close: () => {
+    close: async () => {
+      await manager.close();
       tokens.revokeAll();
       endpoint.close();
     },

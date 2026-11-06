@@ -3,7 +3,9 @@
 // `bridge`, bound to that one agent session by its token.
 //
 // * It reads its token, session and socket from its environment (`CLOVER_BRIDGE_TOKEN`, `CLOVER_BRIDGE_SESSION`,
-//   `CLOVER_BRIDGE_SOCKET`) and deletes them at once, so nothing it might start inherits them.
+//   `CLOVER_BRIDGE_SOCKET`) and deletes them from `process.env` at once, so nothing it might start inherits them. The
+//   process's original environment block still holds them (`ps eww`, `/proc/<pid>/environ`), readable by the agent's
+//   own processes: the defence is the token's binding to the agent's process tree, not the deletion.
 // * It connects to the daemon as soon as it starts, before the agent asks anything, so the real bridge holds the
 //   token's one live connection first (S5 edit 4).
 // * MCP's two eras (S5 §2): Antigravity probes the 2026-07-28 `server/discover` before falling back to the

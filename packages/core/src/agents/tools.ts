@@ -1,9 +1,10 @@
-// The bot's agent tools (spec §9.3 "How a delegation runs"): `Agent`, `TaskStop` and `ListAgents`, in a neutral
-// shape: a name, a description that stands on its own, a JSON Schema and a `run`. The embedded runtime registers them
-// as core tools (lane A, with lane D for the bot's session); `SendMessage` is the bot's own messaging tool (lane D),
-// and reaches an agent through `AgentManager.send`.
+// The bot's agent tools (spec §9.3 "How a delegation runs"): `Agent` and `TaskStop`, in a neutral shape: a name, a
+// description that stands on its own, a JSON Schema and a `run`. The embedded runtime registers them as core tools
+// (lane A, with lane D for the bot's session). `SendMessage` and `ListAgents` are the bot's own tools (lane D's
+// bots/tools.ts, the controller's ruling: one `ListAgents`): `SendMessage` reaches an agent through the
+// session host, as it reaches any session, and `ListAgents` lists the agents from `AgentManager.sessionHooks().agents`.
 import { ContractError, isContractError } from "../contracts/common";
-import type { Level, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentManager } from "./manager";
 
 export interface CoreToolDef {
@@ -30,16 +31,6 @@ function fail(err: unknown): { text: string; isError: true } {
 function str(input: unknown, key: string): string | undefined {
   const v = (input as Record<string, unknown> | undefined)?.[key];
   return typeof v === "string" && v.length > 0 ? v : undefined;
-}
-
-export function describeSession(v: SessionView): string {
-  const parts = [`${v.id}`, v.kind, v.status + (v.failure ? ` (${v.failure})` : "")];
-  if (v.backend) parts.push(`backend ${v.backend}`);
-  if (v.model) parts.push(`model ${v.model}`);
-  if (v.bot) parts.push(`bot ${v.bot}`);
-  if (v.root) parts.push(`in ${v.root}`);
-  if (v.title) parts.push(`"${v.title}"`);
-  return `- ${parts.join(" · ")}`;
 }
 
 export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, opts: { backends?: () => string[] } = {}): CoreToolDef[] {
@@ -106,15 +97,6 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
         } catch (err) {
           return fail(err);
         }
-      },
-    },
-    {
-      name: "ListAgents",
-      description: "List the running sessions: your background agents first, then every other session and bot, with each one's status.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      run: async () => {
-        const views = manager.list({ bot: caller.bot });
-        return { text: views.length === 0 ? "No sessions." : views.map(describeSession).join("\n"), isError: false };
       },
     },
   ];

@@ -185,3 +185,11 @@ export const QUIRK_SOURCES: Readonly<Record<string, "measured (S5)" | "docs and 
   gemini: "docs and code (S5 §3)",
   deepseek: "docs and code (S5 §3)",
 };
+
+/** The read-only mode of each agent that acts without asking (`unasked-actions`), by backend id: the config option
+ *  and its values in order of preference. Spec §9.3's [P] under item 78: at read-only, Cursor starts in its `ask`
+ *  mode ("no edits or command execution"), else `plan` ("read-only mode for planning"), both from S5's
+ *  `configOptions`. Kept beside the quirks, not in them, since lane B's fakes pin the quirks' shape. */
+export const READ_ONLY_MODES: Readonly<Record<string, { option: string; values: readonly string[] }>> = {
+  cursor: { option: "mode", values: ["ask", "plan"] },
+};
