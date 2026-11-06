@@ -119,9 +119,12 @@ export interface KeysEnv {
 /** The signer for this environment; throws NotConfigured when it has none (production without its secret). */
 export function signerFor(env: KeysEnv): TokenSigner {
   if (env.SIGNING_JWKS) return secretSigner(env.SIGNING_JWKS);
-  if (env.EPHEMERAL_KEYS === "1") {
-    const stub = env.KEYS.getByName("keys");
-    return { jwks: () => stub.jwks(), sign: (claims) => stub.sign(claims) };
-  }
+  if (env.EPHEMERAL_KEYS === "1") return memorySigner(env);
   throw new NotConfigured();
+}
+
+/** The local profile's in-memory keys, and only those: the mint without a sign-in signs with nothing else. */
+export function memorySigner(env: KeysEnv): TokenSigner {
+  const stub = env.KEYS.getByName("keys");
+  return { jwks: () => stub.jwks(), sign: (claims) => stub.sign(claims) };
 }

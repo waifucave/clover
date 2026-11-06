@@ -1,7 +1,10 @@
+import { runInDurableObject } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 import { describe, expect, test } from "vitest";
 
 import { clearJwksCache, verifyAccountTokenFrom } from "../../shared/jwks";
 import { CLOSE, HandshakeError } from "../client";
+import type { HandshakeDO } from "../src/handshake-do";
 import { accountToken, box, client, rawSocket } from "./helpers";
 
 let accounts = 0;
@@ -78,6 +81,24 @@ describe("the account channel", () => {
     expect((await refusal(studio.sendMessage("old", "dial", { box: box() }))).code).toBe("revoked");
   });
 
+  test("an account socket ends with the token it was opened with", async () => {
+    const account = uniqueAccount();
+    const exp = Math.floor(Date.now() / 1000) + 120;
+    const studio = client().account(() => accountToken({ account, device: "studio", exp }));
+    const s = await rawSocket((await studio.ticket()).url);
+    await s.frames.until((f) => f.t === "hello");
+    const stub = env.HANDSHAKE.getByName(`account:${account}`);
+    const until = await runInDurableObject(stub, async (_o: HandshakeDO, state) => (state.getWebSockets()[0]!.deserializeAttachment() as { until: number }).until);
+    expect(until).toBe(exp * 1000);
+    // Past the token's end, the next write to the socket closes it instead.
+    await runInDurableObject(stub, async (_o: HandshakeDO, state) => {
+      const ws = state.getWebSockets()[0]!;
+      ws.serializeAttachment({ ...(ws.deserializeAttachment() as object), until: Date.now() - 1 });
+    });
+    await device(account, "laptop").putRecord("addr", "studio", { gen: 1, box: box() });
+    expect(await s.frames.closed()).toBe(CLOSE.reauth);
+  });
+
   test("presence frames name the device", async () => {
     const account = uniqueAccount();
     const studio = device(account, "studio");
@@ -131,5 +152,37 @@ describe("the account service's keys by URL", () => {
     const insecure = { ACCOUNT_ISSUER: "https://accounts.test", ACCOUNT_JWKS_URL: "http://accounts.test/jwks.json" };
     expect(await verifyAccountTokenFrom(token, insecure, "handshake.waifucave.com", counting)).toBeNull();
     expect(plain).toBe(0);
+  });
+
+  test("go through the account service's binding first, with the URL as the fallback", async () => {
+    const token = await accountToken({ account: "a", device: "d", key: "es256" });
+    const asked: string[] = [];
+    let plain = 0;
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      plain++;
+      return fetch(input, init);
+    }) as typeof fetch;
+    // The binding answers for the URL's path; the URL itself (on the same zone in production) is never fetched.
+    clearJwksCache();
+    const binding = {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        asked.push(new URL(String(input)).pathname);
+        return fetch("https://accounts.test/.well-known/jwks.json", init);
+      },
+    };
+    expect(await verifyAccountTokenFrom(token, { ...base, ACCOUNT_SERVICE: binding }, "handshake.waifucave.com", fetcher)).toMatchObject({ account: "a" });
+    expect([asked, plain]).toEqual([["/.well-known/jwks.json"], 0]);
+    // A binding that fails falls back to the URL.
+    clearJwksCache();
+    const broken = { fetch: async () => new Response("no", { status: 503 }) };
+    expect(await verifyAccountTokenFrom(token, { ...base, ACCOUNT_SERVICE: broken }, "handshake.waifucave.com", fetcher)).toMatchObject({ account: "a" });
+    expect(plain).toBe(1);
+  });
+
+  test("refuse a token that lives longer than the account service mints, plus skew", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const config = { ACCOUNT_ISSUER: env.ACCOUNT_ISSUER, ACCOUNT_JWKS: env.ACCOUNT_JWKS };
+    expect(await verifyAccountTokenFrom(await accountToken({ account: "a", device: "d", exp: now + 360 }), config, "handshake.waifucave.com")).not.toBeNull();
+    expect(await verifyAccountTokenFrom(await accountToken({ account: "a", device: "d", exp: now + 361 }), config, "handshake.waifucave.com")).toBeNull();
   });
 });

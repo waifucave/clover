@@ -16,6 +16,8 @@ export interface Env {
   ACCOUNT_ISSUER: string;
   ACCOUNT_JWKS?: string;
   ACCOUNT_JWKS_URL?: string;
+  /** Production: a service binding to the account service, for its JWKS (shared/jwks.ts). */
+  ACCOUNT_SERVICE?: Fetcher;
   /** The `aud` an account token must carry for this service. */
   HANDSHAKE_AUDIENCE: string;
   /** Where clients reach this service: socket URLs are built from it. */

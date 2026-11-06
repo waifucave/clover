@@ -49,10 +49,11 @@ export const LIMITS = {
   ticketTtlMs: 60_000,
   presenceStaleMs: 90_000,
   tombstoneMs: 30 * 24 * 3600_000,
-  /** The longest an account token lasts, plus skew: how long a revoked device is refused. */
-  revocationKeepMs: 24 * 3600_000 + 10 * 60_000,
-  /** The longest an account-channel socket stays open before it must be opened again with a fresh token. */
-  accountSocketMaxMs: 24 * 3600_000,
+  /** The longest an account token lasts (5 minutes, plus a minute's skew), plus 10 minutes: how long a revoked
+   *  device is refused. */
+  revocationKeepMs: 6 * 60_000 + 10 * 60_000,
+  /** The longest an account-channel socket stays open: its token's end, and never past a token's longest life. */
+  accountSocketMaxMs: 6 * 60_000,
   lease: { minTtl: 10, maxTtl: 300, defaultTtl: 60 },
   /** A short code's slot: seconds it may live (a pairing lasts 10 minutes), and its sealed box's decoded bytes. */
   rendezvous: { maxTtl: 600, maxBox: 4096 },

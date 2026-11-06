@@ -37,6 +37,8 @@ export interface TicketClaims {
   member: string;
   expiresAt: number;
   nonce: string;
+  /** Account sockets: the account token's end (ms); the socket closes at its next event after it. */
+  until?: number;
 }
 
 let macKey: { secret: string; key: Promise<CryptoKey> } | null = null;
@@ -58,7 +60,7 @@ async function mac(secret: string, body: string): Promise<Uint8Array> {
 /** A single-use socket ticket for a member of a scope (PROTOCOL.md, "The socket"). */
 export async function mintTicket(secret: string, claims: Omit<TicketClaims, "nonce">): Promise<{ ticket: string; claims: TicketClaims }> {
   const full: TicketClaims = { ...claims, nonce: b64u(crypto.getRandomValues(new Uint8Array(16))) };
-  const body = b64u(utf8(JSON.stringify({ s: full.scope, i: full.id, m: full.member, e: full.expiresAt, n: full.nonce })));
+  const body = b64u(utf8(JSON.stringify({ s: full.scope, i: full.id, m: full.member, e: full.expiresAt, n: full.nonce, ...(full.until !== undefined ? { u: full.until } : {}) })));
   return { ticket: `${body}.${b64u(await mac(secret, body))}`, claims: full };
 }
 
@@ -73,7 +75,8 @@ export async function readTicket(secret: string, ticket: string, now: number): P
     if (scope !== "pair" && scope !== "group" && scope !== "account") return null;
     if (typeof raw.i !== "string" || typeof raw.m !== "string" || typeof raw.n !== "string") return null;
     if (typeof raw.e !== "number" || raw.e <= now) return null;
-    return { scope, id: raw.i, member: raw.m, expiresAt: raw.e, nonce: raw.n };
+    if (raw.u !== undefined && typeof raw.u !== "number") return null;
+    return { scope, id: raw.i, member: raw.m, expiresAt: raw.e, nonce: raw.n, ...(typeof raw.u === "number" ? { until: raw.u } : {}) };
   } catch {
     return null;
   }

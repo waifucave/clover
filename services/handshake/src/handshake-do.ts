@@ -55,7 +55,7 @@ export interface Call {
 interface SocketState {
   member: string;
   openedAt: number;
-  /** Account sockets only: when the socket must be opened again (LIMITS.accountSocketMaxMs). */
+  /** Account sockets only: when the socket must be opened again, with a fresh token: the token's end. */
   until?: number;
 }
 
@@ -468,7 +468,10 @@ export class HandshakeDO extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     this.ctx.acceptWebSocket(server, [socketTag(member)]);
-    const state: SocketState = { member, openedAt: now, ...(kind === "account" ? { until: now + LIMITS.accountSocketMaxMs } : {}) };
+    // An account socket ends with the token it was opened with, and never later than accountSocketMaxMs.
+    const tokenEnd = Number(request.headers.get("x-handshake-until"));
+    const until = Math.min(now + LIMITS.accountSocketMaxMs, Number.isSafeInteger(tokenEnd) && tokenEnd > 0 ? tokenEnd : now + LIMITS.accountSocketMaxMs);
+    const state: SocketState = { member, openedAt: now, ...(kind === "account" ? { until } : {}) };
     server.serializeAttachment(state);
 
     if (kind === "pair") {

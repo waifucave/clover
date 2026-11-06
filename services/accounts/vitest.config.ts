@@ -65,7 +65,6 @@ export default defineConfig({
           ISSUER: "https://accounts.test",
           AUTH_URL: "https://auth.test",
           AUTH_ANON_KEY: ANON_KEY,
-          WEB_ORIGINS: "https://clover.test",
           SIGNING_JWKS: signingJwks,
         },
         cf: false,

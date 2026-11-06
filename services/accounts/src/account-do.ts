@@ -106,11 +106,11 @@ export class AccountDO extends DurableObject<Env> {
   }
 
   /** Whether `device` may have a token for `aud` now: listed, not revoked, its signature good and its `t` new. */
-  async allowMint(device: string, aud: string, t: number, sig: string): Promise<Reply> {
+  async allowMint(account: string, device: string, aud: string, t: number, sig: string): Promise<Reply> {
     const existing = this.row(device);
     if (!existing || existing.revoked_at !== null) return { status: 403, error: "not_member" };
     const key = fromB64(existing.public_key);
-    if (!(await verifyEd25519(key, fromB64u(sig), mintStatement(aud, device, t)))) return { status: 403, error: "bad_signature" };
+    if (!(await verifyEd25519(key, fromB64u(sig), mintStatement(account, aud, device, t)))) return { status: 403, error: "bad_signature" };
     // Everything from here runs without a pause, so a revoke or another mint can't slip in between the check and the
     // write; the revoke is looked at again, since it may have come during the signature check.
     if (this.row(device)?.revoked_at !== null) return { status: 403, error: "not_member" };

@@ -9,7 +9,7 @@ The wire is lane H's proposal (the core's `identity/account.ts`, which `AccountC
 - Production: `https://waifucave.com/auth` (`PATH_PREFIX` `/auth`), the issuer the other services' production profiles name. The paths below follow the prefix. A host of its own works too, with `PATH_PREFIX` empty and `ISSUER` set to match.
 - The local profile (`wrangler.jsonc`'s top level) is what the tests and emulators run. It adds two things production never has:
   - keys made in memory (`EPHEMERAL_KEYS`);
-  - `POST /dev/token`, a mint without a sign-in (`DEV_MINT`), for emulator tests that need a token and no account.
+  - `POST /dev/token`, a mint without a sign-in (`DEV_MINT`), for emulator tests that need a token and no account. It opens only beside the in-memory keys and never when `SIGNING_JWKS` is set, signs only with the in-memory keys, and mints at most 5 minutes.
 
 ## Calls
 
@@ -48,6 +48,7 @@ clover-account-v1 register
 
 ```
 clover-account-v1 mint
+<account: the Supabase user id>
 <aud>
 <device id>
 <t>
@@ -55,7 +56,7 @@ clover-account-v1 mint
 
 - `t` must be within 10 minutes of the service's clock (400 `bad_time` otherwise).
 - **Replay protection** (an addition to H's proposal): a registration's `t` must be newer than the last one that device registered with, and a mint's `t` newer than the last one it minted with for that audience. Otherwise the answer is 409 `replay`. A refused call spends nothing.
-- A registration's statement names the account, so it doesn't register the device in another one.
+- Both statements name the account, so a device's statement registers it or mints for it in that account alone.
 
 ## Tokens
 
@@ -70,7 +71,7 @@ The token is a JWS (compact JWT), signed EdDSA or ES256 under a key of the JWKS:
 - It lives 5 minutes (`TOKEN_TTL` may shorten it), and `expiresAt` is `exp` in milliseconds. The core refuses any token that would live longer (`ACCOUNT_TOKEN_MAX_MS`).
 - `aud` is one service, from `AUDIENCES`: `hooks.waifucave.com`, `push.waifucave.com` or `handshake.waifucave.com`. Anything else is 400 `bad_audience`.
 - Only a listed device that isn't revoked gets one (403 `not_member`), and only with its own key's signature (403 `bad_signature`).
-- The services check it offline (`services/shared/account-token.ts`), against this JWKS fetched by URL and cached (`services/shared/jwks.ts`).
+- The services check it offline (`services/shared/account-token.ts`), against this JWKS fetched and cached (`services/shared/jwks.ts`), and refuse a token that lives longer than 5 minutes plus a minute's skew. In production they fetch it through a service binding to this Worker (`ACCOUNT_SERVICE`), since a Worker can't fetch another Worker's route on its own zone; the URL is the fallback.
 
 **Keys.** In production they are `SIGNING_JWKS`, a secret: private JWKs with `kid`s. The first signs and every one is published. A rotation adds the new key first and drops the old one once its tokens have ended. A set with a key that doesn't import is refused whole (503 `not_configured`), and so is a production service without the secret. It never makes keys of its own.
 
@@ -106,8 +107,8 @@ A bad signature is 403 rather than H's fake's 401, so `AccountClient` doesn't re
 
 ## Cross-origin
 
-The web companion (`https://clover.waifucave.com`) may call the service from the browser once it signs in. The service answers CORS for that origin alone (`WEB_ORIGINS`).
+None yet: the web companion's page may reach only the handshake (its CSP). CORS for the page's origin comes with the page's account mode.
 
 ## Testing against it
 
-`@waifucave/clover-service-accounts/harness`: `startAccountService({authUrl, anonKey, tokenTtlSeconds?, devMint?})` runs the service on wrangler's local runtime against a sign-in stack such as lane M's stub. It answers `{url, issuer, jwks, stop}`, the same as the core's `startFakeAccountService`, with a signing key made in memory for the run.
+`@waifucave/clover-service-accounts/harness`: `startAccountService({authUrl, anonKey, tokenTtlSeconds?})` runs the service on wrangler's local runtime against a sign-in stack such as lane M's stub. It answers `{url, issuer, jwks, stop}`, the same as the core's `startFakeAccountService`, with a signing key made in memory for the run.

@@ -89,7 +89,7 @@ describe.skipIf(!harnessReady())("against lane M's sign-in stub", () => {
 
     const audience = "push.waifucave.com";
     const mintT = Date.now();
-    const minted = await api("POST", "/v1/tokens", access, { aud: audience, dev: id, t: mintT, sig: d.sign(mintStatement(audience, id, mintT)) });
+    const minted = await api("POST", "/v1/tokens", access, { aud: audience, dev: id, t: mintT, sig: d.sign(mintStatement(account, audience, id, mintT)) });
     expect(minted.status).toBe(200);
     const { token, expiresAt } = (await minted.json()) as { token: string; expiresAt: number };
     expect(expiresAt - Date.now()).toBeLessThanOrEqual(300_000);
@@ -101,7 +101,7 @@ describe.skipIf(!harnessReady())("against lane M's sign-in stub", () => {
 
     expect((await api("DELETE", `/v1/devices/${id}`, access)).status).toBe(204);
     const again = Date.now();
-    expect((await api("POST", "/v1/tokens", access, { aud: audience, dev: id, t: again, sig: d.sign(mintStatement(audience, id, again)) })).status).toBe(403);
+    expect((await api("POST", "/v1/tokens", access, { aud: audience, dev: id, t: again, sig: d.sign(mintStatement(account, audience, id, again)) })).status).toBe(403);
   });
 
   test("refuses what the stub refuses", async () => {
@@ -114,7 +114,7 @@ describe.skipIf(!harnessReady())("against lane M's sign-in stub", () => {
 });
 
 describe("the production profile", () => {
-  const profile = (service: string): { vars: Record<string, string>; durable_objects?: { bindings: { name: string }[] } } => {
+  const profile = (service: string): { name: string; vars: Record<string, string>; durable_objects?: { bindings: { name: string }[] }; services?: { binding: string; service: string }[] } => {
     const path = join(servicesDir, service, "wrangler.jsonc");
     const parsed = ts.parseConfigFileTextToJson(path, readFileSync(path, "utf8"));
     if (parsed.error) throw new Error(`${service}/wrangler.jsonc doesn't parse`);
@@ -131,11 +131,13 @@ describe("the production profile", () => {
     expect(durable_objects?.bindings.map((b) => b.name).sort()).toEqual(["ACCOUNTS", "KEYS"]);
   });
 
-  test("is where the other services look for its tokens' issuer and keys", () => {
-    const { ISSUER } = profile("accounts").vars;
+  test("is where the other services look for its tokens' issuer and keys, through a service binding", () => {
+    const accounts = profile("accounts");
+    const { ISSUER } = accounts.vars;
     for (const service of ["forwarder", "push", "handshake"]) {
-      const { vars } = profile(service);
+      const { vars, services } = profile(service);
       expect([service, vars.ACCOUNT_ISSUER, vars.ACCOUNT_JWKS_URL, vars.ACCOUNT_JWKS]).toEqual([service, ISSUER, `${ISSUER}/.well-known/jwks.json`, undefined]);
+      expect([service, services]).toEqual([service, [{ binding: "ACCOUNT_SERVICE", service: accounts.name }]]);
     }
   });
 });

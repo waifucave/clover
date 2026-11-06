@@ -1,5 +1,7 @@
 // Where a service finds the account service's public keys: a JWKS at a URL (ACCOUNT_JWKS_URL), fetched and cached
-// per Worker instance, or inline (ACCOUNT_JWKS) for tests and emulators. The URL wins when both are set.
+// per Worker instance, or inline (ACCOUNT_JWKS) for tests and emulators. The URL wins when both are set. In
+// production the fetch goes through a service binding to the account service (ACCOUNT_SERVICE), since a Worker can't
+// fetch another Worker's route on its own zone (error 1042); the URL itself is the fallback.
 //
 // A fetched set is used for 10 minutes, then fetched again; if that fails, the old set keeps working for up to a day,
 // so a short outage of the account service never signs anyone out. A token whose `kid` the set doesn't have makes one
@@ -13,7 +15,13 @@ export interface JwksEnv {
   ACCOUNT_JWKS?: string;
   ACCOUNT_JWKS_URL?: string;
   ACCOUNT_ISSUER: string;
+  /** A service binding to the account service (clover-accounts), asked for the JWKS URL's path first. */
+  ACCOUNT_SERVICE?: { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> };
 }
+
+/** The longest an account token lives (the account service mints 5 minutes) and the clock skew allowed beside it. */
+export const ACCOUNT_TOKEN_MAX_SECONDS = 300;
+export const ACCOUNT_TOKEN_SKEW_SECONDS = 60;
 
 const FRESH_MS = 10 * 60_000;
 const STALE_MAX_MS = 24 * 3600_000;
@@ -99,7 +107,11 @@ async function currentJwks(env: JwksEnv, kid: string | null, fetcher: typeof fet
   if (!entry) due = sinceAttempt >= RETRY_MS;
   else if (now - entry.fetchedAt >= FRESH_MS) due = sinceAttempt >= RETRY_MS;
   else due = kid !== null && !entry.kids.has(kid) && sinceAttempt >= REFETCH_MIN_MS;
-  if (due) entry = (await fetchJwks(url, fetcher, now)) ?? cache.get(url);
+  if (due) {
+    const binding = env.ACCOUNT_SERVICE;
+    const viaBinding = binding ? await fetchJwks(url, ((input: RequestInfo | URL, init?: RequestInit) => binding.fetch(input, init)) as typeof fetch, now) : null;
+    entry = viaBinding ?? (await fetchJwks(url, fetcher, now)) ?? cache.get(url);
+  }
   if (!entry || now - entry.fetchedAt >= STALE_MAX_MS) return null;
   return entry.text;
 }
@@ -117,7 +129,13 @@ export async function verifyAccountTokenFrom(
   const jwks = await currentJwks(env, kidOf(token), fetcher, Date.now());
   if (jwks === null) return null;
   try {
-    return await verifyAccountToken(token, { jwks, issuer: env.ACCOUNT_ISSUER, audience });
+    return await verifyAccountToken(token, {
+      jwks,
+      issuer: env.ACCOUNT_ISSUER,
+      audience,
+      skewSeconds: ACCOUNT_TOKEN_SKEW_SECONDS,
+      maxLifetimeSeconds: ACCOUNT_TOKEN_MAX_SECONDS + ACCOUNT_TOKEN_SKEW_SECONDS,
+    });
   } catch {
     return null;
   }

@@ -1,7 +1,7 @@
 // Starts test/node/serve.mjs from Bun and hands back the local handshake's origin. For other packages' end-to-end
 // tests (the web companion's); import it as "@waifucave/clover-service-handshake/harness".
 
-import { existsSync } from "node:fs";
+import { existsSync, rmdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export interface HandshakeHarness {
@@ -52,6 +52,16 @@ export async function startHandshake(options: { webOrigins?: string } = {}): Pro
       await child.stdin.end();
       const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => null)]);
       if (exited === null) child.kill();
+      // Wrangler's runtime leaves an empty .wrangler/tmp behind, in both services' folders.
+      for (const folder of [serviceDir, join(serviceDir, "../accounts")]) {
+        for (const leftover of [join(folder, ".wrangler/tmp"), join(folder, ".wrangler")]) {
+          try {
+            rmdirSync(leftover);
+          } catch {
+            // Not there, or not empty: left as it is.
+          }
+        }
+      }
     },
   };
 }

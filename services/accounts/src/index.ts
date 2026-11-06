@@ -17,10 +17,10 @@
 import { bearerToken } from "../../shared/account-token";
 import { b64u, fromB64, fromB64u } from "../../shared/encoding";
 import { errorResponse, json, readJsonObject } from "../../shared/http";
-import { addressKey, originsFrom, preflight, withCors } from "../../shared/web";
+import { addressKey } from "../../shared/web";
 import type { DeviceInput, Reply } from "./account-do";
 import type { Env } from "./env";
-import { NotConfigured, signerFor } from "./keys";
+import { memorySigner, NotConfigured, signerFor } from "./keys";
 import { sessionOf } from "./session";
 import { verifyEd25519 } from "./verify";
 import { ACCOUNT_RE, DEVICE_ID_RE, DEVICE_KINDS, deviceIdFor, LIMITS, OSES, registerStatement, SIG_RE } from "./wire";
@@ -28,7 +28,6 @@ import { ACCOUNT_RE, DEVICE_ID_RE, DEVICE_KINDS, deviceIdFor, LIMITS, OSES, regi
 export { AccountDO } from "./account-do";
 export { KeysDO } from "./keys";
 
-const METHODS = "GET, POST, DELETE";
 const AUD_RE = /^[a-z0-9.-]{1,253}$/;
 const DEV_DEVICE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const STANDARD_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
@@ -36,8 +35,6 @@ const URL_KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const origins = originsFrom(env.WEB_ORIGINS);
-    if (request.method === "OPTIONS") return preflight(request, origins, METHODS);
     let response: Response;
     try {
       response = await route(request, env);
@@ -48,7 +45,7 @@ export default {
         response = errorResponse(500, "internal");
       }
     }
-    return withCors(response, request, origins);
+    return response;
   },
 } satisfies ExportedHandler<Env>;
 
@@ -65,7 +62,10 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === "/.well-known/jwks.json" && request.method === "GET") {
     return json(await signerFor(env).jwks(), 200, { "cache-control": "public, max-age=300" });
   }
-  if (path === "/dev/token" && request.method === "POST" && env.DEV_MINT === "1") return devToken(request, env);
+  // The mint without a sign-in: only in the local profile, with its in-memory keys and never beside real ones.
+  if (path === "/dev/token" && request.method === "POST" && env.DEV_MINT === "1" && env.EPHEMERAL_KEYS === "1" && !env.SIGNING_JWKS) {
+    return devToken(request, env);
+  }
 
   const [version, area, id, ...rest] = path.split("/").slice(1);
   if (version !== "v1" || rest.length > 0) return errorResponse(404, "not_found");
@@ -183,7 +183,7 @@ async function mint(request: Request, env: Env, account: string): Promise<Respon
   if (!withinWindow(t, now)) return errorResponse(400, "bad_time");
   // The signer first: a service without its keys refuses before a device's `t` is spent.
   const signer = signerFor(env);
-  const allowed = await accountObject(env, account).allowMint(dev, aud, t, sig);
+  const allowed = await accountObject(env, account).allowMint(account, dev, aud, t, sig);
   if (allowed.status !== 200) return answer(allowed);
   const iat = Math.floor(now / 1000);
   const exp = iat + tokenTtl(env);
@@ -206,12 +206,12 @@ async function devToken(request: Request, env: Env): Promise<Response> {
     typeof ttl !== "number" ||
     !Number.isSafeInteger(ttl) ||
     ttl < 1 ||
-    ttl > 86_400
+    ttl > 300
   ) {
     return errorResponse(400, "bad_request");
   }
   const iat = Math.floor(Date.now() / 1000);
-  const token = await signerFor(env).sign({
+  const token = await memorySigner(env).sign({
     iss: env.ISSUER,
     aud: body.aud,
     sub: body.account,

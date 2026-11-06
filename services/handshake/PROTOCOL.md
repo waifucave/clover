@@ -156,7 +156,7 @@ Service → client (text, JSON):
   | 4003 | ended or revoked |
   | 4008 | protocol |
   | 4009 | stale: no ping for 90 s |
-  | 4010 | reauth: an account socket's 24 hours are up; open a new one with a fresh token |
+  | 4010 | reauth: the account token an account socket was opened with has ended; open a new one with a fresh token |
 
 - **Presence** means the member has an open socket that pinged within 90 s. Treat it as a hint: a `dial` waits 30 s in the queue anyway.
 
@@ -255,10 +255,10 @@ The same records, messages, socket and lease, for the devices of one account. Th
   - `lease` frames as for groups.
 - **The token:** `Authorization: Bearer <account token>`.
   - ES256 or EdDSA, checked against the account service's JWKS, as the forwarder and push check it.
-  - Claims: `iss`, `aud`, `sub` (the account), `dev` (the device), `iat` and `exp`, lasting at most 24 hours.
-- **An account socket** lasts up to 24 hours, then closes with 4010 (checked whenever the service next writes to it); revoking the device closes it at once.
+  - Claims: `iss`, `aud`, `sub` (the account), `dev` (the device), `iat` and `exp`. A token may live 5 minutes plus a minute's skew (`services/accounts` mints 5 minutes); a longer one is refused.
+- **An account socket** lasts as long as the token it was opened with: its ticket carries the token's `exp`, and after it the socket closes with 4010, checked whenever the service next writes to it. So a device renews its socket every few minutes, with a fresh token. Revoking the device closes it at once.
 - **A device may keep 64 records** (one per recipient and kind), and the account holds at most 512 queued messages over all its devices; the oldest go first.
-- **A revoked device** is refused here for 24 hours and 10 minutes (the longest a token lasts, plus skew).
+- **A revoked device** is refused here for 16 minutes: the longest a token lasts (6 minutes with its skew), plus 10 minutes.
   - Its records, queued messages and socket go at once, and so does its lease.
   - This service keeps nothing else about it.
 

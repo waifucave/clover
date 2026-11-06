@@ -99,10 +99,10 @@ export async function register(session: Session, device: TestDevice, options: Pa
   return call("POST", "/v1/devices", { session, body: await registration(session, device, options), ...(options.via ? { via: options.via } : {}) });
 }
 
-export async function mintFor(session: Session, device: TestDevice, options: { aud?: string; t?: number; signer?: TestDevice; via?: Via } = {}): Promise<Response> {
+export async function mintFor(session: Session, device: TestDevice, options: { aud?: string; t?: number; signer?: TestDevice; via?: Via; account?: string } = {}): Promise<Response> {
   const aud = options.aud ?? AUDIENCE;
   const t = options.t ?? Date.now();
-  const sig = await (options.signer ?? device).sign(mintStatement(aud, device.id, t));
+  const sig = await (options.signer ?? device).sign(mintStatement(options.account ?? session.account, aud, device.id, t));
   return call("POST", "/v1/tokens", { session, body: { aud, dev: device.id, t, sig }, ...(options.via ? { via: options.via } : {}) });
 }
 

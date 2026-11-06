@@ -28,8 +28,8 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO", "MailboxDO"] }],
   // Each limit counts per Cloudflare location. They guard the user's quota; the key guards access.
   "ratelimits": [
-    { "name": "CONNECT_RATE", "namespace_id": "74001", "simple": { "limit": 120, "period": 60 } },
-    { "name": "API_RATE", "namespace_id": "74002", "simple": { "limit": 600, "period": 60 } }
+    { "name": "CONNECT_RATE", "namespace_id": "75001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "API_RATE", "namespace_id": "75002", "simple": { "limit": 600, "period": 60 } }
   ],
   "env": {
     "production": {
@@ -48,8 +48,8 @@
         ]
       },
       "ratelimits": [
-        { "name": "CONNECT_RATE", "namespace_id": "74101", "simple": { "limit": 120, "period": 60 } },
-        { "name": "API_RATE", "namespace_id": "74102", "simple": { "limit": 600, "period": 60 } }
+        { "name": "CONNECT_RATE", "namespace_id": "75101", "simple": { "limit": 120, "period": 60 } },
+        { "name": "API_RATE", "namespace_id": "75102", "simple": { "limit": 600, "period": 60 } }
       ]
     }
   }

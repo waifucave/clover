@@ -22,8 +22,6 @@ export interface Env {
   AUDIENCES: string;
   /** Seconds a token lives, at most 300 (the default). */
   TOKEN_TTL?: string;
-  /** Origins whose pages may call this service from a browser, comma-separated (the web companion's). */
-  WEB_ORIGINS?: string;
 
   /** Secret: {"keys":[private JWK with kid, ...]}; the first signs, every key is published. */
   SIGNING_JWKS?: string;
