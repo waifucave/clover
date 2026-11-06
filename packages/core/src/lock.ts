@@ -1,6 +1,7 @@
 import { closeSync, existsSync, ftruncateSync, openSync, readFileSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { endpointAnswers, isPipe } from "./platform/transport";
+import { checkDaemonServer } from "./platform/server-check";
 
 export { endpointAnswers };
 
@@ -190,13 +191,15 @@ export interface AcquireLockOptions {
 
 /**
  * Take the home's daemon lock. Throws `AlreadyRunningError` (exit 0) when a daemon holds it and
- * answers on `socketPath`, `LockHeldNoDaemonError` (exit 1) when it stays held with no daemon
+ * answers on `socketPath` as this user's daemon binary (`checkDaemonServer`), `LockHeldNoDaemonError` (exit 1) when it stays held with no daemon
  * answering, and `LockFailedError` (exit 1) when the OS refuses it for another reason.
  */
 export async function acquireLock(lockPath: string, socketPath: string, opts: AcquireLockOptions = {}): Promise<Lock> {
   const platform = opts.platform ?? process.platform;
   const backend = backendFor(platform, opts.backend ?? "os");
-  const answers = opts.answers ?? ((p: string) => endpointAnswers(p));
+  // Busy is "already running" only when this user's daemon binary, outside every floor, serves the endpoint
+  // (review M1): a same-user squatter holding the lock and answering there gets exit 1, not a quiet exit 0.
+  const answers = opts.answers ?? (async (p: string) => (await checkDaemonServer(p, { image: process.execPath })).ok);
   const confirmMs = opts.confirmMs ?? 3_000;
   const pollMs = opts.pollMs ?? 250;
   const started = Date.now();

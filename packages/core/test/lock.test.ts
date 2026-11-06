@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers } from "../src/lock";
@@ -50,6 +50,7 @@ describe("acquireLock", () => {
     const p = tmpRun();
     const first = await acquireLock(p.lockPath, p.socketPath, fast);
     const server = Bun.listen({ unix: p.socketPath, socket: { data() {} } });
+    if (!windows) chmodSync(p.socketPath, 0o600); // as the daemon's is: the busy check checks the server (review M1)
     try {
       await acquireLock(p.lockPath, p.socketPath, fast);
       throw new Error("expected a refusal");
@@ -71,7 +72,7 @@ describe("acquireLock", () => {
     const p = tmpRun();
     const first = await acquireLock(p.lockPath, p.socketPath, fast);
     let server: ReturnType<typeof Bun.listen> | undefined;
-    setTimeout(() => { server = Bun.listen({ unix: p.socketPath, socket: { data() {} } }); }, 100);
+    setTimeout(() => { server = Bun.listen({ unix: p.socketPath, socket: { data() {} } }); if (!windows) chmodSync(p.socketPath, 0o600); }, 100);
     await expect(acquireLock(p.lockPath, p.socketPath, { confirmMs: 2_000, pollMs: 50 })).rejects.toBeInstanceOf(AlreadyRunningError);
     server?.stop(true);
     first.release();

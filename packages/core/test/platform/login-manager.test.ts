@@ -77,6 +77,17 @@ describe("login manager", () => {
     expect(st.unitPath).toBeNull();
   });
 
+  test("remove succeeds with nothing registered, and again after a remove (lane M's uninstall hooks)", async () => {
+    for (const os of ["darwin", "linux", "win32"] as const) {
+      const s = spec(os, true);
+      const f = fakeOs();
+      expect((await loginRemove(s, f.os)).state).toBe("not-installed");
+      await loginEnable(s, f.os);
+      await loginRemove(s, f.os);
+      expect((await loginRemove(s, f.os)).state).toBe("not-installed");
+    }
+  });
+
   test("remove takes everything away", async () => {
     const s = spec("linux", true);
     const f = fakeOs();

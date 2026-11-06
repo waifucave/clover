@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1478,6 +1478,13 @@ function currentLoginSpec(app?: string): LoginSpec {
 
 const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|remove|start|status [--json] [--app <path to the app>]";
 
+/** Whether a process's executable is the daemon's binary (`bin`, or this CLI's own when they're one binary). */
+function isDaemonImage(image: string | null, bin: string): boolean {
+  if (image === null) return false;
+  const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+  return [bin, process.execPath].some((b) => real(b) === real(image));
+}
+
 /** Stop the running daemon for an uninstaller (`disable --stop`, `remove`): the pair's quit first
  *  (`pair.quit` as the CLI, so the daemon tells the app and exits 0, and `supervise` ends), else
  *  SIGTERM to the lock holder on macOS and Linux (the same clean stop), then the OS's own stop if it
@@ -1496,6 +1503,9 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
         if (token) { await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-autostart" }, "pair.quit", { handOver: false }); return true; }
       } catch { /* an older daemon, or a token it won't take: fall back */ }
       if (spec.os === "win32" || !(pid > 0)) return false;
+      // Only a process running the daemon's binary is signalled (review M5): a pid in the lock file may have
+      // been reused since.
+      if (!isDaemonImage(processImage(pid), spec.bin)) return false;
       try { process.kill(pid, "SIGTERM"); return true; } catch { return false; }
     },
     sleep: (ms) => Bun.sleep(ms),
@@ -1611,12 +1621,32 @@ async function runSupervise(): Promise<void> {
   let alive = true;
   let stopChild: (() => void) | null = null;
   let wake: (() => void) | null = null;
-  const stopAll = () => { alive = false; stopChild?.(); wake?.(); };
+  let childExited: Promise<unknown> | null = null;
+  // On Windows a kill is TerminateProcess, with no handler: the pair's quit first, so the daemon tells the app
+  // and removes its token (review M2), and the kill only if it hasn't gone within 5 s. Elsewhere the kill is a
+  // SIGTERM, which the daemon's handler turns into the same clean stop.
+  const stopAll = () => {
+    alive = false;
+    void (async () => {
+      if (process.platform === "win32" && childExited) {
+        try {
+          const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
+          if (token) {
+            await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-supervise" }, "pair.quit", { handOver: false });
+            if (await Promise.race([childExited.then(() => true), Bun.sleep(5_000).then(() => false)])) { wake?.(); return; }
+          }
+        } catch { /* no token, or no answer: the kill below */ }
+      }
+      stopChild?.();
+      wake?.();
+    })();
+  };
   process.on("SIGTERM", stopAll);
   process.on("SIGINT", stopAll);
   const result = await superviseLoop({
     spawnDaemon(): DaemonRun {
       const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      childExited = child.exited;
       const kill = () => { try { child.kill(); } catch { /* already gone */ } };
       stopChild = kill;
       return { exited: child.exited, stop: kill };
@@ -2731,7 +2761,9 @@ if (import.meta.main) {
     // with --image, by that binary)? The app runs it before its hello (E-M1's review). Exit 0 when ok.
     const rest = process.argv.slice(4);
     const at = rest.indexOf("--image");
-    const r = await checkDaemonServer(socketPath(), at >= 0 && rest[at + 1] ? { image: rest[at + 1] } : {});
+    const image = at >= 0 ? rest[at + 1] : undefined;
+    if (!image) { console.error("usage: clover-core daemon check-server --image <the daemon's binary> [--json]"); process.exitCode = 2; break; }
+    const r = await checkDaemonServer(socketPath(), { image });
     console.log(rest.includes("--json") ? JSON.stringify(r) : r.ok ? "ok" : `not ok: ${r.reason}`);
     process.exitCode = r.ok ? 0 : 1;
     break;
@@ -3394,7 +3426,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | daemon check-server [--json] [--image <path>] | autostart enable|disable [--stop]|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)

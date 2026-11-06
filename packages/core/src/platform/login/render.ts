@@ -109,24 +109,31 @@ export function xdgAutostartPath(spec: LoginSpec): string | null {
   return join(xdgConfigHome(spec), "autostart", `${spec.profile === "dev" ? "com.waifucave.clover.dev" : "com.waifucave.clover"}.desktop`);
 }
 
+/** A path or value with a control character (a newline above all) would add lines to a unit or an entry
+ *  (review M4): it is refused, never escaped. */
+export function noControl(s: string): string {
+  if (/[\x00-\x1f\x7f]/.test(s)) throw new Error("a login-start path may not hold a control character");
+  return s;
+}
+
 function xmlEscape(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return noControl(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 /** One systemd command-line argument: double-quoted, with `\` and `"` escaped, `%` doubled (a
  *  specifier otherwise) and `$` doubled (a variable otherwise). Paths with spaces stay one argument. */
 export function systemdArg(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%").replace(/\$/g, "$$$$")}"`;
+  return `"${noControl(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%").replace(/\$/g, "$$$$")}"`;
 }
 
 /** A path as a unit-file value outside a command line (`ConditionPathExists=`): `%` doubled. */
 function systemdPath(s: string): string {
-  return s.replace(/%/g, "%%");
+  return noControl(s).replace(/%/g, "%%");
 }
 
 /** One `Environment=` assignment, quoted the same way (`$` is not expanded there). */
 function systemdEnv(key: string, value: string): string {
-  return `Environment="${`${key}=${value}`.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
+  return `Environment="${noControl(`${key}=${value}`).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
 }
 
 /** A macOS LaunchAgent. `KeepAlive` is crash-only (`SuccessfulExit: false`), so a clean Quit holds
@@ -213,7 +220,7 @@ Restart=no
  *  Exec quoting. `TryExec` names the app, so the session skips the entry once the app is gone. */
 export function renderXdgAutostart(spec: LoginSpec): string {
   // A Desktop Entry string value: backslash escaped; a leading space would need \s (an absolute path has none).
-  const tryExec = spec.app ? `TryExec=${spec.app.bin.replace(/\\/g, "\\\\")}\n` : "";
+  const tryExec = spec.app ? `TryExec=${noControl(spec.app.bin).replace(/\\/g, "\\\\")}\n` : "";
   return `[Desktop Entry]
 Type=Application
 Name=${spec.profile === "dev" ? "Clover Dev" : "Clover"}
