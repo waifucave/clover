@@ -270,6 +270,7 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
  "mapping": "same", "relay": "https://euw1-1.relay.iroh.network./", "node": "<link key or iroh node id>"}
 ```
 `addr`: lane H owns these fields.
+- `node` is optional, and lane H's link layer leaves it out: the peer already has the link key from its device registry.
 - `stun` is asked from the port the link then binds (S1).
 - `mapping` is `same` when two STUN servers saw the same address, `varies` behind a symmetric NAT, or `unknown`.
 
