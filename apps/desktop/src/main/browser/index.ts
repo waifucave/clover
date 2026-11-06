@@ -16,12 +16,14 @@ import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabCommand, 
 import { HostWindow } from "./host-window";
 import { choosePopup } from "./popups";
 import { ScreenReaderSwitch, type ScreenReaderProbe } from "./screen-reader";
-import { guardPage, prepareTabSession } from "./session";
+import { NetworkFilter, policyFor, type AddressPolicy, type NetworkFilterOptions } from "./network";
+import { guardPage, isSessionReady, prepareTabSession, resetViewportSession } from "./session";
 import { BrowserTab, HostTab, OffscreenTab, tabWebPreferences, type TabEnv } from "./tab";
 import { Viewport, type ViewportAssets } from "./viewport";
 
 export { BROWSER_ASSETS } from "./assets";
 export { BROWSER_WEBRTC_POLICY, isBrowserContents, isBrowserTab } from "./session";
+export { BOT_POLICY, PERSON_POLICY, SESSION_POLICY, type AddressPolicy } from "./network";
 export type { AppTabCommand, AppTabEvent, TabOwner, TabPlace, TabView } from "./contract";
 export type { ViewportAssets } from "./viewport";
 
@@ -56,6 +58,9 @@ export interface BrowserHostOptions {
   /** Files the person picks for a page's file chooser; by default the OS's open dialog. */
   pickFiles?(window: BaseWindow, multiple: boolean): Promise<string[]>;
   newId?(): string;
+  /** Which addresses an owner's tabs may reach (R13; by default `policyFor`: no loopback or private address for a bot,
+   *  loopback for a coding session, never the metadata address), and the filter's resolver and dialer, for tests. */
+  network?: { policyFor?(owner: TabOwner): AddressPolicy } & Pick<NetworkFilterOptions, "lookup" | "dial" | "log">;
 }
 
 export class BrowserHost {
@@ -66,9 +71,11 @@ export class BrowserHost {
   private pending: AppTabEvent[] = [];
   private flushing = false;
   private readonly env: TabEnv;
+  private readonly network: NetworkFilter;
 
   constructor(private readonly opts: BrowserHostOptions) {
     this.screenReader = new ScreenReaderSwitch({ electron: app, ...opts.screenReader });
+    this.network = new NetworkFilter({ lookup: opts.network?.lookup, dial: opts.network?.dial, log: opts.network?.log });
     const host = this;
     this.env = {
       computer: opts.computer,
@@ -102,8 +109,10 @@ export class BrowserHost {
     if (this.tabs.has(args.id)) throw new Error(`there's already a tab ${args.id}`);
     const partition = partitionFor(args.owner); // refuses a bad owner before anything is made
     if (args.url !== undefined && !isBrowserUrlAllowed(args.url)) throw new Error(`the browser doesn't open ${args.url}`);
-    // Locked down, its proxy set, before the tab exists: `isBrowserTab` holds from `web-contents-created` on.
-    await prepareTabSession(partition);
+    // Locked down, its traffic through the network filter for its owner (R13), before the tab exists: `isBrowserTab`
+    // holds from `web-contents-created` on, and no page loads before its proxy is set.
+    const policy = this.opts.network?.policyFor?.(args.owner) ?? policyFor(args.owner);
+    await prepareTabSession(partition, await this.network.proxyFor(policy));
     if (this.tabs.has(args.id)) throw new Error(`there's already a tab ${args.id}`);
     // The switch decides where a NEW tab starts, and never moves one (decision 93).
     const tab = this.screenReader.on
@@ -168,6 +177,8 @@ export class BrowserHost {
     for (const slot of this.views.values()) slot.viewport?.destroy();
     this.views.clear();
     this.hostWindow.closeIfEmpty();
+    resetViewportSession();
+    void this.network.close();
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -264,7 +275,8 @@ export class BrowserHost {
   // Popups (popups.ts)
 
   private windowOpen(tab: BrowserTab, details: { url: string }): ReturnType<Parameters<Electron.WebContents["setWindowOpenHandler"]>[0]> {
-    if (!isBrowserUrlAllowed(details.url)) return { action: "deny" };
+    // A window opens in its opener's session, which must already take the filter's path (it does: the opener does).
+    if (!isBrowserUrlAllowed(details.url) || !isSessionReady(tab.contents.session)) return { action: "deny" };
     const choice = choosePopup(tab.contents.getURL(), details.url, tab.place === "shown");
     if (choice === "offscreen-tab") {
       return { action: "allow", overrideBrowserWindowOptions: { show: false, width: AGENT_VIEWPORT.width, height: AGENT_VIEWPORT.height, useContentSize: true, skipTaskbar: true, webPreferences: tabWebPreferences(tab.partition, true) } };
@@ -279,6 +291,10 @@ export class BrowserHost {
   }
 
   private windowCreated(tab: BrowserTab, child: BrowserWindow, details: { url: string }): void {
+    if (!isSessionReady(child.webContents.session)) {
+      child.destroy();
+      return;
+    }
     if (!child.webContents.isOffscreen()) {
       // A real window the person uses (a same-site window while they watch, item 94): in the tab's partition, so the
       // session's rules hold; the page's guards here, and any window it opens in turn becomes a tab of the owner's.

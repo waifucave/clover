@@ -2,11 +2,11 @@
 // lane E's runtime will, against pages served on loopback, and writes what it saw as JSON. `../browser.test.ts`
 // builds and runs it (CI only: it shows a window) and asserts on the result. Each step records ok/detail and never
 // throws past itself, so one failure doesn't hide the rest.
-import { app, BrowserWindow, clipboard, webContents, type BaseWindow } from "electron";
+import { app, BrowserWindow, clipboard, session, webContents, type BaseWindow } from "electron";
 import { createServer } from "node:http";
 import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { BROWSER_WEBRTC_POLICY, createBrowserHost, isBrowserContents, isBrowserTab, type BrowserHost, type TabView } from "../../src/main/browser/index";
+import { BROWSER_WEBRTC_POLICY, createBrowserHost, isBrowserContents, isBrowserTab, PERSON_POLICY, type BrowserHost, type TabView } from "../../src/main/browser/index";
 import type { AppTabEvent } from "../../src/main/browser/contract";
 
 const out = process.env.CLOVER_BROWSER_TEST_OUT ?? "";
@@ -91,7 +91,16 @@ async function main(): Promise<void> {
   const port = (server.address() as AddressInfo).port;
   const origin = `http://127.0.0.1:${port}`;
 
-  const appWindow = new BrowserWindow({ width: 1100, height: 760, show: true, webPreferences: { sandbox: true, contextIsolation: true } });
+  // The default session as lane E hardens the app's own (no spellchecker, nowhere to fetch a dictionary from), so the
+  // net log below speaks for the browser's sessions alone.
+  session.defaultSession.setSpellCheckerEnabled(false);
+  try {
+    session.defaultSession.setSpellCheckerLanguages([]);
+    session.defaultSession.setSpellCheckerDictionaryDownloadURL("http://127.0.0.1:9/");
+  } catch {
+    // macOS: the system's spellchecker.
+  }
+  const appWindow = new BrowserWindow({ width: 1100, height: 760, show: true, webPreferences: { sandbox: true, contextIsolation: true, spellcheck: false } });
   await appWindow.loadURL("data:text/html,<title>Clover</title><body style='margin:0;background:%23eee'></body>");
   const viewTarget = { window: appWindow, bounds: { x: 20, y: 40, width: 900, height: 600 } };
   let n = 0;
@@ -105,6 +114,9 @@ async function main(): Promise<void> {
       menus.push({ selectionText: params.selectionText, canCopy: params.editFlags.canCopy });
       if (params.editFlags.canCopy) actions.copy();
     },
+    // The fixture's pages are on loopback, which a bot's tab may not reach (R13): these hosts let bot "alpha" reach
+    // its own machine, as the person's tabs may. The step below runs a host with the real policies.
+    network: { policyFor: () => PERSON_POLICY },
   };
   const host = createBrowserHost({ ...hostOpts, screenReader: { override: false } });
   await host.start();
@@ -329,6 +341,28 @@ async function main(): Promise<void> {
     return { ok: size === "900x600" && back === "1280x800" && before === after, detail: { size, back, sameDocument: before === after } };
   });
 
+  // R13 with the real policies, under `--no-proxy-server` as the app runs (lane E): every tab's fixed proxy, the
+  // network filter, still wins.
+  const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: undefined });
+  await strict.start();
+  await step("R13: a bot's tab reaches no loopback address, by number or by name; a coding session's does; neither reaches the metadata address (its proxy wins over --no-proxy-server)", async () => {
+    const loaded = async (h: BrowserHost, id: string) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
+    const bot = await strict.open({ id: "tab_s_bot", owner: { kind: "bot", bot: "beta" }, url: `${origin}/page`, place: "headless" });
+    const botByNumber = await loaded(strict, bot.id);
+    await strict.command(bot.id, { kind: "navigate", url: `http://localhost:${port}/page` }).catch(() => undefined);
+    const botByName = await loaded(strict, bot.id);
+    const code = await strict.open({ id: "tab_s_code", owner: { kind: "session", session: "sess_fixture" }, url: `http://localhost:${port}/page`, place: "headless" });
+    const codeLoopback = await loaded(strict, code.id);
+    const t0 = Date.now();
+    await strict.command(code.id, { kind: "navigate", url: "http://169.254.169.254/latest/meta-data/" }).catch(() => undefined);
+    const metadataUrl = await until(async () => { const u = String(await evalIn(strict, code.id, "location.href")); return u.includes("169.254.169.254") || u.startsWith("chrome-error") ? u : undefined; }, 4000);
+    const metadataPage = await evalIn(strict, code.id, "document.body ? document.body.innerText.slice(0, 80) : ''");
+    const refusedFast = Date.now() - t0 < 4000;
+    const ok = !botByNumber && !botByName && codeLoopback && !String(metadataPage).includes("select and copy") && refusedFast;
+    return { ok, detail: { botByNumber, botByName, codeLoopback, metadataUrl, metadataPage, refusedFast } };
+  });
+
+  strict.shutdown();
   reader.shutdown();
   host.shutdown();
   server.close();
@@ -342,5 +376,7 @@ void app.whenReady().then(async () => {
   } catch (e) {
     writeFileSync(out, JSON.stringify({ fatal: e instanceof Error ? `${e.message}\n${e.stack}` : String(e), steps }));
   }
-  app.exit(0);
+  // A clean quit, so the net log (`--log-net-log`) is written out whole; exit anyway if it hangs.
+  setTimeout(() => app.exit(0), 5000).unref();
+  app.quit();
 });

@@ -3,7 +3,7 @@
 // side never opens the door alone; the browser's own uses (the viewport's IME, drags and file chooser) go through
 // `internal`, which never reaches the API.
 import type { WebContents } from "electron";
-import { isCdpMethodAllowed } from "./contract";
+import { isCdpCallAllowed, isCdpMethodAllowed } from "./contract";
 
 export type CdpEventSink = (method: string, params: unknown) => void;
 
@@ -34,7 +34,7 @@ export class TabDebugger {
 
   /** A call from the API: allowlisted domains only. */
   async call(method: string, params?: Record<string, unknown>): Promise<unknown> {
-    if (!isCdpMethodAllowed(method)) throw new Error(`${method} isn't allowed`);
+    if (!isCdpCallAllowed(method)) throw new Error(`${method} isn't allowed`);
     return this.internal(method, params);
   }
 

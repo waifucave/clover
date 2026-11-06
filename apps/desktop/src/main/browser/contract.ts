@@ -83,6 +83,28 @@ export function isCdpMethodAllowed(method: string): boolean {
   return (CDP_ALLOWED_DOMAINS as readonly string[]).includes(domain) && !(CDP_DENIED_DOMAINS as readonly string[]).includes(domain);
 }
 
+/** The methods inside the allowed domains that the API refuses too, because they reach outside the page (the core's
+ *  `CDP_DENIED_METHODS`, `packages/core/src/browser/policy.ts`, checked against this copy in a test). The app refuses
+ *  them again on the tab's own debugger, where the call runs. */
+export const CDP_DENIED_METHODS: readonly string[] = [
+  "DOM.setFileInputFiles",
+  "Page.setDownloadBehavior",
+  "Page.setInterceptFileChooserDialog",
+  "Network.setCookies",
+  "Network.clearBrowserCookies",
+  "Network.clearBrowserCache",
+  "Network.loadNetworkResource",
+  "Input.setInterceptDrags",
+  "Emulation.setDeviceMetricsOverride",
+  "Emulation.clearDeviceMetricsOverride",
+  "Emulation.setVisibleSize",
+];
+
+/** A call the API passes to a tab's debugger: an allowed domain, and not one of the methods above. */
+export function isCdpCallAllowed(method: string): boolean {
+  return isCdpMethodAllowed(method) && !CDP_DENIED_METHODS.includes(method);
+}
+
 /** Schemes no browser partition loads, however the load starts. */
 export const BROWSER_REFUSED_SCHEMES = [
   "file:", "filesystem:", "chrome:", "chrome-extension:", "chrome-untrusted:", "devtools:", "view-source:",

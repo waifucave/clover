@@ -61,9 +61,8 @@ describe("API errors become tool errors", () => {
   test("whatever is thrown, the server answers the request with a result", async () => {
     const h = await harness(one());
     h.browser.failures.set("tabs", { weird: "object" });
-    const res = await h.transport.request("tools/call", {
-      name: "Browser", arguments: { verb: "read" }, _meta: { "clover/caller": { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" } },
-    });
+    h.as("whatever", { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" });
+    const res = await h.transport.request("tools/call", { name: "Browser", arguments: { verb: "read" } }, "whatever");
     expect(res.error).toBeUndefined();
     expect((res.result as { isError: boolean }).isError).toBe(true);
   });

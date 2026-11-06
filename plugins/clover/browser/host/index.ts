@@ -4,6 +4,10 @@
 // Exports (lane B's `HostModule`):
 //   start(api) / stop(reason)   the host half's lifecycle
 //   mcp.browser                 serves the `browser` MCP server (clover.json) on one in-process transport
+//
+// Lane B's `HostModule.mcp` hands a server its transport and the plugin's API, and no tool call's context yet: until
+// the plugin host carries it (B-M2, ruling R7), the tool knows no caller and refuses every call. B-M2's host passes
+// `callerOf` to `serveBrowser`.
 
 import { serveBrowser } from "../src/serve";
 import type { McpServerHandle } from "../src/server";

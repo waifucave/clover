@@ -141,9 +141,10 @@ describe("cancelling and closing", () => {
   test("notifications/cancelled stops a wait, and the cancelled request gets no answer", async () => {
     const h = await harness([tabView("t1", ALPHA)], { pollMs: 5 });
     h.browser.page.probe = () => ({ readyState: "complete", url: "https://example.com/", title: "x", hasText: false });
+    h.as(42, { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" });
     h.transport.deliver({
       jsonrpc: "2.0", id: 42, method: "tools/call",
-      params: { name: "Browser", arguments: { verb: "wait", text: "never", timeoutMs: 30_000 }, _meta: { "clover/caller": { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "alpha" } } },
+      params: { name: "Browser", arguments: { verb: "wait", text: "never", timeoutMs: 30_000 } },
     });
     await Bun.sleep(20);
     const probesBefore = h.browser.ops().filter((o) => o === "probe").length;

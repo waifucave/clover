@@ -41,8 +41,10 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
       ELECTRON_ENABLE_LOGGING: "1",
     };
     delete env.ELECTRON_RUN_AS_NODE;
-    // Its own user-data folder, never the real app's.
-    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, built.main], { env, encoding: "utf8", timeout: 300_000 });
+    // Its own user-data folder, never the real app's; no proxy at start, as the app runs (lane E), and a net log of
+    // everything the process sent.
+    const netlog = join(dir, "netlog.json");
+    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", `--log-net-log=${netlog}`, built.main], { env, encoding: "utf8", timeout: 300_000 });
     const output = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
     expect(existsSync(out), output.slice(-4000)).toBe(true);
     const result = JSON.parse(readFileSync(out, "utf8")) as Result;
@@ -50,6 +52,24 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     expect(result.fatal).toBeUndefined();
     const failed = result.steps.filter((s) => !s.ok);
     expect(failed, `${JSON.stringify(failed, null, 2)}\n--- electron's output, last 3000 characters ---\n${output.slice(-3000)}`).toEqual([]);
-    expect(result.steps.length).toBeGreaterThanOrEqual(20);
+    expect(result.steps.length).toBeGreaterThanOrEqual(21);
+
+    // The net log: no WPAD or PAC lookup ran, and no spellchecker dictionary was fetched (lane E's netlogs found both).
+    expect(existsSync(netlog), "no net log").toBe(true);
+    const text = readFileSync(netlog, "utf8");
+    let log: { constants?: { logEventTypes?: Record<string, number> }; events?: { type: number; params?: unknown }[] };
+    try {
+      log = JSON.parse(text);
+    } catch {
+      log = JSON.parse(`${text.replace(/,\s*$/, "")}]}`); // a log cut short at exit: Chromium's own repair
+    }
+    const names = new Map(Object.entries(log.constants?.logEventTypes ?? {}).map(([name, id]) => [id, name]));
+    const events = log.events ?? [];
+    const pacOrWpad = events.map((e) => names.get(e.type) ?? "").filter((n) => /^(PAC_FILE_DECIDER|WPAD)/.test(n));
+    const lookedUp = events.map((e) => JSON.stringify(e.params ?? {})).filter((p) => /"host":"wpad|\.bdic|gvt1\.com|dictionaries/i.test(p));
+    console.log(`net log: ${events.length} events, ${pacOrWpad.length} PAC/WPAD, ${lookedUp.length} wpad or dictionary hosts`);
+    expect(events.length).toBeGreaterThan(0);
+    expect(pacOrWpad).toEqual([]);
+    expect(lookedUp).toEqual([]);
   }, 360_000);
 });
