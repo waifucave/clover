@@ -38,6 +38,10 @@ export interface ShellStart {
   panels?: string[];
   /** A bot's coding agent open in the panel. */
   agent?: string;
+  /** One of the tab's outputs open in the panel (a tree path). */
+  output?: string;
+  /** The command palette open. */
+  palette?: boolean;
 }
 
 export interface ShellProps {
@@ -111,7 +115,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // The command palette (Search opens it, and ⌘K / Ctrl+K), and the plugin commands' shortcuts while this window has
   // the focus: the user's own bindings (synced) win over a command's default key, and a core shortcut over both.
   const core = useCore();
-  const [palette, setPalette] = useState<{ start?: string } | undefined>(undefined);
+  const [palette, setPalette] = useState<{ start?: string } | undefined>(props.start?.palette ? {} : undefined);
   const [commands, setCommands] = useState<PaletteCommand[]>([]);
   const [userKeys, setUserKeys] = useState<Record<string, string | null>>({});
   const [defaults, setDefaults] = useState<{ name: string; key?: string }[]>([]);
@@ -174,7 +178,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     if (!open.includes("agent")) setOpen(toggleView(open, "agent"));
   };
   // One of the tab's outputs, opened from its column into the right panel (`panel` keyed `output`).
-  const [outputs, setOutputs] = useState<Record<string, string | undefined>>({});
+  const [outputs, setOutputs] = useState<Record<string, string | undefined>>(() => (startTab && props.start?.output ? { [tabKey(startTab)]: props.start.output } : {}));
   const output = outputs[key];
   const openOutput = (path: string) => {
     setOutputs((o) => ({ ...o, [key]: path }));
@@ -258,6 +262,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       translucent={props.translucent}
       sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, onSearch: () => setPalette({}) }} />}
       title={title}
+      {...(shown?.route === "bot" && botRef ? { heading: <Spot name="bot.header" props={{ bot: botRef }} fallback={title} /> } : {})}
       toggles={toggles}
       side={side}
       panel={views.length > 0 && kind ? <PanelHost kind={kind} views={views} onClose={(id) => setOpen(open.filter((v) => v !== id))} onExpand={() => undefined} /> : undefined}

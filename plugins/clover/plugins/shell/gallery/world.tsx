@@ -310,6 +310,14 @@ const coreHandlers: Handlers = {
   "session.setModel": () => ({ ok: true }),
   "session.changes": ({ id }) => (SESSIONS.find((s) => s.id === id)?.kind === "coding" && SESSION_COLUMN.changes ? { label: SESSION_COLUMN.changes.label, added: SESSION_COLUMN.changes.added, removed: SESSION_COLUMN.changes.removed, files: SESSION_COLUMN.changes.files } : null),
   "session.diff": () => ({ base: "main", target: "working tree", targets: ["last commit"], files: FILES, notice: "Large files start folded. Open one to see it whole." }),
+  "command.list": () => ({
+    commands: [
+      { name: "tarot.draw", pluginId: "tarot", description: "Draws today's card", key: "Mod+Shift+D" },
+      { name: "tarot.spread", pluginId: "tarot", description: "Lays out a spread", args: { type: "object", properties: { cards: { type: "integer", title: "Cards" } }, required: ["cards"] } },
+      { name: "weather.now", pluginId: "weather-routine", description: { en: "Says the weather where you are" } },
+    ],
+  }),
+  "command.run": () => ({ result: null }),
   "session.context": ({ id }) => (id === "s_alpha" ? { used: 0.31, tokens: 62_000, window: 200_000 } : { used: 0.14, tokens: 28_000, window: 200_000 }),
   "session.connectors": () => ({ total: 7, needSignIn: 2 }),
   "models.catalog": () => ({ models: MODELS.models.map((m) => ({ id: m.id, label: m.label, ...(m.detail ? { provider: m.detail } : {}), efforts: MODELS.efforts ?? [] })) as never }),
@@ -331,6 +339,9 @@ function OUTPUTS(path: string): { path: string; type: "file"; size: number; modi
   const names = m[1] === "s_alpha" ? ["this-week-in-clover.md", "garden-beds.csv"] : (SESSION_COLUMN.outputs?.items ?? []).map((i) => (i.kind === "page" ? `${i.name}.md` : i.kind === "image" ? (/\.\w+$/.test(i.name) ? i.name : `${i.name}.png`) : i.name));
   return names.map((n, i) => ({ path: `${path}/${n}`, type: "file", size: 1, modifiedAt: NOW - i * 60_000, executable: false }));
 }
+
+/** The bot's weekly page, as its outputs folder holds it. */
+const OUTPUT_TEXT = "# This week in the clover repo\n\n- 14 pull requests merged\n- The shell runs on the app's own runtime\n- Settings opens at a device\n";
 
 export function world(options: WorldOptions = {}): UiRuntime {
   const transcripts = options.transcripts ?? {};
@@ -417,9 +428,9 @@ export function world(options: WorldOptions = {}): UiRuntime {
         ? {
             files: {
               list: (path: string) => later(OUTPUTS(path) ?? (LISTING[path] ?? []).map((e) => ({ path: e.path, type: e.type, size: 1, modifiedAt: NOW, executable: false }))),
-              readText: (path: string) => later(path === OPEN_FILE.path ? OPEN_FILE.text : ""),
+              readText: (path: string) => later(path === OPEN_FILE.path ? OPEN_FILE.text : path.endsWith("/this-week-in-clover.md") ? OUTPUT_TEXT : ""),
               grep: () => later({ matches: [], truncated: false }),
-              stat: () => later(null),
+              stat: (path: string) => later(/\/\.clover\/outputs\/[^/]+\/[^/]+$/.test(path) ? { path, type: "file" as const, size: 1, modifiedAt: NOW, executable: false } : null),
               readBytes: () => fail("the gallery reads text only"),
               write: () => fail("the gallery's folder is read only"),
               remove: () => fail("the gallery's folder is read only"),

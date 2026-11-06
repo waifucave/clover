@@ -86,6 +86,8 @@ describe("the bot editor on the runtime", () => {
     fireEvent.click(screen.getAllByRole("radio")[0]!);
     fireEvent.click(screen.getByRole("button", { name: "Reset the theme" }));
     await act(() => settle());
+    // A pack's portrait shows from the pack's own asset URL (review item 8); the user layer keeps the pack's path.
+    expect(document.querySelector('img[src="clover-asset://chibi-pack/assets/mint.png"]')).toBeTruthy();
     const patches = core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params);
     expect(patches).toEqual([
       { id: "alpha", patch: { name: "Alpha Prime" } },

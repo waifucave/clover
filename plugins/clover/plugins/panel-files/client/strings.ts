@@ -6,6 +6,9 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
+  get outputLink() {
+    return t("clover.files.outputLink");
+  },
   get outputOutside() {
     return t("clover.files.outputOutside");
   },

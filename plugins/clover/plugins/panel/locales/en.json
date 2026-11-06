@@ -55,6 +55,8 @@
     "clover.panel.level.ask": "Ask first",
     "clover.panel.level.ask-risky": "Ask when risky",
     "clover.panel.level.accept-edits": "Accept edits",
-    "clover.panel.level.automatic": "Fully automatic"
+    "clover.panel.level.automatic": "Fully automatic",
+    "clover.panel.outputKind.link": "Link",
+    "clover.panel.outputLinkDetail": "A link in the outputs folder. Clover doesn't follow it."
   }
 }

@@ -49,8 +49,8 @@ const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
 const SHOWN = 4;
 
 /** A session's outputs, newest first, kept current while the folder changes. */
-function useOutputs(api: PluginApi, session: Session | undefined): { items: { id: string; name: string; kind: "page" | "file" | "image" }[] } | undefined {
-  const [items, setItems] = useState<{ id: string; name: string; kind: "page" | "file" | "image" }[] | undefined>(undefined);
+function useOutputs(api: PluginApi, session: Session | undefined): { items: { id: string; name: string; kind: "page" | "file" | "image" | "link" }[] } | undefined {
+  const [items, setItems] = useState<{ id: string; name: string; kind: "page" | "file" | "image" | "link" }[] | undefined>(undefined);
   const files = api.files;
   const folder = session ? outputsFolder(session) : undefined;
   useEffect(() => {
@@ -61,12 +61,14 @@ function useOutputs(api: PluginApi, session: Session | undefined): { items: { id
         (list) => {
           if (!live) return;
           setItems(
+            // A link is listed as a link and never followed (the controller's note: a runner can leave one pointing
+            // at another bot's data); only plain files open. The tree (lane J's) judges every real path.
             list
-              .filter((f) => f.type === "file")
+              .filter((f) => f.type === "file" || f.type === "symlink")
               .sort((a, b) => b.modifiedAt - a.modifiedAt)
               .map((f) => {
                 const name = f.path.split("/").pop() ?? f.path;
-                return { id: f.path, name, kind: PAGE.test(name) ? "page" : IMAGE.test(name) ? "image" : "file" };
+                return { id: f.path, name, kind: f.type === "symlink" ? "link" : PAGE.test(name) ? "page" : IMAGE.test(name) ? "image" : "file" };
               }),
           );
         },

@@ -26,6 +26,9 @@ export interface AvatarChoice {
   pack: string;
   file: string;
   format: string;
+  /** The portrait as the pack names it (a path in the pack's folder), which the bot's user layer keeps. */
+  portrait?: string;
+  /** Where it shows from: the pack's own asset URL. */
   portraitUrl?: string;
 }
 

@@ -36,8 +36,9 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
       list: async (path) => {
         listed.push(path);
         const id = path.split("/").pop()!;
-        const names = id === "code-1" ? ["shell-screens.md", "a.png", "b.csv", "c.txt", "d.txt", "e.txt"] : ["digest.md"];
-        return names.map((n, i) => ({ path: `${path}/${n}`, type: "file" as const, size: 1, modifiedAt: 100 - i, executable: false }));
+        const names = id === "code-1" ? ["shell-screens.md", "a.png", "b.csv", "c.txt", "d.txt", "e.txt"] : ["digest.md", "other-bot-memory"];
+        // `other-bot-memory` is a link a runner planted, pointing at another bot's data.
+        return names.map((n, i) => ({ path: `${path}/${n}`, type: n === "other-bot-memory" ? ("symlink" as const) : ("file" as const), size: 1, modifiedAt: 100 - i, executable: false }));
       },
       watch: async () => () => undefined,
     }),
@@ -57,6 +58,17 @@ describe("the session column", () => {
     expect(screen.getByRole("button", { name: /e\.txt/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /a\.png/ }));
     expect(opened).toEqual(["home/Studio/.clover/outputs/code-1/a.png"]);
+  });
+
+  test("a link planted in a session's outputs shows as a link that can't be opened, never followed", async () => {
+    const opened: string[] = [];
+    mount(() => <BotColumn props={{ session: "s_alpha", onOpenOutput: (p) => opened.push(p) }} />);
+    await act(() => settle());
+    expect(screen.queryByRole("button", { name: /other-bot-memory/ })).toBeNull();
+    const link = screen.getByText("other-bot-memory").closest("[data-link]") as HTMLElement;
+    expect(link.textContent).toContain("Link");
+    fireEvent.click(link);
+    expect(opened).toEqual([]);
   });
 
   test("a coding session's: its agents, where it runs, context, connectors, outputs and changes", async () => {

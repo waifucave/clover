@@ -165,11 +165,20 @@ export function SessionView(props: SessionViewProps) {
           <ul className="cl-session__list">
             {outputs.items.map((o) => (
               <li key={o.id}>
-                <button type="button" className="cl-session__row" onClick={() => outputs.onOpen(o.id)} title={o.name}>
-                  {o.kind === "page" ? <IconPage /> : o.kind === "image" ? <IconImage /> : <IconFile />}
-                  <span className="cl-session__name">{o.name}</span>
-                  <span className="cl-session__meta">{S.outputKind[o.kind]}</span>
-                </button>
+                {o.kind === "link" ? (
+                  // A link a runner left in its outputs folder: shown, never followed or opened.
+                  <span className="cl-session__row" data-link="" title={S.outputLinkDetail}>
+                    <IconFile />
+                    <span className="cl-session__name">{o.name}</span>
+                    <span className="cl-session__meta">{S.outputKind.link}</span>
+                  </span>
+                ) : (
+                  <button type="button" className="cl-session__row" onClick={() => outputs.onOpen(o.id)} title={o.name}>
+                    {o.kind === "page" ? <IconPage /> : o.kind === "image" ? <IconImage /> : <IconFile />}
+                    <span className="cl-session__name">{o.name}</span>
+                    <span className="cl-session__meta">{S.outputKind[o.kind]}</span>
+                  </button>
+                )}
               </li>
             ))}
           </ul>

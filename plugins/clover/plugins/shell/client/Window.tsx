@@ -24,6 +24,8 @@ export interface WindowProps {
   sidebar: ReactNode;
   /** The open tab's name: a bot's, an agent's or a session's. */
   title: string;
+  /** What the bar shows for the title, when it is more than its text: a bot's `bot.header`, which a plugin can fill. */
+  heading?: ReactNode;
   /** Opens the tab's menu (rename, fork, archive…) when the host has one. */
   onTitleMenu?: () => void;
   /** The panel toggles, at the title bar's end. */
@@ -98,7 +100,7 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
   );
 }
 
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status }: WindowProps) {
+export function Window({ sidebar, title, heading, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status }: WindowProps) {
   // A dialog asked for while a card waits stays shut, and one open when a card arrives closes; either way
   // the bar says so until the card is answered.
   const [held, setHeld] = useState(false);
@@ -126,7 +128,7 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
             </button>
           ) : (
             <h1 className="cl-window__title">
-              <span className="cl-window__title-text">{title}</span>
+              <span className="cl-window__title-text">{heading ?? title}</span>
             </h1>
           )}
           <span className="cl-window__note" role="status">

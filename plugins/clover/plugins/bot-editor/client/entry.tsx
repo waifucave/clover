@@ -17,6 +17,9 @@ export interface BotEditorEntryProps {
 }
 
 /** The catalog's models, read defensively (its Clover shape is lanes A's and B's). */
+/** A file of a plugin's folder as the app serves it (review item 8): a URL or `data:` as it is, else the pack's asset. */
+export const assetUrl = (pluginId: string, path: string) => (/^(https?:|data:|blob:|clover-asset:)/.test(path) ? path : `clover-asset://${pluginId}/${path.replace(/^\.?\//, "")}`);
+
 export function modelsOf(catalog: unknown): BotEditorModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
@@ -71,7 +74,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
         pack: names[e.pluginId] ?? e.pluginId,
         file: e.value.file,
         format: e.value.format,
-        ...(e.value.portrait ? { portraitUrl: e.value.portrait } : {}),
+        ...(e.value.portrait ? { portrait: e.value.portrait, portraitUrl: assetUrl(e.pluginId, e.value.portrait) } : {}),
       }));
     void Promise.all([api.points.entries<AvatarPackEntry>("avatar.packs").catch(() => []), core?.call("plugin.list", {}).catch(() => undefined)]).then(([entries, list]) => {
       if (!live) return;

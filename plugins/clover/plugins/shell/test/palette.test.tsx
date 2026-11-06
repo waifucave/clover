@@ -3,6 +3,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { fieldsOf, Palette } from "../client/Palette";
 import { bindings, chordOf, commandFor, parseChord, showChord } from "../client/shortcuts";
+import { a11yFindings } from "../runtime/a11y";
 
 afterEach(cleanup);
 
@@ -53,6 +54,8 @@ describe("the palette", () => {
     const list = screen.getByRole("listbox", { name: "Results" });
     expect(within(list).getAllByRole("option").map((o) => o.querySelector(".cl-palette__name")?.textContent)).toEqual(["Luna", "tarot.draw", "tarot.spread"]);
     expect(within(list).getByText("⇧⌘D")).toBeTruthy();
+    // Every control named and reachable: the search takes the keys, the options are its listbox's.
+    expect(a11yFindings(document.body)).toEqual([]);
     const search = screen.getByRole("combobox", { name: "Search commands and bots" });
     fireEvent.change(search, { target: { value: "draw" } });
     expect(within(list).getAllByRole("option")).toHaveLength(1);

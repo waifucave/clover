@@ -9,10 +9,11 @@ import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
-function show(path: string) {
+function show(path: string, links: string[] = []) {
   const reads: string[] = [];
   const api = fakeApi({
     files: fakeFiles({
+      stat: async (p) => ({ path: p, type: links.includes(p) ? ("symlink" as const) : ("file" as const), size: 1, modifiedAt: 0, executable: false }),
       readText: async (p) => {
         reads.push(p);
         return "# This week\n\n<script>alert(1)</script>";
@@ -54,6 +55,14 @@ describe("an output in the right panel", () => {
     expect(other.reads).toEqual([]);
     expect(screen.getByText("Only a session's own outputs open here.")).toBeTruthy();
     expect(reads).toHaveLength(1);
+  });
+
+  test("a link a runner planted in its outputs is never followed or read", async () => {
+    const planted = "home/Studio/.clover/outputs/s_alpha/notes.md";
+    const { reads } = show(planted, [planted]);
+    await act(() => settle());
+    expect(reads).toEqual([]);
+    expect(screen.getByRole("alert").textContent).toContain("doesn't follow it");
   });
 
   test("the Files panel's fence never takes a `..` or `.` segment as inside", () => {

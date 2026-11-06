@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { buildGallery } from "../gallery/build";
 import { CATALOG_SNAPSHOT } from "../gallery/catalog";
 import { M2_SCREENS, screenStories } from "../gallery/screens";
+import { a11yFindings } from "../runtime/a11y";
 import { shellStories } from "../gallery/stories";
 import { stories as composerStories } from "../../composer/gallery/stories";
 import { stories as conversationStories } from "../../conversation/gallery/stories";
@@ -97,11 +98,16 @@ describe("the gallery", () => {
 
   test("no story failed, and nothing logged an error", () => {
     expect([...root!.querySelectorAll("[data-story-error]")].map((e) => e.getAttribute("data-story-error"))).toEqual([]);
+  });
+
+  test("accessibility (F-M3): every control in every story has a name and is in the tab order, and every image an alt", () => {
+    const found = [...root!.querySelectorAll("[data-story]")].flatMap((story) => a11yFindings(story).map((f) => `${story.getAttribute("data-story")}: ${f}`));
+    expect([...new Set(found)]).toEqual([]);
     expect(errors).toEqual([]);
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(40);
+    expect(screenStories.length).toBe(42);
     expect(M2_SCREENS).toHaveLength(11);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
@@ -148,7 +154,8 @@ describe("the gallery", () => {
         expect([story.id, kind]).toEqual([story.id, undefined]);
       } else if (kind === "bot") {
         expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser"]]);
-        expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
+        // (An output opened from the column isn't the Files panel: it is only that file, read only.)
+        expect([story.id, !!frame.querySelector(".cl-term, .cl-diff, .cl-files:not(.cl-files--output)")]).toEqual([story.id, false]);
         // The slim column, if open, has nothing about a folder.
         expect([story.id, frame.querySelector('.cl-session[data-kind="coding"]')]).toEqual([story.id, null]);
       } else if (kind === "agent") {
@@ -158,7 +165,10 @@ describe("the gallery", () => {
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
-    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([17, 1, 17]);
+    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([19, 1, 17]);
+    // An output opened from a bot's column shows in the right panel, read from its session's outputs folder.
+    const out = root!.querySelector('[data-story="screen/bot-output-1440"] .cl-files--output');
+    expect(out?.textContent).toContain("# This week in the clover repo");
   });
 
   test("a bot's slim column shows its agents, and one opens in the panel with its own composer and model picker", () => {

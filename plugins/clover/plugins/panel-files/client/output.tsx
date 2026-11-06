@@ -25,27 +25,39 @@ function Header({ slot, children }: { slot: HTMLElement | null | undefined; chil
 export function OutputEntry({ props }: { props: OutputEntryProps }) {
   const files = usePluginApi().files;
   const path = props.path;
-  const [shown, setShown] = useState<{ text?: string; image?: string; failed?: true } | undefined>(undefined);
+  const [shown, setShown] = useState<{ text?: string; image?: string; failed?: true; link?: true } | undefined>(undefined);
   useEffect(() => {
     setShown(undefined);
     if (!files || !path || !isOutput(path)) return;
     let live = true;
     let url: string | undefined;
-    if (IMAGE.test(path)) {
-      files.readBytes(path).then(
-        (bytes) => {
-          if (!live) return;
-          url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: TYPES[path.split(".").pop()!.toLowerCase()] }));
-          setShown({ image: url });
-        },
-        () => live && setShown({ failed: true }),
-      );
-    } else {
-      files.readText(path).then(
-        (text) => live && setShown({ text }),
-        () => live && setShown({ failed: true }),
-      );
-    }
+    const read = () => {
+      if (IMAGE.test(path)) {
+        files.readBytes(path).then(
+          (bytes) => {
+            if (!live) return;
+            url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: TYPES[path.split(".").pop()!.toLowerCase()] }));
+            setShown({ image: url });
+          },
+          () => live && setShown({ failed: true }),
+        );
+      } else {
+        files.readText(path).then(
+          (text) => live && setShown({ text }),
+          () => live && setShown({ failed: true }),
+        );
+      }
+    };
+    // Only a plain file opens: the tree (lane J's) says what the path is, judging its real path, and a link a runner
+    // left in its outputs is never followed, wherever it points (the controller's note).
+    files.stat(path).then(
+      (stat) => {
+        if (!live) return;
+        if (stat?.type === "file") read();
+        else setShown(stat?.type === "symlink" ? { link: true } : { failed: true });
+      },
+      () => live && setShown({ failed: true }),
+    );
     return () => {
       live = false;
       if (url) URL.revokeObjectURL(url);
@@ -63,6 +75,10 @@ export function OutputEntry({ props }: { props: OutputEntryProps }) {
       ) : !shown ? (
         <p className="cl-files__note" role="status">
           {S.loading}
+        </p>
+      ) : shown.link ? (
+        <p className="cl-files__note" role="alert">
+          {S.outputLink}
         </p>
       ) : shown.failed ? (
         <p className="cl-files__note" role="alert">

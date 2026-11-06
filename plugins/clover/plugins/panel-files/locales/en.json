@@ -21,6 +21,7 @@
     "clover.files.title": "Files in {folder}, on {computer}",
     "clover.files.hiddenMark": "Hidden character {code}, {name}",
     "clover.files.outputOutside": "Only a session's own outputs open here.",
-    "clover.files.outputFailed": "This output couldn't be read."
+    "clover.files.outputFailed": "This output couldn't be read.",
+    "clover.files.outputLink": "This is a link in the outputs folder. Clover doesn't follow it, so it doesn't open."
   }
 }

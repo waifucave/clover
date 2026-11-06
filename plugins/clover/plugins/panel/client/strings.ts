@@ -7,6 +7,9 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
+  get outputLinkDetail() {
+    return t("clover.panel.outputLinkDetail");
+  },
   levelName: (level: string) => t(`clover.panel.level.${level}`),
   views: {
     get session() {
@@ -76,6 +79,9 @@ export const S = {
     return t("clover.panel.outputs");
   },
   outputKind: {
+    get link() {
+      return t("clover.panel.outputKind.link");
+    },
     get page() {
       return t("clover.panel.outputKind.page");
     },
