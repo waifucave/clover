@@ -819,6 +819,30 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/provider-gcp:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/provider-hetzner:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/push:
     devDependencies:
       '@types/bun':
