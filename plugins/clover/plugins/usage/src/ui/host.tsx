@@ -5,7 +5,7 @@ import { createContext, useContext, type ReactElement } from "react";
 import type { UsageApi } from "../model/usage";
 import { UsageTab } from "./UsageTab";
 import { UsageView } from "./UsageView";
-import { setTranslator, type Translator } from "../strings";
+import { setLanguage, setTranslator, type Translator } from "../strings";
 
 export interface UsageHost {
   /** `usage.read` (lane B's `UsageApi`). */
@@ -16,12 +16,15 @@ export interface UsageHost {
   /** The app's translator for this plugin's keys (lane E's `useT()`): the words in the user's language, English for a
    *  key it lacks. Absent, English. */
   t?: Translator;
+  /** The user's language (a BCP 47 tag), for numbers and dates. Absent, English. */
+  lang?: string;
 }
 
 /** The host, with its translator installed for the usage plugin's words. */
 function useUsageHost(): UsageHost | null {
   const host = useContext(UsageHostContext);
   setTranslator(host?.t ?? null);
+  setLanguage(host?.lang);
   return host;
 }
 

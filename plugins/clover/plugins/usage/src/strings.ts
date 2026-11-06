@@ -37,6 +37,22 @@ export function english(key: string, vars: Record<string, string | number> = {})
   return text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`));
 }
 
+let lang = "en";
+
+/** The user's language, for numbers and dates (the host's; English when it gives none). */
+export function setLanguage(language: string | undefined): void {
+  lang = language && language.length > 0 ? language : "en";
+}
+
+export function language(): string {
+  return lang;
+}
+
+/** Whether numbers and dates take the English forms this plugin was drawn with ("1.2k", "$12.30", "Oct 29"). */
+export function isEnglish(): boolean {
+  return lang === "en" || lang.startsWith("en-");
+}
+
 export function t(key: string, vars: Record<string, string | number> = {}): string {
   if (installed) {
     const text = installed(key, vars);

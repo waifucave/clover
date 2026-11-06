@@ -53,4 +53,21 @@ describe("the plugin's words", () => {
     expect(t(key)).toBe(english(key));
     expect(t("clover.no.such.key")).toBe("clover.no.such.key");
   });
+
+  test("numbers and dates take the user's language; English keeps the forms the plugin was drawn with", async () => {
+    const { compactCount, formatCost } = await import("../src/model/usage");
+    const { setLanguage } = await import("../src/strings");
+    try {
+      setLanguage("de");
+      expect(formatCost(1234.4)).toBe(new Intl.NumberFormat("de", { style: "currency", currency: "USD", maximumFractionDigits: 0, minimumFractionDigits: 0 }).format(1234));
+      expect(formatCost(12.3)).toContain("12,30");
+      expect(formatCost(0.004).startsWith("<")).toBe(true);
+      setLanguage("ja");
+      expect(compactCount(34_567)).toBe(new Intl.NumberFormat("ja", { notation: "compact", maximumFractionDigits: 1, roundingMode: "trunc" }).format(34_567));
+      setLanguage(undefined);
+      expect([compactCount(1234), formatCost(12.3), formatCost(1234.4)]).toEqual(["1.2k", "$12.30", "$1,234"]);
+    } finally {
+      setLanguage(undefined);
+    }
+  });
 });
