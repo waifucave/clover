@@ -1,0 +1,29 @@
+{
+  "manifest": 1,
+  "name": { "en": "Cloudflare relay" },
+  "description": {
+    "en": "Carries your devices' encrypted traffic through a relay in your own Cloudflare account when they can't connect directly, and keeps encrypted sync mail for a device that is away. The relay sees which of your devices talk and how much, never what."
+  },
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun", "start": "each" },
+  "capabilities": ["network:*.workers.dev"],
+  "settings": {
+    "origin": {
+      "type": "string",
+      "title": { "en": "Relay address" },
+      "description": { "en": "Where your relay Worker runs, such as https://clover-relay.<your-subdomain>.workers.dev" },
+      "required": true
+    }
+  },
+  "auth": [
+    {
+      "method": "api-key",
+      "secret": "relay-key",
+      "help": "The RELAY_KEY you gave your relay Worker (wrangler secret put RELAY_KEY): at least 32 random bytes, base64url.",
+      "placement": { "header": "authorization", "scheme": "Bearer" }
+    }
+  ],
+  "contributes": {
+    "relays": [{ "id": "cloudflare", "name": { "en": "Your Cloudflare relay" }, "handler": "relay" }]
+  }
+}
