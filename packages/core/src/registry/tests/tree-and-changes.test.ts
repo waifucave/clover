@@ -192,3 +192,19 @@ describe("spellings a disk reads alike (#197's check 4)", () => {
     expect(classifyChange(before, await snapOf({ "clover.json": data, "README.md": "a", "SERVER~1.TXT": "x" }))).toBe("asks-again");
   });
 });
+
+describe("an 8.3 alias in a run field (#197's check 5)", () => {
+  test("names its whole folder as code", async () => {
+    const snapOf = async (arg: string, files: Record<string, string>) => {
+      const root = folder({ "clover.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
+      const entries = treeEntries(root);
+      const tree = await validateTree(folderReader(root), { folderName: "tarot" });
+      return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields);
+    };
+    expect((await snapOf("${plugin}/lib/SERVER~1.TXT", { "lib/server-long-name.txt": "1" })).codePaths).toContain("lib");
+    expect((await snapOf("${plugin}/LIB~1/x.txt", { "library/x.txt": "1" })).codePaths).toContain("");
+    const a = await snapOf("${plugin}/lib/SERVER~1.TXT", { "lib/server-long-name.txt": "1", "README.md": "a" });
+    const b = await snapOf("${plugin}/lib/SERVER~1.TXT", { "lib/server-long-name.txt": "2", "README.md": "a" });
+    expect(classifyChange(a, b)).toBe("asks-again");
+  });
+});

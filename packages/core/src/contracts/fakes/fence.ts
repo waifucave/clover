@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownMemoryOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -153,7 +153,7 @@ export class FakeFence implements Fence {
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
-      ...(ctx?.memoryOf !== undefined ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
+      ...(ownMemoryOf(ctx, this.#cloverHome) !== undefined ? { ownMemory: ownMemoryOf(ctx, this.#cloverHome)! } : {}),
     };
   }
 

@@ -186,6 +186,15 @@ function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet
       if (w.startsWith("/") || w.includes("${")) continue;
       const p = treeKey(posix.normalize(`${base}${w}`).replace(/\/+$/, ""));
       if (p === "." || p.startsWith("../") || p === "..") continue;
+      // A word that looks like an 8.3 alias (`SERVER~1.TXT`, `LIB~1/x`) can name a file no listing shows by that name, so
+      // the folder it sits in counts as code whole (#197's check 5).
+      const segs = p.split("/");
+      const alias = segs.findIndex((seg) => /~\d/.test(seg));
+      if (alias >= 0) {
+        const folder = segs.slice(0, alias).join("/");
+        out.add(folder === "" ? whole : folder);
+        continue;
+      }
       if (files.has(p) || folders.has(p)) out.add(p);
     }
   }

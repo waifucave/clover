@@ -5,7 +5,7 @@
 // the policy a sandbox enforces.
 import { describe, expect, test } from "bun:test";
 import { type FakeFence } from "../fakes/fence";
-import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, foldName, foldPath, judge, windowsAlias, type FencedKind } from "../fence";
+import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, policyAllows, foldName, foldPath, judge, windowsAlias, type FencedKind } from "../fence";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -139,6 +139,42 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       // A root that doesn't exist yet is judged by its nearest existing ancestor's real path.
       expect(f.checkAgentRoot(`${intoClover}/plugins/new-plugin`).allowed).toBe(false);
       expect(f.checkAgentRoot(`${disk.link(disk.folder())}/project`).allowed).toBe(true);
+    });
+
+    test("a runner's sandbox, by the reference order (policyAllows): its own memory's insides, never the folder; no other bot's (#197's check 5)", () => {
+      const f = fence("macos");
+      const mem = (bot: string) => `${CLOVER}/bots/${bot}/memory`;
+      const session = (bot: string | undefined, sessionKind: "bot" | "side-thread" | "agent" | "coding") =>
+        ({ kind: "session", sessionId: "s_1", sessionKind, ...(bot ? { bot } : {}) }) as const;
+      const owner = f.forCaller(session("luna", "bot")).policy();
+      expect(owner.ownMemory).toBe(mem("luna"));
+      expect(policyAllows(owner, "write", `${mem("luna")}/MEMORY.md`)).toBe(true);
+      expect(policyAllows(owner, "read", `${mem("luna")}/notes/a.md`)).toBe(true);
+      expect(policyAllows(owner, "read", `${mem("alpha")}/MEMORY.md`)).toBe(false);
+      expect(policyAllows(owner, "write", `${mem("newbot")}/MEMORY.md`)).toBe(false);
+      // A `/` boundary, never a bare prefix.
+      expect(policyAllows(owner, "write", `${CLOVER}/bots/luna/memory-x/a.md`)).toBe(true); // not memory: the home allows it
+      expect(policyAllows(owner, "write", `${CLOVER}/bots/luna-x/memory/a.md`)).toBe(false);
+      // Unlinking or renaming the folder itself, or a folder that holds it, stays denied.
+      for (const path of [mem("luna"), `${CLOVER}/bots/luna`, `${CLOVER}/bots`]) {
+        expect([path, policyAllows(owner, "unlink", path), policyAllows(owner, "rename", path)]).toEqual([path, false, false]);
+      }
+      expect(policyAllows(owner, "unlink", `${mem("luna")}/old.md`)).toBe(true);
+      // A coding session's runner, and the bot's own agent's, reach neither.
+      for (const c of [session(undefined, "coding"), session("luna", "agent")]) {
+        const p = f.forCaller(c).policy();
+        expect(p.ownMemory).toBeUndefined();
+        expect([policyAllows(p, "read", `${mem("luna")}/MEMORY.md`), policyAllows(p, "write", `${mem("alpha")}/MEMORY.md`)]).toEqual([false, false]);
+      }
+    });
+
+    test("a bot id that isn't one reaches no memory: `..` and `LUNA` (#197's check 5)", () => {
+      const f = fence("macos");
+      for (const bot of ["..", "LUNA", "../../settings", "a"]) {
+        const c = f.forCaller({ kind: "session", sessionId: "s_1", sessionKind: "bot", bot } as never);
+        expect([bot, c.context.memoryOf, c.policy().ownMemory]).toEqual([bot, undefined, undefined]);
+        expect([bot, c.check({ op: "read", path: `${CLOVER}/bots/luna/memory/MEMORY.md` }).allowed]).toEqual([bot, false]);
+      }
     });
 
     test("sessions-runtime: write-denied; a session reads only its own state (#197's check 4)", () => {

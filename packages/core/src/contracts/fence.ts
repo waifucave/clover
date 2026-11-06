@@ -10,7 +10,7 @@
 // One Fence per computer: each computer fences its own home, and the folder tree asks the fence of the computer that
 // holds the files (§9.1 "Approvals follow the files"). Paths are absolute and canonical on that computer; the real
 // implementation canonicalizes per OS (case, symlinks, junctions, 8.3 names, hard-link aliases), the fake is POSIX.
-import type { Caller, Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId, type Caller, type Os } from "@waifucave/clover-protocol";
 import { isInside, type Unsubscribe } from "./common";
 
 /** The fenced set (§9.1), plus the files that hold secrets on Windows and Linux (§8.5). */
@@ -105,14 +105,22 @@ export interface SandboxPolicy {
   allowWrite: string[];
   /** Paths, and the pattern items' globs, in which a `*` segment is any one name (`<home>/bots/` then `*` then
    *  `/memory`): every bot's memory,
-   *  known or not, and every session's runtime state, are denied to every runner (#197's check 4). A bot's memory is
-   *  its main conversation's and side threads' through their file tools (`check`), never a command runner's. */
+   *  known or not, and every session's runtime state, are denied to every runner (#197's check 4); the one exception is
+   *  `ownMemory`. */
   denyWrite: string[];
   denyRead: string[];
   /** The runner's own bot's memory (`<home>/bots/<x>/memory`), for a runner whose caller is that bot's main
-   *  conversation or a side thread (J's ruling on #197): read and write inside it although the `bots/*` memory glob
-   *  denies it, every other bot's memory still denied, and the folder itself never deleted or moved. Absent for every
-   *  other runner (coding sessions, agents, the bot's own included, plugins). */
+   *  conversation or a side thread (J's ruling on #197), its id a valid bot id. Absent for every other runner (coding
+   *  sessions, agents, the bot's own included, plugins).
+   *
+   *  The order a sandbox applies it in is fixed (#197's check 5), and `policyAllows` is its reference:
+   *  1. paths compare as resolved real paths, folded, a subpath only at a `/` boundary (never a bare prefix:
+   *     `memory-x` is not inside `memory`), a glob's `*` one whole name;
+   *  2. `denyWrite` and `denyRead`, the `bots` memory glob included, deny;
+   *  3. then only the descendants of `ownMemory` are allowed again, to read and write;
+   *  4. unlinking or renaming `ownMemory` itself, or any folder that holds it, stays denied.
+   *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
+   *  (for example: grant the runner's own memory and leave the other bots' memory folders out of its rules). */
   ownMemory?: string;
   /** Programs that would hand work to an unfenced process: `open`, `launchctl` and `osascript` on macOS,
    *  `systemd-run --user` on Linux, the Task Scheduler on Windows (§3.1). */
@@ -140,8 +148,39 @@ export function fenceContextFor(caller: Caller): FenceContext {
   if (caller.kind === "user" || caller.kind === "core") return { user: true };
   if (caller.kind !== "session") return {};
   const own = { sessionId: caller.sessionId };
-  if ((caller.sessionKind === "bot" || caller.sessionKind === "side-thread") && caller.bot !== undefined) return { ...own, memoryOf: caller.bot };
+  // Only a valid bot id (#197's check 5): `..` would climb out of `bots/`, and `LUNA` would land on Luna's folder on a
+  // folding disk.
+  if ((caller.sessionKind === "bot" || caller.sessionKind === "side-thread") && caller.bot !== undefined && isAnyPluginId(caller.bot)) {
+    return { ...own, memoryOf: caller.bot };
+  }
   return own;
+}
+
+/** The memory folder a context's bot owns, or undefined without a valid bot id. */
+export function ownMemoryOf(ctx: FenceContext | undefined, cloverHome: string): string | undefined {
+  if (ctx?.memoryOf === undefined || !isAnyPluginId(ctx.memoryOf)) return undefined;
+  return `${cloverHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
+}
+
+/** The reference for how a runner's sandbox applies a policy (`SandboxPolicy.ownMemory`'s order, #197's check 5), over
+ *  a resolved real path: whether `op` on `realPath` passes. A real sandbox must agree with it. */
+export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unlink" | "rename", realPath: string, os?: Os): boolean {
+  const names = (p: string) => segmentsOf(p).map((n) => foldName(n, os));
+  const under = (path: string, root: string, strict = false) => {
+    const a = names(path);
+    const b = names(root);
+    if (a.length < b.length || (strict && a.length === b.length)) return false;
+    return b.every((n, i) => n === "*" || n === a[i]);
+  };
+  const own = policy.ownMemory;
+  // 4. The folder itself, and every folder that holds it, is never unlinked or renamed.
+  if (own !== undefined && (op === "unlink" || op === "rename") && under(own, realPath)) return false;
+  // 3. Inside it (strictly), reading and writing pass after the denies.
+  if (own !== undefined && under(realPath, own, true)) return true;
+  // 2. The denies, the memory glob included.
+  if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
+  if (policy.denyWrite.some((d) => under(realPath, d))) return false;
+  return policy.allowWrite.some((a) => under(realPath, a));
 }
 
 /** A path's segments with `.` and `..` resolved (the fence judges canonical paths; this keeps a pattern rule from
@@ -177,7 +216,7 @@ export function patternItemAt(path: string, cloverHome: string, os?: Os):
 /** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
 export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
   if (ctx?.user) return true;
-  return ctx?.memoryOf !== undefined && foldName(ctx.memoryOf.replace("/", "--"), os) === foldName(folder, os);
+  return ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && foldName(ctx.memoryOf.replace("/", "--"), os) === foldName(folder, os);
 }
 
 /** Whether a caller reaches a `caller` item. */
