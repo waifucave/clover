@@ -159,6 +159,33 @@ describe("voters and the quorum (lane I's proposal)", () => {
     expect((refused as { code?: string }).code).toBe("no_quorum");
   }, 40_000);
 
+  test("against a service without recovery yet (v1), a removal is this computer's alone", async () => {
+    const store = new MemorySecretStore();
+    const { DeviceKey } = await import("../../identity/device-key");
+    const { FileDeviceRegistry } = await import("../../devices/registry");
+    const { generateEd25519 } = await import("../../identity/keys");
+    const { GroupKeeper } = await import("../group");
+    const key = await DeviceKey.loadOrCreate(store);
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-group-v1-")), key, clock, self: { name: "Studio" } });
+    const own = generateEd25519();
+    registry.setGroup({ id: "g1", joinedAt: Date.now(), ownKey: toBase64Url(own.publicKey), members: {} });
+    await store.set(groupKeyRef("g1"), own.seed(), { synced: false });
+    const removed: unknown[][] = [];
+    const handshake = {
+      now: () => Date.now(),
+      readGroup: async () => ({ group: "g1", members: [{ key: toBase64Url(own.publicKey), joinedAt: 1 }, { key: "target", joinedAt: 2 }], lease: { holder: null, epoch: 0, expiresAt: null } }),
+      removeGroupMember: async (...args: unknown[]) => void removed.push(args),
+    } as unknown as HandshakeClient;
+    const keeper = new GroupKeeper({
+      registry, store, handshake, clock, signedIn: () => false,
+      transport: { connect: async () => { throw new Error("no links"); }, handle: () => () => undefined, links: () => [], watch: () => () => undefined },
+    });
+    stops.push(() => keeper.close());
+    await keeper.removeMember("g1", "target");
+    expect(removed).toHaveLength(1);
+    expect(removed[0]!.slice(0, 1).concat(removed[0]!.slice(2))).toEqual(["g1", "target"]);
+  });
+
   test("who counts: voters now, not the target, not the keys it admitted in the last 7 days", () => {
     const now = Date.now();
     const m = (key: string, votesFrom: number | null, admittedBy: string[] = [], joinedAt = now - 1000) => ({ key, joinedAt, votesFrom, admittedBy });

@@ -145,6 +145,8 @@ export class GroupKeeper {
     const read = await this.#o.handshake.readGroup(group, key);
     const target = read.members.find((m) => m.key === member);
     if (!target) return;
+    // A service without group recovery yet (v1: no member shows `votesFrom`) takes any member's removal alone.
+    if (read.members.every((m) => m.votesFrom === undefined)) return this.#o.handshake.removeGroupMember(group, key, member);
     const now = this.#o.handshake.now();
     const eligible = eligibleVoters(read.members, member, now);
     const need = quorumOf(eligible.length);
