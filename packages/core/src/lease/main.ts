@@ -11,6 +11,7 @@ import { machineClocks, watchSleep } from "./boot-clock";
 import { LeaseCoordinator, type LeaseCoordinatorOptions } from "./coordinator";
 import { MainLease, type MainLeaseOptions } from "./lease";
 import { MainChoice } from "./main-choice";
+import { osPowerKeeper, type PowerKeeper } from "./power";
 import type { LeaseScope } from "./scope";
 
 export interface MainComputerOptions {
@@ -26,6 +27,8 @@ export interface MainComputerOptions {
   /** Whether the core watches for wakes itself (the boot clock against the awake clock); on by default. */
   watchSleep?: boolean;
   userActive?: () => boolean;
+  /** What keeps the machine awake while work runs; the OS's by default. */
+  power?: PowerKeeper;
   log?: (line: string) => void;
   timings?: Pick<MainLeaseOptions, "ttlMs" | "marginMs" | "ttlSec"> &
     Pick<LeaseCoordinatorOptions, "renewEveryMs" | "readEveryMs" | "takeoverDelayMs" | "nudgeWaitMs" | "reachTimeoutMs" | "retryMs">;
@@ -37,6 +40,8 @@ export interface MainComputerHandle {
   coordinator: LeaseCoordinator;
   /** A device's tree name (`DeviceRecord.computer`), for lane D's `LeaseMainComputer.computerOf`. */
   computerOf(device: string): string | undefined;
+  /** Holds the machine awake while a turn, an agent or a routine runs (lanes D and K call `hold`, §6.4 "Sleep"). */
+  power: PowerKeeper;
   /** Lane D's `BotService.handBack`, once the bot service exists. */
   setHandBack(fn: (() => Promise<void>) | undefined): void;
   /** The scope changed (signed in or out, a group made or merged). */
@@ -75,7 +80,7 @@ export function startMainComputer(o: MainComputerOptions): MainComputerHandle {
   coordinator.start();
   const c = coordinator;
   return {
-    lease, choice, coordinator: c,
+    lease, choice, coordinator: c, power: o.power ?? osPowerKeeper(o.log ? { log: o.log } : {}),
     computerOf: (device) => {
       const d = o.registry.get(device);
       return d && d.revokedAt === undefined ? d.computer : undefined;
