@@ -235,8 +235,16 @@
   justify-content: flex-end;
 }
 
+.clp-menu-box:empty {
+  display: none;
+}
+
 .clp-menu {
   min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 6px;
   box-sizing: border-box;
   border-radius: 14px;
