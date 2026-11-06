@@ -3,4 +3,4 @@
 // `packages/cli/src/embedded-worker.ts` (a second `compile:core` entrypoint, reached by a plain
 // relative path). Both are this one import: the Worker side of the bridge lives in the SDK, beside the
 // engine it runs, and evaluating it is what gives each session its own realm.
-import "@yanlinglabs/winter-agent-runtime/embedded-worker";
+import "@waifucave/clover-agent-runtime/embedded-worker";

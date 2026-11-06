@@ -6,8 +6,8 @@
 // that session (`daemon.buildSessionCapabilities`) — no test double scripts a `session_spawn` call, and
 // the server is exactly what the runtime child calls. Every model is a `winter-test/<double>`.
 //
-//   (A) no `winter` binary: the spawn is refused TYPED (`winter_executable_unavailable`, from the same
-//       creation transaction `session.create` runs) and leaves no child row
+//   (A) no `winter` binary: since A-M1 a code child runs EMBEDDED (spec §3.3), so the spawn succeeds
+//       and the child runs its turn in a Worker of the daemon; a pre-flight refusal still creates nothing
 //   (B) the real `winter` binary (CLOVER_RUNTIME_EXECUTABLE, or the installed platform package):
 //       (1) an echo child is created linked to the coordinator, announced to every harness, runs its
 //           turn, reports `completed` with its result, and WAKES the coordinator with a <child_update>
@@ -23,12 +23,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { guardHeadlessNotifications, type NotificationGuard } from "../helpers/headless-notifications";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -170,14 +170,18 @@ describe("(A) session_spawn with no winter binary", () => {
   beforeAll(async () => { await h.boot(); });
   afterAll(async () => { await h.stop(); });
 
-  test("is refused typed by the creation transaction and leaves no child row", async () => {
+  test("A-M1: the code child runs embedded — no binary is needed, so the spawn is not refused", async () => {
+    // Until A-M1 this was refused typed (`winter_executable_unavailable`) and left no child row: a
+    // code child spawned the binary. Now it runs in a Worker of the daemon like the coordinator.
     const res = await h.spawn({ dir: h.work, prompt: "do it", model: "winter-test/echo" });
-    expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toContain("could not start the child session");
-    expect(res.content[0]!.text).toContain("winter_executable_unavailable");
-    expect(h.daemon!.sessions.childrenOf(h.dispatchId)).toEqual([]);
-    expect(h.updates()).toEqual([]);
-  });
+    expect(res.isError).toBe(false);
+    const child = /spawned session (s_[0-9a-f]+)/.exec(res.content[0]!.text)?.[1];
+    expect(child).toBeDefined();
+    expect(h.daemon!.sessions.meta(child!)).toMatchObject({ mode: "code", origin: "dispatch-child", parentSessionId: h.dispatchId });
+    const done = await until(() => h.updates().find((u) => u.childSessionId === child && u.status === "completed"), 30_000, "the embedded child's completed update");
+    expect(done.resultSummary ?? "").toStartWith("echo:");
+    await awaitCoordinatorWoken(h, [child!]);
+  }, 90_000);
 
   test("a pre-flight refusal comes back as a tool error before anything is created", async () => {
     const res = await h.spawn({ dir: "relative/path", prompt: "x" });
@@ -186,11 +190,11 @@ describe("(A) session_spawn with no winter binary", () => {
   });
 });
 
-describeWithWinterBinary("(B) session_spawn on the real winter binary", (bin) => {
+describeWithEmbeddedRuntime("(B) session_spawn on the real winter binary", () => {
   const h = harnessFor(() => ({
     schemaVersion: 3,
     provider: { model: "winter-test/echo" },
-    runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 },
+    runtimes: { winterIdleTimeoutSec: 10 },
   }));
   beforeAll(async () => { await h.boot(); });
   afterAll(async () => { await h.stop(); });

@@ -5,9 +5,9 @@ import { env } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
-import { decodeRequestRecord, openEnvelope, readEnvelopeHeader } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { decodeWebhookFrame, PING, PONG } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { b64u, fromUtf8 } from "../../../plugins/clover/plugins/forwarder/src/wire/bytes";
+import { decodeRequestRecord, openEnvelope, readEnvelopeHeader } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
+import { decodeWebhookFrame, PING, PONG } from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 import type { ForwarderDO } from "../src/forwarder-do";
 import { objectOf, openSocket, postHook, registerComputer, registeredRoutine, uniqueAccount } from "./helpers";
 

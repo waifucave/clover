@@ -12,7 +12,7 @@ const isDir = (rel: string): boolean => existsSync(join(ROOT, rel)) && statSync(
 const dirsIn = (rel: string): string[] => (isDir(rel) ? readdirSync(join(ROOT, rel)).filter((d) => !d.startsWith(".") && d !== "node_modules" && isDir(`${rel}/${d}`)).sort() : []);
 
 /** The globs the layout needs, in the root package.json and pnpm-workspace.yaml alike. */
-const REQUIRED_GLOBS = ["packages/*", "apps/*", "plugins/*", "plugins/*/*", "services/*", "native/*"];
+const REQUIRED_GLOBS = ["packages/*", "apps/*", "plugins/*", "plugins/*/*", "plugins/*/plugins/*", "services/*", "native/*"];
 
 /** The name a package in `dir` must have, or undefined where the layout leaves the name alone (spikes, examples). */
 export function expectedPackageName(dir: string): string | undefined {
@@ -23,7 +23,10 @@ export function expectedPackageName(dir: string): string | undefined {
   if (area === "services" && parts.length === 2) return `@waifucave/clover-service-${a}`;
   if (area === "native" && parts.length === 2) return `@waifucave/clover-native-${a}`;
   if (area === "plugins" && parts.length === 2) return `@waifucave/clover-plugin-${a}`;
-  if (area === "plugins" && parts.length === 3) return a === "clover" ? `@waifucave/clover-plugin-${b}` : `@waifucave/clover-plugin-${a}-${b}`;
+  // A child lives in its parent's plugins/ folder, as installed (spec §5.1): plugins/<plugin>/plugins/<child>. A package
+  // in one of a plugin's own folders (Alpha's tab look) is named for the plugin and the folder.
+  if (area === "plugins" && parts.length === 4 && b === "plugins") return a === "clover" ? `@waifucave/clover-plugin-${parts[3]}` : `@waifucave/clover-plugin-${a}-${parts[3]}`;
+  if (area === "plugins" && parts.length === 3 && b !== "plugins") return a === "clover" ? `@waifucave/clover-plugin-${b}` : `@waifucave/clover-plugin-${a}-${b}`;
   return undefined;
 }
 
@@ -40,9 +43,7 @@ const governed = (p: WorkspacePackage): boolean => expectedPackageName(p.dir) !=
 
 /** Top-level plugin folders whose clover.json an open pull request adds. Until it lands such a folder may have none;
  *  once it does, the manifest is checked like any other, and the entry can go. */
-export const MANIFEST_AWAITS: Readonly<Record<string, string>> = {
-  alpha: "lane D's D-M1 (#161) adds plugins/alpha/clover.json",
-};
+export const MANIFEST_AWAITS: Readonly<Record<string, string>> = {};
 
 /** The one folder under services/ that is not a Worker: the source the Workers share (each Worker's tsconfig includes it). */
 const SERVICES_SHARED = "shared";
@@ -101,9 +102,13 @@ describe("the repo layout (docs/clover-layout.md)", () => {
         problems.push(`plugins/${top}: no clover.json`);
         continue;
       }
-      for (const child of dirsIn(`plugins/${top}`)) {
-        const childFile = `plugins/${top}/${child}/clover.json`;
-        if (!existsSync(join(ROOT, childFile))) continue; // a folder of the plugin's own (assets, code), not a child
+      for (const own of dirsIn(`plugins/${top}`)) {
+        // A child sits in plugins/<top>/plugins/, never beside the plugin's own folders (assets, code, Alpha's tab).
+        if (own !== "plugins" && existsSync(join(ROOT, "plugins", top, own, "clover.json"))) problems.push(`plugins/${top}/${own}: a child plugin goes in plugins/${top}/plugins/${own}`);
+      }
+      for (const child of dirsIn(`plugins/${top}/plugins`)) {
+        const childFile = `plugins/${top}/plugins/${child}/clover.json`;
+        if (!existsSync(join(ROOT, childFile))) { problems.push(`plugins/${top}/plugins/${child}: no clover.json (only children go in plugins/)`); continue; }
         const c = Bun.JSONC.parse(read(childFile)) as { manifest?: unknown; id?: unknown; name?: unknown };
         if (c.manifest !== 1) problems.push(`${childFile}: manifest is not 1`);
         if (c.id !== undefined) problems.push(`${childFile}: a child has no id (it takes its parent's)`);
@@ -142,8 +147,10 @@ describe("the repo layout (docs/clover-layout.md)", () => {
   test("the conventions' names follow the folders", () => {
     expect(expectedPackageName("packages/core")).toBe("@waifucave/clover-core");
     expect(expectedPackageName("apps/desktop")).toBe("@waifucave/clover-desktop");
-    expect(expectedPackageName("plugins/clover/shell")).toBe("@waifucave/clover-plugin-shell");
+    expect(expectedPackageName("plugins/clover/plugins/shell")).toBe("@waifucave/clover-plugin-shell");
     expect(expectedPackageName("plugins/alpha/tab")).toBe("@waifucave/clover-plugin-alpha-tab");
+    expect(expectedPackageName("plugins/alpha/plugins/x")).toBe("@waifucave/clover-plugin-alpha-x");
+    expect(expectedPackageName("plugins/clover/plugins")).toBeUndefined();
     expect(expectedPackageName("plugins/alpha")).toBe("@waifucave/clover-plugin-alpha");
     expect(expectedPackageName("services/forwarder")).toBe("@waifucave/clover-service-forwarder");
     expect(expectedPackageName("native/mounts")).toBe("@waifucave/clover-native-mounts");

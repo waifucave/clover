@@ -5,7 +5,7 @@ import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 
 import { verifyAccountToken } from "../../shared/account-token";
-import { CLOSE_REAUTH } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { CLOSE_REAUTH } from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 import type { ForwarderDO } from "../src/forwarder-do";
 import { accountObject, accountTag, mintTicket, readTag, readTicket, tagKeysFrom } from "../src/identity";
 import {

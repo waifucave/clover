@@ -1,6 +1,7 @@
 // Fix wave, item 10 — THE BOUNDED PROBE (whole-branch review F6), now a PINNED MEASUREMENT: does a `{ type: "image" }` block
 // in a capability server's `callTool` result reach the child, and does the child forward it toward
-// the model? Measured on the BUILT binary through the driver table (no daemon): an `sdk` server
+// the model? Measured through the driver table (no daemon) — on the built binary until A-M1, on the
+// embedded runtime (a Worker of this process) since: an `sdk` server
 // named `t8mcpsdk` (the name the `mcpsdk` double calls — `mcp__t8mcpsdk__echo`) answers with a text
 // block AND an image block. Two observations:
 //   (1) the persisted `tool_result.output` — the projector renders a non-text block in the child's
@@ -19,17 +20,18 @@ import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { createWinterRuntimeSdk } from "../../src/runtime-sdk/create";
+import { createEmbeddedSessionHost, EMBEDDED_SHUTDOWN_BUDGET_MS } from "../../src/runtime-sdk/embedded";
 import { createCloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 import { openRuntimeStateDb, ProjectionCheckpoints, RuntimeSessionRecords } from "../../src/runtime-state";
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
 import type { Settings } from "../../src/settings";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { recordedRunHomes } from "../helpers/run-homes";
 
 const TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
-describeWithWinterBinary("item 10 probe: MCP image content through a capability server, on the built binary", (bin) => {
+describeWithEmbeddedRuntime("item 10 probe: MCP image content through a capability server, on the built binary", () => {
   const cleanups: Array<() => Promise<void> | void> = [];
   afterAll(async () => { for (const c of cleanups.reverse()) await c(); });
 
@@ -41,13 +43,16 @@ describeWithWinterBinary("item 10 probe: MCP image content through a capability 
     const rs = openRuntimeStateDb(home);
     const records = new RuntimeSessionRecords(rs);
     const checkpoints = new ProjectionCheckpoints(rs);
-    const settings = { runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 } } as unknown as Settings;
+    const settings = { runtimes: { winterIdleTimeoutSec: 10 } } as unknown as Settings;
     const secrets = new FileSecretStore(join(home, "secrets.json"));
     // R.1: the production shape — a run-home router (`runHomeFor` → `requireRunHome`) and real run homes, so the
     // child writes its transcript where the record says (`sdk/projects`).
     const runHomes = recordedRunHomes(home);
+    // A-M1: a code session runs EMBEDDED (spec §3.3), in a Worker of this process, so the handle needs
+    // the embedded host the daemon builds; the binary configured above is no longer what runs it.
+    const embedded = createEmbeddedSessionHost({ home, log: () => {} });
     const runtime = await createWinterRuntimeSdk({
-      home, settings: () => settings, secrets, capabilities: [],
+      home, settings: () => settings, secrets, embedded,
       runHomeFor: async (ctx) => runHomes.deps.build(runHomes.deps.inputFor({ mode: ctx.mode, dispatchChild: false, leg: ctx.leg, cwd: ctx.cwd })),
     });
     const calls: Array<{ name: string; args: unknown }> = [];
@@ -83,6 +88,7 @@ describeWithWinterBinary("item 10 probe: MCP image content through a capability 
       drivers.beginShutdown?.();
       await drivers.endAll();
       await runtime.dispose();
+      await embedded.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS);
       store.close(); rs.close();
       rmSync(home, { recursive: true, force: true }); rmSync(cwd, { recursive: true, force: true });
     });

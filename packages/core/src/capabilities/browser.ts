@@ -24,7 +24,7 @@
 // `panel_tab_activated`) and `dispatch` is `panelCommands.dispatch` (→ `panel_command`). The
 // capability neither emits nor re-emits anything itself; `test/capabilities/panel-emission-parity.test.ts`
 // compares the two doors' event sequences against one recording hub.
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { browserToolDefs, type BrowserToolDeps } from "../agent/tools/browser";
 import { capabilityServer, type CapabilitySession } from "./server";
 

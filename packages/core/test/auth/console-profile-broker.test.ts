@@ -686,7 +686,7 @@ describe("UNAVAILABLE_SDK — explicit defensive fallback (no longer the default
   });
 });
 
-describe("REAL_SDK — the default now that @yanlinglabs/winter-provider-runtime v0.0.6 is installed", () => {
+describe("REAL_SDK — the default now that @waifucave/clover-provider-runtime v0.0.6 is installed", () => {
   test("createConsoleProfileBroker's default sdk is REAL_SDK, not UNAVAILABLE_SDK — profileExists() no longer answers the inert default for a real (if nonexistent) config dir", () => {
     const home = freshHome();
     const broker = createConsoleProfileBroker({ home, secrets: new FileSecretStore(join(home, "secrets")) });

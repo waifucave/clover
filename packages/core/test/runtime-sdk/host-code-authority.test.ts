@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   WINTER_BRAND,
   type PermissionResult,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import {
   CanonicalHostCodeAuthority,
   type CanonicalHostCodePolicy,

@@ -11,12 +11,12 @@ import {
   serializeRuntimeAddress,
   delivered,
   queued,
-} from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { Query, SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
-import * as clover from "@yanlinglabs/winter-agent-sdk";
-import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk } from "@yanlinglabs/winter-runtime-sdk";
-import type { RuntimeDirectoryStore, RuntimeSdk, SerializedRuntimeAddress } from "@yanlinglabs/winter-runtime-sdk";
+} from "@waifucave/clover-agent-sdk/messaging";
+import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
+import type { Query, SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
+import * as clover from "@waifucave/clover-agent-sdk";
+import { createInMemoryRuntimeDirectoryStore, createRuntimeSdkHost } from "../../src/runtime-sdk/host";
+import type { RuntimeDirectoryStore, RuntimeSdkHost, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { attachWinterSession, parkRecoveredSessions, releaseAllHeld, renderAttributedTurn } from "../../src/runtime-sdk/messaging";
 import type { WinterRuntimeSdk } from "../../src/runtime-sdk/create";
@@ -94,23 +94,21 @@ function harness(
   declaredClass?: PermissionClassLabel,
 ): {
   runtime: WinterRuntimeSdk;
-  sdk: RuntimeSdk;
+  sdk: RuntimeSdkHost;
   store: RuntimeDirectoryStore;
   /** Every `clover.query(...)` the router attempted. Must stay empty in every test here. */
   spawned: unknown[];
 } {
   const spawned: unknown[] = [];
-  const sdk = createRuntimeSdk({
+  const sdk = createRuntimeSdkHost({
     // ⚠️ THE SPAWN SPY IS THE POINT OF THIS HARNESS, not decoration (fix round 1, F2/F3). The
-    // router's `coldResume` calls `peers.winter.query({ options: { resume: <backendSessionId> } })`
-    // — a whole second `winter` process opened from inside a delivery, untracked by `trackQuery`,
+    // messaging router's `coldResume` calls `sdk.query({ options: { resume: <backendSessionId> } })`
+    // — a whole second session opened from inside a delivery, untracked by `trackQuery`,
     // unbudgeted in `dispose()`. Every test that says "never cold-resumes" asserts against THIS.
-    peers: { winter: { ...clover, query: ((args: unknown) => { spawned.push(args); throw new Error("a cold resume was attempted"); }) as typeof clover.query } },
-    peerVersions: CLOVER_PEER_VERSIONS,
-    keychain: { read: async () => undefined },
+    sdk: { ...clover, query: ((args: unknown) => { spawned.push(args); throw new Error("a cold resume was attempted"); }) as typeof clover.query },
     brand: CORE_BRAND,
     directoryStore: store,
-    handoff: { winterHome: "/tmp/clover-messaging-test" },
+    home: "/tmp/clover-messaging-test",
     messaging: declaredClass === undefined ? {} : { messaging: { winter: { permissionClass: () => declaredClass } } },
   });
   const runtime = { sdk } as unknown as WinterRuntimeSdk;

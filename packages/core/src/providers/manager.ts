@@ -152,7 +152,7 @@ export async function createProvider(
   const quota = existingQuota ?? new QuotaManager();
   let inner: Provider;
   if (providerId === "codex-oauth") {
-    // P8c lane 5: onto the `@yanlinglabs/winter-provider-runtime` codex-oauth adapter — credential
+    // P8c lane 5: onto the `@waifucave/clover-provider-runtime` codex-oauth adapter — credential
     // resolution (and, on a 401, refresh write-back) goes through `credential-store.ts`'s
     // `CredentialStore`, which reads/writes the SAME `codex-oauth:default` material record the
     // spawned Clover child does (`runtime-provider.ts`'s own header). No eager credential check

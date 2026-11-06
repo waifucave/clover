@@ -50,16 +50,16 @@ import {
   queued,
   refused,
   serializeRuntimeAddress,
-} from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel, RuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { Query, SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk/messaging";
+import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel, RuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { Query, SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
 import type {
   AttachedWinterSession,
   RuntimeDirectoryEntry,
   RuntimeDirectoryStore,
-  RuntimeSdk,
   SerializedRuntimeAddress,
-} from "@yanlinglabs/winter-runtime-sdk";
+  RuntimeSdkHost,
+} from "./host";
 import type { WinterRuntimeSdk } from "./create";
 import { CLOVER_PEER_VERSIONS } from "./versions";
 import { UNSTATED_TAG } from "./model-tag";
@@ -377,7 +377,7 @@ export function attachWinterSession(runtime: WinterRuntimeSdk, session: CloverSe
  * a settings diff that has nothing to do about it.
  */
 export async function releaseAllHeld(
-  sdk: Pick<RuntimeSdk, "messaging">,
+  sdk: Pick<RuntimeSdkHost, "messaging">,
   store?: Pick<RuntimeDirectoryStore, "mailboxes">,
   log?: (line: string) => void,
 ): Promise<DeliveryOutcome[]> {

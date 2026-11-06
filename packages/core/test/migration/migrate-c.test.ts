@@ -6,7 +6,7 @@ import { authorityFixtureSessions } from "../cowork/committed-sessions";
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { SessionStore } from "../../src/sessions/store";
 import { tmpdir } from "node:os";
 import { join, relative as relativeTo } from "node:path";

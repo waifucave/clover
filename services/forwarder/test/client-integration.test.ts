@@ -1,4 +1,4 @@
-// The forwarder plugin's own client (plugins/clover/forwarder/src/client.ts) against the real Worker and
+// The forwarder plugin's own client (plugins/clover/plugins/forwarder/src/client.ts) against the real Worker and
 // Durable Object, inside workerd: registration, its socket, delivery, acknowledgement, holding while it is
 // stopped, keep-alives answered by the auto-response, and delivery across an eviction.
 
@@ -6,9 +6,9 @@ import { env, exports } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { ForwarderClient, type Delivery, type WebSocketLike } from "../../../plugins/clover/forwarder/src/client";
-import { memoryKeys, type ForwarderKeys } from "../../../plugins/clover/forwarder/src/keys";
-import { fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
+import { ForwarderClient, type Delivery, type WebSocketLike } from "../../../plugins/clover/plugins/forwarder/src/client";
+import { memoryKeys, type ForwarderKeys } from "../../../plugins/clover/plugins/forwarder/src/keys";
+import { fromUtf8 } from "../../../plugins/clover/plugins/forwarder/src/wire/bytes";
 import type { ForwarderDO } from "../src/forwarder-do";
 import { accountToken, objectOf, ORIGIN, postHook, routineKey, uniqueAccount } from "./helpers";
 
