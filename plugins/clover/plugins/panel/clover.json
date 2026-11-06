@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Panel",
-  "description": "The right-hand panel: its toggles, the views it holds two at a time (only those that belong in the tab: a code session's or a bot's), and the column beside the conversation.",
+  "description": "The column beside the conversation: a coding session's (its agents, where it runs, context, connectors, outputs and changes) and a bot's slim one (its agents and tasks, context and outputs).",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -12,15 +12,28 @@
     ]
   },
   "capabilities": [
+    "conversation.read",
     "computers.read"
   ],
   "contributes": {
     "ui": [
       {
         "spot": "panel",
+        "id": "session-column",
         "key": "session",
         "title": "Session",
-        "component": "SessionView"
+        "component": "SessionColumn",
+        "when": {
+          "session": [
+            "coding",
+            "agent"
+          ]
+        }
+      },
+      {
+        "spot": "bot.side",
+        "id": "bot-column",
+        "component": "BotColumn"
       }
     ]
   }

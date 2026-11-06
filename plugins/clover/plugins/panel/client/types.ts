@@ -1,55 +1,7 @@
 // The panel's props contract: plain data and callbacks the host routes back (spec §5.5).
-import type { ReactNode } from "react";
 
-/** The tab the panel belongs to. A code session works in a folder on one computer, so it has every panel:
- *  its column, the terminal, the changes, the files and the browser. A bot's tab has a slim column (its
- *  agents and tasks, context and outputs) and the browser, and nothing that works on a folder. */
-export type SessionKind = "code" | "bot";
-
-/** The panels the default plugins are (each fills `panel`, keyed by these). A third-party plugin may
- *  fill any of them instead, or add its own key. */
-export type PanelViewId = "session" | "terminal" | "diff" | "browser" | "files";
-
-export interface PanelTogglesProps {
-  /** The tab's kind: it decides which views are offered at all. */
-  kind: SessionKind;
-  /** The views open now. */
-  open: readonly string[];
-  onToggle: (id: string) => void;
-  /** The ⋯ menu: more views, and the panel's own settings. */
-  onMore?: () => void;
-  /** The views offered, of those the kind has; every one the kind has when absent. */
-  available?: readonly PanelViewId[];
-}
-
-/** One view the panel holds: a header (a title, or the view's own header such as a browser's tabs),
- *  its actions, and its content. */
-export interface PanelView {
-  id: string;
-  title: string;
-  /** The view's own header, in place of the title. */
-  header?: ReactNode;
-  /** Buttons at the header's end, before expand and close. */
-  actions?: ReactNode;
-  /** What the plugin keyed for this panel draws. Absent: no installed plugin fills the key, and the host
-   *  says so in its place. */
-  content?: ReactNode;
-  /** The tab kinds the view belongs in: its plugin's manifest says so, once lane B's catalog has the field
-   *  (`sessions`). Absent: any. The terminal, the changes and the files are code-only whatever it says. */
-  sessions?: readonly SessionKind[];
-}
-
-export interface PanelHostProps {
-  /** The tab's kind: a view that doesn't belong in it is never drawn. */
-  kind: SessionKind;
-  /** The open views, at most two, top to bottom. */
-  views: readonly PanelView[];
-  onClose: (id: string) => void;
-  /** Make one view fill the panel. */
-  onExpand?: (id: string) => void;
-  /** Look for a plugin that fills an empty panel (the plugin manager). */
-  onFindPlugin?: (id: string) => void;
-}
+/** The kind of session (lane B's `SessionKind`): the column is a coding session's in full, a bot's slim. */
+export type SessionKind = "bot" | "side-thread" | "agent" | "coding";
 
 export type SessionAgentStatus = "running" | "needs-you" | "completed" | "failed" | "stopped" | "stalled";
 
@@ -57,7 +9,8 @@ export type SessionAgentStatus = "running" | "needs-you" | "completed" | "failed
  *  tab, the slim column: the bot's agents and tasks, its context and its outputs, and nothing about a
  *  folder. Each part is optional. */
 export interface SessionViewProps {
-  /** The tab's kind; a code session's when absent. A bot's tab draws only the agents, context and outputs. */
+  /** The session's kind; a coding session's when absent. A bot's tab (and a side thread) draws only the agents,
+   *  context and outputs. */
   kind?: SessionKind;
   /** Its agents and tasks: the coding agents (ACP) it runs, and its background tasks. */
   agents?: { id: string; title: string; backend: string; status: SessionAgentStatus }[];

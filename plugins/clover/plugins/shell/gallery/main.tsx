@@ -1,5 +1,9 @@
 // The lane F gallery: every part in every state, in one page. `?story=<id>` shows one story;
 // `?theme=dark` starts dark. CI renders each story's frame to PNG in both themes (shoot.mjs).
+//
+// The whole-window screens run the default shell on the stand-in runtime over a pretend world (world.tsx), whose
+// fixtures sit on November 5, 2026: the page pins the clock there, so every render reads the same, and it says it
+// is ready only once the worlds' calls have all come back.
 import "../../conversation/client/styles.css";
 import "../../conversation/gallery/mock-runtime.css";
 import "../../conversation/gallery/stories.css";
@@ -13,9 +17,14 @@ import "../../panel-diff/client/styles.css";
 import "../../panel-diff/gallery/stories.css";
 import "../../panel-files/client/styles.css";
 import "../../settings/client/styles.css";
+import "../../bot-editor/client/styles.css";
+import "../../plugin-index/client/styles.css";
+import "../../archive/client/styles.css";
+import "../../archive/gallery/stories.css";
 import "../../sidebar/client/styles.css";
 import "../../sidebar/gallery/stories.css";
 import "../client/styles.css";
+import "./stories.css";
 import "./theme.css";
 import "./page.css";
 import { Component, useEffect, useState, type ReactNode } from "react";
@@ -27,9 +36,17 @@ import { filesStories } from "../../panel-files/gallery/stories";
 import { terminalStories } from "../../panel-terminal/gallery/stories";
 import { panelStories } from "../../panel/gallery/stories";
 import { settingsStories } from "../../settings/gallery/stories";
+import { botEditorStories } from "../../bot-editor/gallery/stories";
+import { pluginIndexStories } from "../../plugin-index/gallery/stories";
+import { archiveStories } from "../../archive/gallery/stories";
 import { stories as sidebarStories } from "../../sidebar/gallery/stories";
 import { screenStories } from "./screens";
+import { shellStories } from "./stories";
 import type { Story } from "./story";
+import { NOW, whenIdle } from "./world";
+
+// The fixtures' clock (see above).
+Date.now = () => NOW;
 
 export const GROUPS: { title: string; stories: Story[] }[] = [
   { title: "Whole window", stories: screenStories },
@@ -41,6 +58,10 @@ export const GROUPS: { title: string; stories: Story[] }[] = [
   { title: "Changes", stories: diffStories },
   { title: "Files", stories: filesStories },
   { title: "Settings", stories: settingsStories },
+  { title: "Bot editor", stories: botEditorStories },
+  { title: "Plugin index", stories: pluginIndexStories },
+  { title: "Archive", stories: archiveStories },
+  { title: "The shell's own parts", stories: shellStories },
 ];
 
 /** Keeps one broken story from taking the page down, and marks it for the screenshot run. */
@@ -90,13 +111,19 @@ function Gallery() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
-  useEffect(() => setReady(true), []);
+  useEffect(() => {
+    let live = true;
+    void whenIdle().then(() => live && setReady(true));
+    return () => {
+      live = false;
+    };
+  }, []);
   const groups = GROUPS.map((g) => ({ ...g, stories: g.stories.filter((s) => !only || s.id === only) })).filter((g) => g.stories.length > 0);
   return (
     <main className="g-page" data-gallery-ready={ready ? "" : undefined}>
       <header className="g-header">
         <h1>Clover: the window and its parts</h1>
-        <p>Lane F, M1. Plain React against mocked props, wearing the values measured from the reference app (lane G's base theme, lane B's token names).</p>
+        <p>Lane F, M2. The default shell on the runtime, every spot filled by the parts' own entries over a pretend core; each part alone against mocked props. Lane G's base theme, lane B's token names.</p>
         <span className="g-theme" role="group" aria-label="Theme">
           {(["light", "dark"] as const).map((t) => (
             <button key={t} type="button" aria-pressed={theme === t} onClick={() => setTheme(t)}>
