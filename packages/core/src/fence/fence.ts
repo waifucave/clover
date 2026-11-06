@@ -86,6 +86,9 @@ export class CloverFence implements Fence {
     return { set, back };
   }
 
+  /** The Clover home, canonical: a command's sandbox names where Clover names things from it. */
+  get cloverHome(): string { return this.#cloverHome; }
+
   #fold(path: string): string {
     // `judge` and `isInside` are POSIX: a Windows path is compared as `c:/users/...`, which they take as relative.
     return foldPath(path, this.os);

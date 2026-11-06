@@ -72,12 +72,18 @@ export function windowsHookShell(env: Readonly<Record<string, string | undefined
   return { shell: "cmd", argv: (command) => [cmd, "/d", "/s", "/c", `"${command}"`] };
 }
 
-async function runAsUser(r: FencedRun): Promise<FencedRunResult> {
+function runAsUser(r: FencedRun): Promise<FencedRunResult> {
+  const winShell = process.platform === "win32" ? windowsHookShell() : null;
+  return runCommand(r, winShell ? { shell: winShell.shell, argv: winShell.argv(r.command) } : { shell: "sh", argv: ["/bin/sh", "-c", r.command] });
+}
+
+/** Runs `how.argv` for `r` (a shell, or a sandbox wrapping one): stdin written and closed, both streams capped, its own
+ *  process group (POSIX) or job (Windows) ended at its limit and at its end, the shell's exit deciding. */
+export async function runCommand(r: FencedRun, how: { shell: RunShell; argv: readonly string[] }): Promise<FencedRunResult> {
   if (r.signal?.aborted) return { kind: "refused", reason: "cancelled before it started" };
   const win = process.platform === "win32";
-  const winShell = win ? windowsHookShell() : null;
-  const shell: RunShell = winShell?.shell ?? "sh";
-  const argv = winShell ? winShell.argv(r.command) : ["/bin/sh", "-c", r.command];
+  const { shell } = how;
+  const argv = [...how.argv];
   let proc: ReturnType<typeof Bun.spawn<"pipe", "pipe", "pipe">>;
   try {
     proc = Bun.spawn(argv, { cwd: r.cwd, env: { ...r.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: !win, windowsHide: true, ...(shell === "cmd" ? { windowsVerbatimArguments: true } : {}) });
