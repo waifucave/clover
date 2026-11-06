@@ -1325,7 +1325,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
