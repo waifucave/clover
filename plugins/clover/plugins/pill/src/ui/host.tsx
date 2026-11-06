@@ -4,13 +4,20 @@
 
 import { createContext, useContext, useMemo, useState, type ReactElement } from "react";
 import { chooseTarget, pillTargets, storageMemory, userSendTarget, type PillBot, type PillTargetEntry, type ResolvedTarget, type TargetMemory, type TargetRef, type UserSendTarget } from "../model/targets";
+import type { SurfaceEnvironment, SurfaceHostApi } from "@waifucave/clover-plugin-island";
 import { DispatchPill, type DispatchPillProps } from "./DispatchPill";
+import { PillSurface } from "./PillSurface";
 import { setTranslator, type Translator } from "../strings";
 
 /** What the pill shows about one target's turn: the running state, its cards, its agents (lane D's sessions). */
 export type TargetTurn = Omit<DispatchPillProps, "target" | "targets" | "onTarget" | "onSend">;
 
 export interface PillHost {
+  /** The display the pill sits on, and the OS and session (lane E's surface host, as for the island). Absent, the pill
+   *  draws without placing a window (the gallery's sketches). */
+  environment?: SurfaceEnvironment;
+  /** Opens, moves and sizes the pill's window, and passes clicks outside its regions through (lane E). */
+  window?: SurfaceHostApi;
   /** `bots.read`: every bot, in the order the user keeps them. */
   bots: readonly PillBot[];
   /** The `pill.target` entries the spot shows (a question for lane B: how a declaring component lists them). */
@@ -52,16 +59,16 @@ export function PillApp(_: PillEntryProps<{ surface: string }>): ReactElement | 
   if (!host) return null;
   const target: ResolvedTarget | null = chooseTarget(targets, picked);
   if (!target) return null;
-  return (
-    <DispatchPill
-      {...host.turn?.(target.ref)}
-      target={target}
-      targets={targets}
-      onTarget={(id) => {
-        memory.set(id);
-        setPicked(id);
-      }}
-      onSend={(text) => host.send(userSendTarget(target.ref), text)}
-    />
-  );
+  const shown = { ...host.turn?.(target.ref) };
+  const common = {
+    ...shown,
+    target,
+    targets,
+    onTarget: (id: string) => {
+      memory.set(id);
+      setPicked(id);
+    },
+    onSend: (text: string) => host.send(userSendTarget(target.ref), text),
+  };
+  return host.environment ? <PillSurface {...common} environment={host.environment} host={host.window} /> : <DispatchPill {...common} />;
 }
