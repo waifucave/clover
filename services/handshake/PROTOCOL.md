@@ -235,7 +235,7 @@ A pairing by short code (lane H, `links/pairing.ts`) needs a place where the joi
 
 | Request | Body / answer |
 | :- | :- |
-| `PUT /v1/rendezvous/<slot>` | `{"box", "ttl", "token"}` → 201 `{"slot","expiresAt"}`; 200 when the same token puts it again; 409 `taken` when another token holds it |
+| `PUT /v1/rendezvous/<slot>` | `{"box", "ttl", "token"}` → 201 `{"slot","expiresAt"}`; 200 with the same answer for a retry (the same token and box); 409 `taken` for anything else on a claimed slot |
 | `GET /v1/rendezvous/<slot>` | → 200 `{"box","expiresAt"}`, or 404 `not_found` when there is none or it has ended |
 | `DELETE /v1/rendezvous/<slot>` | `Authorization: Bearer <token>` → 204; 403 `forbidden` for another token; 404 when it's already gone |
 
@@ -243,7 +243,7 @@ A pairing by short code (lane H, `links/pairing.ts`) needs a place where the joi
 - **`box`:** the host's offer, sealed by the client (lane H seals it as a pair box under a key from the code's secret, with the slot as its scope). At most 4096 bytes decoded.
 - **`ttl`:** seconds, 1–600 (default 600). A pairing lasts 10 minutes.
 - **`token`:** 16–32 random bytes as base64url, chosen by the host. The service keeps only its SHA-256, and only the token removes the slot early.
-- **The slot holds one box.** The first token to take it holds it until it is removed or ends; a host that gets 409 picks a new code. The service keeps nothing about a slot after it ends.
+- **A slot is create-only.** Once claimed, its box never changes until the slot is removed or ends; not even its own token can replace it. So the box a joiner read is the one the host put, which lane H's pairing commits to. A retried `PUT` with the same token and box answers as the first did, ttl included. A host that gets 409 picks a new code. The service keeps nothing about a slot after it ends.
 - **The client:** `HandshakeRendezvous` (`client/rendezvous.ts`) has the `publish`, `lookup` and `remove` lane H's pairing asks for, and keeps each slot's token in memory.
 
 ## Boxes: the client-side encryption

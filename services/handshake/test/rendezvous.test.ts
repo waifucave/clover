@@ -42,6 +42,9 @@ describe("rendezvous", () => {
     const sealed = box(300);
     expect(await joiner.lookup(slot)).toBeUndefined();
     await host.publish(slot, sealed, 600);
+    // A retry (an answer lost on the way back) is the same PUT; another box isn't.
+    await host.publish(slot, sealed, 600);
+    expect(await host.publish(slot, box(300), 600).catch((e: unknown) => (e as HandshakeError).status)).toBe(409);
     expect(await joiner.lookup(slot)).toBe(sealed);
     // Only the publisher holds the token: the joiner's remove leaves the slot alone.
     await joiner.remove(slot);
@@ -53,7 +56,7 @@ describe("rendezvous", () => {
     await host.remove(slot);
   });
 
-  test("a slot is its first token's: another is refused as taken, the same one replaces the box", async () => {
+  test("a slot is create-only: its box never changes once claimed, and a retry of the same PUT is safe", async () => {
     const slot = newSlot();
     const token = newToken();
     const first = await call("PUT", slot, { body: { box: box(40), ttl: 300, token } });
@@ -66,9 +69,13 @@ describe("rendezvous", () => {
     expect(other.status).toBe(409);
     expect(await other.json()).toEqual({ error: "taken" });
 
-    const again = box(50);
-    expect((await call("PUT", slot, { body: { box: again, ttl: 600, token } })).status).toBe(200);
-    expect(await (await call("GET", slot)).json()).toMatchObject({ box: again });
+    const sealed = (await (await call("GET", slot)).json()) as { box: string };
+    // Not even the holder's token replaces the box, or moves the slot's end.
+    expect((await call("PUT", slot, { body: { box: box(50), ttl: 300, token } })).status).toBe(409);
+    expect((await call("PUT", slot, { body: { box: sealed.box, ttl: 600, token } })).status).toBe(200);
+    const retried = await call("PUT", slot, { body: { box: sealed.box, ttl: 300, token } });
+    expect([retried.status, await retried.json()]).toEqual([200, { slot, expiresAt }]);
+    expect(await (await call("GET", slot)).json()).toEqual({ box: sealed.box, expiresAt });
 
     // The client says so too, so the host can pick a new code.
     const err = await new HandshakeRendezvous(client()).publish(slot, box(10), 60).catch((e: unknown) => e);
@@ -152,8 +159,9 @@ describe("rendezvous", () => {
     const from = "203.0.113.77";
     const token = newToken();
     const slot = newSlot();
+    const sealed = box();
     const puts: number[] = [];
-    for (let i = 0; i < 3; i++) puts.push((await call("PUT", slot, { body: { box: box(), token }, address: from, via })).status);
+    for (let i = 0; i < 3; i++) puts.push((await call("PUT", slot, { body: { box: sealed, token }, address: from, via })).status);
     expect(puts).toEqual([201, 200, 429]);
     expect(register.count(from)).toBe(3);
     const reads: number[] = [];

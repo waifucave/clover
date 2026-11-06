@@ -1,6 +1,8 @@
 // One short pairing code's rendezvous slot (PROTOCOL.md, "Rendezvous"): the host's sealed box, the hash of the token
 // that removes it, and when it ends. The Worker has checked the slot, the box, the ttl and the rate limits; this
-// object only decides who holds the slot. It keeps nothing past the slot's end: an alarm clears it then.
+// object only decides who holds the slot. A slot is create-only: once claimed, its box never changes, so what a
+// joiner read is what the host put (lane H's pairing commits to it). It keeps nothing past the slot's end: an alarm
+// clears it then.
 
 import { DurableObject } from "cloudflare:workers";
 
@@ -25,14 +27,15 @@ export class RendezvousDO extends DurableObject<Env> {
     return slot;
   }
 
-  /** Takes the slot, or replaces its box for the holder of the same token (a retried PUT). */
+  /** Claims the slot. A retry of the same PUT (the same token and box) answers as the first did and changes nothing;
+   *  anything else on a claimed slot is refused. */
   async put(box: string, tokenHash: string, ttlSeconds: number, now: number): Promise<RendezvousReply> {
     const held = await this.live(now);
-    if (held && held.tokenHash !== tokenHash) return { status: 409 };
+    if (held) return held.tokenHash === tokenHash && held.box === box ? { status: 200, expiresAt: held.expiresAt } : { status: 409 };
     const expiresAt = now + ttlSeconds * 1000;
     await this.ctx.storage.put<Slot>("slot", { box, tokenHash, expiresAt });
     await this.ctx.storage.setAlarm(expiresAt);
-    return { status: held ? 200 : 201, expiresAt };
+    return { status: 201, expiresAt };
   }
 
   async get(now: number): Promise<{ box: string; expiresAt: number } | null> {
