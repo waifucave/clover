@@ -252,7 +252,7 @@ export class HandshakeDO extends DurableObject<Env> {
       case "group removeMember":
         return await this.removeCall(c, args, now);
       case "group lease":
-        if (args.op === "takeover" && (this.memberRow(c.member)?.votes_from ?? Infinity) > now) return fail(403, "not_voter");
+        if (this.leaseNeedsVote(c.member, args.op, now) && (this.memberRow(c.member)?.votes_from ?? Infinity) > now) return fail(403, "not_voter");
         return this.leaseCall(c.member, args, now);
       case "account lease":
         return this.leaseCall(c.member, args, now);
@@ -638,6 +638,20 @@ export class HandshakeDO extends DurableObject<Env> {
     return { holder: row.holder, epoch: row.epoch, expiresAt: row.expires };
   }
 
+  /**
+   * Whether a group lease call needs a member that votes now (PROTOCOL.md, "Group recovery"): a takeover, and any
+   * acquire that starts a new tenure (a lease never held, released, lapsed or freed) for anyone but its last holder.
+   * The founder votes from the start, so it takes the first lease alone; a key that doesn't vote yet never takes it.
+   */
+  private leaseNeedsVote(member: string, op: unknown, now: number): boolean {
+    if (op === "takeover") return true;
+    if (op !== "acquire") return false;
+    const row = this.leaseRow();
+    // Holding on, or refused as held anyway.
+    if (row.holder !== null && row.expires > now) return false;
+    return this.metaGet("lease_last") !== member;
+  }
+
   private leaseCall(member: string, args: Record<string, unknown>, now: number): Reply {
     const op = args.op as LeaseOp;
     const ttl = args.ttl as number;
@@ -664,6 +678,8 @@ export class HandshakeDO extends DurableObject<Env> {
     }
     if (!next) return fail(409, "held", { lease: this.leaseView() });
     this.sql.exec("UPDATE lease SET holder = ?, epoch = ?, expires = ? WHERE one = 1", next.holder, next.epoch, next.expires);
+    // Who held it last, kept past a release, a lapse or a removal: only that key takes it back without a vote.
+    if (next.holder !== null) this.metaSet("lease_last", next.holder);
     const lease = this.leaseView();
     // A renewal changes only the expiry: others learn of it when they read the lease, not by a push each time.
     if (op !== "renew") this.broadcast({ t: "lease", lease });
