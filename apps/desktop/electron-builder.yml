@@ -20,6 +20,9 @@ extraResources:
     filter:
       - clover-core
       - clover-core.exe
+      # The link sidecar ships beside the daemon (lane M's ask, E-M3): the daemon aims for it by name (§8.2).
+      - clover-link
+      - clover-link.exe
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false

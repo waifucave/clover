@@ -64,6 +64,11 @@ export function daemonTargetFor(arch: LinuxArch): DaemonTarget {
   return arch === "x64" ? "linux-x64" : "linux-arm64";
 }
 
+/** Cargo's directory name for a daemon target's link build (bun's own spelling differs). */
+export function archTargetDir(target: DaemonTarget): string {
+  return target === "linux-x64" ? "x86_64-unknown-linux-gnu" : "aarch64-unknown-linux-gnu";
+}
+
 /** Debian's and RPM's names for an architecture, as electron-builder writes them into file names. */
 export function packageArchNames(arch: LinuxArch): { deb: string; rpm: string; appImage: string } {
   return arch === "x64" ? { deb: "amd64", rpm: "x86_64", appImage: "x86_64" } : { deb: "arm64", rpm: "aarch64", appImage: "arm64" };
@@ -74,13 +79,16 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
   return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never"];
 }
 
-/** What a package must hold: the daemon and the AppArmor profile in the app's resources. */
-export const REQUIRED_FILES = ["/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover"] as const;
+/** What a package must hold: the daemon and the AppArmor profile in the app's resources, with the link sidecar
+ *  (lane M's ask, E-M3): the daemon starts `clover-link` for the links (§8.2), so it ships beside the daemon. */
+export const REQUIRED_FILES = [
+  "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
+] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
 
-/** The executables a package runs as root's files: the app and the daemon, `rwxr-xr-x root root`. */
-export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core"] as const;
+/** What the app's and the daemon's executables run as root's files (`rwxr-xr-x root root`). */
+export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link"] as const;
 
 export interface PackageEntry {
   mode: string;
@@ -173,10 +181,12 @@ export function main(argv: readonly string[], root: string): number {
   const desktop = join(root, "apps", "desktop");
   const staged = join(desktop, "out", "daemon");
   const outDir = join(desktop, "out", "dist");
-  // `stage`: this architecture's daemon goes where electron-builder.yml's extraResources reads it, just before packaging.
+  // `stage`: this architecture's daemon and its link sidecar go where electron-builder.yml's extraResources reads
+  // them, just before packaging (lane M's ask: `clover-link` ships beside the daemon; §8.2).
   const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [{ say: "the app", cmd: ["bun", "run", "build"], cwd: desktop }];
   for (const arch of args.arches) {
     steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch)], cwd: root });
+    steps.push({ say: `the link sidecar for linux-${arch}`, cmd: ["cargo", "build", "--release", "--locked", "--target", archTargetDir(daemonTargetFor(arch)), "--manifest-path", "native/link/Cargo.toml"], cwd: root });
     steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
@@ -190,6 +200,9 @@ export function main(argv: readonly string[], root: string): number {
       rmSync(staged, { recursive: true, force: true });
       mkdirSync(staged, { recursive: true });
       copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
+      // The link sidecar, beside the daemon (lane M's ask): the staged rust target's binary, made by the step above.
+      const linkOut = join(root, "native", "link", "target", archTargetDir(daemonTargetFor(s.stage)), "release", "clover-link");
+      copyFileSync(linkOut, join(staged, "clover-link"));
     }
     const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }

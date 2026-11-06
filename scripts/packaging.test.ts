@@ -145,8 +145,8 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     expect(profile).toContain("  userns,");
   });
 
-  test("the daemon goes in every package's resources, from where build-packages.ts stages it", () => {
-    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe"] }]);
+  test("the daemon and the link sidecar go in every package's resources, from where build-packages.ts stages them", () => {
+    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe", "clover-link", "clover-link.exe"] }]);
   });
 
   test("the deb's and the rpm's launcher entry carries Quit, which runs the app with --quit (no tray on stock GNOME)", () => {
@@ -226,6 +226,7 @@ describe("build-packages.ts", () => {
       "drwxr-xr-x root/root 0 2026-11-05 12:00 ./opt/Clover/",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link",
       "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/chrome-sandbox",
       "lrwxrwxrwx root/root 0 2026-11-05 12:00 ./opt/Clover/libvk.so -> libvulkan.so.1",
@@ -234,9 +235,10 @@ describe("build-packages.ts", () => {
     expect(checkPackage("deb", debListing, scripts)).toEqual([]);
     const rpmListing = [
       "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
+      "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-core",
       "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
     ].join("\n");
-    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing"]);
+    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-link is missing"]);
     expect(checkPackage("deb", debListing, "ln -sf /opt/Clover/clover /usr/bin/clover")).toEqual([
       `deb: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`,
       "deb: its scripts never load the AppArmor profile",
@@ -247,6 +249,7 @@ describe("build-packages.ts", () => {
     const base = [
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link",
       "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
     ];
     const scripts = `CLI='${AFTER_INSTALL_MARK}'\napparmor_parser --replace x`;
@@ -263,11 +266,12 @@ describe("build-packages.ts", () => {
     const rpm = [
       "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
       "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-core",
+      "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-link",
       "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
       "lrwxrwxrwx    1 root     root           14 Nov  5 12:00 /opt/Clover/libvk.so -> libvulkan.so.1",
       "-rwxr-sr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/helper",
     ].join("\n");
-    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
+    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
     expect(checkPackage("rpm", rpm, scripts)).toEqual(["rpm: /opt/Clover/helper is set-user-ID or set-group-ID (-rwxr-sr-x)"]);
   });
 
