@@ -2,7 +2,8 @@
 // "each"`) and shows the OS's own notification when something happens the user hasn't seen. The core never hands a
 // notifier a message's, a card's or a question's text (lane B's `NotifierUpdate`), so the words are what happened and
 // who: "Alpha · Sent you a message", "Alpha · Needs your OK". Only a plugin's `notify.send` carries a title and a body,
-// and its banner names the plugin first, so no plugin can speak as a bot ("Home: Alpha needs your OK" says who sent it).
+// and its banner names the plugin first and marks a third-party one as a plugin, so no plugin can speak as a bot or
+// as Clover: a plugin named "Luna" shows as "Plugin “Luna”: …", never as the bot Luna.
 //
 // One notification per bot and kind, replaced as more arrive, so a busy bot never stacks a column of banners; how many
 // things wait is the core's own count (`unseen`), never one this notifier keeps (the core coalesces updates, so a
@@ -22,9 +23,18 @@ export interface NotifierUpdate {
   session?: string;
   at: number;
   notification?: { title: string; body?: string };
-  /** Who sent a `notification`: the plugin whose `notify.send` asked for it (a field asked of lane B), or `clover` for
-   *  the core's own notices. */
-  sender?: { pluginId: string; pluginName?: string };
+  /** Who sent it: the plugin whose `notify.send` asked for a `notification`, or `clover` for the core's own updates
+   *  and notices. Required (B-M1's review); `bundled` false marks a third-party plugin. */
+  sender: NoticeSender;
+}
+
+/** A notification's sender (lane B's, mirrored until B-M1 merges). */
+export interface NoticeSender {
+  pluginId: string;
+  /** The plugin's name, as its manifest gives it. */
+  name: string;
+  /** Whether it comes from the bundled `clover` tree; false is a third-party plugin, which the banner marks. */
+  bundled: boolean;
 }
 
 /** One banner, as the local app's OS notification takes it. */
@@ -59,6 +69,13 @@ const KINDS_THAT_WAIT = new Set<NotifierUpdate["kind"]>(["card", "question"]);
 const MAX_TITLE = 120;
 const MAX_BODY = 400;
 
+/** Bidi controls a shown name may not carry (one would turn the title around its colon). */
+const BIDI = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+
+function shownName(name: string): string {
+  return name.replace(BIDI, "").trim();
+}
+
 function cut(text: string, max: number): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
@@ -72,11 +89,15 @@ export function noticeWords(update: NotifierUpdate, name: string | undefined): {
     const n = update.notification;
     const own = n ? cut(n.title, MAX_TITLE) : "";
     const body = n?.body ? cut(n.body, MAX_BODY) : undefined;
-    // A plugin's words come under its name; the core's own notices (sender `clover`) under Clover's.
-    const sender = update.sender;
-    if (sender && sender.pluginId === "clover") return { title: own || t("clover.notifications.fallbackTitle"), body: withWaiting(body) };
-    const from = sender ? (sender.pluginName ?? sender.pluginId) : t("clover.notifications.aPlugin");
-    return { title: own ? t("clover.notifications.fromPlugin", { plugin: cut(from, 40), title: own }) : cut(from, 40), body: withWaiting(body) };
+    // The core's own notices (sender `clover`) come under Clover's name; a bundled child's under its name; a
+    // third-party plugin's under its name, quoted and marked as a plugin, first so a cut title keeps the mark. A
+    // sender missing (an older core) counts as third-party.
+    const sender = update.sender as NoticeSender | undefined;
+    if (sender?.pluginId === "clover") return { title: own || t("clover.notifications.fallbackTitle"), body: withWaiting(body) };
+    const name = cut(shownName(sender?.name ?? "") || sender?.pluginId || t("clover.notifications.aPlugin"), 40);
+    const thirdParty = sender?.bundled !== true;
+    const from = thirdParty ? t("clover.notifications.plugin", { plugin: name }) : name;
+    return { title: own ? t("clover.notifications.fromPlugin", { from, title: own }) : from, body: withWaiting(body) };
   }
   const who = name ?? t("clover.notifications.aBot");
   const kind = {

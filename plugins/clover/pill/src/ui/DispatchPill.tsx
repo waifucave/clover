@@ -49,7 +49,9 @@ export interface DispatchPillProps {
   /** The draft, when the host keeps it; otherwise the pill keeps its own. */
   draft?: string;
   onDraft?: (text: string) => void;
-  onSend?: (text: string) => void;
+  /** Sends the words; a rejection (the runtime refused the send) puts them back in the pill's own field while it is
+   *  still empty. */
+  onSend?: (text: string) => void | Promise<void>;
   onStop?: () => void;
   /** A question card's answers; false (or a rejection) shows an error and keeps the card. */
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => boolean | Promise<boolean>;
@@ -301,7 +303,9 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   const send = () => {
     const text = draft.trim();
     if (text.length === 0) return;
-    props.onSend?.(text);
+    const sent = props.onSend?.(text);
+    // A refused send gives the words back, unless the user has typed again; a host that keeps the draft keeps it.
+    if (sent && props.draft === undefined) sent.catch(() => setOwnDraft((now) => (now === "" ? text : now)));
     setDraft("");
     setPresentation("compact");
     setMenu(null);

@@ -317,6 +317,9 @@
     "plugins/clover/pill": {
       "name": "@waifucave/clover-plugin-pill",
       "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-plugin-island": "workspace:*",
+      },
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",

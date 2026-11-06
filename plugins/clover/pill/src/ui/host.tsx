@@ -3,7 +3,7 @@
 // hands the real thing. `PillApp` is the component the manifest names; it takes only its `EntryProps`.
 
 import { createContext, useContext, useMemo, useState, type ReactElement } from "react";
-import { chooseTarget, pillTargets, storageMemory, type PillBot, type PillTargetEntry, type ResolvedTarget, type TargetMemory, type TargetRef } from "../model/targets";
+import { chooseTarget, pillTargets, storageMemory, userSendTarget, type PillBot, type PillTargetEntry, type ResolvedTarget, type TargetMemory, type TargetRef, type UserSendTarget } from "../model/targets";
 import { DispatchPill, type DispatchPillProps } from "./DispatchPill";
 
 /** What the pill shows about one target's turn: the running state, its cards, its agents (lane D's sessions). */
@@ -17,12 +17,14 @@ export interface PillHost {
   /** The last target picked on this device; the layer's storage when absent. */
   memory?: TargetMemory;
   /**
-   * The host's user-send callback (§5.5's rule for a send that counts as the user's): the pill calls it synchronously,
-   * inside the key press or click that sent, and the host counts it only while that frame's transient user activation
-   * from the hardware is there, refusing any other. The pill has no `conversation.post`, whose turns are the plugin's,
-   * never the user's. To a bot, the user's message; to a plugin's target, its handler (B's shape, asked).
+   * `useUserSend()` (lane B's `UiApi`): the runtime's user-send, which only the bundled `clover` tree's surfaces get. The
+   * pill calls it synchronously, inside the key press or click that sent, and the runtime counts it only within that
+   * frame's transient user activation, refusing any other (§5.5). The runtime carries the words to the daemon through
+   * an `app`-role method (`pill.send`, B's to pin), never a layer method, and the daemon hands them to a bot's main
+   * conversation as the user's message, or to a `pill.target` entry's handler. The pill has no `conversation.post`,
+   * whose turns are the plugin's, never the user's. A refusal puts the words back in the field.
    */
-  send(target: TargetRef, text: string): void | Promise<void>;
+  send(to: UserSendTarget, message: string): Promise<void>;
   /** The turn the pill shows for a target. */
   turn?(target: TargetRef): TargetTurn;
 }
@@ -54,7 +56,7 @@ export function PillApp(_: PillEntryProps<{ surface: string }>): ReactElement | 
         memory.set(id);
         setPicked(id);
       }}
-      onSend={(text) => void host.send(target.ref, text)}
+      onSend={(text) => host.send(userSendTarget(target.ref), text)}
     />
   );
 }

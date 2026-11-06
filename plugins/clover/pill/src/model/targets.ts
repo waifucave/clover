@@ -3,6 +3,8 @@
 // this device and comes back to it; a target that went away falls back to the first bot. Pure, except the memory's
 // default store, which reads and writes the layer's own storage and never fails the pill.
 
+import { readsAs, shownName } from "@waifucave/clover-plugin-island/names";
+
 /** A bot, as `bots.read` lists it (lane B's `BotView`, the fields the pill reads). */
 export interface PillBot {
   id: string;
@@ -12,9 +14,11 @@ export interface PillBot {
   color?: string;
 }
 
-/** A `pill.target` entry, as the spot hands its declaring component the entries it shows (a question for lane B):
- *  the plugin, the entry's id, its title and icon. */
+/** A `pill.target` entry, as `useSpotEntries` lists it for the pill (lane B's `SpotEntryView`): its ref, the plugin,
+ *  the entry's id, its title and icon. */
 export interface PillTargetEntry {
+  /** The entry's ref (`SpotEntryView.ref`): what `useUserSend` takes as `{ target }`. */
+  ref: string;
   pluginId: string;
   /** The plugin's name, for the menu's muted words. */
   pluginName?: string;
@@ -25,12 +29,19 @@ export interface PillTargetEntry {
   order?: number;
 }
 
-export type TargetRef = { kind: "bot"; bot: string } | { kind: "plugin"; pluginId: string; entry: string };
+export type TargetRef = { kind: "bot"; bot: string } | { kind: "plugin"; pluginId: string; entry: string; ref: string };
 
-/** A name as a reader takes it: compatibility forms folded, spaces collapsed, case ignored. */
+/** Where `useUserSend` sends (lane B's `UserSendTarget`, mirrored): a bot by id, or a `pill.target` entry by its ref. */
+export type UserSendTarget = { bot: string } | { target: string } | { session: string };
+
+export function userSendTarget(ref: TargetRef): UserSendTarget {
+  return ref.kind === "bot" ? { bot: ref.bot } : { target: ref.ref };
+}
+
+/** Whether two names read the same: the island's skeleton (`readsAs`: case, width, accents, invisible characters,
+ *  spaces and lookalike letters folded), so "Ꮮuna" or "Lu\u200Bna" is Luna. */
 export function sameName(a: string, b: string): boolean {
-  const fold = (s: string) => s.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
-  return fold(a) === fold(b);
+  return readsAs(a, b);
 }
 
 /** One row of the pill's target menu. */
@@ -63,9 +74,10 @@ export function pillTargets(bots: readonly PillBot[], entries: readonly PillTarg
     .filter((e) => !bots.some((b) => sameName(b.name, e.title) || sameName(b.id, e.title)))
     .sort((a, b) => (a.order ?? 500) - (b.order ?? 500) || a.pluginId.localeCompare(b.pluginId) || a.title.localeCompare(b.title))
     .map((e): ResolvedTarget => {
-      const ref: TargetRef = { kind: "plugin", pluginId: e.pluginId, entry: e.id };
-      const plugin = e.pluginName ?? e.pluginId;
-      return { id: targetId(ref), ref, name: e.title, portrait: e.icon, detail: plugin, label: `${e.title} · ${plugin}` };
+      const ref: TargetRef = { kind: "plugin", pluginId: e.pluginId, entry: e.id, ref: e.ref };
+      const plugin = shownName(e.pluginName ?? "") || e.pluginId;
+      const title = shownName(e.title);
+      return { id: targetId(ref), ref, name: title, portrait: e.icon, detail: plugin, label: `${title} · ${plugin}` };
     });
   return [...fromBots, ...fromPlugins];
 }

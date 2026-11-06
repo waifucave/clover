@@ -14,16 +14,19 @@ export interface NotificationStory {
 }
 
 const at = 1_781_270_000_000;
+const sender = { pluginId: "clover", name: "Clover", bundled: true };
 const SAMPLES: { update: NotifierUpdate; name?: string }[] = [
-  { update: { seq: 1, kind: "message", unseen: 1, bot: "alpha", at }, name: "Alpha" },
-  { update: { seq: 2, kind: "message", unseen: 3, bot: "alpha", at }, name: "Alpha" },
-  { update: { seq: 3, kind: "card", unseen: 4, bot: "scout", at }, name: "Scout" },
-  { update: { seq: 4, kind: "question", unseen: 5, bot: "luna", at }, name: "Luna" },
-  { update: { seq: 5, kind: "routine-result", unseen: 6, bot: "alpha", at }, name: "Alpha" },
-  { update: { seq: 6, kind: "agent-finished", unseen: 7, bot: "scout", at }, name: "Scout" },
-  { update: { seq: 7, kind: "notification", unseen: 1, at, notification: { title: "Render finished", body: "scene.blend, 240 frames, 12 min" }, sender: { pluginId: "blender", pluginName: "Blender" } } },
-  // A plugin trying to speak as a bot: its name comes first.
-  { update: { seq: 8, kind: "notification", unseen: 1, at, notification: { title: "Alpha needs your OK" }, sender: { pluginId: "home", pluginName: "Home" } } },
+  { update: { seq: 1, kind: "message", unseen: 1, bot: "alpha", at, sender }, name: "Alpha" },
+  { update: { seq: 2, kind: "message", unseen: 3, bot: "alpha", at, sender }, name: "Alpha" },
+  { update: { seq: 3, kind: "card", unseen: 4, bot: "scout", at, sender }, name: "Scout" },
+  { update: { seq: 4, kind: "question", unseen: 5, bot: "luna", at, sender }, name: "Luna" },
+  { update: { seq: 5, kind: "routine-result", unseen: 6, bot: "alpha", at, sender }, name: "Alpha" },
+  { update: { seq: 6, kind: "agent-finished", unseen: 7, bot: "scout", at, sender }, name: "Scout" },
+  { update: { seq: 7, kind: "notification", unseen: 1, at, notification: { title: "Render finished", body: "scene.blend, 240 frames, 12 min" }, sender: { pluginId: "blender", name: "Blender", bundled: false } } },
+  // A plugin trying to speak as a bot: its name comes first, marked as a plugin's.
+  { update: { seq: 8, kind: "notification", unseen: 1, at, notification: { title: "Alpha needs your OK" }, sender: { pluginId: "home", name: "Home", bundled: false } } },
+  // A plugin named as a bot still reads as a plugin.
+  { update: { seq: 9, kind: "notification", unseen: 1, at, notification: { title: "Hi, it's me" }, sender: { pluginId: "evil", name: "Luna", bundled: false } } },
 ];
 
 type Os = "macos" | "windows" | "linux";
@@ -76,7 +79,7 @@ function Column({ os }: { os: Os }): ReactElement {
 }
 
 export const NOTIFICATION_STORIES: NotificationStory[] = [
-  { id: "notifications/macos", title: "Desktop notifications, sketched on macOS: each kind, the core's unseen count, a plugin's own under its name", width: 400, height: 640, render: () => <Column os="macos" /> },
-  { id: "notifications/windows", title: "Desktop notifications, sketched on Windows", width: 400, height: 660, render: () => <Column os="windows" /> },
-  { id: "notifications/linux", title: "Desktop notifications, sketched on GNOME", width: 400, height: 640, render: () => <Column os="linux" /> },
+  { id: "notifications/macos", title: "Desktop notifications, sketched on macOS: each kind, the core's unseen count, a plugin's own under its name, marked as a plugin's", width: 400, height: 720, render: () => <Column os="macos" /> },
+  { id: "notifications/windows", title: "Desktop notifications, sketched on Windows", width: 400, height: 740, render: () => <Column os="windows" /> },
+  { id: "notifications/linux", title: "Desktop notifications, sketched on GNOME", width: 400, height: 720, render: () => <Column os="linux" /> },
 ];

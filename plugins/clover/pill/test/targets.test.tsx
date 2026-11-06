@@ -12,9 +12,9 @@ const BOTS: PillBot[] = [
   { id: "luna", name: "Luna", color: "#7FD6C2" },
 ];
 const ENTRIES: PillTargetEntry[] = [
-  { pluginId: "home", pluginName: "Home", id: "lights", title: "Lights", order: 600 },
-  { pluginId: "blender", pluginName: "Blender", id: "scene", title: "Scene" },
-  { pluginId: "agents", pluginName: "Agents", id: "codex", title: "Codex" },
+  { ref: "home#lights", pluginId: "home", pluginName: "Home", id: "lights", title: "Lights", order: 600 },
+  { ref: "blender#scene", pluginId: "blender", pluginName: "Blender", id: "scene", title: "Scene" },
+  { ref: "agents#codex", pluginId: "agents", pluginName: "Agents", id: "codex", title: "Codex" },
 ];
 
 describe("the pill's targets", () => {
@@ -27,17 +27,21 @@ describe("the pill's targets", () => {
       ["plugin:blender#scene", "Scene", "Blender"],
       ["plugin:home#lights", "Lights", "Home"],
     ]);
-    expect(targets[2]!.ref).toEqual({ kind: "plugin", pluginId: "agents", entry: "codex" });
+    expect(targets[2]!.ref).toEqual({ kind: "plugin", pluginId: "agents", entry: "codex", ref: "agents#codex" });
     // A bot and an entry of the same name never share an id.
-    expect(targetId({ kind: "bot", bot: "codex" })).not.toBe(targetId({ kind: "plugin", pluginId: "codex", entry: "codex" }));
+    expect(targetId({ kind: "bot", bot: "codex" })).not.toBe(targetId({ kind: "plugin", pluginId: "codex", entry: "codex", ref: "codex#codex" }));
   });
 
   test("an entry titled as a bot is left out, and a plugin's target always carries its plugin's name in the bar", () => {
     const spoofs: PillTargetEntry[] = [
-      { pluginId: "evil", pluginName: "Evil", id: "a", title: "Alpha" },
-      { pluginId: "evil", pluginName: "Evil", id: "b", title: "  ＬＵＮＡ " },
-      { pluginId: "evil", pluginName: "Evil", id: "c", title: "alpha" },
-      { pluginId: "home", pluginName: "Home", id: "lights", title: "Lights" },
+      { ref: "evil#a", pluginId: "evil", pluginName: "Evil", id: "a", title: "Alpha" },
+      { ref: "evil#b", pluginId: "evil", pluginName: "Evil", id: "b", title: "  ＬＵＮＡ " },
+      { ref: "evil#c", pluginId: "evil", pluginName: "Evil", id: "c", title: "alpha" },
+      { ref: "evil#d", pluginId: "evil", pluginName: "Evil", id: "d", title: "\u0410lpha" }, // Cyrillic А
+      { ref: "evil#e", pluginId: "evil", pluginName: "Evil", id: "e", title: "Lu\u200Bna" }, // a zero-width space
+      { ref: "evil#f", pluginId: "evil", pluginName: "Evil", id: "f", title: "\u13DEuna" }, // Cherokee Ꮮ
+      { ref: "evil#g", pluginId: "evil", pluginName: "Evil", id: "g", title: "Lúna" },
+      { ref: "home#lights", pluginId: "home", pluginName: "Ho\u202Eme", id: "lights", title: "Lights" },
     ];
     const targets = pillTargets(BOTS, spoofs);
     expect(targets.map((t) => t.name)).toEqual(["Alpha", "Luna", "Lights"]);
@@ -81,7 +85,7 @@ describe("the pill's targets", () => {
 
 describe("PillApp, the app.surface entry", () => {
   test("messages the remembered target; picking another remembers it; a send goes to the one shown", async () => {
-    const send = mock((_ref: unknown, _text: string) => {});
+    const send = mock(async (_to: unknown, _text: string) => {});
     const memory = memoryOf("bot:luna");
     const host: PillHost = { bots: BOTS, targets: ENTRIES, memory, send };
     const { container } = render(
@@ -98,7 +102,7 @@ describe("PillApp, the app.surface entry", () => {
       fireEvent.keyDown(field, { key: "Enter" });
     });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0]).toEqual([{ kind: "bot", bot: "luna" }, "dim the lights"]);
+    expect(send.mock.calls[0]).toEqual([{ bot: "luna" }, "dim the lights"]);
     // Pick a plugin's target from the menu.
     act(() => {
       fireEvent.click(container.querySelector(".clp-portrait")!.closest("button")!);
@@ -114,12 +118,48 @@ describe("PillApp, the app.surface entry", () => {
     act(() => {
       fireEvent.keyDown(field, { key: "Enter" });
     });
-    expect(send.mock.calls[1]).toEqual([{ kind: "plugin", pluginId: "blender", entry: "scene" }, "render it"]);
+    expect(send.mock.calls[1]).toEqual([{ target: "blender#scene" }, "render it"]);
+  });
+
+  test("a refused send puts the words back in the field, unless the user has typed again", async () => {
+    let refuse: (() => void) | undefined;
+    const send = mock((_to: unknown, _text: string) => new Promise<void>((_, reject) => (refuse = () => reject(new Error("no user activation")))));
+    const host: PillHost = { bots: BOTS, memory: memoryOf("bot:luna"), send };
+    const { container } = render(
+      <PillHostContext.Provider value={host}>
+        <PillApp props={{ surface: "pill" }} />
+      </PillHostContext.Provider>,
+    );
+    const field = container.querySelector("textarea")!;
+    act(() => {
+      fireEvent.change(field, { target: { value: "dim the lights" } });
+    });
+    act(() => {
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    expect(field.value).toBe("");
+    await act(async () => {
+      refuse!();
+      await Promise.resolve();
+    });
+    expect(field.value).toBe("dim the lights");
+    // Typed again before the refusal came: the new words stay.
+    act(() => {
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    act(() => {
+      fireEvent.change(field, { target: { value: "never mind" } });
+    });
+    await act(async () => {
+      refuse!();
+      await Promise.resolve();
+    });
+    expect(field.value).toBe("never mind");
   });
 
   test("without a host or any target it draws nothing", () => {
     expect(render(<PillApp props={{ surface: "pill" }} />).container.innerHTML).toBe("");
-    const host: PillHost = { bots: [], memory: memoryOf(), send: () => {} };
+    const host: PillHost = { bots: [], memory: memoryOf(), send: async () => {} };
     expect(
       render(
         <PillHostContext.Provider value={host}>

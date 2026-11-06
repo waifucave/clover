@@ -17,7 +17,9 @@ function fakeDesktop(showing = false) {
 }
 
 let seq = 0;
-const update = (kind: NotifierUpdate["kind"], more: Partial<NotifierUpdate> = {}): NotifierUpdate => ({ seq: ++seq, kind, unseen: seq, at: 1_000 + seq, ...more });
+const CLOVER = { pluginId: "clover", name: "Clover", bundled: true };
+const plugin = (pluginId: string, name: string, bundled = false) => ({ pluginId, name, bundled });
+const update = (kind: NotifierUpdate["kind"], more: Partial<NotifierUpdate> = {}): NotifierUpdate => ({ seq: ++seq, kind, unseen: seq, at: 1_000 + seq, sender: CLOVER, ...more });
 const NAMES: Record<string, string> = { alpha: "Alpha", luna: "Luna" };
 
 describe("the banner's words: who and what happened, never what was said", () => {
@@ -31,18 +33,28 @@ describe("the banner's words: who and what happened, never what was said", () =>
     expect(noticeWords(update("message", { unseen: 1 }), undefined).title).toBe("A bot");
   });
 
-  test("a plugin's notification comes under its name, so no plugin speaks as a bot; the core's own under Clover's", () => {
-    const spoof = update("notification", { unseen: 1, notification: { title: "Alpha needs your OK" }, sender: { pluginId: "home", pluginName: "Home" } });
-    expect(noticeWords(spoof, undefined)).toEqual({ title: "Home: Alpha needs your OK", body: undefined });
-    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "Alpha" } }), undefined).title).toBe("A plugin: Alpha");
-    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "Usage at 90%" }, sender: { pluginId: "clover" } }), undefined).title).toBe("Usage at 90%");
-    expect(noticeWords(update("notification", { unseen: 1, sender: { pluginId: "home" } }), undefined)).toEqual({ title: "home", body: undefined });
+  test("a plugin's notification comes under its name, marked as a plugin's, so no plugin speaks as a bot; the core's own under Clover's", () => {
+    const spoof = update("notification", { unseen: 1, notification: { title: "Alpha needs your OK" }, sender: plugin("home", "Home") });
+    expect(noticeWords(spoof, undefined)).toEqual({ title: "Plugin “Home”: Alpha needs your OK", body: undefined });
+    // A plugin named as a bot still reads as a plugin.
+    const asBot = update("notification", { unseen: 1, notification: { title: "Hi, it's me" }, sender: plugin("evil", "Luna") });
+    expect(noticeWords(asBot, undefined).title).toBe("Plugin “Luna”: Hi, it's me");
+    // A bidi control can't turn the title around its colon.
+    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "x" }, sender: plugin("evil", "\u202EHome") }), undefined).title).toBe("Plugin “Home”: x");
+    // A bundled child is Clover's own: its name, no mark.
+    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "Usage at 90%" }, sender: plugin("usage", "Usage", true) }), undefined).title).toBe("Usage: Usage at 90%");
+    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "Usage at 90%" }, sender: CLOVER }), undefined).title).toBe("Usage at 90%");
+    expect(noticeWords(update("notification", { unseen: 1, sender: plugin("home", "") }), undefined)).toEqual({ title: "Plugin “home”", body: undefined });
+    // An older core that sends no sender: a plugin, unnamed.
+    const bare = update("notification", { unseen: 1, notification: { title: "Alpha" } });
+    delete (bare as Partial<NotifierUpdate>).sender;
+    expect(noticeWords(bare, undefined).title).toBe("Plugin “A plugin”: Alpha");
   });
 
   test("a plugin's title and body on one line each, cut to fit", () => {
     const long = "word ".repeat(200);
-    const words = noticeWords(update("notification", { unseen: 1, notification: { title: "  Build\n  finished ", body: long }, sender: { pluginId: "ci", pluginName: "CI" } }), undefined);
-    expect(words.title).toBe("CI: Build finished");
+    const words = noticeWords(update("notification", { unseen: 1, notification: { title: "  Build\n  finished ", body: long }, sender: plugin("ci", "CI") }), undefined);
+    expect(words.title).toBe("Plugin “CI”: Build finished");
     expect(words.body!.length).toBe(400);
     expect(words.body!.endsWith("…")).toBe(true);
   });
@@ -114,7 +126,7 @@ describe("DesktopNotifier", () => {
       desktop: { show: () => Promise.reject(new TypeError("no permission")), close: () => {} },
       log: (_level, message) => lines.push(message),
     });
-    await n.notify(update("notification", { notification: { title: "Secret plan", body: "the body" }, sender: { pluginId: "x" } }));
+    await n.notify(update("notification", { notification: { title: "Secret plan", body: "the body" }, sender: plugin("x", "X") }));
     expect(lines).toEqual(["a desktop notification could not show (notification): TypeError"]);
   });
 });

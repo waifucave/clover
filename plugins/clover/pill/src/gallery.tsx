@@ -74,9 +74,9 @@ interface BarFrameProps {
 const WITH_PLUGIN_TARGETS: readonly PillTarget[] = pillTargets(
   TARGETS.map((t) => ({ id: t.id, name: t.name, portrait: t.portrait, color: t.color })),
   [
-    { pluginId: "agents", pluginName: "Agents", id: "codex", title: "Codex" },
-    { pluginId: "blender", pluginName: "Blender", id: "scene", title: "Scene" },
-    { pluginId: "home", pluginName: "Home", id: "lights", title: "Lights", order: 600 },
+    { ref: "agents#codex", pluginId: "agents", pluginName: "Agents", id: "codex", title: "Codex" },
+    { ref: "blender#scene", pluginId: "blender", pluginName: "Blender", id: "scene", title: "Scene" },
+    { ref: "home#lights", pluginId: "home", pluginName: "Home", id: "lights", title: "Lights", order: 600 },
   ],
 );
 

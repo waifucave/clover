@@ -519,6 +519,10 @@ importers:
         version: 5.9.3
 
   plugins/clover/pill:
+    dependencies:
+      '@waifucave/clover-plugin-island':
+        specifier: workspace:*
+        version: link:../island
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4

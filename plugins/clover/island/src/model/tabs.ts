@@ -2,6 +2,7 @@
 // the `island.tab` point it declares (spec §5.4); Needs you ships as its own default guest. Pure.
 
 import { t } from "../strings";
+import { readsAs, shownName } from "./names";
 
 export interface IslandTab {
   id: string;
@@ -22,19 +23,27 @@ export interface GuestTab extends IslandTab {
   attention?: "never" | "badge" | "expand";
 }
 
-function folded(s: string): string {
-  return s.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+/** Names no other plugin's tab may carry, as its title or as its plugin's name beside it: Needs you is the island's
+ *  own, and Clover is the app's. */
+const RESERVED_TITLES = [NEEDS_YOU.title];
+const RESERVED_PLUGIN_NAMES = [NEEDS_YOU.title, "Clover"];
+
+/** Needs you is the island's alone: no entry may take its id or its title, as a reader sees them (`readsAs`: case,
+ *  width, accents, invisible characters and lookalike letters folded). */
+export function isReservedTab(tab: IslandTab): boolean {
+  return readsAs(tab.id, NEEDS_YOU.id) || RESERVED_TITLES.some((r) => readsAs(tab.title, r));
 }
 
-/** Needs you is the island's alone: no entry may take its id or its title, in any case or width. */
-export function isReservedTab(tab: IslandTab): boolean {
-  return folded(tab.id) === NEEDS_YOU.id || folded(tab.title) === folded(NEEDS_YOU.title);
+/** A plugin name the island won't put beside a tab: it would read as Needs you's or as the app's own. */
+export function isReservedPluginName(name: string): boolean {
+  return RESERVED_PLUGIN_NAMES.some((r) => readsAs(name, r));
 }
 
 /**
- * The tabs beside Needs you, as the island shows them: an entry claiming Needs you's id or title is left out; another
- * plugin's tab is titled with its plugin's name ("Servers · Homelab"), never raises attention, and is keyed by its
- * plugin so two plugins' `servers` stay two tabs.
+ * The tabs beside Needs you, as the island shows them: an entry claiming Needs you's id or title is left out, and so
+ * is another plugin's tab whose plugin is named as Needs you or as Clover; another plugin's tab is titled with its
+ * plugin's name ("Servers · Homelab", bidi controls out), never raises attention, and is keyed by its plugin so two
+ * plugins' `servers` stay two tabs.
  */
 export function guestTabs<T extends GuestTab>(entries: readonly T[]): T[] {
   const out: T[] = [];
@@ -42,9 +51,13 @@ export function guestTabs<T extends GuestTab>(entries: readonly T[]): T[] {
   for (const e of entries) {
     if (isReservedTab(e)) continue;
     const own = e.pluginId === OWN_PLUGIN;
-    const tab: T = own
-      ? e
-      : { ...e, id: `${e.pluginId ?? "plugin"}#${e.id}`, title: t("clover.island.pluginTab", { title: e.title, plugin: e.pluginName ?? e.pluginId ?? t("clover.island.aPlugin") }), attention: "never" };
+    let tab: T = e;
+    if (!own) {
+      const plugin = shownName(e.pluginName ?? e.pluginId ?? "");
+      if (plugin && isReservedPluginName(plugin)) continue;
+      const title = shownName(e.title);
+      tab = { ...e, id: `${e.pluginId ?? "plugin"}#${e.id}`, title: t("clover.island.pluginTab", { title, plugin: plugin || t("clover.island.aPlugin") }), attention: "never" };
+    }
     if (seen.has(tab.id)) continue;
     seen.add(tab.id);
     out.push(tab);
