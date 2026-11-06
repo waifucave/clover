@@ -150,6 +150,10 @@ export interface CloverServer {
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
+  /** Runs a method for a caller with no connection here: another computer's `peer.call` (lane H's door), under
+   *  `role`'s allow list. `answered`: the door has checked the user's signed answer bound to this very call, which
+   *  stands in for the user on a `userOnly` method; nothing else sets it. */
+  dispatch(method: string, params: unknown, as: { caller: Caller; role: CloverRole; answered?: boolean }): Promise<unknown>;
   dispose(): void;
 }
 
@@ -223,6 +227,20 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     const sessionKind: SessionKind = bot === undefined ? "coding" : "agent";
     const caller: Caller = { kind: "session", sessionId: ok.sessionId, sessionKind, ...(bot === undefined ? {} : { bot }) };
     return { caller, sessionId: ok.sessionId, connection: ok.connection };
+  };
+
+  // One request through the role's allow list, `userOnly` (unless the user's signed answer for this call stands
+  // in), the method's params, then its handler.
+  const run = async (conn: CloverConn, method: string, params: unknown, answered: boolean): Promise<unknown> => {
+    const spec = CLOVER_METHODS.get(method);
+    if (spec === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `no such method ${method}`);
+    const refused = gateCloverRequest(conn.role, answered ? { kind: "user", client: "app" } : conn.caller, method);
+    if (refused) throw new CloverRpcError(refused.code, refused.message);
+    const p = spec.params.safeParse(params ?? {});
+    if (!p.success) throw new CloverRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
+    const handler = own[method] ?? deps.handlers?.[method];
+    if (handler === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);
+    return handler(conn, p.data);
   };
 
   const pairStatus = (): PairStatus => {
@@ -303,15 +321,19 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
 
     async handle(conn, method, params) {
       if (method === "protocol.hello") throw new CloverRpcError(ERR.INVALID_REQUEST, "already authenticated — open a new connection to change role");
-      const spec = CLOVER_METHODS.get(method);
-      if (spec === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `no such method ${method}`);
-      const refused = gateCloverRequest(conn.role, conn.caller, method);
-      if (refused) throw new CloverRpcError(refused.code, refused.message);
-      const p = spec.params.safeParse(params ?? {});
-      if (!p.success) throw new CloverRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
-      const handler = own[method] ?? deps.handlers?.[method];
-      if (handler === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);
-      return handler(conn, p.data);
+      return run(conn, method, params, false);
+    },
+
+    async dispatch(method, params, as) {
+      if (method === "protocol.hello") throw new CloverRpcError(ERR.INVALID_REQUEST, "a hello is a connection's");
+      const conn: CloverConn = {
+        connId: -1, role: as.role, caller: as.caller, features: [], clientName: "peer.call", areas: new Set(),
+        send() { throw new CloverRpcError(ERR.INVALID_REQUEST, "a peer.call has no connection to send on"); },
+        notify() { /* nowhere to send it */ },
+        follows: new Map(),
+      };
+      try { return await run(conn, method, params, as.answered === true); }
+      finally { for (const stop of conn.follows.values()) { try { stop(); } catch { /* gone */ } } }
     },
 
     closed(conn, socket) {

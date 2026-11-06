@@ -133,13 +133,14 @@ describe("Clover connections (C-M1)", () => {
         return { lastSeq: 3 };
       }),
       "session.list": handler(SESSIONS_METHODS.sessionList, () => { throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user can list", { why: "test" }); }),
+      "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
     });
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid) => { killed.push(pid); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
-    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, unfollowed, setPeer: (p: PeerFacts) => { peer = p; } };
+    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, unfollowed, clover, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("the app says hello with this run's token and counts as the user", async () => {
@@ -357,5 +358,18 @@ describe("Clover connections (C-M1)", () => {
     c.close();
     for (let i = 0; i < 100 && b.unfollowed.length === 0; i++) await Bun.sleep(5);
     expect(b.unfollowed).toEqual(["s-1"]);
+  });
+
+  test("dispatch, for H's peer.call door: the role's list, the peer as the caller, userOnly only with the door's checked answer", async () => {
+    const b = await boot();
+    const peer = { kind: "peer" as const, device: "e".repeat(32) };
+    expect(await b.clover.dispatch("session.attach", { id: "s-2" }, { caller: peer, role: "remote" })).toEqual({ lastSeq: 3 });
+    expect(b.calls.at(-1)).toEqual({ method: "session.attach", sessionId: "s-2", params: peer }); // runs as the peer
+    expect(b.unfollowed).toEqual(["s-2"]); // nothing to stream to: let go at once
+    await expect(b.clover.dispatch("pair.quit", { handOver: false }, { caller: peer, role: "remote" })).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    await expect(b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote" })).rejects.toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+    expect(await b.clover.dispatch("session.interrupt", { id: "s-2" }, { caller: peer, role: "remote", answered: true })).toEqual({ ok: true });
+    expect(b.calls.at(-1)).toEqual({ method: "session.interrupt", sessionId: "s-2", params: peer }); // still the peer, not the user
+    expect(b.stops).toEqual([]);
   });
 });
