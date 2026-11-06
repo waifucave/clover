@@ -130,7 +130,9 @@ export interface TurnEnd {
   reason: "end_turn" | "refusal" | "interrupted" | "cancelled" | "stopped" | "failed";
   /** The final text, unchanged (S5 §8). */
   text?: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  /** `contextTokens`: how full the context is now, the last request's whole prompt, as the runtime states it (agent
+   *  SDK 0.0.65's `result.context_tokens`, A-M2); compaction arms on it and never on the summed tokens (review S5). */
+  usage?: { inputTokens: number; outputTokens: number; contextTokens?: number };
   failure?: SessionFailure;
 }
 
