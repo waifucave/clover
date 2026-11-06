@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { HOST_WORKSPACE_EVENT_TYPES, ERR, SessionEvent, SESSION_TITLE_MAX_CHARS, type SyncConfigResult, type SyncHeadsResult, type SyncMemoryResult, type SyncPullParams, type SyncPullResult, type SyncPushParams, type SyncPushResult } from "@waifucave/clover-protocol";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import type { CredentialPresence } from "../runtime-sdk/host";
 import { assistantMemoryDirFor } from "../agent/memory-dir";
 import { EXA_API_KEY_SECRET } from "../agent/exa-key";
 import { CLIENT_EFFORTS, isClientEffort } from "../settings";

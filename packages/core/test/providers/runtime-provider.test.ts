@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codexFake, openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { codexFake, openaiResponsesFake } from "@waifucave/clover-provider-conformance/fakes";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { createCodexOauthRuntimeProvider, createOpenAiCompatibleRuntimeProvider, _translateEventsForTests } from "../../src/providers/runtime-provider";
@@ -17,7 +17,7 @@ import { SessionTitler } from "../../src/agent/titles";
 
 /** Mirrors `test/agent/titles.test.ts`'s own `setup`/`seedTurn` shape, over a REAL loopback fake
  *  instead of `FakeProvider` — proof that `RuntimeBackedProvider` (providers/runtime-provider.ts)
- *  actually speaks the wire the `@yanlinglabs/winter-provider-runtime` adapters expect, for both
+ *  actually speaks the wire the `@waifucave/clover-provider-runtime` adapters expect, for both
  *  credential families lane 5 covers. */
 function newStore(): SessionStore {
   return new SessionStore(mkdtempSync(join(tmpdir(), "clover-runtime-provider-home-")));

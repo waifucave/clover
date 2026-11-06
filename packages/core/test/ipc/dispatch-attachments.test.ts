@@ -12,7 +12,7 @@ import {
   ConnWriter, ERR, FILE_REFERENCE_INVALID, FILE_SESSION_NOT_CODE, IMAGE_INPUT_UNSUPPORTED, IMAGE_INPUT_UNSUPPORTED_MESSAGE, IMAGE_REFERENCE_INVALID,
   IMAGE_SESSION_NOT_CODE, LineDecoder, METHODS, PROTOCOL_VERSION, SessionEvent, encodeLine, type WritableSocket,
 } from "@waifucave/clover-protocol";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { sessionTakesAttachments, startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";

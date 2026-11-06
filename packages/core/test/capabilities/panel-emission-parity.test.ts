@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ToolRegistry, type ToolContext } from "../../src/agent/tools/registry";
 import { registerBrowserTool } from "../../src/agent/tools/browser";

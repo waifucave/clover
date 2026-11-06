@@ -12,6 +12,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# A-M1: the `@waifucave` scope (the agent SDK's packages, `@waifucave/clover-*`, `@waifucave/mochi2d` and the owner's
+# other packages) comes from GitHub Packages, which wants a token even to read. Every job may read it with this
+# workflow's own token (`packages: read`); the repo's `.npmrc` takes it from NODE_AUTH_TOKEN, which only the install
+# steps are given, so no test or build step sees it. A job with its own `permissions:` block sets `packages: read`
+# itself if it installs. A private package must also grant this repository Actions read access in its own package
+# settings.
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   # CI covers four machines (plan §3): macOS arm64, Windows x64, and Ubuntu x64 and arm64. On each it runs the
   # workspace packages' tests (the plugins' and services' among them), builds the daemon binary and builds the
@@ -77,6 +87,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: The residue and the live install's names
         working-directory: packages/core
@@ -130,6 +142,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Workspaces · test
         if: env.WORKSPACES == 'true' && runner.os != 'Linux'
@@ -201,6 +215,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and render every gallery
         env:
@@ -234,6 +250,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: bun run typecheck
@@ -255,9 +273,13 @@ jobs:
 
       - name: bun.lock
         run: bun install --frozen-lockfile --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: pnpm-lock.yaml
         run: npx --yes pnpm@10.33.0 install --frozen-lockfile --lockfile-only
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Winter for Chrome (extensions/winter-for-chrome): the MV3 extension's typecheck and its unit tests (the CDP guard,
   # the controller over a fake browser, the native port, the manifest and the build — which renders the icons with the
@@ -277,6 +299,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         working-directory: extensions/winter-for-chrome
@@ -328,6 +352,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # P9a-8: `bun install` above must have brought the winter platform package (the same
       # dual-hop resolver the daemon's ladder uses); absent = a loud failure, never a fallback.
@@ -438,6 +464,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Regenerate
         working-directory: packages/protocol
@@ -475,6 +503,8 @@ jobs:
 
       - name: Install dependencies (the WinterKit daemon fixture imports @waifucave/clover-core)
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: WinterProtocol — swift test
         working-directory: apple/WinterProtocol

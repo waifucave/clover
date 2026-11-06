@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertMachOArm64, buildVersionsJson, sha256File, stageRuntimes } from "./stage-runtimes";
 import { parseVersionsJson } from "../packages/core/src/runtime-sdk/bundle-layout";
-import { REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "../packages/core/src/runtime-sdk/versions";
+import { CODING_AGENT_BINARY_VERSION, REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "../packages/core/src/runtime-sdk/versions";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -99,7 +99,7 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
     const out = tempDir("stage-runtimes-ws3-out-");
     const result = await stageRuntimes({
       out,
-      resolveWinterPackage: () => ({ binPath: pkgBin, version: REQUIRED_WINTER_AGENT_SDK }),
+      resolveWinterPackage: () => ({ binPath: pkgBin, version: CODING_AGENT_BINARY_VERSION }),
     });
     expect(result.versions.winterSource).toBe("platform-package");
     expect(readFileSync(result.winterPath).equals(fakeMachOArm64())).toBe(true);
@@ -113,6 +113,13 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
     await expect(
       stageRuntimes({ out, resolveWinterPackage: () => ({ binPath: pkgBin, version: "9.9.9" }) }),
     ).rejects.toThrow(/mixed pair is not the pinned artifact/);
+    // A-M1: the binary's pin is its own, so the SDK's version is a mismatch too (unless the two happen to agree;
+    // compared as strings, since the two pins are literal types that may differ).
+    if (String(REQUIRED_WINTER_AGENT_SDK) !== String(CODING_AGENT_BINARY_VERSION)) {
+      await expect(
+        stageRuntimes({ out, resolveWinterPackage: () => ({ binPath: pkgBin, version: REQUIRED_WINTER_AGENT_SDK }) }),
+      ).rejects.toThrow(/mixed pair is not the pinned artifact/);
+    }
   });
 
   test("the package resolver hits but the binary is not a Mach-O arm64 -> throws (the injected checkWinterMachO seam)", async () => {
@@ -123,7 +130,7 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
     await expect(
       stageRuntimes({
         out,
-        resolveWinterPackage: () => ({ binPath: pkgBin, version: REQUIRED_WINTER_AGENT_SDK }),
+        resolveWinterPackage: () => ({ binPath: pkgBin, version: CODING_AGENT_BINARY_VERSION }),
         checkWinterMachO: (p) => assertMachOArm64(p), // the REAL checker, on a deliberately fake file
       }),
     ).rejects.toThrow(/not a 64-bit Mach-O binary/);
@@ -162,7 +169,7 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
     const result = await stageRuntimes({
       out,
       winterSource: "checkout-build",
-      resolveWinterPackage: () => { packageDoorConsulted = true; return { binPath: "/should/not/be/used", version: REQUIRED_WINTER_AGENT_SDK }; },
+      resolveWinterPackage: () => { packageDoorConsulted = true; return { binPath: "/should/not/be/used", version: CODING_AGENT_BINARY_VERSION }; },
       buildWinterFn: async () => cloverSrc,
     });
     expect(packageDoorConsulted).toBe(false);

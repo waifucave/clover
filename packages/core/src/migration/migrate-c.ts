@@ -36,14 +36,14 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSy
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { SDK_COMPAT_LINKS, SDK_PERSISTENT_ENTRIES, canonicalCwd, sdkHomeFor } from "../agent/paths";
 import { downgradeRuntimeStateToV6, openRuntimeStateDb } from "../runtime-state/db";
 import { RuntimeLeases, type LeaseProbe } from "../runtime-state/leases";
 import { RuntimeSessionRecords } from "../runtime-state/records";
 import { claudeResumeStagingPresent, type ClaudeResumeLister } from "../runtime-state/claude-resume-scan";
 import { moveTranscriptFiles, transcriptEntriesOf } from "../runtime-state/transcript-rekey";
-import type { RecoveryReport, RecoveryTranscriptOutcome } from "@yanlinglabs/winter-runtime-sdk";
+import type { RecoveryReport, RecoveryTranscriptOutcome } from "../runtime-sdk/host";
 import { normalizeRecoveryReport, quarantinedBackendSessions } from "../runtime-sdk/run-home-support";
 import { DEAD_LEGACY_TOP_LEVEL_FILES } from "./dead-legacy-files";
 import { LEGACY_INSTRUCTIONS_FILE } from "../legacy-names";

@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryMcpOAuthStore, decodeMcpOAuthClientSecretItem, encodeMcpOAuthClientRecord, encodeMcpOAuthTokenRecord, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount, McpOAuthError, type McpOAuthLogin } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { createMemoryMcpOAuthStore, decodeMcpOAuthClientSecretItem, encodeMcpOAuthClientRecord, encodeMcpOAuthTokenRecord, mcpOAuthClientAccount, mcpOAuthClientSecretAccount, mcpOAuthTokenAccount, McpOAuthError, type McpOAuthLogin } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { McpOAuthDoors } from "../../../src/agent/mcp/oauth-doors";
 
 const URL_ = "https://mcp.example.test/mcp";
@@ -260,7 +260,7 @@ describe("the copied fixture authorization server (fix round 1, minor 7)", () =>
   const copy = join(import.meta.dir, "..", "..", "fixtures", "mcp-oauth-fixture-as.ts");
   let sdkSource: string | undefined;
   try {
-    const entry = Bun.resolveSync("@yanlinglabs/winter-agent-runtime/mcp-auth", import.meta.dir);
+    const entry = Bun.resolveSync("@waifucave/clover-agent-runtime/mcp-auth", import.meta.dir);
     const candidate = join(realpathSync(entry), "..", "mcp-auth", "test-fixture-as.ts");
     if (existsSync(candidate)) sdkSource = candidate;
   } catch { /* not resolvable: skipped */ }
