@@ -300,10 +300,14 @@ export class LeaseCoordinator {
         } catch (err) {
           if (isContractError(err, "offline")) return this.#retryMs;
           if (isContractError(err, "not_main")) {
-            // Refused: another computer holds it, or it lapsed while this one acted on through an exception.
+            // Refused: another computer holds it, or it lapsed while this one acted on through an exception. Only a
+            // record that lapsed under this computer is taken again: one released (a hand-over or a hand-back that
+            // raced this renew) went to another computer, and taking it back would bounce the bots between the two.
             const k = lease.known();
-            const free = k.holderRaw === null || k.expiresAt === null || this.#o.clock.now() >= k.expiresAt;
-            if (free) await lease.acquire().then(() => (this.#lastRenew = mono)).catch(() => undefined);
+            const lapsedHere = k.holder === this.#o.self && k.expiresAt !== null && this.#o.clock.now() >= k.expiresAt;
+            if (lapsedHere && this.#yieldedAt === undefined && this.#handingBack === undefined) {
+              await lease.acquire().then(() => (this.#lastRenew = mono)).catch(() => undefined);
+            }
           } else throw err;
         }
       }

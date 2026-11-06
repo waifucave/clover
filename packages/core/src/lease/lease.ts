@@ -67,6 +67,8 @@ export class MainLease implements Lease {
   #deadline: number | null = null;
   #woke = false;
   #handingOver = false;
+  /** Releases so far, so a renew in flight across one is not taken as holding. */
+  #releases = 0;
   /** A lease held with no handshake (`byUser`, no scope). */
   #local: { epoch: number } | null = null;
   #lastEmitted = "";
@@ -139,6 +141,7 @@ export class MainLease implements Lease {
   }
 
   async release(): Promise<void> {
+    this.#releases++;
     this.#deadline = null;
     if (this.#local) {
       this.#local = null;
@@ -289,6 +292,7 @@ export class MainLease implements Lease {
 
   async #op(scope: LeaseScope, op: "acquire" | "renew" | "takeover"): Promise<LeaseState> {
     const sent = this.#mono();
+    const releases = this.#releases;
     let record: ScopeLease;
     try {
       record = await scope.op(op, this.#known.epoch, this.#ttlSec());
@@ -307,6 +311,10 @@ export class MainLease implements Lease {
       throw err;
     }
     this.#reachable = true;
+    // A renew answered after this device released (a hand-over racing the renew loop): the service took the release
+    // after the renew, or refused the renew, so the record is free; the renew's answer must not make this device the
+    // holder again.
+    if (op === "renew" && this.#releases !== releases) return this.state();
     this.#observe(record);
     if (record.holder === this.self) {
       this.#deadline = sent + this.ttlMs - this.marginMs;

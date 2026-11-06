@@ -13,6 +13,7 @@ import { SystemClock } from "../../clock/system-clock";
 import { fromBase64, fromUtf8, toHex, utf8 } from "../../identity/bytes";
 import { DeviceKey } from "../../identity/device-key";
 import { FrameReader, MAX_FRAME } from "../frames";
+import { bundledLinkBinary } from "../sidecar-binary";
 import { PairingService } from "../pairing";
 import { followRegistry, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
@@ -493,6 +494,22 @@ class FakeSidecar implements SidecarProcess {
     this.#exit(0);
   }
 }
+
+describe("the link sidecar's binary", () => {
+  test("without a binary, the wire starts the one shipped beside the daemon, never one from the PATH", async () => {
+    const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
+    const argv: string[][] = [];
+    const wire = await SidecarWire.start({
+      key, relay: "disabled", n0Lookup: false,
+      spawn: (a) => {
+        argv.push([...a]);
+        return new FakeSidecar(toHex(key.publicKey), false);
+      },
+    });
+    stops.push(() => wire.close());
+    expect(argv).toEqual([[bundledLinkBinary()]]);
+  });
+});
 
 describe("the link sidecar's restart (S6.1), against a fake process", () => {
   test("restarts with backoff under the same seed, allow list and lookup, ends what it carried offline, and holds dials until it is back", async () => {

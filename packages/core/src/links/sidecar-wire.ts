@@ -23,6 +23,7 @@ import { type Bytes, concat, fromBase64, fromUtf8, own, toHex, utf8 } from "../i
 import type { DeviceKey } from "../identity/device-key";
 import type { NatMapping } from "./dial-policy";
 import { FrameReader, MAX_FRAME } from "./frames";
+import { bundledLinkBinary } from "./sidecar-binary";
 import {
   ALPN_LINK, ALPN_PAIR, CLOSE_LOST, CLOSE_NORMAL, RESET_CONN_LOST,
   type DialOptions, type DialTarget, type PathInfo, type WireClose, type WireConn, type WireEndpoint, type WireStream, WireOffline,
@@ -52,7 +53,8 @@ export interface SidecarProcess {
 }
 
 export interface SidecarWireOptions {
-  binary: string;
+  /** The sidecar to run: by default the one shipped beside the daemon (`bundledLinkBinary`), never one from the PATH. */
+  binary?: string;
   key: DeviceKey;
   /** `default` (n0's relays, with QUIC address discovery), `disabled`, or a relay's URL. */
   relay?: string;
@@ -352,7 +354,8 @@ export class SidecarWire implements WireEndpoint {
   async #launch(): Promise<void> {
     const o = this.#o;
     const gen = ++this.#gen;
-    const proc = o.spawn ? o.spawn([o.binary]) : spawnSidecar([o.binary], o.onLog);
+    const binary = o.binary ?? bundledLinkBinary();
+    const proc = o.spawn ? o.spawn([binary]) : spawnSidecar([binary], o.onLog);
     this.#proc = proc;
     const ready = new Promise<{ publicKey: string; relay?: string | null }>((resolve, reject) => {
       void (async () => {

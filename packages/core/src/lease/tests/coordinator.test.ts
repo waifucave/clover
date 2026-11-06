@@ -31,14 +31,16 @@ interface Node {
   active: boolean;
 }
 
-async function computers(names: string[]) {
+type Scope = ReturnType<MemoryLeaseService["scope"]>;
+
+async function computers(names: string[], wrap?: (name: string, scope: Scope) => Scope) {
   const c = await makeLinkCluster(names, { clock, transport: { failFastMs: 300, dialTimeoutMs: 500 } });
   stops.push(() => c.close());
   const service = new MemoryLeaseService(clock, { minTtlSec: 0 });
   const nodes = new Map<string, Node>();
   for (const name of names) {
     const device = c.devices.get(name)!;
-    const scope = service.scope(device.id);
+    const scope = wrap ? wrap(name, service.scope(device.id)) : service.scope(device.id);
     const node: Node = { name, device, handBacks: 0, active: false, mc: undefined as unknown as MainComputerHandle };
     node.mc = startMainComputer({
       home: mkdtempSync(join(tmpdir(), "clover-h-lease-")), self: device.id, registry: device.registry, transport: device.transport,
@@ -142,6 +144,51 @@ describe("the main computer", () => {
     expect(Date.now() - t0).toBeLessThan(TIMINGS.ttlMs);
     expect(w.n("Studio").mc.lease.canAct()).toBe(false);
   }, 20_000);
+
+  for (const when of ["reaches the service after the release", "is answered after the release"] as const) {
+    test(`a hand-over racing the holder's renew: the renew ${when}, and the bots still go to the other computer`, async () => {
+      // The renew loop's next renew is held while the hand-over releases: either it reaches the service after the
+      // release (refused, the record free), or the service renews first and its answer comes after the release's.
+      let hold = false;
+      let held: (() => void) | undefined;
+      let pending = false;
+      const w = await computers(["Studio", "Laptop"], (name, scope) => name !== "Studio" ? scope : {
+        ...scope,
+        op: async (op, epoch, ttlSec) => {
+          if (op !== "renew" || !hold) return scope.op(op, epoch, ttlSec);
+          hold = false;
+          pending = true;
+          const gate = new Promise<void>((r) => (held = r));
+          if (when === "reaches the service after the release") {
+            await gate;
+            return scope.op(op, epoch, ttlSec);
+          }
+          const answer = await scope.op(op, epoch, ttlSec);
+          await gate;
+          return answer;
+        },
+      });
+      await w.n("Studio").mc.coordinator.chooseSelf();
+      await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+      hold = true;
+      await waitFor(() => pending);
+      const since = w.service.log.length;
+      expect(await w.n("Studio").mc.coordinator.handOver()).toEqual({ to: w.id("Laptop") });
+      // From the hand-over on, the studio never holds it again, not even for a moment.
+      let heldAgain = false;
+      stops.push(w.n("Studio").mc.lease.watch(() => {
+        if (w.n("Studio").mc.lease.holds()) heldAgain = true;
+      }));
+      held!();
+      await waitFor(() => w.holder() === "Laptop");
+      // And it stays there: the studio neither takes it back nor acts on.
+      await Bun.sleep(TIMINGS.ttlMs);
+      expect(w.holder()).toBe("Laptop");
+      expect(w.n("Studio").mc.lease.canAct()).toBe(false);
+      expect(w.service.log.slice(since).filter((l) => l === `${w.id("Studio")} acquire`)).toEqual([]);
+      expect(heldAgain).toBe(false);
+    }, 20_000);
+  }
 
   test("with no other computer on, a hand-over keeps the bots here", async () => {
     const w = await computers(["Studio", "Laptop"]);
