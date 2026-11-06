@@ -6,9 +6,9 @@ import { env, exports } from "cloudflare:workers";
 import { b64u, fromB64u, utf8 } from "../../shared/encoding";
 import type { StepLimiter } from "../../shared/testing/step-limiter";
 import forwarder from "../src/index";
-import { keyId, type DeviceKey } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { generateX25519 } from "../../../plugins/clover/forwarder/src/wire/hpke";
-import { hookKeyHash, type DeviceRegistered, type RoutineRegistered, type Ticket } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { keyId, type DeviceKey } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
+import { generateX25519 } from "../../../plugins/clover/plugins/forwarder/src/wire/hpke";
+import { hookKeyHash, type DeviceRegistered, type RoutineRegistered, type Ticket } from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 
 export const ORIGIN = "https://hooks.test";
 

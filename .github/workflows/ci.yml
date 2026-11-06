@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main, cowork/output-integration]
+  # The merge queue: a queued pull request is tested again on top of the real latest main (and the PRs queued ahead of
+  # it) before it lands, so two PRs that are each green against an older main can't break it together.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 # One run per branch: a new push to a pull request cancels the run it supersedes (a run on main is never cancelled).
@@ -35,8 +39,9 @@ jobs:
   # A pull request runs only the jobs whose inputs it changes (`changes`, scripts/ci-changes.ts); the names-and-layout
   # checks always run, and `gate` is the one check branch protection needs.
 
-  # Which areas this change touches. A pull request compares its merge commit with the base it merges into; a push
-  # to main and a manual run take every area.
+  # Which areas this change touches. A pull request compares its merge commit with the base it merges into, and a
+  # merge-queue group its head with the main it was built on (every PR in the group); a push to main and a manual run
+  # take every area, and so does a group whose base can't be fetched.
   changes:
     name: changes
     runs-on: ubuntu-24.04
@@ -68,8 +73,15 @@ jobs:
         id: areas
         env:
           EVENT: ${{ github.event_name }}
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
-          if [ "$EVENT" = "pull_request" ]; then bun scripts/ci-changes.ts --base HEAD^1; else bun scripts/ci-changes.ts --all; fi
+          case "$EVENT" in
+            pull_request) bun scripts/ci-changes.ts --base HEAD^1 ;;
+            merge_group)
+              git fetch --no-tags --depth=1 origin "$GROUP_BASE" || true
+              bun scripts/ci-changes.ts --base "$GROUP_BASE" ;;
+            *) bun scripts/ci-changes.ts --all ;;
+          esac
 
   # Always, whatever changed: the rename's residue and the live install's names over every tracked file, the rename's
   # rules, the layout's conventions and the CI areas. On Linux, in a minute or two, so a docs-only or report-only change

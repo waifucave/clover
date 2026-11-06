@@ -112,8 +112,8 @@ importers:
         specifier: ^1.6.2
         version: 1.6.2
       zod:
-        specifier: ^4.0.0
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@waifucave/clover-provider-conformance':
         specifier: 0.0.63
@@ -129,14 +129,14 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       zod:
-        specifier: ^4.0.0
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/protocol:
     dependencies:
       zod:
-        specifier: ^4.0.0
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/test-harness:
     dependencies:
@@ -163,7 +163,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/base-theme:
+  plugins/clover/plugins/base-theme:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -172,7 +172,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/base-theme/gallery:
+  plugins/clover/plugins/base-theme/gallery:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -206,7 +206,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/composer:
+  plugins/clover/plugins/composer:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -240,7 +240,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/conversation:
+  plugins/clover/plugins/conversation:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -280,7 +280,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/fish-audio:
+  plugins/clover/plugins/fish-audio:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -289,7 +289,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/forwarder:
+  plugins/clover/plugins/forwarder:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -298,7 +298,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/island:
+  plugins/clover/plugins/island:
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -328,7 +328,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel:
+  plugins/clover/plugins/panel:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -362,7 +362,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-diff:
+  plugins/clover/plugins/panel-diff:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -396,7 +396,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-files:
+  plugins/clover/plugins/panel-files:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -430,7 +430,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/panel-terminal:
+  plugins/clover/plugins/panel-terminal:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -464,7 +464,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/pill:
+  plugins/clover/plugins/pill:
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -494,7 +494,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/push:
+  plugins/clover/plugins/push:
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -503,7 +503,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/settings:
+  plugins/clover/plugins/settings:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -537,7 +537,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/shell:
+  plugins/clover/plugins/shell:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -574,7 +574,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/sidebar:
+  plugins/clover/plugins/sidebar:
     dependencies:
       lucide-react:
         specifier: 1.61.0
@@ -608,7 +608,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  plugins/clover/vrm:
+  plugins/clover/plugins/vrm:
     dependencies:
       '@pixiv/three-vrm':
         specifier: 3.5.5
@@ -3587,11 +3587,11 @@ packages:
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
-
   zod@4.6.6:
     resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -4000,11 +4000,11 @@ snapshots:
       eventsource-parser: 3.1.1
       jose: 6.2.12
       pkce-challenge: 5.0.1
-      zod: 4.6.6
+      zod: 4.6.7
 
   '@modelcontextprotocol/core@2.3.1':
     dependencies:
-      zod: 4.6.6
+      zod: 4.6.7
 
   '@noble/hashes@1.8.0': {}
 
@@ -6669,8 +6669,8 @@ snapshots:
       cookie: 1.1.1
       youch-core: 0.3.3
 
-  zod@4.4.3: {}
-
   zod@4.6.6: {}
+
+  zod@4.6.7: {}
 
   zwitch@2.0.4: {}
