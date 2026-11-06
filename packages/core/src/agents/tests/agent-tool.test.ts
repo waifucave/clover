@@ -269,6 +269,32 @@ describe("models and sessions", () => {
   });
 });
 
+describe("live tabs: the user drives a bot's agent directly", () => {
+  test("the user's message is the agent's next prompt, its turn is the user's, so its cards wait", async () => {
+    const w = make({ level: "ask", script: [[{ say: "first done" }], [{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    await w.host.sendUser(r.sessionId, { text: "Now build it.", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
+    expect(card.origin).toBe("user");
+    expect(w.report("prompt")[1]!["text"]).toBe("Now build it.");
+    await w.manager.stop(r.sessionId);
+  });
+
+  test("the user's interrupt cancels the agent's turn; the agent stays, and the bot isn't told it finished", async () => {
+    const w = make({ script: [[{ wait: true }], [{ say: "after" }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    await w.host.interrupt(r.sessionId);
+    await waitFor(() => w.host.get(r.sessionId)!.status === "idle", "the turn to end");
+    expect(w.parentInputs("task-notification")).toEqual([]);
+    const ends = w.host.history(r.sessionId).filter((x) => x.type === "turn_ended").map((x) => (x as { end: { reason: string } }).end.reason);
+    expect(ends).toEqual(["interrupted"]);
+    await w.host.sendUser(r.sessionId, { text: "Go on.", device: "d".repeat(16), clientMessageId: "m2", sentAt: w.clock.now() });
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("after");
+  });
+});
+
 describe("the agent's own sandbox, and the OK for one without", () => {
   test("a backend whose sandbox is admitted starts with the fenced set in its own format, written in the fenced run folder", async () => {
     const w = make({ script: [[{ wait: true }]] });
