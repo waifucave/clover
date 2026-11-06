@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FilesPanel, FilesTitle } from "./FilesPanel";
+import { FilePreview, previews, usePreviewPlugin } from "./preview";
 import type { FilesWithWatch } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
 import type { FileEntry } from "./types";
@@ -33,6 +34,10 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
   const [where, setWhere] = useState<{ root: string; computer: string } | undefined>(undefined);
   const [listing, setListing] = useState<Record<string, FileEntry[]>>({});
   const [open, setOpen] = useState<{ path: string; text: string } | undefined>(undefined);
+  // A file the host or a plugin previews (an image; a type a plugin fills `file.preview` for) shows as that, through the
+  // no-follow check, in place of its text.
+  const byPlugin = usePreviewPlugin(open?.path);
+  const previewed = open !== undefined && previews(open.path, byPlugin);
   const [matches, setMatches] = useState<{ query: string; items: { path: string; line: number; text: string }[]; truncated?: boolean } | undefined>(undefined);
 
   const list = (path: string) => {
@@ -62,7 +67,8 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
 
   // What the agent and the user change shows as it happens.
   const shown = useRef<{ listed: string[]; open?: string }>({ listed: [] });
-  shown.current = { listed: Object.keys(listing), ...(open ? { open: open.path } : {}) };
+  // A previewed file reads itself (`FilePreview`); only a text file is read again here.
+  shown.current = { listed: Object.keys(listing), ...(open && !previewed ? { open: open.path } : {}) };
   useEffect(() => {
     if (!files?.watch || !where) return;
     let stop: (() => void) | undefined;
@@ -94,9 +100,12 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
         onList={list}
         onOpen={(path) => {
           if (!files || !inside(where.root, path)) return;
+          // An image is never read as text: its preview reads it.
+          if (previews(path, false)) return setOpen({ path, text: "" });
           files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
         }}
         {...(open ? { open } : {})}
+        {...(open && previewed ? { preview: <FilePreview key={open.path} path={open.path} /> } : {})}
         onSearch={(query) =>
           void files?.grep(query, { cwd: where.root, limit: 200 }).then(
             (r) => setMatches({ query, items: r.matches.filter((m) => inside(where.root, m.path)), ...(r.truncated ? { truncated: true } : {}) }),

@@ -15,7 +15,8 @@
     "conversation.read",
     "approvals",
     "bots.read",
-    "devices.read"
+    "devices.read",
+    "files"
   ],
   "contributes": {
     "locales": [
@@ -136,6 +137,53 @@
               "bot"
             ],
             "doc": "A tool's result, keyed by tool name."
+          },
+          "file.preview": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "mediaType": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "A file's preview, keyed by its media type (`image/png`, or a pattern such as `model/*`): a plugin's, in its own sealed part, handed the path only once the tree's no-follow check says it is a plain file."
+          },
+          "menu.message": {
+            "shape": "list",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "Items in a message's menu: each entry's `title`, and the `command` it runs. The command is given the message's id and role; its text only when the plugin declares `conversation.read`."
           }
         }
       }

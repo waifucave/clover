@@ -57,6 +57,15 @@
     "clover.panel.level.accept-edits": "Accept edits",
     "clover.panel.level.automatic": "Fully automatic",
     "clover.panel.outputKind.link": "Link",
-    "clover.panel.outputLinkDetail": "A link in the outputs folder. Clover doesn't follow it."
+    "clover.panel.outputLinkDetail": "A link in the outputs folder. Clover doesn't follow it.",
+    "clover.panel.outputOutside": "Only a session's own outputs open here.",
+    "clover.panel.outputFailed": "This output couldn't be read.",
+    "clover.panel.outputLink": "This is a link in the outputs folder. Clover doesn't follow it, so it doesn't open.",
+    "clover.panel.opening": "Opening…",
+    "clover.panel.previewLink": "This is a link. Clover doesn't follow it here, so it doesn't open.",
+    "clover.panel.previewFailed": "This file couldn't be read.",
+    "clover.panel.hiddenWarning": "Has hidden characters",
+    "clover.panel.viewer": "Contents of {path}",
+    "clover.panel.hiddenMark": "Hidden character {code}, {name}"
   }
 }

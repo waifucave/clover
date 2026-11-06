@@ -6,14 +6,14 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
-  get outputLink() {
-    return t("clover.files.outputLink");
+  get opening() {
+    return t("clover.files.opening");
   },
-  get outputOutside() {
-    return t("clover.files.outputOutside");
+  get previewLink() {
+    return t("clover.files.previewLink");
   },
-  get outputFailed() {
-    return t("clover.files.outputFailed");
+  get previewFailed() {
+    return t("clover.files.previewFailed");
   },
   get tree() {
     return t("clover.files.tree");

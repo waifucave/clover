@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 // The files panel's props. It belongs to a code session: its tree is that session's folder and nothing
 // outside it, read from the computer that holds the folder through lane J's API, which lane B's `files`
 // calls carry (`files.list(path)` → `FileStat[]`, `files.readText(path)`, `files.grep`). There are no
@@ -24,6 +25,8 @@ export interface FilesPanelProps {
   onOpen: (path: string) => void;
   /** The open file, as `files.readText` read it. */
   open?: { path: string; text: string };
+  /** The open file's preview (`file.preview`: an image, or a plugin's for its type), in place of its text. */
+  preview?: ReactNode;
   /** Search inside files: a filter that starts with `?` (`files.grep`). */
   onSearch?: (query: string) => void;
   /** What the last search found, shown in place of the tree while the filter still asks for it. */

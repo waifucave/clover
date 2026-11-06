@@ -7,6 +7,29 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
+  get opening() {
+    return t("clover.panel.opening");
+  },
+  get previewLink() {
+    return t("clover.panel.previewLink");
+  },
+  get previewFailed() {
+    return t("clover.panel.previewFailed");
+  },
+  get hiddenWarning() {
+    return t("clover.panel.hiddenWarning");
+  },
+  viewer: (path: string) => t("clover.panel.viewer", { path }),
+  hiddenMark: (code: string, name: string) => t("clover.panel.hiddenMark", { code, name }),
+  get outputLink() {
+    return t("clover.panel.outputLink");
+  },
+  get outputOutside() {
+    return t("clover.panel.outputOutside");
+  },
+  get outputFailed() {
+    return t("clover.panel.outputFailed");
+  },
   get outputLinkDetail() {
     return t("clover.panel.outputLinkDetail");
   },

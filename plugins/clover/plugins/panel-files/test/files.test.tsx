@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { inside } from "../client/entry";
 import { visiblePaths } from "../client/filter";
 import { FilesPanel, FilesTitle } from "../client/FilesPanel";
 import { COMPUTER, LISTING, OPEN_FILE, ROOT } from "../gallery/fixtures";
@@ -123,5 +124,14 @@ describe("a code session's folder (the owner's scope ruling)", () => {
     render(<FilesPanel root={ROOT} listing={listing} onOpen={() => undefined} />);
     expect(screen.queryByText("beds.csv")).toBeNull();
     expect(screen.getByText("README.md")).toBeTruthy();
+  });
+});
+
+describe("the Files panel's fence (review item 7)", () => {
+  test("it never takes a `..` or `.` segment as inside", () => {
+    expect(inside("home/Laptop/code/tarot", "home/Laptop/code/tarot/src/a.ts")).toBe(true);
+    expect(inside("home/Laptop/code/tarot", "home/Laptop/code/tarot/../secrets")).toBe(false);
+    expect(inside("home/Laptop/code/tarot", "home/Laptop/code/tarot/./a")).toBe(false);
+    expect(inside("home/Laptop/code/tarot", "home/Laptop/code/tarot-other/a")).toBe(false);
   });
 });

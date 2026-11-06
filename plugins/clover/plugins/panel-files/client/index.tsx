@@ -2,7 +2,7 @@
 // plain parts take mocked props. It imports no CSS: `client.css` lists the stylesheet (lane B).
 export { FilesPanel, FilesTitle } from "./FilesPanel";
 export { FilesEntry, inside, type FilesEntryProps } from "./entry";
-export { OutputEntry, type OutputEntryProps } from "./output";
+export { FilePreview, previews, usePreviewPlugin, type FilePreviewProps } from "./preview";
 export { visiblePaths } from "./filter";
 export { TOKENS } from "./tokens";
 export type * from "./types";

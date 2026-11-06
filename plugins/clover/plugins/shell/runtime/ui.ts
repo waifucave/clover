@@ -168,7 +168,9 @@ export function uiFor(react: ReactLike): Ui {
       return [
         createElement(
           "div",
-          { key: entryRef(e), "data-clover-entry": entryRef(e), style: CONTENTS },
+          // A plugin outside the `clover` tree draws in its own sealed frame in the app (lane E's `LayerFrame`), never in
+          // the declaring part's document: marked here so a part's tests can see where it would.
+          { key: entryRef(e), "data-clover-entry": entryRef(e), ...(isCloverTree(e.pluginId) ? {} : { "data-clover-frame": "" }), style: CONTENTS },
           createElement(EntryContext.Provider, { value: { entry, ctx } }, createElement(component, { props, tokens: runtime.tokens?.() ?? {}, entry })),
         ),
       ];
