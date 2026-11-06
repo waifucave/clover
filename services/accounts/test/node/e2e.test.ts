@@ -18,6 +18,9 @@ import { type AccountServiceHarness, harnessReady, startAccountService } from ".
 const servicesDir = join(dirname(import.meta.path), "../../..");
 const coreContracts = join(dirname(fileURLToPath(import.meta.resolve("@waifucave/clover-core"))), "contracts");
 const laneB = (await import(join(coreContracts, "device-registry.ts"))) as { deviceIdFor(publicKey: Uint8Array): Promise<string> };
+const laneH = (await import(join(coreContracts, "../identity/account.ts"))) as {
+  registerStatement(account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array;
+};
 
 function device() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -78,11 +81,9 @@ describe.skipIf(!harnessReady())("against lane M's sign-in stub", () => {
     const d = device();
     const id = await laneB.deviceIdFor(d.raw);
     const t = Date.now();
-    const registered = await api("POST", "/v1/devices", access, {
-      device: { id, publicKey: d.publicKey, boxKey: d.boxKey, name: "Studio", kind: "desktop", os: "macos" },
-      t,
-      sig: d.sign(registerStatement(account, id, t)),
-    });
+    const record = { id, publicKey: d.publicKey, boxKey: d.boxKey, name: "Studio", kind: "desktop", os: "macos" };
+    // Signed over lane H's own statement (the core's identity/account.ts), so the service checks what H signs.
+    const registered = await api("POST", "/v1/devices", access, { device: record, t, sig: d.sign(laneH.registerStatement(account, record, t)) });
     expect(registered.status).toBe(201);
     const { devices } = (await (await api("GET", "/v1/devices", access)).json()) as { devices: { id: string; publicKey: string; boxKey: string }[] };
     expect(devices).toEqual([expect.objectContaining({ id, publicKey: d.publicKey, boxKey: d.boxKey })]);
@@ -138,6 +139,17 @@ describe("the production profile", () => {
       const { vars, services } = profile(service);
       expect([service, vars.ACCOUNT_ISSUER, vars.ACCOUNT_JWKS_URL, vars.ACCOUNT_JWKS]).toEqual([service, ISSUER, `${ISSUER}/.well-known/jwks.json`, undefined]);
       expect([service, services]).toEqual([service, [{ binding: "ACCOUNT_SERVICE", service: accounts.name }]]);
+    }
+  });
+});
+
+describe("the registration statement", () => {
+  test("is lane H's, byte for byte, with and without os", () => {
+    const base = { id: "a".repeat(32), publicKey: "k+/=", boxKey: "b-_", name: "Studio é 🍀 \ud800", kind: "phone" };
+    for (const d of [base, { ...base, kind: "desktop", os: "macos" }]) {
+      for (const t of [0, 23, 24, 255, 65_536, 1_793_000_000_123]) {
+        expect(Buffer.from(registerStatement("acct-1", d, t)).toString("hex")).toBe(Buffer.from(laneH.registerStatement("acct-1", d, t)).toString("hex"));
+      }
     }
   });
 });
