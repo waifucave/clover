@@ -49,14 +49,47 @@
 
 ---
 
-## What's measured on the VM
-- **Not yet measured** — the Windows VM `clover-c-win` has not been started. The pure half (launcher args, status parsing, deny plan, reset plan, certificate validation, protected copy path) is tested on macOS via unit tests. Live measurement of `sandbox setup|remove|status`, principal provisioning, WFP filters, profile reset, and per-launch deny ACEs requires the VM.
+## What's measured on the VM (`clover-c-win`, Server 2025 x64, 2026-11-06)
+
+Built `clover-core.exe` on the VM from this branch (`compile:core`) and ran it from a
+`%ProgramFiles%\Clover Sandbox\<user SID>\` protected-copy layout with `srt-win.exe` beside it.
+The VM carries the npm 0.0.81 `srt-win.exe` (Authenticode digest `e9ee…977`), not lane M's
+static-CRT build, so the repo keeps the confirmed pins (`9e30…29b`/`cf56…9c6`) and the VM-only
+binary was rebuilt with a temporary pin edit that was reverted afterwards and never committed.
+Every `exec` probe needed S2's temporary Session 0 namespace alias (`session0-bno.cs`,
+opened/closed around the probes); without it `exec` fails closed with
+`NtOpenDirectoryObject(\Sessions\0\BaseNamedObjects): 0xC0000034` over SSH session 0.
+
+| # | Command / probe | Exit | Observed |
+|---|---|---|---|
+| 1 | `sandbox status`, launcher = npm binary vs confirmed pins | 3 | `the launcher is missing or unpinned` — the pin check fails closed |
+| 2 | `sandbox status`, nothing installed (temp pin) | 1 | `Bash isn't set up yet` (status exit fix: was always 0) |
+| 3 | `sandbox setup` (elevated) | 0 | `Bash is set up under Clover's fence`; created principal `clover-sb-f41c96d1` (= `principalNameFromSid` of the VM user SID, 18 chars), 4 WFP filters under `CLOVER_WFP_SUBLAYER`, `allow_loopback: false`, `cred_present: true`, `hidden_from_logon: true`, `seclogon: ok` |
+| 4 | `sandbox setup` again (idempotence) | 0 | same message, no error |
+| 5 | `sandbox status` after setup | 0 | `Bash is set up under Clover's fence` (needed two parser fixes: numeric `marker/setup_version`, nested `user.user` shape) |
+| 6 | Git Bash as the principal (`whoami`) | 0 | `clover-sb-f41c96d1`; kill-on-close job per `exec` help (cleanup verified by S2) |
+| 7 | Allowed write (own profile file; stable granted dir) | 0 | round-trips content |
+| 8 | Fenced write (`--deny-write` on a stable principal-writable dir) | 0 (bash handled) | `Permission denied`, file content unchanged; same path without the flag lands |
+| 9 | Network: TCP connect 172.66.147.243:443 | — | principal: `Permission denied` (EACCES); real user: `TCP-OPEN`. curl https: principal fails, real user `NET-OPEN exit 0` |
+| 10 | `sandbox remove` (from protected copy) | 0 | principal gone, `wfp.state: absent`, `filters: 0`, `cred_present: false`, markers cleared (needed two fixes: remove used to delete only the folder and report success; `uninstall` takes no `--sandbox-user`) |
+| 11 | `sandbox remove` again / `sandbox status` after remove | 0 / 1 | `removed` / `Bash isn't set up yet` — idempotent |
+| 12 | `sandbox setup` unelevated | — | not live-measured (SSH is always elevated; `runas /trustlevel` doesn't work over SSH session 0). Branch is `net session` → exit 2 by inspection |
+
+Still open after measuring: the principal's profile never loads (no `ProfileList` key for its SID,
+`USERPROFILE=C:\Users\TEMP`, temp-profile fail-closed check and per-session reset unimplemented —
+brief item 7); `HOME` is inherited from the broker (the caller must pass `--env HOME/USERPROFILE`);
+the principal's description is srt-win's default, not the user SID (Addendum 9 store-and-check
+unimplemented); the Session 0 startup task (no registration path exists without the broker's
+password — item 76/Addendum 10 forbid the CLI from handling it; live gate); loopback/proxy modes
+unprobed; `setup` does no profile/Startup-folder work yet (brief item 5).
 
 ---
 
 ## What's still missing
-1. **VM measurement** — start `clover-c-win`, run `sandbox setup`, verify principal `clover-sb-<8hex>` created with write-restricted token, WFP filters under `CLOVER_WFP_SUBLAYER`, profile reset between sessions, deny ACEs applied
-2. **Launch Git Bash as principal** — through pinned srt-win with kill-on-close job, verify write to fenced path and network egress refused while allowed folder works
-3. **Session 0 startup task** — spec's password-principal startup task for Session 0; if gap can't be closed, becomes Windows live gate (item 8)
-4. **Credential broker integration** — principal's password lives in daemon's credential broker (item 76); broker may be a later step
-5. **Windows signing check** — once Clover's certificate exists, launch must also verify signature is from Clover (Addendum 1)
+1. **Per-session reset + temp-profile fail-closed** — reset the principal's profile/hive per session and refuse TEMP profiles on launch (brief item 7; VM shows the profile never loads)
+2. **Description SID store-and-check** — set the user SID in the principal's description on setup, verify on status/remove (Addendum 9)
+3. **Caller env** — pass `HOME`/`USERPROFILE` (and proxy) via `--env` so the child doesn't inherit the broker's home
+4. **Session 0 startup task** — no registration path exists without the broker password; live gate (item 8)
+5. **Credential broker integration** — principal's password lives in daemon's credential broker (item 76); broker may be a later step
+6. **Windows signing check** — once Clover's certificate exists, launch must also verify signature is from Clover (Addendum 1)
+7. **Setup's profile work** — resolve profile by SID, pre-create and deny Startup folders (brief item 5)
