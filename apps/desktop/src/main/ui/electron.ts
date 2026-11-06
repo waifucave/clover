@@ -233,6 +233,8 @@ export interface IpcHooks {
   open(pluginId: string, target: OpenTarget): Promise<void>;
   /** Where a part's native view goes in the window (undefined: nowhere now); `used` when the person just used it. */
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
+  /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
+  userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }): Promise<{ seq?: number }>;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
   activeSession(windowId: number, session: string | null): void;
   /** Where a web page part's view goes in the window (undefined: hidden). */
@@ -274,8 +276,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const mount = str(a.mount, 32);
     const spot = str(a.spot, 128);
     if (mount === undefined || spot === undefined) throw new LayerError("bad request");
-    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown }) : {};
-    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}) });
+    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown; entry?: unknown }) : {};
+    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}), ...(str(hints.entry, 300) ? { entry: str(hints.entry, 300)! } : {}) });
+  });
+  handle("clover:entries", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const spot = str(a.spot, 128);
+    if (mount === undefined || spot === undefined) throw new LayerError("bad request");
+    return runtime.entries(s.frame, mount, spot, str(a.key));
   });
   handle("clover:reload", (event, a) => {
     const s = sender(event);
@@ -413,6 +422,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.webFrame(place.windowId, mount, web, bounds);
     });
   });
+  handle("clover:user-send", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) throw new LayerError("bad request");
+    const { windowId } = runtime.userSender(s.frame, mount);
+    const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
+    if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
+    return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) });
+  });
   on("clover:active-session", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
@@ -457,7 +475,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }

@@ -384,6 +384,51 @@ describe("each document's strings (§5.5's translations)", () => {
   });
 });
 
+describe("lane B's #179 hooks in the runtime", () => {
+  function tabbed(id: string, title: string, enabledAt: number, extra: Record<string, unknown> = {}): UiPlugin {
+    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
+  }
+
+  test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
+    const s = setup([tabbed("vn", "Visual novel", 2), tabbed("timer", "Timer", 1)]);
+    // The tab's part declares bot.header.action (the fake shell's bot.tab declares the tab's spots).
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "bot.header.action": { shape: "list" } } })) })));
+    const shell = mountShell(s);
+    const fresh = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const entries = s.rt.entries(shell.shellFrame, fresh.mount, "bot.header.action");
+    expect(entries.map((e) => [e.ref, e.pluginName, e.bundled, e.fields.title])).toEqual([["timer#act", "timer", false, "Timer"], ["vn#act", "vn", false, "Visual novel"]]);
+    const one = s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "vn#act" });
+    expect(one.items.map((i) => i.ref)).toEqual(["vn#act"]);
+    // A part that doesn't declare the spot lists nothing.
+    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.header.action")).toEqual([]);
+  });
+
+  test("the questions go only to a document whose plugin may read conversations", () => {
+    const reader = tabbed("reader", "Reader", 3, { capabilities: ["conversation.read"] });
+    const s = setup([...composerFixture(), reader]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(composer.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(composer.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    s.sent.length = 0;
+    const q = { session: "s_alpha", callId: "c1", at: 1, questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] };
+    s.rt.setQuestions([q]);
+    const to = s.sent.filter((x) => x.m.type === "questions").map((x) => x.to);
+    // The clover layer (its conversation reads them) does; the fixture composer, with no capability, doesn't.
+    expect(to).toContain(`${shell.shellFrame.processId}:${shell.shellFrame.routingId}`);
+    expect(to).not.toContain(`${child.processId}:${child.routingId}`);
+  });
+
+  test("only a clover surface's part sends the user's words", () => {
+    const s = setup();
+    const shell = mountShell(s);
+    expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("only the app's own surfaces");
+  });
+});
+
 describe("safe mode and the registry", () => {
   test("in safe mode a third-party part isn't mounted; the bundled one shows", () => {
     const s = setup(composerFixture(), { safeMode: true });

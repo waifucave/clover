@@ -25,6 +25,7 @@ if (isRoot || isLayer) {
     token,
     describe: () => ipcRenderer.invoke("clover:describe", { token }),
     resolve: (mount, spot, key, hints) => ipcRenderer.invoke("clover:resolve", { mount, spot, key, hints }),
+    entries: (mount, spot, key) => ipcRenderer.invoke("clover:entries", { mount, spot, key }),
     setProps: (child, props) => ipcRenderer.send("clover:props", { child, props }),
     callback: (id, args) => ipcRenderer.send("clover:callback", { id, args }),
     reportSize: (height) => ipcRenderer.send("clover:size", { height }),
@@ -40,6 +41,7 @@ if (isRoot || isLayer) {
     viewFrame: (mount, name, rect, used) => ipcRenderer.send("clover:view-frame", { mount, name, rect, used: used === true }),
     webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
     activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),
+    userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     onMessage: (listener) => {

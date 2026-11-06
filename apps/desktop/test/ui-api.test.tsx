@@ -57,6 +57,14 @@ function fakeBridge(views: Record<string, SpotView>) {
     viewFrame: (mount, name, rect, used) => calls.push({ op: "viewFrame", args: [mount, name, rect, used] }),
     webFrame: (mount, rect) => calls.push({ op: "webFrame", args: [mount, rect] }),
     activeSession: (mount, session) => calls.push({ op: "activeSession", args: [mount, session] }),
+    entries: async (mount, spot, key) => {
+      calls.push({ op: "entries", args: [mount, spot, key] });
+      return [{ ref: "clover/island#usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
+    },
+    userSend: async (mount, to, message) => {
+      calls.push({ op: "userSend", args: [mount, to, message] });
+      return {};
+    },
     dragOffer: async (mount, offer) => {
       calls.push({ op: "dragOffer", args: [mount, offer] });
       return { token: "g1" };
@@ -95,7 +103,7 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+const hooks: { entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -117,6 +125,11 @@ describe("the UI API in a layer", () => {
     const Sidebar = ({ props, entry }: { props: { route: string }; entry: { pluginId: string } }) => {
       const tokens = ui.useTokens();
       hooks.t = ui.useT();
+      const list = ui.useSpotEntries("island.tab");
+      hooks.entries = () => list.entries;
+      const q = ui.useQuestions();
+      hooks.questions = () => q.questions;
+      hooks.userSend = ui.useUserSend();
       const menu = ui.useMenu();
       const drag = ui.useDrag();
       const open = ui.useOpen();
@@ -290,6 +303,19 @@ describe("the UI API in a layer", () => {
     // Its spot resolves as the layout part's.
     expect(fake.calls).toContainEqual({ op: "resolve", args: ["m20", "conversation", undefined] });
     expect(part.querySelector('[data-clover-part="m21"] nav')).not.toBeNull();
+  });
+
+  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; no user sends outside a surface", async () => {
+    await tick();
+    expect(hooks.entries!().map((e) => e.ref)).toEqual(["clover/island#usage", "vn#tab"]);
+    expect(fake.calls).toContainEqual({ op: "entries", args: ["m2", "island.tab", undefined] });
+    // The questions the core sends (to a plugin that may read them), kept current.
+    expect(hooks.questions!()).toEqual([]);
+    const q = { session: "s_alpha", callId: "c1", at: 1, questions: [{ question: "Which one?", options: [{ label: "A" }, { label: "B" }] }] };
+    await act(async () => fake.emit({ type: "questions", questions: [q] }));
+    expect(hooks.questions!()).toEqual([q]);
+    // The sidebar isn't a surface's part: it has no way to send as the user.
+    expect(hooks.userSend).toBeUndefined();
   });
 
   test("props across a frame's edge: functions become markers; markers become functions", () => {

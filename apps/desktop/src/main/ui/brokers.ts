@@ -303,6 +303,57 @@ export class MenuGate {
   }
 }
 
+/** How soon after the user's key press or click a send it started must reach the main process. */
+export const SEND_INPUT_WINDOW_MS = 1_000;
+
+/** Sends counted as the user's (§5.5): one key press or click the main process saw come to the window covers one
+ *  send, within a second; any other send is refused. */
+export class SendGate {
+  private readonly lastInput = new Map<number, number>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  input(windowId: number): void {
+    this.lastInput.set(windowId, this.now());
+  }
+
+  take(windowId: number): boolean {
+    const at = this.lastInput.get(windowId);
+    this.lastInput.delete(windowId);
+    return at !== undefined && this.now() - at <= SEND_INPUT_WINDOW_MS;
+  }
+
+  forget(windowId: number): void {
+    this.lastInput.delete(windowId);
+  }
+}
+
+/** A `pill.send` target, checked: a bot, a session, or a `pill.target` entry by its ref. */
+export function sendTarget(v: unknown): { bot: string } | { session: string } | { target: string } | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const t = v as Record<string, unknown>;
+  const keys = Object.keys(t);
+  if (keys.length !== 1) return undefined;
+  if (typeof t.bot === "string" && /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/.test(t.bot)) return { bot: t.bot };
+  if (typeof t.session === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(t.session)) return { session: t.session };
+  if (typeof t.target === "string" && /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?#[a-z0-9][a-z0-9._-]*$/.test(t.target)) return { target: t.target };
+  return undefined;
+}
+
+/** The images that may go with the user's words: at most 4, PNG, JPEG or WebP, each at most 7.5 MB. */
+export function sendImages(v: unknown): { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: string }[] | { error: string } {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > 4) return { error: "at most four pictures" };
+  const out: { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: string }[] = [];
+  for (const i of v) {
+    const m = (i as { mediaType?: unknown })?.mediaType;
+    const d = (i as { data?: unknown })?.data;
+    if ((m !== "image/png" && m !== "image/jpeg" && m !== "image/webp") || !(d instanceof Uint8Array) || d.length === 0 || d.length > 7_500_000) return { error: "a picture is a PNG, JPEG or WebP of at most 7.5 MB" };
+    out.push({ mediaType: m, data: Buffer.from(d).toString("base64") });
+  }
+  return out;
+}
+
 function text(v: unknown, max: number): string | undefined {
   return typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined;
 }

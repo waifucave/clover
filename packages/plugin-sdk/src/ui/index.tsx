@@ -17,7 +17,7 @@ import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 
@@ -41,6 +41,8 @@ interface Runtime {
   /** The callbacks each child frame was handed, by child mount. */
   callbacks: Map<string, Map<string, (...args: unknown[]) => unknown>>;
   tokens: Map<string, Readonly<Record<string, TokenValue>>>;
+  /** The questions waiting, as the core last sent them (to a plugin with `conversation.read`). */
+  questions: readonly PendingQuestion[];
   /** How long a frame stays away from the screen before it sleeps (§5.5). */
   sleepAfterMs: number;
 }
@@ -64,6 +66,7 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
     listeners: new Set(),
     callbacks: new Map(),
     tokens: new Map(),
+    questions: [],
     sleepAfterMs: input.sleepAfterMs ?? SLEEP_AFTER_MS,
   };
   runtime = r;
@@ -79,6 +82,7 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
       }
     }
     if (m.type === "focus-returned") restoreFocus();
+    if (m.type === "questions") r.questions = m.questions;
     if (m.type === "rect-query") {
       // The menu broker asks where a child frame is in this document's viewport.
       const el = typeof document === "undefined" ? undefined : Array.from(document.querySelectorAll("iframe[data-clover-mount]")).find((f) => f.getAttribute("data-clover-mount") === m.child);
@@ -340,21 +344,22 @@ function sameView(a: SpotView | undefined, b: SpotView): boolean {
   return a !== undefined && JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** `<Spot name spotKey props>`'s props. Lane B's declaration names the key `key`, which React keeps for itself and
- *  never hands a component, so the runtime reads `spotKey` (asked of lane B: rename it). */
-export type SpotProps = Omit<SpotElementProps, "key"> & { spotKey?: string };
+/** `<Spot name spotKey entry props>`'s props (lane B's `SpotElementProps`; `entry` shows one entry only, by its ref
+ *  from `useSpotEntries`). */
+export type SpotProps = Omit<SpotElementProps, "key" | "spotKey" | "entry"> & { spotKey?: string; entry?: string };
 
 /** `<Spot name spotKey props>`: shows a spot this part declares (§5.5). */
-export function Spot({ name, spotKey, props }: SpotProps) {
+export function Spot({ name, spotKey, entry, props }: SpotProps) {
   const part = usePart();
   const hints = useContext(SpotHints);
   const r = rt();
   const [view, setView] = useState<SpotView | undefined>(undefined);
   const session = hints.session;
   const resolve = useCallback(() => {
-    void r.bridge.resolve(part.mount, name, spotKey, session !== undefined ? { session } : undefined)
+    const h = { ...(session !== undefined ? { session } : {}), ...(entry !== undefined ? { entry } : {}) };
+    void r.bridge.resolve(part.mount, name, spotKey, Object.keys(h).length > 0 ? h : undefined)
       .then((v) => setView((old) => (sameView(old, v) ? old : v)), () => setView(undefined));
-  }, [r, part.mount, name, spotKey, session]);
+  }, [r, part.mount, name, spotKey, session, entry]);
   useEffect(() => {
     resolve();
     return onLayerMessage((m) => {
@@ -720,6 +725,75 @@ export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined
       return "error" in r ? undefined : r;
     },
   }), [part.mount]);
+}
+
+/** A spot this part declares, as its entries in the spot's order, kept current (lane B's `useSpotEntries`): for a part
+ *  that draws one at a time with `<Spot entry>` (the island's tabs, the pill's targets). */
+export function useSpotEntries(name: string, spotKey?: string): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe } {
+  const part = usePart();
+  const [entries, setEntries] = useState<readonly SpotEntryView[]>([]);
+  const listeners = useRef(new Set<() => void>());
+  useEffect(() => {
+    let live = true;
+    const load = () => void rt().bridge.entries(part.mount, name, spotKey).then((e) => {
+      if (!live) return;
+      setEntries((old) => (JSON.stringify(old) === JSON.stringify(e) ? old : e));
+    }, () => undefined);
+    load();
+    const off = onLayerMessage((m) => {
+      if (m.type === "respot") load();
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, [part.mount, name, spotKey]);
+  useEffect(() => {
+    for (const l of listeners.current) l();
+  }, [entries]);
+  return useMemo(() => ({
+    entries,
+    subscribe: (listener: () => void) => {
+      listeners.current.add(listener);
+      return () => listeners.current.delete(listener);
+    },
+  }), [entries]);
+}
+
+/** Questions waiting in any session the plugin may read, with their text (lane B's `useQuestions`; the core sends them
+ *  only to a plugin with `conversation.read`). */
+export function useQuestions(): { readonly questions: readonly PendingQuestion[]; subscribe(listener: () => void): Unsubscribe } {
+  const [questions, setQuestions] = useState<readonly PendingQuestion[]>(() => rt().questions);
+  const listeners = useRef(new Set<() => void>());
+  useEffect(() => onLayerMessage((m) => {
+    if (m.type === "questions") setQuestions(m.questions);
+  }), []);
+  useEffect(() => {
+    for (const l of listeners.current) l();
+  }, [questions]);
+  return useMemo(() => ({
+    questions,
+    subscribe: (listener: () => void) => {
+      listeners.current.add(listener);
+      return () => listeners.current.delete(listener);
+    },
+  }), [questions]);
+}
+
+/** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the
+ *  Dispatch pill's). Only the bundled `clover` tree's surfaces have it; elsewhere it is undefined. The runtime counts
+ *  a send only within the frame's transient user activation, and the core only after it saw that input come to the
+ *  window, one send for one press or click; any other is refused and sends nothing. */
+export function useUserSend(): ((to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => Promise<void>) | undefined {
+  const part = usePart();
+  const allowed = part.entry.pluginId.split("/")[0] === "clover" && part.context.surface !== undefined;
+  const send = useCallback(async (to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => {
+    const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
+    if (activation !== undefined && !activation.isActive) throw new Error("the user's words go only from inside their key press or click");
+    const m = typeof message === "string" ? { text: message } : message;
+    await rt().bridge.userSend(part.mount, to, m);
+  }, [part.mount]);
+  return allowed ? send : undefined;
 }
 
 /** The session this window shows (the `clover` layer's shell says so; the core refuses it from any other layer): a

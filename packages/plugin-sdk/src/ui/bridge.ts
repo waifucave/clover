@@ -55,6 +55,35 @@ export interface MountInfo {
   strings?: StringTable;
 }
 
+/** A question a bot asked (`AskUserQuestion`), with its text (lane B's `PendingQuestion`). */
+export interface PendingQuestion {
+  readonly session: string;
+  readonly callId: string;
+  readonly bot?: string;
+  readonly at: number;
+  readonly questions: readonly {
+    readonly question: string;
+    readonly header?: string;
+    readonly multiSelect?: boolean;
+    readonly options: readonly { readonly label: string; readonly description?: string }[];
+  }[];
+}
+
+/** Where the user's own words go (lane B's `UserSendTarget`): a bot's main conversation, a session, or a
+ *  `pill.target` entry by its ref. */
+export type UserSendTarget = { bot: string } | { target: string } | { session: string };
+
+/** One entry of a spot, as its declaring part lists it (lane B's `SpotEntryView`): its ref for `<Spot entry>`, its
+ *  plugin, by name too, whether it is the bundled tree's, its key and the spot's own fields. */
+export interface SpotEntryView {
+  readonly ref: string;
+  readonly pluginId: string;
+  readonly pluginName: string;
+  readonly bundled: boolean;
+  readonly key?: string;
+  readonly fields: Readonly<Record<string, unknown>>;
+}
+
 /** One sheet the core applies in a document. */
 export interface ThemeSheet {
   id: string;
@@ -147,6 +176,8 @@ export type LayerMessage =
   /** The themes' sheets for this document changed (a theme, a style entry, a part placed). */
   | { type: "sheets"; sheets: readonly ThemeSheet[] }
   | { type: "strings"; strings: StringTable }
+  /** Questions waiting in any session, with their text: only to a document whose plugin has `conversation.read`. */
+  | { type: "questions"; questions: readonly PendingQuestion[] }
   /** The core root only: one of the core's own pages to show over the window (the welcome guide, safe mode's plugin
    *  manager), or none. */
   | { type: "core-page"; page: "welcome" | "plugins" | null }
@@ -240,7 +271,9 @@ export interface LayerBridge {
   describe(): Promise<MountInfo>;
   /** Resolves a spot that the part `mount` (this document's, or an inline part in it) declares. `hints.session` (the
    *  kind of session the part shows, for `when.session`) is heard from the `clover` layer only. */
-  resolve(mount: string, spot: string, key?: string, hints?: { session?: string }): Promise<SpotView>;
+  resolve(mount: string, spot: string, key?: string, hints?: { session?: string; entry?: string }): Promise<SpotView>;
+  /** A spot the part declares, as its entries, in the spot's order. */
+  entries(mount: string, spot: string, key?: string): Promise<readonly SpotEntryView[]>;
   /** New props for a child frame. */
   setProps(child: string, props: unknown): void;
   /** Calls a callback the parent handed this frame. */
@@ -274,6 +307,9 @@ export interface LayerBridge {
   /** The `clover` layer only: the session the window shows now (null: none), so a desktop notification for it is held
    *  back while the app is in front. */
   activeSession(mount: string, session: string | null): void;
+  /** The user's own words from a `clover` surface's part, inside the key press or click that sends (`useUserSend`):
+   *  the core carries them to the daemon as `pill.send` only after it saw that input come to this window. */
+  userSend(mount: string, to: UserSendTarget, message: { text: string; images?: readonly { mediaType: string; data: Uint8Array }[] }): Promise<{ seq?: number }>;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
   /** Claims a dropped grant for the part `mount`. */

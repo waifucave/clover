@@ -10,7 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { LayerMessage, LocaleValue, MountContext, MountInfo, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerMessage, LocaleValue, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
@@ -136,6 +136,7 @@ export class UiRuntime {
   private readonly strings: StringStore;
   private readonly layouts: LayoutStore;
   private readonly tables = new Map<string, StringTable>();
+  private questions: readonly PendingQuestion[] = [];
   private readonly now: () => number;
   private readonly token: () => string;
   private readonly log: (line: string) => void;
@@ -498,6 +499,8 @@ export class UiRuntime {
     m.sheetsKey = JSON.stringify(sheets);
     const strings = this.stringsFor(m);
     m.stringsKey = JSON.stringify(strings);
+    // The questions waiting, for a plugin that may read them.
+    if (this.questions.length > 0 && this.readsQuestions(m)) queueMicrotask(() => this.post(m.id, { type: "questions", questions: this.questions }));
     return { ...this.info(m), sheets, strings };
   }
 
@@ -561,24 +564,51 @@ export class UiRuntime {
     return entry?.declares[spot] !== undefined;
   }
 
-  /** Resolves a spot that the part `mountId` declares, for the document `frame`. */
-  resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string } = {}): SpotView {
-    const doc = this.requireDoc(frame);
-    const part = this.mounts.get(mountId);
-    if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
+  /** The cell a part's spot is, in its context: its shape and what may show there, with the cell's context. */
+  private cellOf(doc: Mount, part: Mount, spot: string, key: string | undefined, hints: { session?: string }) {
     const shape = spotInfo(spot)?.shape ?? part.plugin?.entries.find((e) => e.id === part.entryId)?.declares[spot]?.shape ?? "single";
     const cellKey = shape === "keyed" ? key : undefined;
-    if (!this.declares(part, spot)) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
-    // Only the trusted `clover` layer may say which kind of session a part shows (`when.session`).
     const session = doc.layer === "clover" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
     if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
     const prefer = ctx.bot === undefined ? undefined : this.preferFor(ctx.bot);
     if (prefer !== undefined) ctx.prefer = prefer;
     else delete ctx.prefer;
+    return { shape, cellKey, session, ctx };
+  }
+
+  /** A spot the part declares, as its entries (lane B's `useSpotEntries`, lane G's ask): for a part that draws them
+   *  one at a time with `<Spot entry>` (the island's tabs, the pill's targets). In the spot's order; only the
+   *  declaring part lists it. */
+  entries(frame: FrameRef, mountId: string, spot: string, key?: string): SpotEntryView[] {
+    const doc = this.requireDoc(frame);
+    const part = this.partIn(frame, mountId);
+    if (!this.declares(part, spot)) return [];
+    const { cellKey, ctx } = this.cellOf(doc, part, spot, key, {});
+    const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
+    return cell.shown.map((c) => ({
+      ref: entryRef(c.entry),
+      pluginId: c.plugin.id,
+      pluginName: c.plugin.name ?? c.plugin.id,
+      bundled: c.plugin.source === "bundled",
+      ...(c.entry.key !== undefined ? { key: c.entry.key } : {}),
+      fields: c.entry.fields,
+    }));
+  }
+
+  /** Resolves a spot that the part `mountId` declares, for the document `frame`. With `entry`, only that entry shows
+   *  (`<Spot entry>`). */
+  resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string; entry?: string } = {}): SpotView {
+    const doc = this.requireDoc(frame);
+    const part = this.mounts.get(mountId);
+    if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
+    // Only the trusted `clover` layer may say which kind of session a part shows (`when.session`).
+    const { shape, cellKey, session, ctx } = this.cellOf(doc, part, spot, key, hints);
+    if (!this.declares(part, spot)) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     let shown = cell.shown;
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
+    if (hints.entry !== undefined) shown = shown.filter((c) => entryRef(c.entry) === hints.entry);
     const places = new Set<string>();
     const items: SpotItem[] = [];
     for (const c of shown) {
@@ -905,6 +935,28 @@ export class UiRuntime {
       const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
       if (m.windowId === windowId && m.kind === "frame" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef !== undefined) this.post(m.id, message);
     }
+  }
+
+  /** The questions waiting in every session (lane D's): each document whose plugin has `conversation.read` hears them,
+   *  with their text; no other does. */
+  setQuestions(questions: readonly PendingQuestion[]): void {
+    this.questions = questions;
+    for (const m of this.mounts.values()) {
+      if (m.kind === "frame" && m.frame !== undefined && this.readsQuestions(m)) this.post(m.id, { type: "questions", questions });
+    }
+  }
+
+  private readsQuestions(doc: Mount): boolean {
+    // The `clover` layer is the whole tree's: it hears them when any of its parts' plugins may read conversations.
+    if (doc.plugin?.topId === "clover") return this.plugins.some((p) => p.topId === "clover" && p.capabilities.has("conversation.read"));
+    return doc.plugin?.capabilities.has("conversation.read") === true;
+  }
+
+  /** The part sending the user's own words: in the document `frame`, a `clover` tree surface's (throws otherwise). */
+  userSender(frame: FrameRef, mountId: string): { windowId: number; pluginId: string } {
+    const part = this.partIn(frame, mountId);
+    if (part.plugin?.topId !== "clover" || part.ctx.surface === undefined) throw new LayerError("only the app's own surfaces send the user's words");
+    return { windowId: part.windowId, pluginId: part.plugin.id };
   }
 
   /** A message to a window's core root only (the core's own pages). */

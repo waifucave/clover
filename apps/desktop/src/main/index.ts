@@ -10,6 +10,7 @@
 // temporary home.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease } from "node:os";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
@@ -30,7 +31,7 @@ import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
@@ -145,6 +146,17 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
+    userSend: async (windowId, to, message) => {
+      // One key press or click the main process saw come to the window covers one send (§5.5).
+      if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+      const target = sendTarget(to);
+      if (target === undefined) throw new LayerError("not a place the user's words go");
+      const images = sendImages(message.images);
+      if ("error" in images) throw new LayerError(images.error);
+      const client = pair.client;
+      if (client === undefined) throw new LayerError("Clover isn't running");
+      return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+    },
     activeSession: (windowId, session) => {
       activeSessions.set(windowId, session);
     },
@@ -621,6 +633,9 @@ function clickThrough(s: Surface): void {
 /** The menu broker's gate: menus open only right after the user's click or key press in that window, one at a time. */
 const menus = new MenuGate();
 
+/** Sends counted as the user's: one key press or click per send (the user-send gate). */
+const sends = new SendGate();
+
 /** The person's mouse-downs, by window (the view-frame gate). */
 const pointers = new PointerLog();
 
@@ -739,17 +754,22 @@ function browserHost(): BrowserHost {
 function watchWindow(win: BrowserWindow): void {
   const id = win.id;
   win.webContents.on("before-input-event", (_event, input) => {
-    if (input.type === "keyDown" || input.type === "rawKeyDown") menus.input(id);
+    if (input.type === "keyDown" || input.type === "rawKeyDown") {
+      menus.input(id);
+      sends.input(id);
+    }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
     if (mouse.type !== "mouseDown") return;
     menus.input(id);
+    sends.input(id);
     pointers.down(id, mouse.x, mouse.y);
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
   win.on("closed", () => {
     menus.forget(id);
+    sends.forget(id);
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);

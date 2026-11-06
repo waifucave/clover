@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, MENU_INPUT_WINDOW_MS, MenuGate, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -192,6 +192,32 @@ describe("a hang restarts the app into safe mode (ruling R9)", () => {
     w.unresponsive(2);
     for (const fn of [...timers.values()]) fn();
     expect(restarted).toEqual([1]);
+  });
+});
+
+describe("sends counted as the user's (§5.5)", () => {
+  test("one key press or click the main process saw covers one send, within a second, in that window", () => {
+    let now = 0;
+    const g = new SendGate(() => now);
+    expect(g.take(1)).toBe(false);
+    g.input(1);
+    expect(g.take(2)).toBe(false);
+    expect(g.take(1)).toBe(true);
+    expect(g.take(1)).toBe(false);
+    g.input(1);
+    now += SEND_INPUT_WINDOW_MS + 1;
+    expect(g.take(1)).toBe(false);
+  });
+
+  test("where the words may go, and the pictures with them", () => {
+    expect(sendTarget({ bot: "alpha" })).toEqual({ bot: "alpha" });
+    expect(sendTarget({ session: "s_alpha:main" })).toEqual({ session: "s_alpha:main" });
+    expect(sendTarget({ target: "clover/pill#codex" })).toEqual({ target: "clover/pill#codex" });
+    for (const bad of [{ bot: "Alpha!" }, { bot: "alpha", session: "x" }, { target: "nohash" }, "alpha", null]) expect(sendTarget(bad)).toBeUndefined();
+    expect(sendImages([{ mediaType: "image/png", data: new Uint8Array([1, 2]) }])).toEqual([{ mediaType: "image/png", data: "AQI=" }]);
+    expect(sendImages([{ mediaType: "image/gif", data: new Uint8Array([1]) }])).toHaveProperty("error");
+    expect(sendImages(Array.from({ length: 5 }, () => ({ mediaType: "image/png", data: new Uint8Array([1]) })))).toHaveProperty("error");
+    expect(sendImages(undefined)).toEqual([]);
   });
 });
 
