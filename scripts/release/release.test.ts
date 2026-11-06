@@ -476,7 +476,7 @@ describe("the Windows installer's elevated step", () => {
     const src = read("packaging/windows/sandbox-elevated.ps1");
     const b64 = sandboxScript(src, "d".repeat(64));
     expect(b64.length).toBeLessThanOrEqual(SANDBOX_SCRIPT_MAX);
-    const code = Buffer.from(b64, "base64").toString("utf8");
+    const code = Buffer.from(Bun.gunzipSync(new Uint8Array(Buffer.from(b64, "base64")))).toString("utf8");
     expect(code).toContain(`$Pin = '${"d".repeat(64)}'`);
     expect(code).not.toMatch(/^\s*#/m);
     // Copied into the protected folder, checked there, and run only from there.
@@ -484,14 +484,31 @@ describe("the Windows installer's elevated step", () => {
     expect(code).toContain("Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clover Sandbox'");
     expect(code).not.toContain("$env:ProgramFiles");
     expect(code).toContain("$dir = Join-Path $base $User");
-    expect(code.indexOf("Test-Protected $base")).toBeLessThan(code.indexOf("Copy-Item"));
-    expect(code).toContain("$User -notmatch '^S-1-[0-9]+(-[0-9]+)+$'");
+    expect(code).toContain("$User -notmatch '^S-1-[0-9]+(-[0-9]+)+\\z'");
     expect(code).toContain("param([string]$Action, [string]$SourceB64, [string]$UserB64)");
     const { SANDBOX_EXIT } = await import("../../packaging/installer-hooks");
     for (const n of [SANDBOX_EXIT.exeMissing, SANDBOX_EXIT.copyNotPinned, SANDBOX_EXIT.notProtected, SANDBOX_EXIT.badArgument]) {
       expect(code).toContain(`exit ${n}`);
     }
-    expect(code.indexOf("Copy-Item -LiteralPath $Source -Destination $exe")).toBeLessThan(code.indexOf("(Get-CloverDigest $exe) -ne $Pin"));
+    // The copy: never over an old file (deleted first, then created new, so it is born with the folder's list), the
+    // folders protected before it is written, the copy itself checked, then its digest, then run.
+    const at = (t: string): number => { const i = code.indexOf(t); expect(i, t).toBeGreaterThanOrEqual(0); return i; };
+    expect(code).not.toContain("Copy-Item");
+    expect(at("  Set-Protected $base")).toBeLessThan(at("  Set-Protected $dir"));
+    expect(at("  Set-Protected $dir")).toBeLessThan(at("Remove-Item -LiteralPath $exe -Force }"));
+    expect(at("Remove-Item -LiteralPath $exe -Force }")).toBeLessThan(at("[IO.FileMode]::CreateNew"));
+    expect(code).toContain("([IO.FileShare]::None), 65536, ([IO.FileOptions]::None), (New-Protected $false)");
+    expect(code).toContain("$acl.SetOwner((New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'))");
+    expect(code).toContain("if (-not (Test-Owner $Path)) { exit 6 }");
+    expect(at("[IO.FileMode]::CreateNew")).toBeLessThan(at("if (-not (Test-Protected $exe)) { Remove-Item"));
+    expect(at("if (-not (Test-Protected $exe)) { Remove-Item")).toBeLessThan(at("(Get-CloverDigest $exe) -ne $Pin"));
+    expect(code).toContain("-or -not (Test-Protected $exe)) { exit 6 }");
+    // The writer check is an allow list (only the owners may write), inheritable entries included, generic rights too.
+    expect(code).toContain("($Owners -notcontains $ace.IdentityReference.Value)");
+    expect(code).not.toContain("InheritOnly");
+    expect(code).toContain("-bor 0x40000000 -bor 0x10000000");
+    expect(code).toContain("$acl.SetAccessRuleProtection($true, $false)");
+    expect(code).toContain("[IO.FileAttributes]::ReparsePoint");
     expect(code).toContain("Start-Process -FilePath $exe -ArgumentList 'sandbox', $Action");
     expect(code).not.toContain("-FilePath $Source");
     // The certificate table's rules, as authenticodeDigest has them.
@@ -525,5 +542,9 @@ describe("the Windows installer's elevated step", () => {
     // An old daemon without `daemon stop`: Windows stops what is still running from this install, or the install stops.
     expect(check).toContain("Get-Process -Name clover-core");
     expect(check.indexOf("daemon stop")).toBeLessThan(check.indexOf("Stop-Process -Force"));
+    // The ruling: the user's own clover command line or terminal sessions may go with it, and the install says so.
+    expect(check).toContain("any clover command line or terminal session you had open was closed too");
+    // The script travels gzipped, opened by .NET's GZipStream in the installer's PowerShell.
+    expect(text).toContain("New-Object IO.Compression.GZipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String('${CLOVER_SANDBOX_PS}')))");
   });
 });

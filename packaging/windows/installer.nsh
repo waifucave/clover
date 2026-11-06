@@ -41,7 +41,7 @@
 
 !macro cloverSandbox ACTION
   System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_SANDBOX_SOURCE", t "$INSTDIR\resources\daemon\clover-core.exe")i'
-  nsExec::ExecToLog `"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${CLOVER_SANDBOX_PS}')); $$u = [Text.Encoding]::Unicode; $$src = [Convert]::ToBase64String($$u.GetBytes($$env:CLOVERINSTALL_SANDBOX_SOURCE)); $$sid = [Convert]::ToBase64String($$u.GetBytes([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); $$a = [string][char]39; $$c = '& {' + $$s + '} -Action ${ACTION} -SourceB64 ' + $$a + $$src + $$a + ' -UserB64 ' + $$a + $$sid + $$a; $$ps = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'; try { $$p = Start-Process -FilePath $$ps -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',[Convert]::ToBase64String($$u.GetBytes($$c)) -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode } catch { exit 1223 }"`
+  nsExec::ExecToLog `"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$z = New-Object IO.Compression.GZipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String('${CLOVER_SANDBOX_PS}'))), [IO.Compression.CompressionMode]::Decompress); $$s = (New-Object IO.StreamReader($$z, [Text.Encoding]::UTF8)).ReadToEnd(); $$u = [Text.Encoding]::Unicode; $$src = [Convert]::ToBase64String($$u.GetBytes($$env:CLOVERINSTALL_SANDBOX_SOURCE)); $$sid = [Convert]::ToBase64String($$u.GetBytes([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); $$a = [string][char]39; $$c = '& {' + $$s + '} -Action ${ACTION} -SourceB64 ' + $$a + $$src + $$a + ' -UserB64 ' + $$a + $$sid + $$a; $$ps = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'; try { $$p = Start-Process -FilePath $$ps -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',[Convert]::ToBase64String($$u.GetBytes($$c)) -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode } catch { exit 1223 }"`
   Pop $0
   System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_SANDBOX_SOURCE", p 0)i'
   DetailPrint "Clover: sandbox ${ACTION} exited $0"
@@ -58,12 +58,15 @@
     ${endIf}
     ; An older daemon without `daemon stop` answers with its help and exit 0, so stopped is confirmed from the OS:
     ; any clover-core still running from this install is stopped by Windows itself, and if one is still there after,
-    ; the install stops.
+    ; the install stops. That includes the user's own `clover` command line or terminal sessions running the same
+    ; exe (the controller's ruling: acceptable on an upgrade), and the install says so.
     System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_DAEMON_DIR", t "$INSTDIR\resources\daemon\")i'
-    nsExec::ExecToLog `"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$d = $$env:CLOVERINSTALL_DAEMON_DIR; function Get-Ours { Get-Process -Name clover-core -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and $$_.Path.StartsWith($$d, [StringComparison]::OrdinalIgnoreCase) } }; $$p = Get-Ours; if ($$p) { $$p | Stop-Process -Force; Start-Sleep -Seconds 2; if (Get-Ours) { exit 1 } }; exit 0"`
+    nsExec::ExecToLog `"$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$d = $$env:CLOVERINSTALL_DAEMON_DIR; function Get-Ours { Get-Process -Name clover-core -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and $$_.Path.StartsWith($$d, [StringComparison]::OrdinalIgnoreCase) } }; $$p = Get-Ours; if ($$p) { $$p | Stop-Process -Force; Start-Sleep -Seconds 2; if (Get-Ours) { exit 1 }; exit 2 }; exit 0"`
     Pop $0
     System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_DAEMON_DIR", p 0)i'
-    ${if} $0 != 0
+    ${if} $0 == 2
+      DetailPrint "Clover: stopped the clover-core processes still running from this install, so its files can be replaced; any clover command line or terminal session you had open was closed too"
+    ${elseif} $0 != 0
       DetailPrint "Clover: a daemon from this install is still running; its files can't be replaced now"
       SetErrorLevel 1
       Quit

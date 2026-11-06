@@ -466,6 +466,53 @@ jobs:
             if (-not $ps -or $ps -ne $ts) { throw "the digests differ for $file" }
           }
 
+      # The elevated script for real on this runner (an elevated admin, as the installer's runas is), called the way
+      # the installer calls it (`& {script} -Action … -SourceB64 … -UserB64 …` as an encoded command), with the runner's
+      # git.exe as the payload and its digest as the pin, and everything from running the copy on cut off (git.exe has
+      # no `sandbox` command). The copy must be owned by Administrators with no one else able to write, an old copy is
+      # replaced, one a user can write is refused on remove, a wrong digest and a bad SID are refused.
+      - name: The installer's elevated script protects the copy
+        shell: powershell
+        run: |
+          $src = Get-Content -Raw packaging/windows/sandbox-elevated.ps1
+          $fn = [regex]::Match($src, '(?s)function Get-CloverDigest.*?\r?\n}\r?\n').Value
+          Invoke-Expression $fn
+          $git = (Get-Command git.exe).Source
+          $cut = $src.IndexOf('$p = Start-Process -FilePath $exe')
+          if ($cut -lt 0) { throw 'the script no longer runs the copy where this step cuts it' }
+          $body = $src.Substring(0, $cut).Replace('__CLOVER_CORE_DIGEST__', (Get-CloverDigest $git)) + "exit 0`n"
+          $u = [Text.Encoding]::Unicode
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          function Run([string]$action, [string]$source, [string]$user) {
+            $c = '& {' + $body + "} -Action $action -SourceB64 '" + [Convert]::ToBase64String($u.GetBytes($source)) + "' -UserB64 '" + [Convert]::ToBase64String($u.GetBytes($user)) + "'"
+            $p = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', [Convert]::ToBase64String($u.GetBytes($c)) -NoNewWindow -Wait -PassThru
+            return $p.ExitCode
+          }
+          $exe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) "Clover Sandbox\$sid\clover-core.exe"
+          function Check-Protected([string]$path) {
+            $acl = Get-Acl -LiteralPath $path
+            $owner = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value
+            if ($owner -ne 'S-1-5-32-544') { throw "$path is owned by $owner" }
+            foreach ($ace in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+              $id = $ace.IdentityReference.Value
+              if ($ace.AccessControlType -eq 'Allow' -and $id -ne 'S-1-5-32-544' -and $id -ne 'S-1-5-18' -and ($ace.FileSystemRights -band [Security.AccessControl.FileSystemRights]'Write, Delete, ChangePermissions, TakeOwnership')) { throw "$path lets $id write ($($ace.FileSystemRights))" }
+            }
+          }
+          $r = Run 'setup' $git $sid; if ($r -ne 0) { throw "setup exited $r" }
+          if ((Get-FileHash $exe).Hash -ne (Get-FileHash $git).Hash) { throw 'the copy is not the payload' }
+          Check-Protected (Split-Path $exe); Check-Protected (Split-Path (Split-Path $exe)); Check-Protected $exe
+          # An old copy a user could write: replaced by a new one, born protected.
+          icacls $exe /grant '*S-1-5-32-545:(M)' | Out-Null
+          $r = Run 'remove' $git $sid; if ($r -ne 6) { throw "remove ran a copy users can write (exit $r)" }
+          $r = Run 'setup' $git $sid; if ($r -ne 0) { throw "setup over an old copy exited $r" }
+          Check-Protected $exe
+          $r = Run 'remove' $git $sid; if ($r -ne 0) { throw "remove of a protected copy exited $r" }
+          # A payload that isn't the pinned build, and a SID with a newline after it (`$` would let it through; `\z` doesn't).
+          $r = Run 'setup' (Join-Path ([Environment]::SystemDirectory) 'cmd.exe') $sid; if ($r -ne 5) { throw "a wrong digest exited $r" }
+          if (Test-Path -LiteralPath $exe) { throw 'the wrong copy was left behind' }
+          $r = Run 'setup' $git "$sid`n"; if ($r -ne 7) { throw "a bad SID exited $r" }
+          Write-Output 'the elevated script: the copy and its folders are protected, an old copy is replaced, a writable one refused, a wrong digest and a bad SID refused'
+
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
   # boolean>`, fails core's tsc when a `SessionEvent` variant is added). `bun run typecheck` is every workspace

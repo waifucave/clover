@@ -36,6 +36,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
 import { authenticodeDigest, parsePins, PIN_FILE, pinProblems, SRT_WIN_NOTICES, srtWinOutput } from "./srt-win";
@@ -89,14 +90,15 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
 
 /**
  * The installer's elevated script as it goes into the installer: comments and blank lines dropped (NSIS strings are
- * bounded), the daemon's Authenticode digest in place of the pin, UTF-8 in base64. Throws if the pin isn't there
- * once, the digest isn't one, or the result is too long for the installer's command line.
+ * bounded), the daemon's Authenticode digest in place of the pin, UTF-8, gzipped (the installer's PowerShell opens
+ * it with .NET's GZipStream), in base64. Throws if the pin isn't there once, the digest isn't one, or the result is
+ * too long for the installer's command line.
  */
 export function sandboxScript(source: string, coreDigest: string): string {
   if (!/^[0-9a-f]{64}$/.test(coreDigest)) throw new Error("the daemon's digest is not a SHA-256");
   if (source.split("__CLOVER_CORE_DIGEST__").length !== 2) throw new Error("sandbox-elevated.ps1 must hold the pin's placeholder once");
   const code = source.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim() !== "" && !l.trimStart().startsWith("#")).join("\n");
-  const b64 = Buffer.from(code.replace("__CLOVER_CORE_DIGEST__", coreDigest), "utf8").toString("base64");
+  const b64 = Buffer.from(gzipSync(Buffer.from(code.replace("__CLOVER_CORE_DIGEST__", coreDigest), "utf8"), { level: 9 })).toString("base64");
   if (b64.length > SANDBOX_SCRIPT_MAX) throw new Error(`the elevated script is ${b64.length} characters in base64, over ${SANDBOX_SCRIPT_MAX}`);
   return b64;
 }
