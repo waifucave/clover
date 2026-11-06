@@ -7,6 +7,7 @@
 
 import { type AccountIdentity, verifyAccountToken } from "./account-token";
 import { fromB64u } from "./encoding";
+import { fetchableUrl } from "./web";
 
 export interface JwksEnv {
   ACCOUNT_JWKS?: string;
@@ -45,15 +46,7 @@ function kidsOf(text: string): Set<string> {
 
 /** Whether a JWKS URL is one a service may fetch: https, or plain http to this machine for the local emulators. */
 export function allowedJwksUrl(raw: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (url.username || url.password) return false;
-  if (url.protocol === "https:") return true;
-  return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]");
+  return fetchableUrl(raw);
 }
 
 async function fetchJwks(url: string, fetcher: typeof fetch, now: number): Promise<Cached | null> {

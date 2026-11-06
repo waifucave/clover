@@ -74,3 +74,16 @@ export function ipv6Prefix64(ip: string): string {
     .map((g) => (g.replace(/^0+(?=.)/, "") || "0"))
     .join(":");
 }
+
+/** Whether a service may call this URL: https, or plain http to this machine for the local emulators. */
+export function fetchableUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password) return false;
+  if (url.protocol === "https:") return true;
+  return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]");
+}

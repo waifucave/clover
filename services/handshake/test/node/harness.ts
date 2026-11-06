@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 export interface HandshakeHarness {
   /** The handshake's origin, http://127.0.0.1:<port> */
   url: string;
-  /** The local sign-in stand-in's origin. */
+  /** The account service's local profile beside it (services/accounts): its POST /dev/token mints tokens. */
   accounts: string;
   stop(): Promise<void>;
 }

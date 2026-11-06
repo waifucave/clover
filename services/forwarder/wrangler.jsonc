@@ -53,9 +53,9 @@
       "observability": { "enabled": false },
       "routes": [{ "pattern": "hooks.waifucave.com", "custom_domain": true }],
       "vars": {
-        // Set at the live gates from lane H's account service: its issuer and its public signing keys.
+        // waifucave's account service (services/accounts): its issuer and its keys' URL.
         "ACCOUNT_ISSUER": "https://waifucave.com/auth",
-        "ACCOUNT_JWKS": "{\"keys\":[]}",
+        "ACCOUNT_JWKS_URL": "https://waifucave.com/auth/.well-known/jwks.json",
         "HOOKS_AUDIENCE": "hooks.waifucave.com",
         "HOOKS_ORIGIN": "https://hooks.waifucave.com",
         "HOLD_DAYS": "7",

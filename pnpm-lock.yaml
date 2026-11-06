@@ -684,7 +684,7 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  services/accounts-local:
+  services/accounts:
     devDependencies:
       '@cloudflare/vitest-plugin':
         specifier: 1.4.8
@@ -692,9 +692,18 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261023.1
         version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
       '@types/node':
         specifier: 25.9.3
         version: 25.9.3
+      '@waifucave/clover-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@waifucave/clover-test-harness':
+        specifier: workspace:*
+        version: link:../../packages/test-harness
       typescript:
         specifier: 5.9.3
         version: 5.9.3

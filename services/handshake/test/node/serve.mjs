@@ -1,6 +1,6 @@
-// Runs the handshake Worker on wrangler's local runtime (workerd), with the local sign-in stand-in
-// (services/accounts-local) beside it, for end-to-end tests that talk to it over real sockets: the web companion's
-// (plugins' clover/companion-web) and a browser's.
+// Runs the handshake Worker on wrangler's local runtime (workerd), with the account service's local profile beside it
+// (services/accounts: keys in memory, and its mint without a sign-in), for end-to-end tests that talk to it over real
+// sockets: the web companion's (plugins' clover/companion-web) and a browser's.
 //
 // Input:  HANDSHAKE_E2E (environment, JSON): { ticketSecret, webOrigins? }, made by the test in memory for this run.
 //         Nothing is written to disk but wrangler's own local state folder.
@@ -13,7 +13,7 @@ import { createTestHarness } from "wrangler";
 
 const config = JSON.parse(process.env.HANDSHAKE_E2E ?? "{}");
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const accountsRoot = fileURLToPath(new URL("../../../accounts-local", import.meta.url));
+const accountsRoot = fileURLToPath(new URL("../../../accounts", import.meta.url));
 
 const accounts = createTestHarness({ root: accountsRoot, workers: [{ configPath: "./wrangler.jsonc" }] });
 const { url: accountsUrl } = await accounts.listen();

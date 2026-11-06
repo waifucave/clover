@@ -45,7 +45,7 @@
       "observability": { "enabled": false },
       "routes": [{ "pattern": "handshake.waifucave.com", "custom_domain": true }],
       "vars": {
-        // Set at the live gates from lane H's account service: its issuer and its keys' URL.
+        // waifucave's account service (services/accounts): its issuer and its keys' URL.
         "ACCOUNT_ISSUER": "https://waifucave.com/auth",
         "ACCOUNT_JWKS_URL": "https://waifucave.com/auth/.well-known/jwks.json",
         "HANDSHAKE_AUDIENCE": "handshake.waifucave.com",

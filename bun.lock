@@ -407,13 +407,16 @@
         "react-dom": "^19.3.0",
       },
     },
-    "services/accounts-local": {
-      "name": "@waifucave/clover-service-accounts-local",
+    "services/accounts": {
+      "name": "@waifucave/clover-service-accounts",
       "version": "0.0.0",
       "devDependencies": {
         "@cloudflare/vitest-plugin": "1.4.8",
         "@cloudflare/workers-types": "5.20261023.1",
+        "@types/bun": "1.4.4",
         "@types/node": "26.6.5",
+        "@waifucave/clover-core": "workspace:*",
+        "@waifucave/clover-test-harness": "workspace:*",
         "typescript": "5.9.3",
         "vitest": "4.1.12",
         "wrangler": "4.153.0",
@@ -950,7 +953,7 @@
 
     "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
 
-    "@waifucave/clover-service-accounts-local": ["@waifucave/clover-service-accounts-local@workspace:services/accounts-local"],
+    "@waifucave/clover-service-accounts": ["@waifucave/clover-service-accounts@workspace:services/accounts"],
 
     "@waifucave/clover-service-forwarder": ["@waifucave/clover-service-forwarder@workspace:services/forwarder"],
 

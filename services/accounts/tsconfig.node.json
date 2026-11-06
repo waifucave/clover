@@ -4,10 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": [
-      "ES2023"
+      "ES2023",
+      "DOM"
     ],
     "types": [
-      "node"
+      "bun"
     ],
     "strict": true,
     "noUncheckedIndexedAccess": true,

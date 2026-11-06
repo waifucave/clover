@@ -1,0 +1,72 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // waifucave's account service (PROTOCOL.md): each account's device list, and the account tokens the hooks
+  // forwarder, push and the handshake check. Signing in is waifucave's Supabase project; this service takes its
+  // sessions. One Durable Object per account keeps its devices.
+  //
+  // The top level is the local profile that the tests and the emulators use: its signing keys are made in memory
+  // (EPHEMERAL_KEYS) and it has a mint without a sign-in (DEV_MINT), for tests that need a token and no account.
+  // env.production has neither, and would be the first deploy at the live gates; nothing here has been deployed.
+  // SIGNING_JWKS is never in this file: it comes from `wrangler secret put` (production) or a test harness.
+  //
+  // Observability stays off: nothing here should keep request lines.
+  "name": "clover-accounts-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "vars": {
+    "ISSUER": "http://127.0.0.1:8791",
+    "PATH_PREFIX": "",
+    "AUTH_URL": "",
+    "AUTH_ANON_KEY": "",
+    "AUDIENCES": "hooks.waifucave.com,push.waifucave.com,handshake.waifucave.com",
+    "WEB_ORIGINS": "http://127.0.0.1:8790",
+    "EPHEMERAL_KEYS": "1",
+    "DEV_MINT": "1"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ACCOUNTS", "class_name": "AccountDO" },
+      { "name": "KEYS", "class_name": "KeysDO" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountDO", "KeysDO"] }],
+  // Each limit counts per Cloudflare location, not globally.
+  "ratelimits": [
+    // Per client address (IPv6 by /64), before the sign-in is checked; room for carrier-grade NAT.
+    { "name": "ADDRESS_RATE", "namespace_id": "74001", "simple": { "limit": 120, "period": 60 } },
+    // Per account.
+    { "name": "API_RATE", "namespace_id": "74002", "simple": { "limit": 60, "period": 60 } }
+  ],
+  "env": {
+    "production": {
+      "name": "clover-accounts",
+      "workers_dev": false,
+      "observability": { "enabled": false },
+      // Under waifucave.com/auth, where the services' production profiles look for its issuer and keys. A host of
+      // its own works too: set PATH_PREFIX to "" and ISSUER to match.
+      "routes": [{ "pattern": "waifucave.com/auth/*", "zone_name": "waifucave.com" }],
+      "vars": {
+        "ISSUER": "https://waifucave.com/auth",
+        "PATH_PREFIX": "/auth",
+        // Set at the live gates: waifucave's Supabase project and its public anon key.
+        "AUTH_URL": "",
+        "AUTH_ANON_KEY": "",
+        "AUDIENCES": "hooks.waifucave.com,push.waifucave.com,handshake.waifucave.com",
+        "WEB_ORIGINS": "https://clover.waifucave.com"
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "ACCOUNTS", "class_name": "AccountDO" },
+          { "name": "KEYS", "class_name": "KeysDO" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "ADDRESS_RATE", "namespace_id": "74101", "simple": { "limit": 120, "period": 60 } },
+        { "name": "API_RATE", "namespace_id": "74102", "simple": { "limit": 60, "period": 60 } }
+      ]
+    }
+  }
+}
