@@ -119,10 +119,15 @@ export class PeerOwner {
   /** A reading of the table that starts after this call: joins the next one if one is already waiting. */
   private reading(): Promise<{ rows: Row[]; pids: Set<number>; held: Set<number> | "unknown" }> {
     if (this.next !== undefined) return this.next;
-    const p = (async () => {
+    // eslint-disable-next-line prefer-const
+    let p: Promise<{ rows: Row[]; pids: Set<number>; held: Set<number> | "unknown" }> | undefined;
+    p = (async () => {
+      // Never synchronously: `next` is set below before this body runs, and taken down here once the reading starts,
+      // so a call that comes after this point waits for a reading of its own.
+      await Promise.resolve();
       // Wait for a reading in progress to end: it may have started before this connection was made.
       while (this.running) await new Promise((r) => setTimeout(r, 2));
-      this.next = undefined;
+      if (this.next === p) this.next = undefined;
       this.running = true;
       try {
         return await this.read();

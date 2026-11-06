@@ -33,6 +33,8 @@ const steps: Step[] = [];
 const reports: AppTabEvent[] = [];
 const holds: string[] = [];
 const menus: { selectionText: string; canCopy: boolean }[] = [];
+const netLogs: string[] = [];
+const netLog = (line: string): void => { if (netLogs.length < 200) netLogs.push(line); };
 
 async function step(name: string, f: () => Promise<{ ok: boolean; detail?: unknown }>): Promise<void> {
   const t0 = Date.now();
@@ -117,7 +119,7 @@ async function main(): Promise<void> {
     },
     // The fixture's pages are on loopback, which a bot's tab may not reach (R13): these hosts let bot "alpha" reach
     // its own machine, as the person's tabs may. The step below runs a host with the real policies.
-    network: { policyFor: () => PERSON_POLICY },
+    network: { policyFor: () => PERSON_POLICY, log: netLog },
   };
   const host = createBrowserHost({ ...hostOpts, screenReader: { override: false } });
   await host.start();
@@ -344,7 +346,7 @@ async function main(): Promise<void> {
 
   // R13 with the real policies, under `--no-proxy-server` as the app runs (lane E): every tab's fixed proxy, the
   // network filter, still wins.
-  const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: undefined });
+  const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: { log: netLog } });
   await strict.start();
   await step("R13: a bot's tab reaches no loopback address, by number or by name; a coding session's does; neither reaches the metadata address (its proxy wins over --no-proxy-server)", async () => {
     const loaded = async (h: BrowserHost, id: string) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
@@ -401,6 +403,7 @@ async function main(): Promise<void> {
   const proxied = createBrowserHost({
     ...hostOpts, newId: () => `tab_p${++n}`, screenReader: { override: false },
     network: {
+      log: netLog,
       lookup: async (h: string) => (h === "proxied.test" ? [PUBLIC] : h === "nas.test" ? [LAN] : h === "localhost" ? ["127.0.0.1"] : []),
       dial: (p: number, ip: string) => {
         if (ip === PUBLIC || ip === LAN) {
@@ -466,7 +469,7 @@ async function main(): Promise<void> {
   reader.shutdown();
   host.shutdown();
   server.close();
-  writeFileSync(out, JSON.stringify({ platform: process.platform, electron: process.versions.electron, steps, reports: reports.length, holds }, null, 2));
+  writeFileSync(out, JSON.stringify({ platform: process.platform, electron: process.versions.electron, steps, reports: reports.length, holds, netLogs }, null, 2));
 }
 
 app.on("window-all-closed", () => undefined);

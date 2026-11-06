@@ -72,6 +72,18 @@ describe("PeerOwner", () => {
     expect(await quiet.accepts(at(PEER), LISTENER)).toBe(false);
   });
 
+  test("a connection made after a reading is found by the next one (never an old reading)", async () => {
+    let table = "p812\nn127.0.0.1:52344->127.0.0.1:61000\n";
+    let runs = 0;
+    const owner = new PeerOwner({ platform: "darwin", allowedPids: () => [812], run: async () => { runs++; return table; } });
+    expect(await owner.accepts(at(PEER), LISTENER)).toBe(true);
+    table += "n127.0.0.1:52345->127.0.0.1:61000\n";
+    expect(await owner.accepts(at(PEER + 1), LISTENER)).toBe(true);
+    table += "n127.0.0.1:52346->127.0.0.1:61000\n";
+    expect(await owner.accepts(at(PEER + 2), LISTENER)).toBe(true);
+    expect(runs).toBe(3);
+  });
+
   test("Windows: netstat names the process; only the allowed one passes", async () => {
     const run = async () => "  TCP    127.0.0.1:52344  127.0.0.1:61000  ESTABLISHED  4420\n  TCP    127.0.0.1:52345  127.0.0.1:61000  ESTABLISHED  999\n";
     const owner = new PeerOwner({ platform: "win32", allowedPids: () => [4420], run });
