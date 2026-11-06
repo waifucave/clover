@@ -11,15 +11,8 @@ import { useEffect, useState } from "react";
 import type { ComputerView, CoreClient, PluginApi, SessionView as Session } from "../../shell/runtime/types";
 import { SessionView } from "./SessionView";
 import { useCore, usePluginApi } from "./sdk";
+import { S } from "./strings";
 import type { SessionAgentStatus, SessionKind, SessionViewProps } from "./types";
-
-const LEVEL_LABELS: Record<string, string> = {
-  "read-only": "Read only",
-  ask: "Ask first",
-  "ask-risky": "Ask when risky",
-  "accept-edits": "Accept edits",
-  automatic: "Fully automatic",
-};
 
 function agentState(s: Session): SessionAgentStatus {
   if (s.needsYou && s.needsYou.cards + s.needsYou.questions > 0) return "needs-you";
@@ -109,7 +102,7 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
     // A level change is a sealed card from every layer (§5.5); Change opens Settings' Levels page, where the pick
     // raises it.
     ...(computer
-      ? { level: { label: LEVEL_LABELS[computer.level] ?? computer.level, ...(props.navigate ? { onChange: () => props.navigate!({ route: "settings", params: { section: "levels" } }) } : {}) } }
+      ? { level: { label: S.levelName(computer.level), ...(props.navigate ? { onChange: () => props.navigate!({ route: "settings", params: { section: "levels" } }) } : {}) } }
       : {}),
     folders: s.root ? [folder(s.root)] : [],
   };

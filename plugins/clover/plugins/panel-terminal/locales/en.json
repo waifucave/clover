@@ -1,0 +1,12 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.terminal.terminals": "Terminals",
+    "clover.terminal.newTerminal": "New terminal",
+    "clover.terminal.close": "Close {title}",
+    "clover.terminal.output": "{title} output",
+    "clover.terminal.exited": "Exited with code {count}",
+    "clover.terminal.leaveHint": "The terminal keeps Tab. F6 leaves it."
+  }
+}

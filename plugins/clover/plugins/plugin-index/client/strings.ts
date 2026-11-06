@@ -1,33 +1,90 @@
-// Every string the plugin index browser shows, for the move to `clover.` keys (plan, F-M3).
+// Every string the plugin index browser shows.
+import en from "../locales/en.json" with { type: "json" };
+import { translator } from "../../shell/runtime/strings";
+
+/** This part's words: `clover.pluginIndex.` keys, English in `locales/en.json`, the user's language through the app's tables. */
+const t = translator(en.strings);
+
 export const S = {
-  title: "Plugins",
-  intro: "Plugins add bots, panels, themes, tools and more. Each asks for your OK before it runs.",
-  search: "Search the plugin index",
-  searchButton: "Search",
-  installed: "Installed plugins",
-  looking: (what: string) => `Looking for a plugin for ${what}.`,
-  lookingDetail: "Index entries don't say which parts they fill yet, so this searches by name.",
-  panelKey: (key: string) => `the ${key} panel`,
-  spotKey: (spot: string, key: string) => `${spot}, ${key}`,
-  results: "Results",
-  searching: "Searching…",
-  none: (query: string) => (query ? `Nothing in your indexes matches “${query}”.` : "Your indexes have no plugins yet."),
-  install: "Install",
-  installName: (name: string) => `Install ${name}`,
-  state: { asking: "Asking…", waiting: "Waiting for your OK", installed: "Installed", failed: "Couldn't install" },
-  installedVersion: (v: string) => `Installed ${v}`,
-  update: (v: string) => `${v} available`,
-  notReviewed: "Not reviewed",
-  notReviewedDetail: "From an index you added. Only the official index is reviewed.",
-  adult: "18+",
-  gateTitle: "Adult content",
-  gateText: (name: string) => `${name} says it may contain adult content. Clover keeps plugins like it off until you confirm you're 18 or older. After that, it asks for its OK like any plugin.`,
-  gateConfirm: "I'm 18 or older",
-  gateCancel: "Cancel",
-  from: (index: string) => `From ${index}`,
-  indexes: "Indexes",
-  indexesDetail: "Where Clover looks for plugins. Indexes you add aren't reviewed.",
-  official: "Official",
-  checked: (when: string) => `Checked ${when}`,
-  neverChecked: "Not checked yet",
+  get title() {
+    return t("clover.pluginIndex.title");
+  },
+  get intro() {
+    return t("clover.pluginIndex.intro");
+  },
+  get search() {
+    return t("clover.pluginIndex.search");
+  },
+  get searchButton() {
+    return t("clover.pluginIndex.searchButton");
+  },
+  get installed() {
+    return t("clover.pluginIndex.installed");
+  },
+  looking: (what: string) => t("clover.pluginIndex.looking", { what }),
+  get lookingDetail() {
+    return t("clover.pluginIndex.lookingDetail");
+  },
+  panelKey: (key: string) => t("clover.pluginIndex.panelKey", { key }),
+  spotKey: (spot: string, key: string) => t("clover.pluginIndex.spotKey", { spot, key }),
+  get results() {
+    return t("clover.pluginIndex.results");
+  },
+  get searching() {
+    return t("clover.pluginIndex.searching");
+  },
+  none: (query: string) => (query ? t("clover.pluginIndex.noneMatching", { query }) : t("clover.pluginIndex.none")),
+  get install() {
+    return t("clover.pluginIndex.install");
+  },
+  installName: (name: string) => t("clover.pluginIndex.installName", { name }),
+  state: {
+    get asking() {
+      return t("clover.pluginIndex.state.asking");
+    },
+    get waiting() {
+      return t("clover.pluginIndex.state.waiting");
+    },
+    get installed() {
+      return t("clover.pluginIndex.state.installed");
+    },
+    get failed() {
+      return t("clover.pluginIndex.state.failed");
+    },
+  },
+  installedVersion: (v: string) => t("clover.pluginIndex.installedVersion", { v }),
+  update: (v: string) => t("clover.pluginIndex.update", { v }),
+  get notReviewed() {
+    return t("clover.pluginIndex.notReviewed");
+  },
+  get notReviewedDetail() {
+    return t("clover.pluginIndex.notReviewedDetail");
+  },
+  get adult() {
+    return t("clover.pluginIndex.adult");
+  },
+  get gateTitle() {
+    return t("clover.pluginIndex.gateTitle");
+  },
+  gateText: (name: string) => t("clover.pluginIndex.gateText", { name }),
+  get gateConfirm() {
+    return t("clover.pluginIndex.gateConfirm");
+  },
+  get gateCancel() {
+    return t("clover.pluginIndex.gateCancel");
+  },
+  from: (index: string) => t("clover.pluginIndex.from", { index }),
+  get indexes() {
+    return t("clover.pluginIndex.indexes");
+  },
+  get indexesDetail() {
+    return t("clover.pluginIndex.indexesDetail");
+  },
+  get official() {
+    return t("clover.pluginIndex.official");
+  },
+  checked: (when: string) => t("clover.pluginIndex.checked", { when }),
+  get neverChecked() {
+    return t("clover.pluginIndex.neverChecked");
+  },
 };

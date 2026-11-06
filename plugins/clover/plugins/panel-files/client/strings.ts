@@ -1,21 +1,45 @@
-// Every string the files panel shows, for the move to `clover.` keys (plan, F-M3).
+// Every string the files panel shows.
+import en from "../locales/en.json" with { type: "json" };
+import { translator } from "../../shell/runtime/strings";
+
+/** This part's words: `clover.files.` keys, English in `locales/en.json`, the user's language through the app's tables. */
+const t = translator(en.strings);
+
 export const S = {
-  tree: "Files",
-  filter: "Filter files",
-  filterHint: "Filter names · ?word inside",
-  noMatch: "No file matches",
-  matches: (query: string) => `Inside files: ${query}`,
-  noInside: (query: string) => `Nothing inside these files says “${query}”`,
-  truncated: "More matches than shown. Search for something longer.",
-  match: (path: string, line: number) => `${path}, line ${line}`,
-  emptyTitle: "No file open",
-  emptyText: "Choose one from the tree on the right, or a path named in the conversation.",
-  title: (folder: string, computer: string) => `Files in ${folder}, on ${computer}`,
-  on: (computer: string) => `on ${computer}`,
-  hiddenWarning: "Has hidden characters",
-  hiddenMark: (code: string, name: string) => `Hidden character ${code}, ${name}`,
-  loading: "Listing…",
-  viewer: (path: string) => `Contents of ${path}`,
-  fold: (name: string) => `Fold ${name}`,
-  unfold: (name: string) => `Unfold ${name}`,
+  get tree() {
+    return t("clover.files.tree");
+  },
+  get filter() {
+    return t("clover.files.filter");
+  },
+  get filterHint() {
+    return t("clover.files.filterHint");
+  },
+  get noMatch() {
+    return t("clover.files.noMatch");
+  },
+  matches: (query: string) => t("clover.files.matches", { query }),
+  noInside: (query: string) => t("clover.files.noInside", { query }),
+  get truncated() {
+    return t("clover.files.truncated");
+  },
+  match: (path: string, line: number) => t("clover.files.match", { path, line }),
+  get emptyTitle() {
+    return t("clover.files.emptyTitle");
+  },
+  get emptyText() {
+    return t("clover.files.emptyText");
+  },
+  title: (folder: string, computer: string) => t("clover.files.title", { folder, computer }),
+  on: (computer: string) => t("clover.files.on", { computer }),
+  get hiddenWarning() {
+    return t("clover.files.hiddenWarning");
+  },
+  hiddenMark: (code: string, name: string) => t("clover.files.hiddenMark", { code, name }),
+  get loading() {
+    return t("clover.files.loading");
+  },
+  viewer: (path: string) => t("clover.files.viewer", { path }),
+  fold: (name: string) => t("clover.files.fold", { name }),
+  unfold: (name: string) => t("clover.files.unfold", { name }),
 };

@@ -27,45 +27,17 @@ export interface SettingsEntryProps {
   close?: () => void;
 }
 
-/** What each capability lets a plugin do, in plain words, as its OK says. */
-const OK_WORDS: Record<string, string> = {
-  "conversation.read": "Reads your bots' conversations",
-  "conversation.post": "Posts notes and messages to bots",
-  "memory.read": "Reads your bots' memories",
-  "bots.read": "Sees your bots",
-  "routines.read": "Sees your routines",
-  "computers.read": "Sees your computers",
-  "computers.control": "Controls the screen and input of your computers",
-  approvals: "Restyles approval cards",
-  files: "Reads and writes files in your folders",
-  terminal: "Runs commands on your computers",
-  browser: "Drives the Clover Browser",
-  "usage.read": "Reads your usage",
-  "logs.read": "Reads Clover's logs",
-  notify: "Sends you notifications",
-  audio: "Can hear your microphone",
-  "devices.read": "Sees your devices",
-};
-
 export function okWords(detail: Pick<PluginDetail, "capabilities" | "networkHosts">): string[] {
   const out: string[] = [];
   for (const c of detail.capabilities) {
     if (c.startsWith("network:")) continue;
-    if (c.startsWith("call:")) out.push(`Runs ${c.slice(5)}'s commands`);
-    else out.push(OK_WORDS[c] ?? c);
+    if (c.startsWith("call:")) out.push(S.okCall(c.slice(5)));
+    else out.push(S.okWord(c));
   }
-  for (const h of detail.networkHosts) out.push(`Reaches ${h}`);
+  for (const h of detail.networkHosts) out.push(S.okHost(h));
   return out;
 }
 
-const SOURCES: Record<PluginSummary["source"], string> = {
-  bundled: "Bundled",
-  index: "From the plugin index",
-  npm: "From npm",
-  local: "From a folder",
-  wrapped: "Wrapped by Clover",
-  dev: "A development folder",
-};
 
 /** The languages Settings offers: English, built in, and every installed pack's. */
 const LANGUAGE_NAMES: Record<string, { native: string; name: string }> = {
@@ -186,7 +158,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     plugins: (loaded?.plugins ?? []).map((p) => ({
       id: p.id,
       name: plain(p.name),
-      source: SOURCES[p.source],
+      source: S.source(p.source),
       state: p.state,
       enabled: p.enabled,
       ...(p.reason ? { reason: p.reason } : {}),
@@ -195,13 +167,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     themes: loaded?.themes ?? [],
     theme: loaded?.globalTheme ?? loaded?.themes[0]?.id ?? "",
     levels: computers.map((c) => ({ computer: c.name, ...(c.link === "self" ? { here: true } : {}), level: c.level })),
-    levelOptions: [
-      { id: "read-only", label: "Read only" },
-      { id: "ask", label: "Ask first" },
-      { id: "ask-risky", label: "Ask when risky" },
-      { id: "accept-edits", label: "Accept edits" },
-      { id: "automatic", label: "Fully automatic" },
-    ],
+    levelOptions: (["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const).map((id) => ({ id, label: S.levelName(id) })),
     devices: devices.map((d) => ({ id: d.id, name: d.name, kind: deviceKind(d), ...(d.isThis ? { here: true } : {}), ...(d.isMain ? { main: true } : {}) })),
     bots,
   };

@@ -1,0 +1,24 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.files.tree": "Files",
+    "clover.files.filter": "Filter files",
+    "clover.files.filterHint": "Filter names · ?word inside",
+    "clover.files.noMatch": "No file matches",
+    "clover.files.matches": "Inside files: {query}",
+    "clover.files.noInside": "Nothing inside these files says “{query}”",
+    "clover.files.truncated": "More matches than shown. Search for something longer.",
+    "clover.files.emptyTitle": "No file open",
+    "clover.files.emptyText": "Choose one from the tree on the right, or a path named in the conversation.",
+    "clover.files.on": "on {computer}",
+    "clover.files.hiddenWarning": "Has hidden characters",
+    "clover.files.loading": "Listing…",
+    "clover.files.viewer": "Contents of {path}",
+    "clover.files.fold": "Fold {name}",
+    "clover.files.unfold": "Unfold {name}",
+    "clover.files.match": "{path}, line {line}",
+    "clover.files.title": "Files in {folder}, on {computer}",
+    "clover.files.hiddenMark": "Hidden character {code}, {name}"
+  }
+}

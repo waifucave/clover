@@ -47,7 +47,7 @@ describe("the session column", () => {
     render(<SessionView {...SESSION} outputs={{ ...SESSION.outputs!, onOpen }} />);
     fireEvent.click(screen.getByRole("button", { name: /Panel layout review/ }));
     expect(onOpen).toHaveBeenCalledWith("o1");
-    expect(screen.getByRole("button", { name: "lane/f-m1: 41 files, 2844 added, 365 removed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "lane/f-m1: 41 files, 2,844 added, 365 removed" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Create PR" })).toBeNull();
   });
 

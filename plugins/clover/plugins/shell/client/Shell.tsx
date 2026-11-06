@@ -15,7 +15,8 @@ import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, useLayerMessage, usePluginApi, useSpotEntries } from "./sdk";
+import { Spot, useApprovals, useLayerMessage, usePluginApi, useSpotEntries, useT } from "./sdk";
+import { setTranslator } from "../runtime/strings";
 import { S } from "./strings";
 import { plain } from "../runtime/views";
 import { Window } from "./Window";
@@ -55,6 +56,9 @@ function NothingHere({ title }: { title: string }) {
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {
+  // Every part under the shell reads its `clover.` keys through the app's table for the `clover` layer (lane E's
+  // `useT()`), in the user's language; what it lacks reads in the part's own English.
+  setTranslator(useT());
   const api = usePluginApi();
   const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
   const [route, setRoute] = useState<ShellRoute | undefined>(props.start?.route);

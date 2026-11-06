@@ -18,6 +18,12 @@
     "devices.read"
   ],
   "contributes": {
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
     "ui": [
       {
         "spot": "conversation",
