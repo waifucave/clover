@@ -25,10 +25,12 @@ export type SrtWinArch = "x64" | "arm64";
 /**
  * The pinned launcher digests, one per architecture. Shape is load-bearing: lane M's build check parses this exact
  * constant (`parsePins` in `scripts/release/srt-win.ts`), so keep it a frozen object literal with `x64` and `arm64`.
- * These are the confirmed pins from lane M's reproducible static-CRT build (Addendum 5).
+ * x64 is the measured Authenticode digest of the lane-C patched static-CRT build (per-principal records);
+ * arm64 is lane M's unpatched static-CRT build and is STALE until lane M's CI rebuilds the patched source —
+ * an arm64 launch fails closed (exit 3) until then.
  */
 export const SRT_WIN_PINS = Object.freeze({
-  x64: "9e303d358e0bfe153c1f81d3601f88b74a610ccb62bc67d7001249b7a6b0293b",
+  x64: "0cb06f4add9a91627427ccfb7e157bd085594cb8e0f919fb2d28abae2c92e495",
   arm64: "cf562110127e7612084de53782b0307326074d4e1958ca2c5262a974f6bc19c6",
 });
 
