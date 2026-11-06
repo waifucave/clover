@@ -49,10 +49,47 @@ export const SANDBOX_PRINCIPAL_PREFIX = "clover-sb-";
 
 /** Compute the per-user principal name from a Windows SID (Addendum 9).
  *  Returns `clover-sb-` + first 8 hex characters of SHA-256(SID).
- *  This is a pure function for testing; the live name always derives from the installer's target SID. */
+ *  Kept for single-principal contexts and tests; the pool uses
+ *  [`poolPrincipalName`] so concurrent sessions never share a SID. */
 export function principalNameFromSid(sid: string): string {
   const hash = createHash("sha256").update(sid).digest("hex");
   return `${SANDBOX_PRINCIPAL_PREFIX}${hash.slice(0, 8)}`;
+}
+
+/** Pool size: concurrent sessions per user (controller ruling 2). */
+export const SANDBOX_POOL_SIZE = 4;
+
+/** Pool principal `n` (1-based) for an owner SID: `clover-sb-<6hex>-<n>`, 18 chars, leased
+ *  exclusively — two bots never share a principal while they run. */
+export function poolPrincipalName(ownerSid: string, slot: number): string {
+  const hash = createHash("sha256").update(ownerSid).digest("hex").slice(0, 6);
+  return `${SANDBOX_PRINCIPAL_PREFIX}${hash}-${slot}`;
+}
+
+/** Per-slot WFP sublayer: name-based UUIDv5 (SHA-1) over the compiled sublayer namespace plus
+ *  owner SID and principal name (controller ruling 3: the sublayer derives per user; each pool
+ *  slot gets its own so one install never replaces another's filters). */
+export function poolSublayerGuid(ownerSid: string, principal: string): string {
+  const ns = Buffer.from(CLOVER_WFP_SUBLAYER.replace(/-/g, ""), "hex");
+  const digest = createHash("sha1").update(ns).update(ownerSid, "utf8").update(principal, "utf8").digest();
+  digest[6] = (digest[6]! & 0x0f) | 0x50;
+  digest[8] = (digest[8]! & 0x3f) | 0x80;
+  const hex = digest.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/** One leased pool member. */
+export interface PoolMember {
+  readonly principal: string;
+  readonly sublayer: string;
+}
+
+/** The pool for an owner: 4 exclusive principals with their sublayers. */
+export function sandboxPool(ownerSid: string, size: number = SANDBOX_POOL_SIZE): readonly PoolMember[] {
+  return Array.from({ length: size }, (_, i) => {
+    const principal = poolPrincipalName(ownerSid, i + 1);
+    return { principal, sublayer: poolSublayerGuid(ownerSid, principal) };
+  });
 }
 
 /** The installer's target user SID, read off our own path (should-fix: never the elevated token or env).
@@ -96,9 +133,12 @@ export function setupArgs(launcher: string, sublayer: string, principal: string)
 
 /** `srt-win uninstall`: undoes everything (`--keep-user` is never passed: remove removes all of it).
  *  Exits 0 when nothing is left. Takes no `--sandbox-user`: the 0.0.81 uninstall removes whatever account
- *  the install marker names under the sublayer; naming a user is a usage error (exit 2). */
-export function removeArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER): readonly string[] {
-  return [launcher, "uninstall", "--sublayer-guid", sublayer];
+ *  the install marker names under the sublayer; naming a user is a usage error (exit 2). With the patched
+ *  launcher, `--user` scopes the removal to that principal's record, credential and account. */
+export function removeArgs(launcher: string, sublayer: string, principal?: string): readonly string[] {
+  return principal === undefined
+    ? [launcher, "uninstall", "--sublayer-guid", sublayer]
+    : [launcher, "uninstall", "--sublayer-guid", sublayer, "--user", principal];
 }
 
 /** `srt-win status`: one line of JSON `{user, wfp}`; never elevates. */
@@ -108,6 +148,12 @@ export function statusArgs(launcher: string, sublayer: string): readonly string[
 
 /** `srt-win user status`: the principal's provisioning state, one object of JSON; never elevates. */
 export const USER_STATUS_ARGS: readonly string[] = ["user", "status"];
+
+/** `srt-win user status --user <principal>`: the per-principal record (patched launcher); without the
+ *  flag the machine-global record is reported. */
+export function userStatusArgs(launcher: string, principal?: string): readonly string[] {
+  return principal === undefined ? [launcher, "user", "status"] : [launcher, "user", "status", "--user", principal];
+}
 
 /** `srt-win exec`: launch a command as the principal. `--quiet` keeps broker chatter off the command's
  *  stderr; `--write-restricted-token` is the brief's token; `--deny-read`/`--deny-write` are the per-launch
@@ -124,9 +170,11 @@ export function execArgs(o: {
   denyWrite: readonly string[];
   env: Readonly<Record<string, string>>;
   writeRoots: readonly string[];
+  /** The pool principal to launch as (patched launcher `--user`): the launch names its identity. */
+  user: string;
   heldBy?: number;
 }): readonly string[] {
-  const a: string[] = [o.launcher, "exec", "--quiet", "--write-restricted-token"];
+  const a: string[] = [o.launcher, "exec", "--quiet", "--user", o.user, "--write-restricted-token"];
   for (const p of o.denyRead) a.push("--deny-read", p);
   for (const p of o.denyWrite) a.push("--deny-write", p);
   for (const r of o.writeRoots) a.push("--write-root", r);
@@ -306,17 +354,20 @@ export function startupFolders(o: { profileRoot: string; realUserProfile: string
   return [under(o.profileRoot), under(o.realUserProfile), o.commonStartup];
 }
 
-/** The install marker: our own per-user record of a completed `setup` (ruling 3). srt-win keeps one
- *  machine-global setup record (measured: the last install wins, an uninstall orphans the rest), so Clover
- *  keeps its own: `%ProgramData%\Clover Sandbox\markers\<owner SID>.json`, written elevated by setup,
- *  readable by everyone. `setup --force` across owners and `remove` against another owner's marker are
- *  refused off this record — never off the live token alone. */
-export interface InstallMarker {
-  readonly ownerSid: string;
+/** The install marker: our own per-user record of a completed `setup` (ruling 3). One pool of
+ *  principals per owner: `%ProgramData%\Clover Sandbox\markers\<owner SID>.json`, written elevated
+ *  by setup, readable by everyone. `setup --force` across owners and `remove` against another
+ *  owner's marker are refused off this record — never off the live token alone. */
+export interface PoolMemberRecord {
   readonly principal: string;
   readonly principalSid: string | null;
   readonly sublayer: string;
-  readonly version: 1;
+}
+
+export interface InstallMarker {
+  readonly version: 2;
+  readonly ownerSid: string;
+  readonly members: readonly PoolMemberRecord[];
 }
 
 /** Where the install marker for this owner lives. */
@@ -326,17 +377,34 @@ export function installMarkerPath(programData: string, ownerSid: string): string
 
 /** Serialize a completed setup's marker. */
 export function formatInstallMarker(m: InstallMarker): string {
-  return JSON.stringify({ version: 1, ownerSid: m.ownerSid, principal: m.principal, principalSid: m.principalSid, sublayer: m.sublayer });
+  return JSON.stringify({
+    version: 2,
+    ownerSid: m.ownerSid,
+    members: m.members.map((x) => ({ principal: x.principal, principalSid: x.principalSid, sublayer: x.sublayer })),
+  });
 }
 
-/** Parse a marker file back; null when absent or not ours. */
+/** Parse a marker file back; null when absent or not ours. Version 1 (single principal) reads as a
+ *  one-member pool. */
 export function parseInstallMarker(text: string | null): InstallMarker | null {
   if (text === null) return null;
   try {
     const o = JSON.parse(text) as Record<string, unknown>;
-    if (o.version !== 1 || typeof o.ownerSid !== "string" || typeof o.principal !== "string" ||
-      typeof o.sublayer !== "string" || (o.principalSid !== null && typeof o.principalSid !== "string")) return null;
-    return { version: 1, ownerSid: o.ownerSid, principal: o.principal, principalSid: o.principalSid, sublayer: o.sublayer };
+    if (typeof o.ownerSid !== "string") return null;
+    if (o.version === 2 && Array.isArray(o.members)) {
+      const members: PoolMemberRecord[] = [];
+      for (const e of o.members as Record<string, unknown>[]) {
+        if (typeof e !== "object" || e === null || typeof e.principal !== "string" || typeof e.sublayer !== "string" ||
+          (e.principalSid !== null && typeof e.principalSid !== "string")) return null;
+        members.push({ principal: e.principal, principalSid: e.principalSid, sublayer: e.sublayer });
+      }
+      return { version: 2, ownerSid: o.ownerSid, members };
+    }
+    if (o.version === 1 && typeof o.principal === "string" && typeof o.sublayer === "string" &&
+      (o.principalSid === null || typeof o.principalSid === "string")) {
+      return { version: 2, ownerSid: o.ownerSid, members: [{ principal: o.principal, principalSid: o.principalSid, sublayer: o.sublayer }] };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -350,11 +418,11 @@ export function markerAllowsSetup(marker: InstallMarker | null, ownerSid: string
   return { ok: true };
 }
 
-/** Whether `remove` may proceed: the marker's account must be one of the caller's own principals (ruling 3).
- *  A missing marker means nothing was set up here (exit 0 path); a foreign marker refuses. */
-export function markerAllowsRemove(marker: InstallMarker | null, ownerSid: string, principal: string): { ok: true } | { ok: false; reason: string } {
+/** Whether `remove` may proceed: the marker must belong to this owner (ruling 3). Every pool member
+ *  is the caller's own by construction; a missing marker means nothing was set up here. */
+export function markerAllowsRemove(marker: InstallMarker | null, ownerSid: string): { ok: true } | { ok: false; reason: string } {
   if (marker === null) return { ok: true };
-  if (marker.ownerSid !== ownerSid || marker.principal !== principal) {
+  if (marker.ownerSid !== ownerSid) {
     return { ok: false, reason: "the install belongs to another user" };
   }
   return { ok: true };

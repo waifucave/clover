@@ -57,6 +57,10 @@ import {
   minimalChildEnv,
   execArgs,
   profileQueryArgs,
+  poolPrincipalName,
+  poolSublayerGuid,
+  sandboxPool,
+  userStatusArgs,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -552,9 +556,9 @@ describe("the launch session protocol (ruling 1)", () => {
     const doc = JSON.parse(sessionGrantInput({ read: ["r"], write: ["w"], denyWrite: ["d"] }));
     expect(doc).toEqual({ read: ["r"], write: ["w"], denyWrite: ["d"] });
   });
-  test("exec requires env and write roots", () => {
-    const a = execArgs({ launcher: "s", shell: ["bash"], denyRead: ["dr"], denyWrite: ["dw"], env: { HOME: "h" }, writeRoots: ["w"] });
-    expect(a).toEqual(["s", "exec", "--quiet", "--write-restricted-token",
+  test("exec requires env, write roots and the principal", () => {
+    const a = execArgs({ launcher: "s", shell: ["bash"], denyRead: ["dr"], denyWrite: ["dw"], env: { HOME: "h" }, writeRoots: ["w"], user: "clover-sb-a-1" });
+    expect(a).toEqual(["s", "exec", "--quiet", "--user", "clover-sb-a-1", "--write-restricted-token",
       "--deny-read", "dr", "--deny-write", "dw", "--write-root", "w", "--env", "HOME=h", "--", "bash"]);
   });
   test("a session ends with revoke then forget/restore", () => {
@@ -567,26 +571,59 @@ describe("the launch session protocol (ruling 1)", () => {
 
 describe("the install marker (ruling 3)", () => {
   const owner = "S-1-5-21-1-2-3-1000";
-  const m = { version: 1 as const, ownerSid: owner, principal: "clover-sb-abc", principalSid: "S-1-5-21-1-2-3-1025", sublayer: "g" };
+  const m = {
+    version: 2 as const, ownerSid: owner,
+    members: [{ principal: "clover-sb-abc", principalSid: "S-1-5-21-1-2-3-1025", sublayer: "g" }],
+  };
   test("round-trips, and rejects foreign shapes", () => {
     expect(parseInstallMarker(formatInstallMarker(m))).toEqual(m);
     expect(parseInstallMarker(null)).toBeNull();
     expect(parseInstallMarker("{}")).toBeNull();
-    expect(parseInstallMarker(JSON.stringify({ ...m, version: 2 }))).toBeNull();
+    expect(parseInstallMarker(JSON.stringify({ ...m, version: 9 }))).toBeNull();
+  });
+  test("a version-1 single-principal marker reads as a one-member pool", () => {
+    const v1 = JSON.stringify({ version: 1, ownerSid: owner, principal: "clover-sb-abc", principalSid: null, sublayer: "g" });
+    expect(parseInstallMarker(v1)).toEqual({ ...m, members: [{ principal: "clover-sb-abc", principalSid: null, sublayer: "g" }] });
   });
   test("setup across owners is refused even with force", () => {
     expect(markerAllowsSetup(null, owner)).toEqual({ ok: true });
     expect(markerAllowsSetup(m, owner)).toEqual({ ok: true });
     expect(markerAllowsSetup(m, "S-1-5-21-9")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
   });
-  test("remove checks the marker's account is the caller's principal", () => {
-    expect(markerAllowsRemove(null, owner, "clover-sb-abc")).toEqual({ ok: true });
-    expect(markerAllowsRemove(m, owner, "clover-sb-abc")).toEqual({ ok: true });
-    expect(markerAllowsRemove(m, owner, "clover-sb-other")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
-    expect(markerAllowsRemove(m, "S-1-5-21-9", "clover-sb-abc")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
+  test("remove checks the marker belongs to the caller", () => {
+    expect(markerAllowsRemove(null, owner)).toEqual({ ok: true });
+    expect(markerAllowsRemove(m, owner)).toEqual({ ok: true });
+    expect(markerAllowsRemove(m, "S-1-5-21-9")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
   });
   test("the marker path scopes per owner under ProgramData", () => {
     expect(installMarkerPath("C:\\ProgramData", owner)).toBe(`C:\\ProgramData\\Clover Sandbox\\markers\\${owner}.json`);
+  });
+});
+
+describe("the pool (ruling 2)", () => {
+  const owner = "S-1-5-21-2049286435-129160171-2159440921-1000";
+  test("four exclusive 18-char names with distinct sublayers", () => {
+    const pool = sandboxPool(owner);
+    expect(pool).toHaveLength(4);
+    const names = pool.map((x) => x.principal);
+    expect(new Set(names).size).toBe(4);
+    for (const [i, p] of names.entries()) {
+      expect(p).toMatch(/^clover-sb-[0-9a-f]{6}-[1-4]$/);
+      expect(p.length).toBe(18);
+      expect(p.endsWith(`-${i + 1}`)).toBe(true);
+    }
+    const guids = pool.map((x) => x.sublayer);
+    expect(new Set(guids).size).toBe(4);
+    for (const g of guids) expect(g).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    // Deterministic per owner.
+    expect(sandboxPool(owner)).toEqual(pool);
+    expect(poolPrincipalName(owner, 1)).toBe(names[0]!);
+  });
+  test("user status and uninstall take the principal selector", () => {
+    expect(userStatusArgs("s.exe")).toEqual(["s.exe", "user", "status"]);
+    expect(userStatusArgs("s.exe", "clover-sb-a-1")).toEqual(["s.exe", "user", "status", "--user", "clover-sb-a-1"]);
+    expect(removeArgs("s.exe", "g")).toEqual(["s.exe", "uninstall", "--sublayer-guid", "g"]);
+    expect(removeArgs("s.exe", "g", "clover-sb-a-1")).toEqual(["s.exe", "uninstall", "--sublayer-guid", "g", "--user", "clover-sb-a-1"]);
   });
 });
 
