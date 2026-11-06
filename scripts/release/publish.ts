@@ -1,0 +1,194 @@
+// The owner's release step (plan §4 M-M2): it gathers every OS's release build into one GitHub release of this
+// repository, the feed electron-updater, the Homebrew cask and winget read (scripts/release/lib.ts). Nothing else
+// in the repo publishes, and CI never runs this.
+//
+//   bun scripts/release/publish.ts --from <dir>[,<dir>…] [--channel latest|beta]            the plan, checked
+//   bun scripts/release/publish.ts --from <dir>[,<dir>…] [--channel latest|beta] --create-draft
+//   bun scripts/release/publish.ts --promote <version> [--yes]                                beta → latest
+//
+// `--from` names the folders holding the builds: this Mac's signed `apps/desktop/out/dist` and the release
+// workflow's downloaded Windows and Linux artifacts. It checks that every OS's installers and update files are
+// there for the channel and that each update file matches the files it names, and on macOS that the dmg is signed
+// and stapled. Without `--create-draft` it only prints what it would upload. With it, it creates the release as a
+// draft (a pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment
+// it reaches anyone.
+//
+// `--promote` turns a published beta into the latest release: it adds the latest update files (the beta ones under
+// their latest names; the files they name are the same) and makes it a full release. Without `--yes` it only prints.
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkUpdateInfo, expectedArtifacts, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
+
+export const RELEASE_OSES: readonly ReleaseOs[] = ["mac", "win", "linux-x64", "linux-arm64"];
+
+export type PublishArgs =
+  | { mode: "draft"; from: string[]; channel: Channel; create: boolean }
+  | { mode: "promote"; version: string; yes: boolean };
+
+export function parsePublishArgs(argv: readonly string[]): PublishArgs {
+  let from: string[] | undefined;
+  let channel: Channel = "latest";
+  let create = false;
+  let promote: string | undefined;
+  let yes = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    const value = (name: string): string | undefined => (a === name ? argv[++i] : a.slice(name.length + 1));
+    if (a === "--create-draft") create = true;
+    else if (a === "--yes") yes = true;
+    else if (a === "--from" || a.startsWith("--from=")) from = (value("--from") ?? "").split(",").filter(Boolean);
+    else if (a === "--channel" || a.startsWith("--channel=")) channel = parseChannel(value("--channel"));
+    else if (a === "--promote" || a.startsWith("--promote=")) promote = value("--promote");
+    else throw new Error(`unknown argument ${a} (usage: release/publish --from <dir>[,…] [--channel latest|beta] [--create-draft] | --promote <version> [--yes])`);
+  }
+  if (promote !== undefined) {
+    if (from !== undefined || create) throw new Error("--promote takes a published version alone");
+    if (!/^\d+\.\d+\.\d+$/.test(promote)) throw new Error(`--promote takes a version, such as 0.125.0 (not ${promote})`);
+    return { mode: "promote", version: promote, yes };
+  }
+  if (from === undefined || from.length === 0) throw new Error("--from names the folders holding the release builds");
+  if (yes) throw new Error("--yes is for --promote; a draft is created with --create-draft");
+  return { mode: "draft", from, channel, create };
+}
+
+export interface ReleasePlan {
+  version: string;
+  channel: Channel;
+  /** Each asset's name and the folder it comes from. */
+  assets: Array<{ name: string; dir: string }>;
+  problems: string[];
+}
+
+/**
+ * Gathers a release from the build folders (`list` and `read` look into them, for tests): every OS's installers and
+ * update files for the channel, found once each, with each update file checked against the files it names. Block
+ * maps travel with their files (electron-updater's partial downloads).
+ */
+export function planRelease(
+  version: string,
+  channel: Channel,
+  dirs: readonly string[],
+  list: (dir: string) => string[],
+  read: (dir: string, name: string) => Uint8Array,
+): ReleasePlan {
+  const problems: string[] = [];
+  const where = new Map<string, string>();
+  for (const dir of dirs) {
+    for (const name of list(dir)) {
+      if (where.has(name) && where.get(name) !== dir) problems.push(`${name} is in both ${where.get(name)} and ${dir}`);
+      else where.set(name, dir);
+    }
+  }
+  const assets: Array<{ name: string; dir: string }> = [];
+  const add = (name: string) => {
+    const dir = where.get(name);
+    if (dir === undefined) problems.push(`${name} is missing`);
+    else if (!assets.some((x) => x.name === name)) assets.push({ name, dir });
+  };
+  for (const os of RELEASE_OSES) {
+    for (const name of expectedArtifacts(version, os, channel)) {
+      add(name);
+      if (name.endsWith(".yml") && where.has(name)) {
+        const info = parseUpdateInfo(new TextDecoder().decode(read(where.get(name)!, name)));
+        const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
+        problems.push(...checkUpdateInfo(info, version, readAny).map((p) => `${name}: ${p}`));
+        for (const f of info.files) {
+          add(f.url);
+          if (where.has(`${f.url}.blockmap`)) add(`${f.url}.blockmap`);
+        }
+      }
+    }
+  }
+  return { version, channel, assets, problems };
+}
+
+/** `gh release create` for the plan: a draft, a pre-release on beta, never marked latest until the owner publishes. */
+export function draftReleaseArgs(plan: ReleasePlan, repo: string): string[] {
+  return ["gh", "release", "create", `v${plan.version}`, "--repo", repo, "--draft", ...(plan.channel === "beta" ? ["--prerelease"] : []),
+    "--title", `Clover ${plan.version}`, "--notes", `Clover ${plan.version}${plan.channel === "beta" ? " (beta)" : ""}.`,
+    ...plan.assets.map((a) => join(a.dir, a.name))];
+}
+
+/** A beta update file's latest name (`beta-mac.yml` → `latest-mac.yml`, `beta.yml` → `latest.yml`). */
+export function promotedName(name: string): string {
+  if (!/^beta(-mac|-linux|-linux-arm64)?\.yml$/.test(name)) throw new Error(`${name} is not a beta update file`);
+  return name.replace(/^beta/, "latest");
+}
+
+const REPO = "waifucave/clover";
+
+function gh(args: readonly string[]): { status: number; out: string } {
+  const r = spawnSync("gh", args.slice(1) as string[], { encoding: "utf8" });
+  return { status: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
+
+function macSignedAndStapled(dmg: string): string[] {
+  if (process.platform !== "darwin") return ["the owner's release step runs on the Mac that signed the dmg"];
+  const sig = parseCodesignDisplay(spawnSync("codesign", ["-dvvv", dmg], { encoding: "utf8" }).stderr ?? "");
+  const problems: string[] = [];
+  if (sig.adhoc || sig.teamId === undefined) problems.push(`${dmg} is not signed with a Developer ID`);
+  if ((spawnSync("xcrun", ["stapler", "validate", dmg]).status ?? 1) !== 0) problems.push(`${dmg} has no notarization staple`);
+  return problems;
+}
+
+export function main(argv: readonly string[], root: string): number {
+  let a: PublishArgs;
+  try {
+    a = parsePublishArgs(argv);
+  } catch (err) {
+    console.error(`release/publish: ${(err as Error).message}`);
+    return 2;
+  }
+  if (a.mode === "promote") {
+    const tag = `v${a.version}`;
+    const view = gh(["gh", "release", "view", tag, "--repo", REPO, "--json", "isPrerelease,isDraft,assets"]);
+    if (view.status !== 0) { console.error(`release/publish: no release ${tag}: ${view.out.trim()}`); return 1; }
+    const info = JSON.parse(view.out) as { isPrerelease: boolean; isDraft: boolean; assets: Array<{ name: string }> };
+    if (info.isDraft || !info.isPrerelease) { console.error(`release/publish: ${tag} is ${info.isDraft ? "a draft" : "already a full release"}: only a published beta is promoted`); return 1; }
+    const betas = info.assets.map((x) => x.name).filter((n) => /^beta(-mac|-linux|-linux-arm64)?\.yml$/.test(n));
+    if (betas.length !== 4) { console.error(`release/publish: ${tag} has ${betas.length} beta update files, not 4 (${betas.join(", ")})`); return 1; }
+    console.log(`release/publish: promote ${tag}: upload ${betas.map(promotedName).join(", ")}, then make it a full release and the latest`);
+    if (!a.yes) { console.log("release/publish: nothing done (add --yes)"); return 0; }
+    const dir = mkdtempSync(join(tmpdir(), "clover-promote-"));
+    try {
+      if (gh(["gh", "release", "download", tag, "--repo", REPO, "--dir", dir, ...betas.flatMap((n) => ["--pattern", n])]).status !== 0) throw new Error("couldn't download the beta update files");
+      const files = betas.map((n) => {
+        const text = readFileSync(join(dir, n), "utf8");
+        if (parseUpdateInfo(text).version !== a.version) throw new Error(`${n} is not for ${a.version}`);
+        writeFileSync(join(dir, promotedName(n)), text);
+        return join(dir, promotedName(n));
+      });
+      const up = gh(["gh", "release", "upload", tag, "--repo", REPO, ...files]);
+      if (up.status !== 0) throw new Error(`the upload failed: ${up.out.trim()}`);
+      const edit = gh(["gh", "release", "edit", tag, "--repo", REPO, "--prerelease=false", "--latest"]);
+      if (edit.status !== 0) throw new Error(`the release edit failed: ${edit.out.trim()}`);
+      console.log(`release/publish: ${tag} is the latest release`);
+      return 0;
+    } catch (err) {
+      console.error(`release/publish: ${(err as Error).message}`);
+      return 1;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  const version = (JSON.parse(readFileSync(join(root, "apps", "desktop", "package.json"), "utf8")) as { version: string }).version;
+  for (const d of a.from) if (!existsSync(d)) { console.error(`release/publish: ${d} doesn't exist`); return 2; }
+  const plan = planRelease(version, a.channel, a.from, (d) => readdirSync(d), (d, n) => new Uint8Array(readFileSync(join(d, n))));
+  const dmg = plan.assets.find((x) => x.name === `Clover-${version}.dmg`);
+  if (dmg !== undefined) plan.problems.push(...macSignedAndStapled(join(dmg.dir, dmg.name)));
+  for (const p of plan.problems) console.error(`release/publish: ${p}`);
+  if (plan.problems.length > 0) return 1;
+  console.log(`release/publish: v${version} on ${a.channel}, ${plan.assets.length} files:`);
+  for (const x of plan.assets) console.log(`  ${x.name}  (${x.dir})`);
+  if (!a.create) { console.log("release/publish: nothing uploaded (add --create-draft)"); return 0; }
+  if (gh(["gh", "release", "view", `v${version}`, "--repo", REPO]).status === 0) { console.error(`release/publish: v${version} already exists`); return 1; }
+  const created = gh(draftReleaseArgs(plan, REPO));
+  if (created.status !== 0) { console.error(`release/publish: gh release create failed: ${created.out.trim()}`); return 1; }
+  console.log(`release/publish: the draft is up: ${created.out.trim()}. Publishing it on GitHub releases it.`);
+  return 0;
+}
+
+if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..", "..")));
