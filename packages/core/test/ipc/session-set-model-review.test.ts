@@ -41,8 +41,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifySwitch, sameFamily } from "@yanlinglabs/winter-provider-runtime";
-import { openaiChatFake, openaiResponsesFake, startFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { classifySwitch, sameFamily } from "@waifucave/clover-provider-runtime";
+import { openaiChatFake, openaiResponsesFake, startFake } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
@@ -50,9 +50,9 @@ import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
 import { renderNoCredentialHint } from "../../src/runtime-sdk/handoff";
 import { daemonResolveEndpoint } from "../../src/providers/registry";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { carriesReasoning, opaqueLeaks, outOfOrder } from "../helpers/carriage";
-import type { anthropicFake as AnthropicFakeModule } from "@yanlinglabs/winter-provider-conformance";
+import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
 
@@ -130,7 +130,7 @@ describe("A-6a: the no-credential hint never names an SDK or runtime (pure funct
   });
 });
 
-describeWithWinterBinary("A-6b: no credential at all -> runtime_selection_refused with the alternatives hint", (winterBin) => {
+describeWithEmbeddedRuntime("A-6b: no credential at all -> runtime_selection_refused with the alternatives hint", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -146,7 +146,7 @@ describeWithWinterBinary("A-6b: no credential at all -> runtime_selection_refuse
       schemaVersion: 3,
       provider: { model: "openai/gpt-5.6-sol" },
       providers: { openai: { baseUrl: openaiFake.url } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-a6b" });
@@ -190,7 +190,7 @@ describeWithWinterBinary("A-6b: no credential at all -> runtime_selection_refuse
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // A-7a — same family never prompts.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Clover runtime) never prompts", (winterBin) => {
+describeWithEmbeddedRuntime("A-7a: Sonnet -> Opus (both on the Clover runtime) never prompts", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -199,7 +199,7 @@ describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Clover runtime) neve
 
   beforeAll(async () => {
     home = realpathSync(mkdtempSync(join(tmpdir(), "review-a7a-sonnet-")));
-    const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
     const fakeServer = await startFake({
       routes: [{
         path: "*",
@@ -213,7 +213,7 @@ describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Clover runtime) neve
       schemaVersion: 3,
       provider: { model: "winter-test/unused" },
       providers: { anthropic: { baseUrl: fakeServer.url } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME, { kind: "api-key", key: "sk-test-a7a" });
@@ -249,7 +249,7 @@ describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Clover runtime) neve
   }, 60_000);
 });
 
-describeWithWinterBinary("A-7a: two OpenAI-family models never prompt on Clover", (winterBin) => {
+describeWithEmbeddedRuntime("A-7a: two OpenAI-family models never prompt on Clover", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -265,7 +265,7 @@ describeWithWinterBinary("A-7a: two OpenAI-family models never prompt on Clover"
       schemaVersion: 3,
       provider: { model: "openai/gpt-4.1" },
       providers: { openai: { baseUrl: openaiFake.url } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-a7a-gpt" });
@@ -348,7 +348,7 @@ describe("A-7: same-leg loss, against the REAL daemon resolver (no fixture)", ()
   });
 });
 
-describeWithWinterBinary("A-7: a zero-turn session that switches families does not prompt", (winterBin) => {
+describeWithEmbeddedRuntime("A-7: a zero-turn session that switches families does not prompt", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -361,7 +361,7 @@ describeWithWinterBinary("A-7: a zero-turn session that switches families does n
       scenarios: {}, unknownModel: async () => openaiResponsesFake.responsesStream({ text: ["hi"] }),
     });
     openaiFakeRef = openaiFake;
-    const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
     const fakeServer = await startFake({
       routes: [{
         path: "*",
@@ -375,7 +375,7 @@ describeWithWinterBinary("A-7: a zero-turn session that switches families does n
       schemaVersion: 3,
       provider: { model: "openai/gpt-5.6-sol" },
       providers: { openai: { baseUrl: openaiFake.url }, anthropic: { baseUrl: fakeServer.url } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-a7-zero" });
@@ -436,7 +436,7 @@ describeWithWinterBinary("A-7: a zero-turn session that switches families does n
 // gpt-4.1), and in `portable`, where only a reasoning source's own state is listed as kept for it
 // (gpt-4.1 is `continuation: "none"` and has none).
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("C1: a same-leg switch must not leave the review reading a stale model", (winterBin) => {
+describeWithEmbeddedRuntime("C1: a same-leg switch must not leave the review reading a stale model", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -452,7 +452,7 @@ describeWithWinterBinary("C1: a same-leg switch must not leave the review readin
       schemaVersion: 3,
       provider: { model: "openai/gpt-4.1" },
       providers: { openai: { baseUrl: openaiFake.url } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-c1" });
@@ -585,7 +585,7 @@ async function startChatProviderFake(reply: string, reasoning?: string[]): Promi
 // the rest of its point — each hop really reaches its own provider, body-level, with the conversation
 // carried. The prompt half of a real session lives in C1 above (a conversation the target cannot hold);
 // the loss matrix itself in the "same-leg loss" block.
-describeWithWinterBinary("A-7: the LITERAL gpt -> deepseek / deepseek -> GLM pairing (both silent since WS-23)", (winterBin) => {
+describeWithEmbeddedRuntime("A-7: the LITERAL gpt -> deepseek / deepseek -> GLM pairing (both silent since WS-23)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -608,7 +608,7 @@ describeWithWinterBinary("A-7: the LITERAL gpt -> deepseek / deepseek -> GLM pai
       provider: { model: "openai/gpt-5.6-sol" },
       // W19-6 — the ONLY thing pointing these providers anywhere. No daemon-side endpoint table.
       providers: { openai: { baseUrl: openaiFakeRef.url }, deepseek: { baseUrl: `${deepseek.fake.url}/v1` }, zai: { baseUrl: `${zai.fake.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-a7-openai" });
@@ -675,7 +675,7 @@ describeWithWinterBinary("A-7: the LITERAL gpt -> deepseek / deepseek -> GLM pai
   }, 240_000);
 });
 
-describeWithWinterBinary("A-7a: ONE canonical model on TWO providers switches SILENTLY (openai -> openrouter)", (winterBin) => {
+describeWithEmbeddedRuntime("A-7a: ONE canonical model on TWO providers switches SILENTLY (openai -> openrouter)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -692,7 +692,7 @@ describeWithWinterBinary("A-7a: ONE canonical model on TWO providers switches SI
       schemaVersion: 3,
       provider: { model: "openai/gpt-4.1" },
       providers: { openai: { baseUrl: openaiFakeRef.url }, openrouter: { baseUrl: `${openrouter.fake.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-a7a-openai" });

@@ -43,7 +43,7 @@ export function runtimeFolds(version: string | undefined): boolean {
   for (let i = 0; i < 3; i++) if (have[i] !== need[i]) return have[i]! > need[i]!;
   return true;
 }
-import type { Query, SDKHostInputFoldedMessage } from "@yanlinglabs/winter-agent-sdk";
+import type { Query, SDKHostInputFoldedMessage } from "@waifucave/clover-agent-sdk";
 
 /** `system/host_input_folded` → its `count`; `undefined` for every other frame (or a malformed one). */
 export function hostInputFoldedCount(msg: unknown): number | undefined {

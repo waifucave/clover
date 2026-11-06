@@ -1,6 +1,6 @@
 /** Host-only adapter executor. Input is already decoded by the authenticated native helper;
  * no guest packet/socket parser, credentials or endpoint selection live on this service port. */
-import type { CredentialMaterial, CredentialRef, ProviderContext, ProviderEvent, ResolvedModel, TurnRequest } from "@yanlinglabs/winter-provider-runtime";
+import type { CredentialMaterial, CredentialRef, ProviderContext, ProviderEvent, ResolvedModel, TurnRequest } from "@waifucave/clover-provider-runtime";
 import { credentialStoreOverSecretStore } from "../providers/credential-store";
 import type { SecretStore } from "../auth/secret-store";
 

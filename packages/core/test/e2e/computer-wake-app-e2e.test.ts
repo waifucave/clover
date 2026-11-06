@@ -13,7 +13,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { HELPER_GONE_REASON } from "../../src/computer-use/wakes/app-backend";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { sandboxAvailable } from "../../src/workflows/sandbox";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { FakeHelper } from "../computer-use/fake-helper";
 
 class TestClient {
@@ -71,9 +71,9 @@ const script = (code: string): string => [
   `CALL ComputerV2 ${JSON.stringify({ code: `const notes = await apps.open('Notes', { emit: false })\n${code}`, timeoutMs: 60_000 })}`,
 ].join("\n");
 
-const run = sandboxAvailable() ? describeWithWinterBinary : (name: string, _fn: (bin: string) => void) => test.skip(`${name} (no sandbox)`, () => {});
+const run = sandboxAvailable() ? describeWithEmbeddedRuntime : (name: string, _fn: () => void) => test.skip(`${name} (no sandbox)`, () => {});
 
-run("ComputerV2 wake triggers on apps through a real daemon (the real AppWakeBackend, a fake 1.17.0 helper)", (bin) => {
+run("ComputerV2 wake triggers on apps through a real daemon (the real AppWakeBackend, a fake 1.17.0 helper)", () => {
   let home: string;
   let cwd: string;
   let daemon: RunningDaemon | undefined;
@@ -111,7 +111,7 @@ run("ComputerV2 wake triggers on apps through a real daemon (the real AppWakeBac
       provider: { model: "winter-test/calls" },
       // A trigger needs the app allowed for the session or always.
       computerUse: { enabled: true, apps: { "com.apple.Notes": { grant: "always" } } },
-      runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 30 },
+      runtimes: { winterIdleTimeoutSec: 30 },
     }, null, 2));
     await boot();
   });

@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { connectMcpServer as sdkConnectMcpServer, createElicitationAsker, McpConnectError, type ConnectMcpServerOptions, type ConnectedMcpClient, type McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-client";
+import { connectMcpServer as sdkConnectMcpServer, createElicitationAsker, McpConnectError, type ConnectMcpServerOptions, type ConnectedMcpClient, type McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-client";
 import { readRawProjectMcpConfig, parseProjectMcpServers, type McpOAuthSetting } from "./project-file";
 import { projectScopeRootFor, projectScopeTrusted } from "../../runtime-sdk/run-home-input";
 import type { TrustStore } from "../trust";
@@ -43,7 +43,7 @@ export type McpServerConfig =
 //
 // WS-25 — THE RUNTIME'S OWN CLIENT, EVERY TRANSPORT. The probe no longer speaks through the daemon's
 // hand-written 2024-11-05 stdio client (`client.ts`, retired): it connects through the agent SDK's public
-// `@yanlinglabs/winter-agent-runtime/mcp-client` — the client a session's child uses, with the runtime's
+// `@waifucave/clover-agent-runtime/mcp-client` — the client a session's child uses, with the runtime's
 // version negotiation, its stdio transport (explicit env allowlist, process-GROUP kill on close) and its
 // cause-classified `McpConnectError`. So a status line and a session now fail, and succeed, for the same
 // reasons.

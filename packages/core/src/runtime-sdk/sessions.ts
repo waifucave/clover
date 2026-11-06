@@ -29,7 +29,7 @@ import {
   listSubagents as sdkListSubagents,
   renameSession as sdkRenameSession,
   tagSession as sdkTagSession,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "./brand";
 import { storeHomeFor } from "../agent/paths";
 

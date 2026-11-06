@@ -1,6 +1,6 @@
 // `runtime-sdk/fold.ts`: what a session may assume of its runtime (agent SDK 0.0.44's mid-turn fold).
 import { describe, expect, test } from "bun:test";
-import { WinterRpcError } from "@yanlinglabs/winter-agent-sdk";
+import { WinterRpcError } from "@waifucave/clover-agent-sdk";
 import { FOLD_SINCE, clearQueuedInput, hostInputFoldedCount, runtimeFolds } from "../../src/runtime-sdk/fold";
 
 describe("runtimeFolds: only a runtime KNOWN to be ≥ 0.0.44 folds", () => {

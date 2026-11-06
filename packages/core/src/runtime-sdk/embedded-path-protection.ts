@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { canonicalizeForWrite, resolveLeafSymlinks } from "../agent/paths";
-import { escapeSandboxGlobPath } from "@yanlinglabs/winter-runtime-sdk";
+import { escapeSandboxGlobPath } from "./host";
 import { homeFenceFor } from "./home-fence";
 import { hostStorageReadPatterns } from "./host-storage-fence";
 
