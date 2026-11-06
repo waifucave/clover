@@ -164,11 +164,16 @@ export class TreeService {
       }));
     };
     const h = opts.holder;
-    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, call) }));
-    serve("tree.read", (p, call) => h.read(p.path, {
+    // `noFollow` (tree 1.1) is refused until the holder honours it (lane J's #225): taking it and following links
+    // anyway would be the very bug it guards against.
+    const noFollowFirst = (p: { noFollow?: boolean }) => {
+      if (p.noFollow) throw new ContractError("unsupported", "this computer can't read without following links yet");
+    };
+    serve("tree.stat", async (p, call) => (noFollowFirst(p), { stat: await h.stat(p.path, call) }));
+    serve("tree.read", (p, call) => (noFollowFirst(p), h.read(p.path, {
       ...call, ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
       ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
-    }));
+    })));
     serve("tree.write", async (p, call) => {
       if (p.data.encoding === "base64" ? p.data.data.length > WRITE_BASE64_MAX : p.data.text.length > TREE_IO_MAX) {
         throw new ContractError("invalid", `${p.path}: a write carries at most ${TREE_IO_MAX} bytes`);

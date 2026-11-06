@@ -29,6 +29,8 @@ export const LinkView = z.object({
   relay: utf16(128).optional(),
   rttMs: z.number().nonnegative().optional(),
   since: Timestamp.optional(),
+  /** What the peer's `peer.hello` named on the live connection (its tree protocol among them, `treeFeature`). */
+  features: z.array(utf16(64)).max(64).optional(),
 });
 export type LinkView = z.infer<typeof LinkView>;
 

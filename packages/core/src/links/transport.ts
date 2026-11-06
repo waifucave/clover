@@ -18,6 +18,7 @@
 //   failed within `failFastMs`; a request in flight when its connection drops fails `offline` (§9.1).
 // * A link re-dials by itself with backoff after a loss, and at once on `networkChanged` (S1: re-dial on every
 //   network change and wake, keep whichever connection answers first).
+import { peerTakesTreeCall, treeFeature, treeProtocolOf } from "@waifucave/clover-protocol";
 import { type LinkPath, type LinkView, PEER_PROTOCOL_VERSION_RANGE } from "./versions";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError, isContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -61,6 +62,9 @@ export interface LinkTransportOptions {
   /** The lease epoch the hello carries (H-M2); 0 until then. */
   epoch?: () => number;
   features?: readonly string[];
+  /** The tree protocol this daemon names in its hello (`treeFeature`); default `TREE_PROTOCOL`. Tests play an older
+   *  peer with it. */
+  treeProtocol?: { major: number; minor: number };
   /** A relay's id for `LinkView.relay`, from its URL (the relay plugin that configured it). */
   relayLabel?: (url: string) => string | undefined;
   dialTimeoutMs?: number;
@@ -303,6 +307,17 @@ export class CloverLinkTransport implements LinkTransport {
 }
 
 /** A peer's link: the same object across drops and re-dials. */
+/** The features this daemon names in its hello: the caller's, and the tree protocol it speaks. */
+function helloFeatures(own: readonly string[], tree?: { major: number; minor: number }): string[] {
+  const named = tree === undefined ? treeFeature() : tree.major === 1 && tree.minor === 0 ? undefined : treeFeature(tree);
+  return [...new Set([...own, ...(named === undefined ? [] : [named])])];
+}
+
+/** A hello's `features`, kept only as short strings (at most 64). */
+function featuresOf(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((f): f is string => typeof f === "string" && f.length <= 64).slice(0, 64) : [];
+}
+
 class PeerLink implements Link {
   readonly peer: string;
   readonly #t: CloverLinkTransport;
@@ -336,6 +351,7 @@ class PeerLink implements Link {
       ...(relay === undefined ? {} : { relay }),
       ...(p.rttMs === undefined ? {} : { rttMs: p.rttMs }),
       ...(this.#since === undefined ? {} : { since: this.#since }),
+      features: [...best.peerFeatures],
     };
   }
 
@@ -391,7 +407,15 @@ class PeerLink implements Link {
     } catch (err) {
       return Promise.reject(err);
     }
-    return this.ready(opts.signal).then((s) => s.request<R>(method, payload, opts));
+    return this.ready(opts.signal).then((s) => {
+      // A peer on an older protocol would drop what it doesn't know (a `noFollow` read, and follow links): refused here,
+      // judged by what the peer's hello named on the connection the call would take, never trusted to the peer.
+      if (!peerTakesTreeCall(method, params, s.peerFeatures)) {
+        const has = treeProtocolOf(s.peerFeatures);
+        throw new ContractError("unsupported", `${this.peer} speaks tree protocol ${has.major}.${has.minor}, which can't take ${method} as asked`, { peer: this.peer, method });
+      }
+      return s.request<R>(method, payload, opts);
+    });
   }
 
   notify(method: string, params: unknown, opts: { priority?: LinkPriority } = {}): void {
@@ -631,6 +655,8 @@ class Session {
   #helloTimer: TimerHandle | undefined;
   retiring = false;
   seq = 0;
+  /** What the peer's `peer.hello` named on this connection: its tree protocol among them. */
+  peerFeatures: readonly string[] = [];
   /** The device that dialled this connection. */
   dialler: string;
 
@@ -673,7 +699,7 @@ class Session {
     if (this.conn.outbound) {
       const proposed = this.#link.lastSeq + 1;
       this.#link.lastSeq = proposed;
-      const hello = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.current, device: t.self, epoch: t.opts.epoch?.() ?? 0, features: [...t.opts.features], connSeq: proposed };
+      const hello = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.current, device: t.self, epoch: t.opts.epoch?.() ?? 0, features: helloFeatures(t.opts.features, t.opts.treeProtocol), connSeq: proposed };
       const p = this.#send("control", ["q", 0, "peer.hello", hello]);
       this.#pending.set(0, {
         resolve: (v) => {
@@ -690,12 +716,13 @@ class Session {
   }
 
   #helloAnswered(v: unknown): void {
-    const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown };
+    const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; features?: unknown };
     if (r?.device !== this.#link.peer || !seqOk(r.connSeq, this.#link.lastSeq) || !PEER_PROTOCOL_VERSION_RANGE.accepts(r.protocolVersion)) {
       this.close(CLOSE_PROTOCOL, "a bad hello answer");
       return;
     }
     this.seq = r.connSeq;
+    this.peerFeatures = featuresOf(r.features);
     this.#becomeReady();
   }
 
@@ -713,11 +740,12 @@ class Session {
       void this.#reply(lane, id, false, { code: "refused", message: `protocol version ${String(h.protocolVersion)} isn't supported` }).finally(() => this.close(CLOSE_PROTOCOL, "unsupported protocol version"));
       return;
     }
+    this.peerFeatures = featuresOf(h.features);
     const agreed = Math.max(h.connSeq, this.#link.lastSeq + 1);
     this.#link.lastSeq = agreed;
     this.seq = agreed;
     const t = this.#t;
-    const answer = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.agree(h.protocolVersion as number), device: t.self, epoch: t.opts.epoch?.() ?? 0, features: [...t.opts.features], connSeq: agreed };
+    const answer = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.agree(h.protocolVersion as number), device: t.self, epoch: t.opts.epoch?.() ?? 0, features: helloFeatures(t.opts.features, t.opts.treeProtocol), connSeq: agreed };
     void this.#reply(lane, id, true, answer).then(() => this.#becomeReady(), (e: unknown) => this.#fail(e instanceof Error ? e : new Error(String(e))));
   }
 

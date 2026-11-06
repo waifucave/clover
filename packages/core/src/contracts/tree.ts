@@ -136,8 +136,12 @@ export interface Tree {
   resolve(path: string): TreeLocation;
   /** A real path inside a computer's home folder, as a tree path; null outside it. */
   toTreePath(computer: string, realPath: string): string | null;
-  stat(path: string, opts: TreeCallOptions): Promise<FileStat | null>;
-  read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" }): Promise<TreeData>;
+  /** `noFollow` (tree protocol 1.1, lane J's `tree/nofollow.ts`): no link anywhere on the way is followed; one is
+   *  refused. For the user's own file viewers. To a peer on tree 1.0, which would drop it, it is refused here
+   *  (`unsupported`), never sent. */
+  stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null>;
+  /** `noFollow`: as `stat`, in the same call: only a plain file reached without a link is read. */
+  read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData>;
   write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean }): Promise<void>;
   list(path: string, opts: TreeCallOptions): Promise<FileStat[]>;
   remove(path: string, opts: TreeCallOptions & { recursive?: boolean }): Promise<void>;

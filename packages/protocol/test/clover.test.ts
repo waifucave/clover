@@ -630,3 +630,24 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [], adultConfirmed: "yes" }).success).toBe(false);
   });
 });
+
+describe("the tree protocol version (lane J's noFollow, #225)", () => {
+  test("noFollow is a tree.stat and tree.read param, and needs tree 1.1 of the peer", async () => {
+    const { CLOVER_METHODS: M, TREE_PROTOCOL, peerTakesTreeCall, treeFeature, treeProtocolOf } = await import("../src/index");
+    expect(M.get("tree.stat")!.params.safeParse({ path: "home/Studio/a", noFollow: true }).success).toBe(true);
+    expect(M.get("tree.read")!.params.safeParse({ path: "home/Studio/a", noFollow: true }).success).toBe(true);
+    expect(M.get("tree.read")!.params.safeParse({ path: "home/Studio/a", noFollow: "yes" }).success).toBe(false);
+    expect(TREE_PROTOCOL).toEqual({ major: 1, minor: 1 });
+    expect(treeFeature()).toBe("tree/1.1");
+    expect(treeProtocolOf(undefined)).toEqual({ major: 1, minor: 0 });
+    expect(treeProtocolOf(["x", "tree/1.1", "tree/1.0"])).toEqual({ major: 1, minor: 1 });
+    expect(treeProtocolOf(["tree/1.x", "tree/"])).toEqual({ major: 1, minor: 0 });
+    expect(peerTakesTreeCall("tree.stat", { path: "a", noFollow: true }, [])).toBe(false);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/1.0"])).toBe(false);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/1.1"])).toBe(true);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/1.2"])).toBe(true);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/2.0"])).toBe(false);
+    expect(peerTakesTreeCall("tree.read", { path: "a" }, [])).toBe(true);
+    expect(peerTakesTreeCall("tree.list", { path: "a", noFollow: true }, [])).toBe(true);
+  });
+});
