@@ -12,8 +12,8 @@
 //
 // `<bot>` is the bot's id with `/` written `--` (`pack--luna`, §5.1). The user layers' folder is part of the fenced
 // set (§9.1 "bots' user layers"): lane C's fence names `userLayersDir(home)`.
-import { join } from "node:path";
-import { botSegment, transcriptsDir } from "../sessions/ids";
+import { isAbsolute, join, relative, sep } from "node:path";
+import { botSegment, sessionFileStem, transcriptsDir } from "../sessions/ids";
 
 export interface BotPaths {
   /** `<home>/bots/<bot>`: what the tree's `bots/<bot>/` will name (§9.1). */
@@ -27,6 +27,20 @@ export function botPaths(home: string, botId: string): BotPaths {
   const seg = botSegment(botId);
   const root = join(home, "bots", seg);
   return { root, memory: join(root, "memory"), agents: join(root, "agents"), scratch: join(home, "scratch", seg) };
+}
+
+/** A session's scratch folder on this computer (§6.5): its bot's (`<home>/scratch/<bot>/`), or for a session with no
+ *  bot (a coding session the user started) one of its own, `<home>/scratch/_/<session>/`. Never synced. */
+export function sessionScratchDir(home: string, session: { id: string; bot?: string }): string {
+  return session.bot === undefined ? join(home, "scratch", "_", sessionFileStem(session.id)) : botPaths(home, session.bot).scratch;
+}
+
+/** A folder of this computer as a folder-tree path (§9.1): `home/<Computer>/` and its place under the user's home
+ *  folder. Undefined for a folder outside the user's home (a test's temp home), which the tree doesn't name. */
+export function homeTreePath(o: { userHome: string; computer: string; dir: string }): string | undefined {
+  const rel = relative(o.userHome, o.dir);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  return `home/${o.computer}/${rel.split(sep).join("/")}`;
 }
 
 /** The fenced folder of every bot's user layer (§9.1). */

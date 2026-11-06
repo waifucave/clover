@@ -1,7 +1,7 @@
 // The island in every state, for the lane's gallery (rendered to PNGs in CI, never on a desk). Each story
 // draws still frames of the pure animations, so a picture is the same on every run.
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { emptyDraft } from "./model/cards";
 import { cardGeometry, ISLAND, islandRect, stripRect, topInset, waitingRect, type ScreenShape } from "./model/geometry";
 import { FLUID } from "./model/fluid";
@@ -10,12 +10,16 @@ import { NEEDS_YOU, tabState } from "./model/tabs";
 import { APPROVAL, APPROVAL_2, APPROVAL_ALWAYS, LINK, NOTCH, NO_NOTCH, QUESTION, QUESTIONS_2, SEALED } from "./fixtures";
 import { QuestionCardContent, SealedCardContent } from "./ui/CardContent";
 import { LiquidCard } from "./ui/Liquid";
-import { NeedsYou, OpenIsland, TabScroll } from "./ui/OpenIsland";
+import { NeedsYou, OpenIsland } from "./ui/OpenIsland";
 import { mockSealedKit } from "./mock-kit";
 import { SealedKitContext } from "./ui/sealed";
 import { Strip } from "./ui/Strip";
 import { WaitingPill } from "./ui/WaitingPill";
-import { GroupTitle, LiftRow, LinkWords, RowWords, StatusWord } from "./ui/rows";
+import { DevicesList } from "./ui/DevicesTab";
+import { IslandSurface, type SurfaceHostApi } from "./ui/IslandSurface";
+import { islandPlacement, type SurfaceEnvironment, type SurfaceWindowSpec } from "./model/placement";
+import type { DeviceView } from "./model/devices";
+import type { IslandCard } from "./model/cards";
 
 export interface Story {
   id: string;
@@ -30,10 +34,12 @@ export interface Story {
 
 const kit = mockSealedKit(SEALED);
 
-/** The island's tabs in every story, in one order: Needs you, then the two sample guests. */
-const DEVICES = { id: "devices", title: "Devices" };
+/** The island's tabs in every story: Needs you, then the usage plugin's Usage and the island's own Devices. */
 const USAGE = { id: "usage", title: "Usage" };
-const TABS = [NEEDS_YOU, DEVICES, USAGE];
+const DEVICES = { id: "devices", title: "Devices" };
+/** In the manifests' order: the usage plugin's tab (800) before the island's own Devices (900). */
+export const ISLAND_TABS = [NEEDS_YOU, USAGE, DEVICES];
+const TABS = ISLAND_TABS;
 
 /** A screen's top edge: wallpaper, the menu bar, and the camera housing when there is one. */
 function Desktop({ shape, width, height, dark = false, children }: { shape: ScreenShape; width: number; height: number; dark?: boolean; children: ReactNode }): ReactElement {
@@ -110,45 +116,76 @@ function filmstrip(times: number[], frame: (t: number) => ReactNode, width: numb
   );
 }
 
-function SampleDevices({ hovered = false }: { hovered?: boolean }): ReactElement {
+/** Sample devices for the Devices tab (sample data). */
+const NOW = Date.UTC(2026, 10, 5, 12, 0, 0);
+export const SAMPLE_DEVICES: DeviceView[] = [
+  { id: "studio", name: "Studio", kind: "desktop", os: "macos", runsCore: true, online: true, isThis: true, isMain: true, addedAt: 0 },
+  { id: "laptop", name: "Pocket laptop", kind: "desktop", os: "windows", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0, link: { peer: "laptop", up: true, path: "lan", rttMs: 3.4 } },
+  { id: "box", name: "Box", kind: "server", os: "linux", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0, link: { peer: "box", up: true, path: "relay", relay: "waifucave relay", rttMs: 48 } },
+  { id: "phone", name: "Phone", kind: "phone", os: "ios", runsCore: false, online: false, isThis: false, isMain: false, addedAt: 0, lastSeenAt: NOW - 3 * 3_600_000, link: { peer: "phone", up: false, path: "relay", relay: "waifucave relay" } },
+];
+
+/** The island's desktop for another plugin's tab stories (the usage plugin's): wallpaper, menu bar and housing. */
+export const IslandDesktop = Desktop;
+
+/** A screen's top-centre crop for the surface stories: wallpaper, what the OS draws along the top, and the island's
+ *  overlay window where the surface asks for it, outlined (dashed, a few pixels out and BENEATH everything, never over a
+ *  sealed part): only what the island draws, never the whole frame. */
+function Screen({ env, width, height, cards, working = 0 }: { env: SurfaceEnvironment; width: number; height: number; cards: IslandCard[]; working?: number }): ReactElement {
+  const placement = islandPlacement(env);
+  const { bounds } = env.display;
+  const band = placement.shape.menuBarHeight;
+  const [spec, setSpec] = useState<SurfaceWindowSpec | null>(null);
+  const host = useMemo<SurfaceHostApi>(() => ({ setWindow: setSpec, setInteractiveRegions: () => {} }), []);
+  // The crop's left edge on the display: the frame centred in the crop.
+  const crop = placement.window.bounds.x - bounds.x + placement.window.bounds.width / 2 - width / 2;
+  const win = spec?.bounds ?? placement.window.bounds;
+  const left = Math.round(win.x - bounds.x - crop);
+  const top = win.y - bounds.y;
+  const wallpaper = env.os === "windows" ? "linear-gradient(160deg, #1B4F8A 0%, #6FA3D9 100%)" : env.os === "linux" ? "linear-gradient(160deg, #3C2F5C 0%, #C46A4A 100%)" : "linear-gradient(180deg, #8CA8D1 0%, #DBD4E6 100%)";
+  const barColour = env.os === "linux" ? "#000000E6" : "#FFFFFF59";
   return (
-    <TabScroll scrolls={false}>
-      <div className="clv-rows">
-        <GroupTitle title="Computers" meta="2 connected" />
-        <LiftRow
-          title="Studio"
-          side="this computer · main"
-          mark={{ kind: "dot", color: "#4CC38A" }}
-          trailing={<StatusWord mark={{ kind: "dot", color: "#4CC38A" }} word="Running" />}
-        />
-        <LiftRow
-          title="Pocket laptop"
-          side="2 bots lent their files"
-          mark={{ kind: "dot", color: "#4CC38A" }}
-          hovered={hovered}
-          trailing={<StatusWord mark={{ kind: "dot", color: "#4CC38A" }} word="Connected" />}
-          below={hovered ? <RowWords text="Paired 3 days ago · last turn 2 min ago" trailing={<LinkWords text="Open" />} /> : null}
-        />
-        <GroupTitle title="Phones" meta="1 paired" />
-        <LiftRow title="Phone" mark={{ kind: "ring", color: "#8B8B8B" }} quiet trailing={<StatusWord mark={{ kind: "ring", color: "#8B8B8B" }} word="Asleep" />} />
+    <SealedKitContext.Provider value={kit}>
+      <div style={{ position: "relative", width, height, overflow: "hidden", background: wallpaper }}>
+        {band > 0 ? <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: band, background: barColour }} /> : null}
+        {placement.shape.housing ? (
+          <div style={{ position: "absolute", top: 0, left: `calc(50% - ${placement.shape.housing.width / 2}px)`, width: placement.shape.housing.width, height: placement.shape.housing.height, background: "#000", borderRadius: "0 0 9px 9px" }} />
+        ) : null}
+        {spec?.visible ? <div style={{ position: "absolute", left: left - 4, top, width: win.width + 8, height: win.height + 4, boxSizing: "border-box", border: "1px dashed #FFFFFFD9", borderTop: 0 }} /> : null}
+        <div style={{ position: "absolute", left, top }}>
+          <IslandSurface environment={env} cards={cards} working={working} host={host} reducedMotion />
+        </div>
       </div>
-    </TabScroll>
+    </SealedKitContext.Provider>
   );
 }
 
-/** A sample Usage tab: what the usage plugin will show, in the island's row language (sample data). */
-function SampleUsage(): ReactElement {
+/** Wayland: the island as a normal window the compositor frames, always open on Needs you. */
+function WaylandWindow({ width, height, cards }: { width: number; height: number; cards: IslandCard[] }): ReactElement {
+  const env = WAYLAND_ENV;
+  const placement = islandPlacement(env);
+  const w = placement.window.bounds;
+  const titleBar = 38;
   return (
-    <TabScroll scrolls={false}>
-      <div className="clv-rows">
-        <GroupTitle title="This week" meta="sample" />
-        <LiftRow title="Claude" side="Max plan" trailing={<StatusWord mark={{ kind: "dot", color: "#4CC38A" }} word="62% left" />} />
-        <LiftRow title="Codex" side="Plus plan" trailing={<StatusWord mark={{ kind: "dot", color: "#FFC747" }} word="18% left" />} below={<RowWords text="Resets Monday at 09:00" />} hovered />
-        <LiftRow title="Grok" side="API key" quiet trailing={<StatusWord mark={{ kind: "ring", color: "#8B8B8B" }} word="Pay as you go" />} />
+    <SealedKitContext.Provider value={kit}>
+      <div style={{ position: "relative", width, height, overflow: "hidden", background: "linear-gradient(160deg, #3C2F5C 0%, #C46A4A 100%)" }}>
+        <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 32, background: "#000000E6" }} />
+        <div style={{ position: "absolute", left: (width - w.width) / 2, top: 56, width: w.width, borderRadius: 12, overflow: "hidden", boxShadow: "0 12px 40px #00000066", background: "#242424" }}>
+          <div style={{ height: titleBar, display: "flex", alignItems: "center", justifyContent: "center", font: "600 13px system-ui, sans-serif", color: "#FFFFFFDE" }}>Island</div>
+          <div style={{ position: "relative", height: w.height, background: "#000" }}>
+            <IslandSurface environment={env} cards={cards} reducedMotion />
+          </div>
+        </div>
       </div>
-    </TabScroll>
+    </SealedKitContext.Provider>
   );
 }
+
+const MAC_NOTCH_ENV: SurfaceEnvironment = { os: "macos", display: { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 0, y: 32, width: 1512, height: 950 }, notch: { x: 663.5, y: 0, width: 185, height: 32 } } };
+const MAC_PLAIN_ENV: SurfaceEnvironment = { os: "macos", display: { bounds: { x: 0, y: 0, width: 2560, height: 1440 }, workArea: { x: 0, y: 25, width: 2560, height: 1415 }, notch: null } };
+const WINDOWS_ENV: SurfaceEnvironment = { os: "windows", display: { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1032 }, notch: null } };
+const X11_ENV: SurfaceEnvironment = { os: "linux", session: "x11", display: { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 32, width: 1920, height: 1048 }, notch: null } };
+const WAYLAND_ENV: SurfaceEnvironment = { ...X11_ENV, session: "wayland" };
 
 const W = 640;
 
@@ -290,32 +327,73 @@ export const ISLAND_STORIES: Story[] = [
     ),
   },
   {
-    id: "island/open-rows",
-    title: "Open island: a tab in the island's row language, one row hovered",
+    id: "island/open-devices",
+    title: "Open island: Devices, the computers then the phones, one row under the pointer",
     width: W,
     height: 220,
     render: () => (
       <Desktop shape={NOTCH} width={W} height={220}>
         <Strip shape={NOTCH} counts={{ waiting: 0, working: 2 }} />
-        <OpenIsland shape={NOTCH} tabs={tabState(TABS, 1)}>
-          <SampleDevices hovered />
+        <OpenIsland shape={NOTCH} tabs={tabState(TABS, 2)}>
+          <DevicesList devices={SAMPLE_DEVICES} now={NOW} hovered="laptop" onOpenDevices={() => {}} />
         </OpenIsland>
       </Desktop>
     ),
   },
   {
-    id: "island/open-usage",
-    title: "Open island: Usage, a sample body until the usage plugin lands",
+    id: "island/open-devices-no-housing",
+    title: "Open island: Devices on a screen with no housing, an offline phone under the pointer",
     width: W,
     height: 220,
     render: () => (
-      <Desktop shape={NOTCH} width={W} height={220}>
-        <Strip shape={NOTCH} counts={{ waiting: 0, working: 1 }} />
-        <OpenIsland shape={NOTCH} tabs={tabState(TABS, 2)}>
-          <SampleUsage />
+      <Desktop shape={NO_NOTCH} width={W} height={220}>
+        <OpenIsland shape={NO_NOTCH} tabs={tabState(TABS, 2)}>
+          <DevicesList devices={SAMPLE_DEVICES} now={NOW} hovered="phone" />
         </OpenIsland>
       </Desktop>
     ),
+  },
+  {
+    id: "island/surface-macos-housing",
+    title: "The surface on a Mac with a camera housing: its window (dashed) is only the strip and the card, never the whole frame",
+    width: 760,
+    height: 240,
+    sealed: { visible: 5 },
+    render: () => <Screen env={MAC_NOTCH_ENV} width={760} height={240} cards={[APPROVAL]} working={1} />,
+  },
+  {
+    id: "island/surface-macos-external",
+    title: "The surface on a Mac's external display: no housing, from the top edge below the menu bar",
+    width: 760,
+    height: 240,
+    sealed: { visible: 5 },
+    render: () => <Screen env={MAC_PLAIN_ENV} width={760} height={240} cards={[APPROVAL]} working={1} />,
+  },
+  {
+    id: "island/surface-windows",
+    title: "The surface on Windows: the same island from the top edge, themed, no Apple blue",
+    width: 760,
+    height: 240,
+    sealed: { visible: 5 },
+    render: () => <Screen env={WINDOWS_ENV} width={760} height={240} cards={[APPROVAL]} working={2} />,
+  },
+  {
+    id: "island/surface-linux-x11",
+    title: "The surface on Linux (X11): below GNOME's top bar",
+    width: 760,
+    height: 240,
+    sealed: { visible: 5 },
+    render: () => <Screen env={X11_ENV} width={760} height={240} cards={[APPROVAL]} working={0} />,
+  },
+  {
+    id: "island/surface-linux-wayland",
+    title: "The surface on Linux (Wayland): a normal window, always open on Needs you",
+    width: 760,
+    height: 300,
+    // As on a screen with no housing: the open island's header is a row of its own, so the newest card's last parts
+    // lie below the fold of Needs you, a scroll away.
+    sealed: { visible: 4, scrolled: 2 },
+    render: () => <WaylandWindow width={760} height={300} cards={[{ ...QUESTION, issuedAt: 1 }, { ...APPROVAL, issuedAt: 6 }]} />,
   },
   {
     id: "island/open-morph",
