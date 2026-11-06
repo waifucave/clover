@@ -81,6 +81,7 @@ describe("the macOS profile, as text", () => {
     expect(at(denyPluginsStateOks)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(at(denyLaunchAgentsPlist)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(p).toContain(denyRunSubpath);
+    expect(p).toContain('(allow file-read* (subpath "/U/me/.clover/git-template"))'); // Clover's empty git template reads
     expect(p).toContain('(deny process-exec (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/osascript"))');
     expect(p.trim().endsWith("(deny network*)")).toBe(true);
   });
@@ -332,7 +333,7 @@ describe("the session's own repo", () => {
   });
 
   test("the Linux sandbox's mounts bind the session repo's hooks read-only", () => {
-    const dirs = new Set(["/h", "/h/p", "/h/p/.git", "/h/p/.git/hooks"]);
+    const dirs = new Set(["/h", "/h/p", "/h/p/.git", "/h/p/.git/hooks", "/h/.clover", "/h/.clover/git-template"]);
     const fs = {
       kind: (p: string) => (dirs.has(p) ? "dir" as const : null),
       list: (d: string) => [...dirs].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
@@ -340,6 +341,8 @@ describe("the session's own repo", () => {
     const s = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, repoHooks: "/h/p/.git/hooks", policy: {
       allowWrite: ["/h"], denyWrite: ["/h/.clover"], denyRead: ["/h/.clover"], closedDoors: [], blockedAddresses: [], network: "none" } }).join(" ");
     expect(s).toContain("--ro-bind /h/p/.git/hooks /h/p/.git/hooks");
+    // Clover's empty git template is bound back read-only, even without a caller.
+    expect(s).toContain("--ro-bind /h/.clover/git-template /h/.clover/git-template");
   });
 });
 
@@ -607,11 +610,18 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
   test("ordinary work runs: a shell pipeline, git init and commit in the project, mktemp", async () => {
     const w = world();
-    // Hooks are unwritable by design, so init installs no samples from the template dir; planting one is refused
-    // (see the hooks probes above). The empty template keeps ordinary git work running.
-    const r = await w.run(`printf 'a\\nb\\n' | sort -r | head -1 && mkdir -p empty-templates && GIT_TEMPLATE_DIR="$PWD/empty-templates" git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x && git log --oneline | wc -l | tr -d ' ' && TMPDIR='${w.temp}' mktemp >/dev/null && echo done`);
+    const r = await w.run(`printf 'a\nb\n' | sort -r | head -1 && git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x && git log --oneline | wc -l | tr -d ' ' && TMPDIR='${w.temp}' mktemp >/dev/null && echo done`);
     expect(r).toMatchObject({ kind: "exited", code: 0, shell: "sh" });
     expect(r.kind === "exited" && r.stdout).toBe("b\n1\ndone\n");
+  }, 60_000);
+
+  test("git init and clone work without installing hooks", async () => {
+    const w = world();
+    // Plain init and clone, as a bot runs them: Clover's empty template installs no hooks.
+    expect(ok(await w.run(`git init -q . && test ! -e .git/hooks && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x`))).toBe(true);
+    expect(existsSync(join(w.home, "project", ".git", "hooks"))).toBe(false);
+    expect(ok(await w.run(`git clone -q . ../clone && test ! -e ../clone/.git/hooks && cd ../clone && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m y && git log --oneline | wc -l`))).toBe(true);
+    expect(existsSync(join(w.home, "clone", ".git", "hooks"))).toBe(false);
   }, 60_000);
 });
 

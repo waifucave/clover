@@ -14,6 +14,7 @@
 //     refuses every new name outright, with no allow after it.
 import { dirname } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
+import { gitTemplateDir } from "./layout";
 import type { CallerPlaces } from "./per-caller";
 
 export interface MacProfileInput {
@@ -130,6 +131,8 @@ export function macFenceProfile(input: MacProfileInput): string {
   // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): refused everywhere
   // under it, after the caller's own allows (a runner's own folders may hold a repo too).
   lines.push(`(deny file-write* (regex #"^${rx(input.home)}/.*/\\.git/hooks(/|$)"))`);
+  // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it.
+  lines.push(`(allow file-read* (subpath ${q(gitTemplateDir(input.cloverHome))}))`);
   // No network (the daemon's socket included); `filtered` comes with the escape floor's ports.
   lines.push("(deny network*)");
   return `${lines.join("\n")}\n`;

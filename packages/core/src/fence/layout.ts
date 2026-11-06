@@ -148,3 +148,12 @@ export function botFolders(cloverHome: string): string[] {
   try { return readdirSync(join(cloverHome, "bots"), { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name); }
   catch { return []; }
 }
+
+/** Clover's empty git template for the sandboxed Bash (`GIT_TEMPLATE_DIR`): read-only to the runner, created by the
+ *  core when a sandboxed command starts, outside every runner-writable place (directly under the Clover home, which
+ *  the home default-deny keeps from runners). `git init` and `git clone` install no hooks from it. A user's own
+ *  `init.templateDir` in their git config is overridden by the env var inside the sandbox only. */
+export function gitTemplateDir(cloverHome: string): string {
+  const p = cloverHome.startsWith("/") && !cloverHome.includes("\\") ? posix : win32;
+  return p.join(cloverHome, "git-template");
+}

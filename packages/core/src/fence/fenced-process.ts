@@ -13,9 +13,10 @@ import type { Os } from "@waifucave/clover-protocol";
 import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
+import { gitTemplateDir } from "./layout";
 import { macFenceProfile } from "./macos-profile";
 import { callerPlaces } from "./per-caller";
-import { runCommand, type FencedSpawner } from "./spawn";
+import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } from "./spawn";
 
 export interface FencedProcessOptions {
   readonly fence: CloverFence;
@@ -46,10 +47,12 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       available: true,
       run: (r) => {
+        const template = ensureGitTemplate(o.fence.cloverHome);
+        if (typeof template !== "string") return Promise.resolve(template);
         const ctx = fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
         const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
-        return runCommand(r, { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
+        return runCommand(withGitTemplate(r, template), { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
       },
     };
   }
@@ -84,6 +87,8 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         const fd = openSync(file, "r");
         try {
           const ctx = fenceContextFor(r.who.caller);
+          const template = ensureGitTemplate(o.fence.cloverHome);
+          if (typeof template !== "string") return template;
           const caller = callerPlaces(o.fence.cloverHome, os, ctx);
           // The runner's own folders exist before the sandbox hides everything else: a first write lands on the
           // disk, the way the macOS profile's allows do. Parents included, each 0700, as `makeBotFolders` makes
@@ -100,7 +105,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           const repoHooks = ownRepoHooks(r.cwd, o.fence.home);
           if (repoHooks !== null) { try { mkdirSync(repoHooks, { recursive: true, mode: 0o700 }); } catch { /* stays unbound */ } }
           const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks });
-          const result = await runCommand(r, { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
+          const result = await runCommand(withGitTemplate(r, template), { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
           const note = heldFolderNote(result.stderr, plan.held);
           return note === null ? result : { ...result, stderr: result.stderr + note };
@@ -115,6 +120,24 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
 }
 
 const BWRAP = "/usr/bin/bwrap";
+
+/** Clover's empty git template for the sandbox: made here if missing, read-only to runners, so `git init` and
+ *  `git clone` install no hooks. A user's own `init.templateDir` in their git config is overridden by the env var
+ *  inside the sandbox only. */
+function ensureGitTemplate(cloverHome: string): string | FencedRunResult {
+  const template = gitTemplateDir(cloverHome);
+  try {
+    mkdirSync(template, { recursive: true, mode: 0o700 });
+    return template;
+  } catch (e) {
+    return { kind: "refused", reason: `a fenced process can't be started here: Clover's git template ${template} can't be made (${e instanceof Error ? e.message : String(e)})` };
+  }
+}
+
+/** The run with `GIT_TEMPLATE_DIR` pointed at Clover's empty template. */
+function withGitTemplate(r: FencedRun, template: string): FencedRun {
+  return { ...r, env: { ...r.env, GIT_TEMPLATE_DIR: template } };
+}
 
 /** The session's own repo's `.git/hooks`, when `cwd` sits inside a repo under `home`: the folder a planted hook
  *  would fire from. Climbs without following links — a link on the way up stops the climb — and stays under the

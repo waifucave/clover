@@ -20,11 +20,13 @@
 // Notes for the runner (a bot's Bash under here): a denied part of the home looks absent, not "permission denied"
 // (the tmpfs view holds nothing there: no listing, no stat), a write into the view fails as a read-only file
 // system (the view is remounted read-only around the bound-back own folders), `pip install --user` is refused (the
-// user site folders are fenced: bots use virtual environments), and `git init` installs no templates (its hooks
-// folder is read-only: plant nothing there, and the fence judges every tool call that reaches another repo's).
+// user site folders are fenced: bots use virtual environments), and `git init` and `git clone` use Clover's empty
+// template (`GIT_TEMPLATE_DIR`): no hooks are installed, plant none anyway, and the fence judges every tool call
+// that reaches another repo's).
 import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
+import { gitTemplateDir } from "./layout";
 import type { CallerPlaces } from "./per-caller";
 
 export interface BwrapInput {
@@ -118,6 +120,10 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
   }
 
+  // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. It is bound
+  // back even without a caller: the template holds no runner data, only Clover's empty template.
+  const template = gitTemplateDir(cloverHome);
+  if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
   // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): the session's own
   // repo's hooks are bound read-only (other repos under the home are the known limit, above).
   if (input.repoHooks !== null && input.repoHooks !== undefined && fs.kind(input.repoHooks) === "dir") {
