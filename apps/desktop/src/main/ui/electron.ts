@@ -233,6 +233,8 @@ export interface IpcHooks {
   open(pluginId: string, target: OpenTarget): Promise<void>;
   /** Where a part's native view goes in the window (undefined: nowhere now); `used` when the person just used it. */
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
+  /** The session a window shows now, as the `clover` layer's shell says (null: none). */
+  activeSession(windowId: number, session: string | null): void;
   /** Where a web page part's view goes in the window (undefined: hidden). */
   webFrame(windowId: number, mount: string, web: { plugin: UiPlugin; web: Readonly<Record<string, unknown>> }, bounds: Rect | undefined): void;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
@@ -411,6 +413,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.webFrame(place.windowId, mount, web, bounds);
     });
   });
+  on("clover:active-session", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) return;
+    // Only the app's own shell says what the window shows.
+    if (runtime.partOf(s.frame, mount).split("/")[0] !== "clover") return;
+    const session = a.session === null ? null : str(a.session, 128);
+    if (session !== undefined) hooks.activeSession(s.windowId, session);
+  });
   handle("clover:drag-offer", (event, a) => {
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
@@ -447,7 +458,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
 
   return () => {
     for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }
 

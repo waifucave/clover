@@ -271,6 +271,9 @@ export interface LayerBridge {
   /** Where a web page part's view goes, in this document's viewport (null: hidden). Only the document that placed
    *  the web part places its view. */
   webFrame(mount: string, rect: Rect | null): void;
+  /** The `clover` layer only: the session the window shows now (null: none), so a desktop notification for it is held
+   *  back while the app is in front. */
+  activeSession(mount: string, session: string | null): void;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
   /** Claims a dropped grant for the part `mount`. */

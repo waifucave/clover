@@ -5,7 +5,7 @@
 // What the core doesn't hand layers yet (the plugin API's bots, conversations, sessions, settings: lanes B, D, F)
 // draws empty: the default shell renders whole, with Alpha's tab, an empty conversation and a live composer.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Spot, SpotHints, useLayerMessage, useMountContext, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { Spot, SpotHints, useActiveSession, useLayerMessage, useMountContext, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { BotTab as FBotTab, Window as FWindow } from "@clover-child/shell";
 import { Sidebar as FSidebar, type SidebarBot, type SidebarRoute } from "@clover-child/sidebar";
 import { ConversationView } from "@clover-child/conversation";
@@ -40,6 +40,8 @@ export function Window(_: Props<Record<string, never>>) {
     return bots.find((b) => b.id === id) ?? { id, name: id.charAt(0).toUpperCase() + id.slice(1) };
   }, [route, bots, first]);
   const session = `${bot.id}:main`;
+  // The window shows this session: a desktop notification for it waits while the app is in front.
+  useActiveSession(settings === false ? session : undefined);
   const navigate = useCallback((r: SidebarRoute) => {
     if (r.kind === "settings") setSettings(true);
     else setRoute(r);
@@ -50,6 +52,12 @@ export function Window(_: Props<Record<string, never>>) {
     if (m.name === "open-bot" && m.args?.bot !== undefined) {
       setSettingsAt(false);
       setRoute({ kind: "bot", botId: m.args.bot });
+    }
+    // A notification's session: a bot's main conversation is its tab (other sessions' routes are F-M2's).
+    const main = m.name === "open-session" ? /^([a-z0-9-]+):main$/.exec(m.args?.session ?? "") : null;
+    if (main !== null) {
+      setSettingsAt(false);
+      setRoute({ kind: "bot", botId: main[1]! });
     }
   });
   const toggle = useCallback((id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id].slice(-2))), []);

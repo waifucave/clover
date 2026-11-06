@@ -56,6 +56,7 @@ function fakeBridge(views: Record<string, SpotView>) {
     },
     viewFrame: (mount, name, rect, used) => calls.push({ op: "viewFrame", args: [mount, name, rect, used] }),
     webFrame: (mount, rect) => calls.push({ op: "webFrame", args: [mount, rect] }),
+    activeSession: (mount, session) => calls.push({ op: "activeSession", args: [mount, session] }),
     dragOffer: async (mount, offer) => {
       calls.push({ op: "dragOffer", args: [mount, offer] });
       return { token: "g1" };

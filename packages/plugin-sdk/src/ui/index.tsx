@@ -722,6 +722,17 @@ export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined
   }), [part.mount]);
 }
 
+/** The session this window shows (the `clover` layer's shell says so; the core refuses it from any other layer): a
+ *  desktop notification for it waits while the app is in front. Not in lane B's declarations. */
+export function useActiveSession(session: string | undefined): void {
+  const part = usePart();
+  useEffect(() => {
+    const bridge = rt().bridge;
+    bridge.activeSession(part.mount, session ?? null);
+    return () => bridge.activeSession(part.mount, null);
+  }, [part.mount, session]);
+}
+
 /** Pending cards without their text. Sealed cards come in E-M3: none until then. */
 export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe } {
   return useMemo(() => ({ cards: [], subscribe: () => () => {} }), []);

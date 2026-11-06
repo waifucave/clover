@@ -39,6 +39,7 @@ if (isRoot || isLayer) {
     open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target }),
     viewFrame: (mount, name, rect, used) => ipcRenderer.send("clover:view-frame", { mount, name, rect, used: used === true }),
     webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
+    activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     onMessage: (listener) => {

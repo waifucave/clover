@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, Notification, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -25,6 +25,7 @@ import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, type DaemonClient } from "./protocol/client";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
+import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
@@ -143,6 +144,9 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
+    activeSession: (windowId, session) => {
+      activeSessions.set(windowId, session);
+    },
     webFrame: (windowId, mount, web, bounds) => {
       const spec = webSpec(web.web);
       if (spec === undefined) {
@@ -206,6 +210,19 @@ function makePair(): Pair {
   p.handle("app.tab.list", () => ({ tabs: browserHost().list() }));
   // The heartbeat (ruling R9): answered at once, from the main process, so a hung app goes unanswered.
   p.handle("app.ping", () => ({ ok: true }));
+  // Desktop notifications for the bundled notifier (lane G): shown unless the app is in front showing that session.
+  p.handle("app.notify", (params) => {
+    const raw = (params ?? {}) as Record<string, unknown>;
+    const parsed = APP_METHODS.appNotify.params.safeParse(raw);
+    if (!parsed.success) throw new Error("app.notify needs an id and a title");
+    const r = notifications.notify({ ...parsed.data, ...(raw.urgent === true ? { urgent: true } : {}) }, front());
+    return { ok: true, ...r };
+  });
+  p.handle("app.notify.close", (params) => {
+    const id = (params as { id?: unknown } | undefined)?.id;
+    notifications.close(typeof id === "string" ? id : undefined);
+    return { ok: true };
+  });
   p.handle("app.show", (params) => {
     const parsed = APP_METHODS.appShow.params.safeParse(params);
     if (!parsed.success) throw new Error("app.show needs a place to show");
@@ -651,6 +668,32 @@ const views = new ViewFrames((name, target) => {
   browser.setView(name, win === null || win.isDestroyed() ? undefined : { window: win, bounds: target!.bounds });
 });
 
+/** The session each window shows, as its shell said (the notifications' "in front" check). */
+const activeSessions = new Map<number, string | null>();
+
+function front(): { focused: boolean; session?: string | null } {
+  const w = BrowserWindow.getFocusedWindow();
+  if (w === null || w.isDestroyed() || !w.isVisible()) return { focused: false };
+  return { focused: true, session: activeSessions.get(w.id) ?? null };
+}
+
+const notifications = new Notifications((req, onClick) => {
+  // A headless run shows nothing and plays nothing.
+  if (headless || !Notification.isSupported()) {
+    log(`notify: ${headless ? "a headless run shows no notification" : "this desktop has no notifications"} (${req.id})`);
+    return undefined;
+  }
+  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
+  n.on("click", onClick);
+  n.show();
+  return n;
+}, (session) => {
+  void (async () => {
+    const win = await openMainWindow();
+    if (win !== undefined && session !== undefined) runtime.command(win.id, "open-session", { session });
+  })();
+});
+
 /** Web page entries' views (§5.5 "Web pages"), each in its plugin's own session. */
 const webViews = new WebViews((windowId) => {
   const w = BrowserWindow.fromId(windowId);
@@ -698,6 +741,7 @@ function watchWindow(win: BrowserWindow): void {
     hangs.responsive(id);
     views.dropWindow(id);
     webViews.dropWindow(id);
+    activeSessions.delete(id);
   });
 }
 
