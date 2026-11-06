@@ -10,6 +10,7 @@
 //     says `pair.exiting` before it leaves for an update or a restart. Quit itself is `pair.quit` (quit.ts).
 //
 // Pure apart from the injected dial, launcher and clock, so the tests drive it against a fake daemon under Bun.
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { APP_METHODS, type CloverHelloParams, type CloverHelloResult } from "@waifucave/clover-protocol";
 import { dial as dialSocket, RpcCallError, type DaemonClient, type RequestHandler } from "../protocol/client";
 import type { DaemonLauncher } from "./login";
@@ -57,9 +58,11 @@ export interface PairOptions {
   hello: () => HelloParamsOrUndefined;
   /** How to install and start the daemon; undefined when the app has no daemon binary (the unpackaged dev app). */
   launcher?: DaemonLauncher;
-  /** Check the server before the hello (`launcher.checkServer`): on Windows, where any user can make a pipe of that
-   *  name, the app sends its token only to this user's own daemon. */
-  checkServer?: boolean;
+  /** Lane C's `protocol.prove` before the hello, on the same connection: the daemon answers the app's nonce with an
+   *  HMAC under the app's token over the nonce and the pid it sees at the other end, which must be this process. A
+   *  daemon that can't prove it holds the token, or that sees another process, gets nothing (no token): on Windows a
+   *  pipe's name is in a namespace every user shares, and elsewhere it costs one round trip. */
+  prove?: { pid: number };
   dial?: (endpoint: string) => Promise<DaemonClient | undefined>;
   timing?: Partial<PairTiming>;
   now?: () => number;
@@ -73,6 +76,26 @@ export interface PairOptions {
 }
 
 type HelloParamsOrUndefined = CloverHelloParams | undefined | Promise<CloverHelloParams | undefined>;
+
+/** Lane C's `proveDaemon`: an HMAC under the app's token over the nonce and the pid the daemon sees. */
+export function daemonProof(appToken: string, nonce: string, pid: number): string {
+  return createHmac("sha256", appToken).update(`clover-daemon-proof\0${nonce}\0${pid}`).digest("base64url");
+}
+
+/** Asks the endpoint to prove it is this user's daemon (`protocol.prove`); undefined when it did, else why not. */
+export async function proveServer(client: Pick<DaemonClient, "request">, appToken: string, pid: number, timeoutMs: number): Promise<string | undefined> {
+  const nonce = randomBytes(24).toString("base64url");
+  let r: { proof?: unknown; pid?: unknown };
+  try {
+    r = await client.request<{ proof?: unknown; pid?: unknown }>("protocol.prove", { nonce }, timeoutMs);
+  } catch (err) {
+    return `it gave no proof: ${err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err)}`;
+  }
+  if (r.pid !== pid) return "it sees another process at the other end";
+  const want = Buffer.from(daemonProof(appToken, nonce, pid));
+  const got = Buffer.from(typeof r.proof === "string" ? r.proof : "");
+  return got.length === want.length && timingSafeEqual(got, want) ? undefined : "its proof is wrong";
+}
 
 export class Pair {
   private readonly timing: PairTiming;
@@ -142,22 +165,22 @@ export class Pair {
     const client = await (this.opts.dial ?? dialSocket)(this.opts.endpoint);
     this.refusal = undefined;
     if (client === undefined) return false;
-    if (this.opts.checkServer === true && this.opts.launcher?.checkServer !== undefined) {
-      const check = await this.opts.launcher.checkServer();
-      if (!check.ok) {
-        client.close();
-        this.refusal = `the endpoint isn't this user's daemon (${check.reason}); the app sent it nothing`;
-        this.log(`pair: ${this.refusal}`);
-        this.setState({ kind: "unavailable", reason: this.refusal });
-        return false;
-      }
-    }
     const params = await this.opts.hello();
     if (params === undefined) {
       client.close();
       this.refusal = "the app has no token for the daemon yet";
       this.setState({ kind: "unavailable", reason: this.refusal });
       return false;
+    }
+    if (this.opts.prove !== undefined) {
+      const why = await proveServer(client, params.token, this.opts.prove.pid, this.timing.helloTimeoutMs);
+      if (why !== undefined) {
+        client.close();
+        this.refusal = `the endpoint isn't this user's daemon (${why}); the app sent it nothing`;
+        this.log(`pair: ${this.refusal}`);
+        this.setState({ kind: "unavailable", reason: this.refusal });
+        return false;
+      }
     }
     client.onListenerError = (what, err) => this.log(`pair: a listener for ${what} failed: ${err instanceof Error ? err.message : String(err)}`);
     for (const [method, handler] of this.handlers) client.handle(method, handler);

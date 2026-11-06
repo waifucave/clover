@@ -189,8 +189,9 @@ function makePair(): Pair {
       return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
     },
     ...(binary !== undefined ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
-    // A pipe's name is in a namespace every Windows user shares: the token goes only to this user's own daemon.
-    checkServer: process.platform === "win32",
+    // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
+    // pipe's name is in a namespace every user shares.
+    prove: { pid: process.pid },
     log,
     onConnected: (client, hello) => {
       // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).

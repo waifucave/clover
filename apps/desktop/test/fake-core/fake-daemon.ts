@@ -6,7 +6,7 @@
 //
 // Everything it does goes to `<home>/fake/calls.jsonl`, which the tests read. It never touches a real home.
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
@@ -26,6 +26,9 @@ export interface FakeOptions {
   models?: FakeModel[];
   /** Answer `plugin.list` (and `plugin.setEnabled`, `plugin.remove`) from `ui`, for the plugin manager. */
   listPlugins?: boolean;
+  /** `protocol.prove`: the pid it says it sees at the other end (default: its own, for an app in this process), or
+   *  `refuse` to give no proof, or `wrong` to give a bad one. */
+  prove?: number | "refuse" | "wrong";
 }
 
 export interface FakeModel {
@@ -110,6 +113,13 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     // A key the app sends for a sign-in is never written down, here as in the daemon: only its length.
     const logged = typeof params.key === "string" ? { ...params, key: `<${params.key.length} characters>` } : params;
     record(opts.home, "request", { method, ...(method === "protocol.hello" ? { role: params.role } : { params: logged }) });
+    // Lane C's proof, before the hello: an HMAC under the app token over the app's nonce and the pid at the other end.
+    if (method === "protocol.prove" && !authed.has(s)) {
+      if (opts.prove === "refuse") return fail(-32601, "no protocol.prove");
+      const pid = typeof opts.prove === "number" ? opts.prove : process.pid;
+      const proof = createHmac("sha256", opts.prove === "wrong" ? "not-the-token" : token).update(`clover-daemon-proof\0${String(params.nonce)}\0${pid}`).digest("base64url");
+      return reply({ proof, pid });
+    }
     if (method === "protocol.hello") {
       if (params.role !== "app" || params.token !== token) return fail(-32001, "unauthorized");
       authed.add(s);
@@ -269,38 +279,23 @@ async function main(argv: string[]): Promise<void> {
     if (sub === "start") {
       // "Through the OS": a detached process of its own, never the caller's child for long.
       const self = process.argv[1] !== undefined && process.argv[1].endsWith(".ts") ? [process.argv[1]] : [];
-      const child = spawn(process.execPath, [...self, "daemon"], { detached: true, stdio: "ignore", env: process.env, windowsHide: true });
+      // The app that asked is the daemon's other end: the fake's `protocol.prove` names it, as the real one sees it.
+      const child = spawn(process.execPath, [...self, "daemon"], { detached: true, stdio: "ignore", env: { ...process.env, CLOVER_FAKE_APP_PID: String(process.ppid) }, windowsHide: true });
       child.unref();
       return;
     }
     process.exitCode = 2;
     return;
   }
-  if (cmd === "daemon" && sub === "check-server") {
-    // Lane C's pre-hello check: this user's daemon serves the endpoint when the fake's pid file names a live process.
-    record(home, "check-server");
-    const pidFile = join(fakeDir(home), "daemon.pid");
-    const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8")) : 0;
-    let alive = false;
-    try {
-      alive = pid > 0 && process.kill(pid, 0);
-    } catch {
-      alive = false;
-    }
-    const refuse = process.env.CLOVER_FAKE_CHECK_SERVER === "refuse";
-    process.stdout.write(`${JSON.stringify(alive && !refuse ? { ok: true, pid, userSid: "S-1-5-21-fake", image: argv[argv.indexOf("--image") + 1] ?? "" } : { ok: false, reason: refuse ? "another user's process serves the pipe" : "no daemon" })}\n`);
-    process.exitCode = alive && !refuse ? 0 : 1;
-    return;
-  }
   if (cmd === "daemon") {
     const uiFile = process.env.CLOVER_FAKE_UI;
     const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown>; models?: FakeModel[]; listPlugins?: boolean }) : {};
     let fake: FakeDaemon;
-    // The pid first, so `daemon check-server` already names this process when an app dials the new endpoint.
+    // The pid first, for the tests that stop it.
     mkdirSync(fakeDir(home), { recursive: true });
     writeFileSync(join(fakeDir(home), "daemon.pid"), String(process.pid));
     try {
-      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}) });
+      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}), prove: process.env.CLOVER_FAKE_PROVE === "refuse" || process.env.CLOVER_FAKE_PROVE === "wrong" ? process.env.CLOVER_FAKE_PROVE : Number(process.env.CLOVER_FAKE_APP_PID ?? process.pid) });
     } catch (err) {
       record(home, "listen-failed", { error: String(err) });
       process.exit(0);

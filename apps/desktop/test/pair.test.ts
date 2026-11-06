@@ -3,14 +3,14 @@
 // daemon's own quit, the token, how the app was started, and Quit's question.
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import { parseAutostartStatus, parseServerCheck, type DaemonLauncher } from "../src/main/pair/login";
-import { Pair, type PairState } from "../src/main/pair/pair";
+import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
+import { Pair, daemonProof, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
 import { readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
@@ -54,7 +54,7 @@ function fakeLauncher(home: string, opts: { startDelayMs?: number } = {}): Daemo
   return l;
 }
 
-function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { onDaemonQuit?: (r: string) => void; log?: (line: string) => void; checkServer?: boolean } = {}): { pair: Pair; states: PairState["kind"][] } {
+function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { onDaemonQuit?: (r: string) => void; log?: (line: string) => void; prove?: boolean } = {}): { pair: Pair; states: PairState["kind"][] } {
   const states: PairState["kind"][] = [];
   const pair = new Pair({
     endpoint: daemonEndpoint(home),
@@ -67,7 +67,7 @@ function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { on
     onState: (s) => states.push(s.kind),
     ...(extra.onDaemonQuit ? { onDaemonQuit: extra.onDaemonQuit } : {}),
     ...(extra.log ? { log: extra.log } : {}),
-    ...(extra.checkServer ? { checkServer: true } : {}),
+    ...(extra.prove ? { prove: { pid: process.pid } } : {}),
   });
   pairs.push(pair);
   return { pair, states };
@@ -241,55 +241,42 @@ describe("quitting", () => {
   });
 });
 
-describe("the server check before the hello (Windows' pipes, lane C's `daemon check-server`)", () => {
-  const withCheck = (home: string, answer: { ok: true } | { ok: false; reason: string }) => {
-    const l = fakeLauncher(home) as ReturnType<typeof fakeLauncher> & { checkServer: () => Promise<typeof answer>; checks: number };
-    l.checks = 0;
-    l.checkServer = async () => {
-      l.checks++;
-      return answer;
-    };
-    return l;
-  };
-
-  test("this user's daemon: the hello goes, and the pair connects", async () => {
+describe("the daemon's proof before the hello (lane C's protocol.prove, on the same connection)", () => {
+  test("this user's daemon proves it holds the token and sees this process: the hello goes, and the pair connects", async () => {
     const home = tempHome();
     fakes.push(await startFakeDaemon({ home }));
-    const launcher = withCheck(home, { ok: true });
-    const { pair } = pairFor(home, launcher, { checkServer: true });
+    const { pair } = pairFor(home, fakeLauncher(home), { prove: true });
     await pair.start();
     expect(pair.state.kind).toBe("connected");
-    expect(launcher.checks).toBe(1);
+    const methods = readCalls(home).filter((c) => c.event === "request").map((c) => c.method);
+    expect(methods.slice(0, 2)).toEqual(["protocol.prove", "protocol.hello"]);
+    // The nonce is fresh and long, and nothing secret goes with it.
+    const prove = readCalls(home).find((c) => c.method === "protocol.prove")!.params as { nonce: string };
+    expect(prove.nonce).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(Object.keys(prove)).toEqual(["nonce"]);
   });
 
-  test("anyone else serving the endpoint gets nothing: no hello, no token", async () => {
-    const home = tempHome();
-    fakes.push(await startFakeDaemon({ home }));
-    const launcher = withCheck(home, { ok: false, reason: "another user's process serves the pipe" });
-    const { pair } = pairFor(home, launcher, { checkServer: true });
-    await pair.start();
-    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("isn't this user's daemon") });
-    expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
-  });
+  for (const [what, prove, reason] of [
+    ["gives no proof", "refuse", "it gave no proof"],
+    ["can't prove it holds the token", "wrong", "its proof is wrong"],
+    ["sees another process at the other end (a proof relayed from its own connection)", 1, "another process"],
+  ] as const) {
+    test(`an endpoint that ${what} gets nothing: no hello, no token`, async () => {
+      const home = tempHome();
+      fakes.push(await startFakeDaemon({ home, prove }));
+      const { pair } = pairFor(home, fakeLauncher(home), { prove: true });
+      await pair.start();
+      // (Read before matching: Bun's toMatchObject writes its matchers into the object it checks.)
+      const state = { ...pair.state } as { kind: string; reason?: string };
+      expect(state.kind).toBe("unavailable");
+      expect(state.reason).toContain(reason);
+      expect(state.reason).toContain("the app sent it nothing");
+      expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
+    });
+  }
 
-  test("the fake binary's `daemon check-server`, as the app runs it", () => {
-    const home = tempHome();
-    const fake = join(import.meta.dir, "fake-core", "fake-daemon.ts");
-    const run = (env: Record<string, string> = {}) => spawnSync(process.execPath, [fake, "daemon", "check-server", "--json", "--image", "/x/clover-core"], { env: { ...process.env, CLOVER_HOME: home, ...env }, encoding: "utf8" });
-    expect(parseServerCheck({ ok: run().status === 0, code: run().status, out: run().stdout })).toMatchObject({ ok: false, reason: "no daemon" });
-    mkdirSync(join(home, "fake"), { recursive: true });
-    writeFileSync(join(home, "fake", "daemon.pid"), String(process.pid));
-    const ok = run();
-    expect(ok.status).toBe(0);
-    expect(JSON.parse(ok.stdout)).toMatchObject({ ok: true, pid: process.pid, image: "/x/clover-core" });
-    expect(run({ CLOVER_FAKE_CHECK_SERVER: "refuse" }).status).toBe(1);
-  });
-
-  test("the command's answer: ok only with exit 0 and ok: true", () => {
-    expect(parseServerCheck({ ok: true, code: 0, out: '{"ok":true,"pid":1,"userSid":"S-1","image":"x"}' })).toEqual({ ok: true });
-    expect(parseServerCheck({ ok: false, code: 1, out: '{"ok":false,"reason":"another user"}' })).toEqual({ ok: false, reason: "another user" });
-    expect(parseServerCheck({ ok: true, code: 0, out: "fine" })).toMatchObject({ ok: false });
-    expect(parseServerCheck({ ok: false, code: 2, out: "" })).toEqual({ ok: false, reason: "it exited with 2" });
+  test("the proof is lane C's: an HMAC under the app token over the nonce and the pid", () => {
+    expect(daemonProof("token", "nonce", 42)).toBe(createHmac("sha256", "token").update("clover-daemon-proof\u0000nonce\u000042").digest("base64url"));
   });
 });
 
