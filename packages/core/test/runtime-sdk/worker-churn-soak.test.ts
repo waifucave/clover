@@ -41,7 +41,8 @@ async function runChild(argv: string[], env: Record<string, string>, limitMs: nu
   const timer = setTimeout(() => proc.kill("SIGKILL"), limitMs);
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   clearTimeout(timer);
-  return { code, signal: proc.signalCode ?? null, stdout, stderr };
+  // Bun 1.4's types: a signal may be its name or its number.
+  return { code, signal: proc.signalCode == null ? null : String(proc.signalCode), stdout, stderr };
 }
 
 const crashLines = (stderr: string): string => stderr.split("\n").filter((l) => /panic|Segmentation|crash|error/i.test(l)).slice(0, 10).join("\n");
