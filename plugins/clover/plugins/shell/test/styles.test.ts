@@ -69,14 +69,17 @@ describe("the frame's material and its bar", () => {
     expect(decl(".cl-window__bar", "background")).toBe("var(--clover-plugin-clover-bar-tint)");
     expect(decl(".cl-window__bar", "backdrop-filter")).toContain("var(--clover-plugin-clover-bar-blur)");
     expect(decl(".cl-window__bar", "height")).toBe("var(--clover-plugin-clover-bar-height)");
-    // Only in main: a bot tab in the panel (an agent opened from a bot's column) has no bar over it.
-    expect(decl(".cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
-    // An agent's live tab in main runs up under the bar the same way.
-    expect(decl(".cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
-    expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBeUndefined();
-    // Anything else in main starts below the bar.
+    // Only in main, where a bot's or an agent's tab (which holds a bot tab) runs up under the bar: set on the content
+    // and inherited, found by a descendant `:has()`, so no element a `<Spot>` wraps an entry in can drop it (S5).
+    expect(decl(".cl-window__content:has(.cl-bot-tab)", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
+    expect(decl(".cl-window__content:has(.cl-bot-tab)", "padding-top")).toBe("0");
+    // Anything else in main starts below the bar, with no inset; a bot tab in the panel is outside the content.
     expect(decl(".cl-window__content", "padding-top")).toBe("var(--clover-plugin-clover-bar-height)");
-    expect(decl(".cl-window__content:has(> .cl-bot-tab)", "padding-top")).toBe("0");
+    expect(decl(".cl-window__content", "--cl-inset-top")).toBe("0px");
+    expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBeUndefined();
+    expect(decl(".cl-bot-tab__stage", "padding-top")).toBe("var(--cl-inset-top, 0px)");
+    // No selector the inset depends on names a direct child across a part's edge.
+    expect(css).not.toMatch(/\.cl-window__content\s*>|:has\(>\s*\.cl-(bot|agent)-tab/);
     // Nothing the bar holds paints below its rule (review round 3).
     expect(decl(".cl-window__bar", "overflow")).toBe("hidden");
   });

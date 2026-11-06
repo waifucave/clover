@@ -139,9 +139,12 @@ button.cl-window__title:hover {
   min-height: 0;
 }
 
-/* Main content starts below the bar, except the bot tab's conversation, which runs up under it and keeps
-   its own content below it with `--cl-inset-top`. */
+/* Main content starts below the bar, except a bot's or an agent's tab, whose conversation runs up under it and keeps
+   its own content below it with `--cl-inset-top`. The inset is set here and inherited, and the tab is found with a
+   descendant `:has()`, so both hold whatever elements the runtime's `<Spot>` wraps an entry in (review S5). A bot tab
+   in the panel has no bar over it, and the panel is outside this, so it gets no inset. */
 .cl-window__content {
+  --cl-inset-top: 0px;
   box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
@@ -151,7 +154,8 @@ button.cl-window__title:hover {
   padding-top: var(--clover-plugin-clover-bar-height);
 }
 
-.cl-window__content:has(> .cl-bot-tab) {
+.cl-window__content:has(.cl-bot-tab) {
+  --cl-inset-top: var(--clover-plugin-clover-bar-height);
   padding-top: 0;
 }
 
@@ -228,24 +232,15 @@ button.cl-window__title:hover {
   min-height: 0;
 }
 
-/* In main, the conversation runs up under the bar. A bot tab in the panel has no bar over it, and a stage takes the
-   top in its place. */
-.cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation,
-.cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation {
-  --cl-inset-top: var(--clover-plugin-clover-bar-height);
-}
-
-.cl-bot-tab:has(> .cl-bot-tab__stage) > .cl-bot-tab__conversation {
+/* A stage takes the top in the conversation's place: it starts below the bar (when there is one over it), and the
+   conversation under it needs no inset. */
+.cl-bot-tab:has(.cl-bot-tab__stage) .cl-bot-tab__conversation {
   --cl-inset-top: 0px;
 }
 
 .cl-bot-tab__stage {
   flex: none;
-  padding-top: var(--clover-plugin-clover-bar-height);
-}
-
-.cl-window__content:has(> .cl-agent-tab) {
-  padding-top: 0;
+  padding-top: var(--cl-inset-top, 0px);
 }
 
 /* The status bar, when a plugin fills it: a thin row under the main column. */

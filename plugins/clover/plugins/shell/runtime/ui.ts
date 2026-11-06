@@ -112,7 +112,7 @@ const built = new WeakMap<object, Ui>();
 export function uiFor(react: ReactLike): Ui {
   const cached = built.get(react);
   if (cached) return cached;
-  const { createContext, createElement, Fragment, useContext, useEffect, useState } = react;
+  const { createContext, createElement, useContext, useEffect, useState } = react;
 
   const RuntimeContext = createContext<UiRuntime | null>(null);
   const EntryContext = createContext<{ entry: EntryRef; ctx: SpotContext } | null>(null);
@@ -141,6 +141,8 @@ export function uiFor(react: ReactLike): Ui {
     return resolveSpot(name, decl, runtime.entries, ctx, spotKey, runtime.uiSettings?.());
   }
 
+  const CONTENTS = { display: "contents" } as const;
+
   function Spot({ name, spotKey, props = {}, fallback, only }: SpotElementProps): ReactNode {
     const runtime = useRuntime();
     const parent = useScope();
@@ -154,14 +156,17 @@ export function uiFor(react: ReactLike): Ui {
       const entry: EntryRef = { pluginId: e.pluginId, id: e.id, spot: name, ...(spotKey !== undefined ? { key: spotKey } : {}) };
       return [
         createElement(
-          EntryContext.Provider,
-          { key: entryRef(e), value: { entry, ctx } },
-          createElement(component, { props, tokens: runtime.tokens?.() ?? {}, entry }),
+          "div",
+          { key: entryRef(e), "data-clover-entry": entryRef(e), style: CONTENTS },
+          createElement(EntryContext.Provider, { value: { entry, ctx } }, createElement(component, { props, tokens: runtime.tokens?.() ?? {}, entry })),
         ),
       ];
     });
-    if (mounted.length === 0) return fallback ?? null;
-    return createElement(Fragment, null, ...mounted);
+    // The same elements lane E's `<Spot>` wraps a spot and each entry in (`display: contents`), so the parts' CSS is
+    // proven here against the DOM it meets in the app (review S5).
+    const at = { "data-clover-spot": name, ...(spotKey !== undefined ? { "data-clover-key": spotKey } : {}), style: CONTENTS };
+    if (mounted.length === 0) return fallback === undefined ? null : createElement("div", { ...at, "data-clover-empty": "" }, fallback);
+    return createElement("div", at, ...mounted);
   }
 
   function useSpotEntries(name: string, spotKey?: string, props: Record<string, unknown> = {}): Resolved {
