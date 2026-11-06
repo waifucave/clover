@@ -45,7 +45,7 @@ import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
-import { agentPolicyOf, botMemoryFolders, touchesBotMemory, touchesConversations, withMemoryDenied } from "./memory";
+import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -460,8 +460,9 @@ export class AgentManager {
         env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
         tools: e.bridgeTools,
       },
-      // Bots' memory is out of every agent's reach (the owner's decision): denied to its sandbox for reads and writes.
-      fence: withMemoryDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home, botMemoryFolders(this.#o.home, e.bot)),
+      // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
+      // whole, for reads and writes.
+      fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       admitted,
@@ -557,10 +558,10 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
-    // A bot's memory, or the conversations that carry it: refused without a card, at every level (the owner's decision,
-    // #208's review).
-    if (resolved.paths.some((p) => touchesBotMemory(this.#o.home, p) || touchesConversations(this.#o.home, p))) {
-      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "bot-memory" });
+    // Anything in the Clover home (a bot's memory, its conversations, the runtime's state), as written or through a link:
+    // refused without a card, at every level (the owner's decision, #208's check 2).
+    if (resolved.paths.some((p) => homeReach(this.#o.home, p, e.rootPath) === "inside")) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "clover-home" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }

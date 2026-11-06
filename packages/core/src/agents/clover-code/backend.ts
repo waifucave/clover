@@ -17,6 +17,7 @@
 //   keep running; only tool calls are held.
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { query as sdkQuery, SDK_VERSION, type CanUseTool, type HookCallbackMatcher, type McpSdkServerConfigWithInstance, type Options } from "@waifucave/clover-agent-sdk";
 import { serveAcpAgent, type AcpAgentServer, type AcpQuery, type AcpQueryFn } from "@waifucave/clover-agent-sdk/acp";
 import type { AgentBackend, AgentDetection, AgentQuirks } from "../../contracts/agent-backend";
@@ -26,7 +27,7 @@ import { UserSelections } from "../acp/selections";
 import { AcpAgentSession, type AgentProcess } from "../acp/session";
 import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
-import { agentPolicyOf, fileToolDenials } from "../memory";
+import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 
 export const CLOVER_CODE_ID = "clover-code";
 
@@ -107,6 +108,49 @@ function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer)
 
 const PAUSED = "Stopped: the user paused bots and their agents.";
 
+const READ_TOOLS = new Set(["Read", "Glob", "Grep", "NotebookRead"]);
+const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
+/** The fixed folder an absolute glob pattern starts in (`/a/b/**` is `/a/b`), or undefined for a relative one. */
+function globRoot(pattern: string): string | undefined {
+  if (!isAbsolute(pattern)) return undefined;
+  const parts = pattern.split(/[\\/]/);
+  const fixed: string[] = [];
+  for (const part of parts) {
+    if (/[*?[{]/.test(part)) break;
+    fixed.push(part);
+  }
+  return fixed.join("/") || "/";
+}
+
+/** Why a file tool's call may not run under the fence, or undefined: a read or search reaching a read-denied folder
+ *  (inside it, or a search from a folder that holds one), a write into a write-denied one, each as it really is. */
+export function fileToolRefusal(input: { tool_name?: unknown; tool_input?: unknown }, fence: { denyRead: readonly string[]; denyWrite: readonly string[] }, root: string): string | undefined {
+  const name = typeof input.tool_name === "string" ? input.tool_name : "";
+  const args = (input.tool_input ?? {}) as Record<string, unknown>;
+  if (!READ_TOOLS.has(name) && !WRITE_TOOLS.has(name)) return undefined;
+  const paths: { path: string; search: boolean }[] = [];
+  for (const key of ["file_path", "notebook_path", "path"]) {
+    if (typeof args[key] === "string" && args[key] !== "") paths.push({ path: args[key] as string, search: name === "Glob" || name === "Grep" });
+  }
+  if ((name === "Glob" || name === "Grep") && paths.length === 0) paths.push({ path: root, search: true });
+  // Glob's pattern, and Grep's `glob`, may be absolute: their fixed folder is searched (Grep's `pattern` is a regex).
+  const globs = [name === "Glob" ? args["pattern"] : undefined, name === "Grep" ? args["glob"] : undefined];
+  for (const g of globs) {
+    const at = typeof g === "string" ? globRoot(g) : undefined;
+    if (at !== undefined) paths.push({ path: at, search: true });
+  }
+  const denied = WRITE_TOOLS.has(name) ? fence.denyWrite : fence.denyRead;
+  for (const { path, search } of paths) {
+    for (const folder of denied) {
+      if (folder.includes("*")) continue; // a pattern item: its whole folder is denied by name too
+      const reach = homeReach(folder, path, root);
+      if (reach === "inside" || (search && reach === "holds")) return `${name} was not run: ${path} reaches a folder agents may not touch.`;
+    }
+  }
+  return undefined;
+}
+
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
@@ -180,14 +224,23 @@ export class CloverCodeBackend implements AgentBackend {
     // The runtime's TaskStop and SendMessage would reach the host's other sessions through host messaging; an agent
     // reaches its bot through the bridge alone.
     if ((base as { hostMessaging?: unknown }).hostMessaging !== undefined) throw new ContractError("refused", "Clover's coding agent wasn't started: its options carry host messaging");
-    // The base's hooks stay; the pause goes first in `PreToolUse`.
-    const hooks: Options["hooks"] = gate ? { ...(base.hooks ?? {}), PreToolUse: [...pauseHook, ...(base.hooks?.PreToolUse ?? [])] } : base.hooks;
+    // Each file tool's path as it really is: the deny rules match a path as written, so a link from the root into a
+    // denied folder (the Clover home) would pass them.
+    const fenceHook: HookCallbackMatcher[] = [{
+      failClosed: true,
+      hooks: [async (input) => {
+        const why = fileToolRefusal(input as { tool_name?: unknown; tool_input?: unknown }, fence, spec.root);
+        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
+      }],
+    }];
+    // The base's hooks stay; the pause goes first in `PreToolUse`, then the fence's check.
+    const hooks: Options["hooks"] = { ...(base.hooks ?? {}), PreToolUse: [...(gate ? pauseHook : []), ...fenceHook, ...(base.hooks?.PreToolUse ?? [])] };
     const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
     const options: Options = {
       ...base,
       tools: [...CLOVER_CODE_TOOLS],
       abortController: abort,
-      ...(hooks ? { hooks } : {}),
+      hooks,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       sandbox: {
         enabled: true,

@@ -26,7 +26,7 @@ import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPath
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
-import { botMemoryFolders, botMemoryPattern, fileToolDenials, touchesBotMemory, touchesConversations, withMemoryDenied } from "../memory";
+import { fileToolDenials, homeReach, realPathOf, withHomeDenied } from "../memory";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -512,33 +512,28 @@ describe("the backends' rows", () => {
   });
 });
 
-describe("bots' memory", () => {
-  test("every bot's memory folder, the delegating bot's even before it exists; a path in one, folded; the policy denies them", () => {
-    const home = mkdtempSync(join(tmpdir(), "clover-k-mem-"));
+describe("the Clover home is out of agents' reach", () => {
+  test("the whole home is denied, once; a path in it, as written or through a link, is in reach; one that holds it holds it", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-home-")));
     try {
-      mkdirSync(join(home, "bots", "beta", "memory"), { recursive: true });
-      mkdirSync(join(home, "bots", "gamma"), { recursive: true });
-      expect(botMemoryFolders(home, "alpha")).toEqual([join(home, "bots", "alpha", "memory"), join(home, "bots", "beta", "memory"), join(home, "bots", "gamma", "memory")]);
-      expect(touchesBotMemory(home, join(home, "bots", "beta", "memory"))).toBe(true);
-      expect(touchesBotMemory(home, join(home, "bots", "zeta", "MEMORY", "a.md"))).toBe(true);
-      // A bot's own folder, its agents' transcripts and the home are the fence's and the cards' business.
-      expect(touchesBotMemory(home, join(home, "bots", "beta"))).toBe(false);
-      expect(touchesBotMemory(home, join(home, "bots", "beta", "agents", "x"))).toBe(false);
-      expect(touchesBotMemory(home, home)).toBe(false);
-      expect(touchesBotMemory(home, "/elsewhere/bots/beta/memory")).toBe(false);
-      // By pattern, so a bot that comes later is covered; writes to all of `bots` need no glob.
-      const p = withMemoryDenied({ allowWrite: [home], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, home, ["/m1", "/a"]);
-      expect(botMemoryPattern(home)).toBe(join(home, "bots", "*", "memory"));
-      // Bots' conversations too: every bot's folder, the runtimes' transcript stores and the sessions' logs, whole.
-      const stores = [join(home, "bots"), join(home, "projects"), join(home, "sdk", "projects"), join(home, "sessions")];
-      expect(p.denyRead).toEqual([...stores, join(home, "bots", "*", "memory"), "/m1", "/a"]);
-      expect(p.denyWrite).toEqual(["/a", ...stores, join(home, "bots", "*", "memory"), "/m1"]);
-      expect(touchesConversations(home, join(home, "projects", "-x", "s.jsonl"))).toBe(true);
-      expect(touchesConversations(home, join(home, "Bots", "beta", "agents", "a", "acp.ndjson"))).toBe(true);
-      expect(touchesConversations(home, join(home, "settings"))).toBe(false);
+      const home = join(root, ".clover");
+      mkdirSync(join(home, "transcripts", "beta"), { recursive: true });
+      mkdirSync(join(root, "project"));
+      symlinkSync(join(home, "transcripts"), join(root, "project", "link"));
+      const p = withHomeDenied({ allowWrite: [root], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, home);
+      expect(p.denyRead).toEqual([home]);
+      expect(p.denyWrite).toEqual(["/a", home]);
+      expect(withHomeDenied(p, home).denyRead).toEqual([home]);
+      expect(homeReach(home, join(home, "diffs", "s", "1.diff"), root)).toBe("inside");
+      expect(homeReach(home, join(root, ".CLOVER", "x"), root)).toBe("inside");
+      expect(homeReach(home, join(root, "project", "link", "beta", "s.jsonl"), root)).toBe("inside");
+      expect(homeReach(home, "link/beta", join(root, "project"))).toBe("inside");
+      expect(homeReach(home, root, root)).toBe("holds");
+      expect(homeReach(home, join(root, "project", "a.txt"), root)).toBeUndefined();
+      expect(realPathOf(join(root, "project", "link", "new", "file"), root)).toBe(join(home, "transcripts", "new", "file"));
       expect(fileToolDenials(["/m1"], ["/w"])).toEqual(["Read(//m1)", "Read(//m1/**)", "Edit(//m1)", "Edit(//m1/**)", "Write(//m1)", "Write(//m1/**)", "Glob(//m1)", "Glob(//m1/**)", "Grep(//m1)", "Grep(//m1/**)", "NotebookEdit(//m1)", "NotebookEdit(//m1/**)", "Edit(//w)", "Edit(//w/**)", "Write(//w)", "Write(//w/**)", "NotebookEdit(//w)", "NotebookEdit(//w/**)"]);
     } finally {
-      rmSync(home, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

@@ -129,9 +129,9 @@ describe("Agent", () => {
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
   });
 
-  test("a bot no one had when the agent started is covered too: its memory is in the pattern, and a request into it is refused", async () => {
+  test("a bot no one had when the agent started is covered too: the whole home is denied, and a request into it is refused", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit notes", paths: [] } }, { say: "Done." }]] });
-    // `latecomer` has no folder at the start, so no denial names it; the pattern and the request check still hold.
+    // `latecomer` has no folder at the start; the home's denial and the request check still hold.
     const late = join(w.cloverHome, "bots", "latecomer", "memory", "MEMORY.md");
     const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     script.script[0]![0]!.tool.paths = [late];
@@ -141,9 +141,8 @@ describe("Agent", () => {
     w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
     await w.delegate();
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
-    expect(fence!.denyRead.some((p) => p.includes("latecomer"))).toBe(false);
-    expect(fence!.denyRead).toContain(join(w.cloverHome, "bots", "*", "memory"));
-    expect(fence!.denyWrite).toContain(join(w.cloverHome, "bots"));
+    expect(fence!.denyRead).toContain(w.cloverHome);
+    expect(fence!.denyWrite).toContain(w.cloverHome);
     expect(w.approvals.cards()).toEqual([]);
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
     // A bot's own Bash may work in its own memory (`ownMemory`); an agent's policy never carries it.
@@ -179,23 +178,27 @@ describe("Agent", () => {
     expect(w.approvals.cards()).toEqual([]);
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
     const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
-    expect(calls).toContain('"by":"bot-memory"');
-    for (const folder of [join(w.cloverHome, "bots", "alpha", "memory"), join(w.cloverHome, "bots", "beta", "memory")]) {
-      expect(fence!.denyRead).toContain(folder);
-      expect(fence!.denyWrite).toContain(folder);
-    }
+    expect(calls).toContain('"by":"clover-home"');
+    expect(fence!.denyRead).toContain(w.cloverHome);
+    expect(fence!.denyWrite).toContain(w.cloverHome);
   });
 
-  test("a request touching a fenced path is a card even at automatic", async () => {
-    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit settings", paths: [] } }]] });
-    // The path is only known once the world exists: the script is rewritten with it.
+  test("a request touching a fenced path outside the home is a card even at automatic; one into the home is refused", async () => {
+    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit settings", paths: [] } }, { tool: { kind: "edit", title: "Edit tools", paths: [] } }]] });
+    // The paths are only known once the world exists: the script is rewritten with them. A development folder is a
+    // fenced item outside the Clover home.
     const settings = join(w.cloverHome, "settings");
+    const dev = join(w.userHome, "dev-tools");
+    mkdirSync(dev, { recursive: true });
+    w.fence.addDevFolder(dev);
     const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     script.script[0]![0]!.tool.paths = [settings];
+    script.script[0]![1]!.tool.paths = [join(dev, "x.sh")];
     await Bun.write(w.agent.config, JSON.stringify(script));
     const r = await w.delegate();
     const card = await waitFor(() => w.approvals.cards()[0], "a card");
-    expect(card.fields["paths"]).toEqual({ type: "list", items: [settings] });
+    expect(card.fields["paths"]).toEqual({ type: "list", items: [join(dev, "x.sh")] });
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
     // TaskStop with the card still open: the card is cancelled, and so is the agent's request.
     await w.manager.stop(r.sessionId, { bot: "alpha" });
     expect(w.approvals.cards()).toEqual([]);
@@ -528,7 +531,11 @@ describe("what never runs quietly", () => {
 describe("check 2's minors", () => {
   test("a fenced path behind 200 harmless ones is still a card at automatic, and listed first (minor 1)", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit many files", paths: [] } }]] });
-    const fenced = join(w.cloverHome, "run", "x.json");
+    // A fenced item outside the Clover home (one in it is refused outright): a development folder.
+    const dev = join(w.userHome, "dev-tools");
+    mkdirSync(dev, { recursive: true });
+    w.fence.addDevFolder(dev);
+    const fenced = join(dev, "x.json");
     const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     config.script[0]![0]!.tool.paths = [...Array.from({ length: 200 }, (_, i) => `f${i}.txt`), fenced];
     writeFileSync(w.agent.config, JSON.stringify(config));
@@ -771,14 +778,9 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     await waitFor(() => w.report("blocked").length > 0, "the agent to block");
     const dir = join(w.cloverHome, "run", "agents", r.sessionId);
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
-    // The fenced set, and bots' memory (the owner's decision).
-    expect(policy.denyWrite).toEqual(expect.arrayContaining([
-      ...w.fence.policy().denyWrite, join(w.cloverHome, "bots"), join(w.cloverHome, "projects"), join(w.cloverHome, "sessions"),
-      join(w.cloverHome, "bots", "*", "memory"), join(w.cloverHome, "bots", "alpha", "memory"),
-    ]));
-    expect(new Set(policy.denyWrite).size).toBe(policy.denyWrite.length);
-    expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
-    expect(policy.denyRead).toContain(join(w.cloverHome, "bots", "*", "memory"));
+    // The fenced set, and the whole Clover home (the owner's decision, #208's check 2).
+    expect(policy.denyWrite).toEqual([...w.fence.policy().denyWrite, w.cloverHome]);
+    expect(policy.denyRead).toEqual([...w.fence.policy().denyRead, w.cloverHome]);
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
     expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
     expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");

@@ -3,7 +3,7 @@
 // client talks to it through an in-memory pipe, its writes ask through `session/request_permission` and the approval
 // level, its bridge is in-process, and the pause holds its tool calls, read-only ones too.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { buildCoreBrand } from "../../runtime-sdk/brand";
@@ -116,24 +116,34 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     expect(view.backends[0]).toMatchObject({ id: CLOVER_CODE_ID, name: "Clover's coding agent", protocol: "acp", placement: "local", computers: [{ installed: true, sandboxed: true, marks: [] }] });
     expect(existsSync(w.cloverHome)).toBe(true);
   });
-  test("bots' conversations are out of its reach: Read, Grep and Bash cat of a bot's session transcript and of another bot's agent transcript are denied", async () => {
+  test("the Clover home is out of its reach: a direct Read, a Read through a link from the root, and Bash cat of what it holds are denied", async () => {
     const w = make(spawn);
     const MARK = "MEMORY.md: the-bot-remembers-a-secret";
     const files = [
+      join(w.cloverHome, "transcripts", "beta", "s_beta.jsonl"),
+      join(w.cloverHome, "diffs", "s_beta", "1.diff"),
+      join(w.cloverHome, "sdk", "file-history", "s_beta", "MEMORY.md"),
       join(w.cloverHome, "projects", "-home-project", "s_beta.jsonl"),
-      join(w.cloverHome, "sdk", "projects", "-home-project", "s_gamma.jsonl"),
       join(w.cloverHome, "sessions", "bots", "s_beta.jsonl"),
       join(w.cloverHome, "bots", "beta", "agents", "agent_other", "acp.ndjson"),
     ];
-    for (const f of files) {
+    const links: string[] = [];
+    for (const [i, f] of files.entries()) {
       mkdirSync(join(f, ".."), { recursive: true });
       writeFileSync(f, `{"text":"${MARK}"}\n`);
+      const link = join(w.project, `link-${i}`);
+      symlinkSync(f, link);
+      links.push(link);
     }
+    // A link to a folder in the home, for a search that would walk into it.
+    symlinkSync(join(w.cloverHome, "transcripts"), join(w.project, "link-dir"));
     const calls = files.flatMap((f, i) => [
       `${i === 0 ? "" : "+"}CALL Read {"file_path":${JSON.stringify(f)}}`,
-      `+CALL Grep {"pattern":"remembers","path":${JSON.stringify(join(f, ".."))}}`,
-      `+CALL Bash {"command":${JSON.stringify(`cat '${f}'`)}}`,
+      `+CALL Read {"file_path":${JSON.stringify(links[i])}}`,
+      `+CALL Bash {"command":${JSON.stringify(`cat '${f}' '${links[i]}'`)}}`,
     ]);
+    calls.push(`+CALL Grep {"pattern":"remembers","path":${JSON.stringify(join(w.project, "link-dir"))}}`);
+    calls.push(`+CALL Glob {"pattern":${JSON.stringify(`${w.cloverHome}/**/*.jsonl`)}}`);
     const r = await w.manager.start({
       caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
       backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Probe",
@@ -141,9 +151,18 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     });
     await waitFor(() => notification(w), "the task notification");
     const wire = readFileSync(join(w.cloverHome, r.transcript), "utf8");
-    // Every probe ran and none read the conversation: the marker never came back in a tool result or the report.
-    expect(wire.split("\n").filter((l) => l.includes('"tool_call_update"')).length).toBeGreaterThanOrEqual(files.length * 3);
+    // Every probe ran and none read the home: the marker, and the home's file names, never came back.
+    expect(wire.split("\n").filter((l) => l.includes('"tool_call_update"')).length).toBeGreaterThanOrEqual(files.length * 3 + 2);
     expect(wire).not.toContain("the-bot-remembers-a-secret");
+    // Each search into the home, through a link or an absolute pattern, ended refused, its file names never listed.
+    const updates = wire.split("\n").filter(Boolean).map((l) => (JSON.parse(l) as { msg?: { params?: { update?: Record<string, unknown> } } }).msg?.params?.update).filter((u): u is Record<string, unknown> => u !== undefined);
+    const searches = updates.filter((u) => u["sessionUpdate"] === "tool_call" && /^(Grep|Glob)\b/.test(String(u["title"])));
+    expect(searches.length).toBe(2);
+    for (const call of searches) {
+      const end = updates.find((u) => u["sessionUpdate"] === "tool_call_update" && u["toolCallId"] === call["toolCallId"]);
+      // Refused by a deny rule (failed) or by the fence's real-path check (its reason as the result).
+      expect(end?.["status"] === "failed" || JSON.stringify(end).includes("was not run")).toBe(true);
+    }
     expect(JSON.stringify(notification(w))).not.toContain("the-bot-remembers-a-secret");
   });
 
@@ -163,12 +182,14 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     const w = make(spawn, { pause: gate, query: fakeQuery, base: { hooks: { PreToolUse: [{ hooks: [own] }], PostToolUse: [{ hooks: [post] }] } } });
     await w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Hooks", prompt: "hi", model: MODEL });
     await waitFor(() => notification(w), "the task notification");
-    expect(seen!.hooks!.PreToolUse!.length).toBe(2);
+    // The pause, then the fence's real-path check, then the base's own.
+    expect(seen!.hooks!.PreToolUse!.length).toBe(3);
     expect(seen!.hooks!.PreToolUse![0]!.failClosed).toBe(true);
-    expect(seen!.hooks!.PreToolUse![1]!.hooks[0]).toBe(own);
+    expect(seen!.hooks!.PreToolUse![1]!.failClosed).toBe(true);
+    expect(seen!.hooks!.PreToolUse![2]!.hooks[0]).toBe(own);
     expect(seen!.hooks!.PostToolUse![0]!.hooks[0]).toBe(post);
     // The fence's file-tool denials reach the rules, the bots' folders and the transcript stores among them.
-    expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${join(w.cloverHome, "bots")}/**)`, `Read(/${join(w.cloverHome, "projects")}/**)`, `Grep(/${join(w.cloverHome, "sessions")}/**)`]));
+    expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${w.cloverHome}/**)`, `Grep(/${w.cloverHome}/**)`, `Write(/${w.cloverHome}/**)`]));
 
     const w2 = make(spawn, { query: fakeQuery, base: { hostMessaging: {} as never } });
     await w2.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Host", prompt: "hi", model: MODEL });
