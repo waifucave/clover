@@ -113,6 +113,8 @@ export async function boot(opts: {
   main?: MainComputer; relay?: BotRelay; compaction?: BotSideOptions["compaction"]; approvals?: BotSideOptions["approvals"];
   reattach?: BotSideOptions["reattach"];
   userHome?: string;
+  agents?: BotSideOptions["agents"];
+  levelOf?: BotSideOptions["levelOf"];
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
@@ -128,6 +130,8 @@ export async function boot(opts: {
     ...(opts.approvals === undefined ? {} : { approvals: opts.approvals }),
     ...(opts.reattach === undefined ? {} : { reattach: opts.reattach }),
     ...(opts.userHome === undefined ? {} : { userHome: opts.userHome }),
+    ...(opts.agents === undefined ? {} : { agents: opts.agents }),
+    ...(opts.levelOf === undefined ? {} : { levelOf: opts.levelOf }),
     assetUrl: (pluginId, path) => `clover-asset://${pluginId.replace("/", "--")}/${path}`,
     warn: (m) => warnings.push(m),
   });

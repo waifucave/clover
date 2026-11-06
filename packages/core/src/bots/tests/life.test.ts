@@ -426,6 +426,47 @@ describe("a restart's dormant agents", () => {
   });
 });
 
+describe("lane K's agents on the bot side", () => {
+  test("its hooks feed ListAgents, session.setModel and the reattaching; it gets each computer's level and closes at shutdown", async () => {
+    const home = tempDir();
+    const clock = new FakeClock();
+    const first = await boot({ home, plugins: await alpha(), clock });
+    first.host.open({ id: "s_agent", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Studio", backend: "cursor" }, new FakeSessionDriver({ canFold: false }));
+    await first.shutdown();
+    const log: string[] = [];
+    let levelSeen: string | undefined;
+    const b = await boot({
+      home, plugins: await alpha(), clock,
+      levelOf: (computer) => (computer === "Studio" ? "accept-edits" : undefined),
+      agents: ({ host, levelOf }) => {
+        levelSeen = levelOf("Studio");
+        return {
+          sessionHooks: () => ({
+            agents: { list: () => host.list({ kind: "agent" }).map((v) => ({ ...v, title: "from K" })) },
+            setAgentModel: async (id, model) => {
+              log.push(`setModel ${id} ${model}`);
+            },
+            reattach: (views) => {
+              log.push(`reattach ${views.map((v) => v.id).join(",")}`);
+            },
+          }),
+          close: async () => {
+            log.push("close");
+          },
+        };
+      },
+    });
+    expect(levelSeen).toBe("accept-edits");
+    expect(log).toEqual(["reattach s_agent"]);
+    const list = b.side.tools("b_alpha")[1]!;
+    expect((await list.run({ kind: "agent" })).text).toContain('"from K"');
+    await b.side.methods({ localDevice: "studio" })[M.sessionSetModel.name]!({ id: "s_agent", model: "cursor/fast" }, { caller: theUser });
+    expect(log).toContain("setModel s_agent cursor/fast");
+    await b.shutdown();
+    expect(log.at(-1)).toBe("close");
+  });
+});
+
 describe("the new sessions methods", () => {
   test("session.setModel: an agent's or coding session's, never a bot's", async () => {
     const b = await boot({ home: tempDir(), plugins: await alpha() });
