@@ -1,33 +1,31 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Build Clover's pinned srt-win launcher with a static CRT, and check its hash.
+  Build Clover's pinned srt-win launcher with a static CRT, Clover's
+  per-principal patch set applied, and check its Authenticode digest.
 
 .DESCRIPTION
   Lane C, C-M2 part 2 (spec §4; controller ruling 1). Vendors the launcher from
   `anthropics/sandbox-runtime` at the pinned tag/commit into `vendor/srt-win-src`
-  (a build input, never committed — like `.clover-sdk/`), builds `srt-win.exe`
-  with the CRT linked statically (no VC++ redistributable prerequisite, per S2),
-  and fails closed when the result's SHA-256 differs from the pinned constant in
-  `packages/core/src/fence/win-sandbox.ts` (`SRT_WIN_SHA256`).
+  (a build input, never committed — like `.clover-sdk/`), applies
+  `vendor/srt-win/patches/*.patch`, builds `srt-win.exe` with the CRT
+  linked statically (no VC++ redistributable prerequisite, per S2),
+  and fails closed when the result's Authenticode digest differs from
+  the pinned constant in `packages/core/src/fence/windows-launcher.ts`
+  (`SRT_WIN_PINS`).
 
   Lane M's CI runs this build and signs the result; this script is the build.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1
-  # Verifies vendor/srt-win/srt-win.exe against the pinned hash.
-
-.EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1 -RecordHash
-  # First trusted build only: writes the measured hash into the core constant
-  # and vendor/srt-win/SHA256. Review the diff before committing it.
+  powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1 -ExpectedDigest <hex>
+  # Verifies the built binary's Authenticode digest against the pin.
 #>
 [CmdletBinding()]
 param(
   [string]$Tag = "v0.0.81",
   [string]$Commit = "c40cf14a65d025e3cd27f071f13a73c12b3b1f92",
   [string]$Repo = "https://github.com/anthropics/sandbox-runtime.git",
-  [switch]$RecordHash
+  [string]$ExpectedDigest = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,15 +37,9 @@ function RepoRoot {
 
 $root = RepoRoot
 $srcDir = Join-Path $root "vendor/srt-win-src"
+$crateDir = Join-Path $srcDir "vendor/srt-win-src"
 $outDir = Join-Path $root "vendor/srt-win"
 $outExe = Join-Path $outDir "srt-win.exe"
-$constFile = Join-Path $root "packages/core/src/fence/win-sandbox.ts"
-
-function PinnedHash {
-  $line = Select-String -Path $constFile -Pattern 'SRT_WIN_SHA256 = "([^"]+)"' | Select-Object -First 1
-  if (-not $line) { throw "SRT_WIN_SHA256 not found in $constFile" }
-  return $line.Matches[0].Groups[1].Value
-}
 
 function Check-Tools {
   foreach ($t in @("git", "cargo") ) {
@@ -79,15 +71,33 @@ function Sync-Source {
   Write-Host "build-srt-win: source at $Commit"
 }
 
+function Apply-Patches {
+  # Clover's per-principal patch set (vendor/srt-win/patches/*.patch).
+  # Applied after the checkout, before the build, in sorted order.
+  $patchDir = Join-Path $root "vendor/srt-win/patches"
+  $patches = Get-ChildItem -Path $patchDir -Filter "*.patch" -ErrorAction SilentlyContinue | Sort-Object Name
+  foreach ($p in $patches) {
+    Write-Host "build-srt-win: applying $($p.Name)"
+    Push-Location $srcDir
+    try {
+      git apply --check $p.FullName
+      if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch does not apply: $($p.Name)" }
+      git apply $p.FullName
+      if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch failed: $($p.Name)" }
+    } finally { Pop-Location }
+  }
+  if (-not $patches) { Write-Host "build-srt-win: no patches to apply" }
+}
+
 function Build-Launcher {
-  Push-Location $srcDir
+  Push-Location $crateDir
   try {
     # Static CRT: no VCRUNTIME140/MSVCP140 prerequisite on the target machine (S2).
     $env:RUSTFLAGS = "-C target-feature=+crt-static"
-    cargo build --release --locked --manifest-path (Join-Path $srcDir "Cargo.toml")
+    cargo build --release --locked
     if ($LASTEXITCODE -ne 0) { throw "build-srt-win: cargo build failed" }
   } finally { Pop-Location }
-  $built = Join-Path $srcDir "target/release/srt-win.exe"
+  $built = Join-Path $crateDir "target/release/srt-win.exe"
   if (-not (Test-Path $built)) { throw "build-srt-win: expected output not found at $built" }
   New-Item -ItemType Directory -Force -Path $outDir | Out-Null
   Copy-Item -Force $built $outExe
@@ -128,26 +138,20 @@ function Check-NoDynamicCrt {
 
 Check-Tools
 Sync-Source
+Apply-Patches
 Build-Launcher
 Check-NoDynamicCrt
 
-$hash = (Get-FileHash -Algorithm SHA256 $outExe).Hash.ToLower()
-Write-Host "build-srt-win: SHA-256 $hash"
-
-if ($RecordHash) {
-  $text = Get-Content -Raw $constFile
-  $updated = $text -replace 'SRT_WIN_SHA256 = "[^"]+"', "SRT_WIN_SHA256 = `"$hash`""
-  if ($updated -eq $text) { throw "build-srt-win: could not update SRT_WIN_SHA256" }
-  Set-Content -NoNewline $constFile -Value $updated
-  Set-Content -NoNewline (Join-Path $outDir "SHA256") -Value "$hash  srt-win.exe`n"
-  Write-Host "build-srt-win: recorded the hash in win-sandbox.ts and vendor/srt-win/SHA256; review the diff"
+if ($ExpectedDigest -eq "") {
+  Write-Warning "build-srt-win: no -ExpectedDigest given; the Authenticode digest is checked at every launch (exit 3 on mismatch), not here"
 } else {
-  $expected = (PinnedHash).ToLower()
-  if ($expected -eq "pending-first-trusted-build") {
-    Write-Warning "build-srt-win: no pinned hash yet (SRT_WIN_SHA256 is pending); re-run with -RecordHash on a trusted machine, review, and commit the result"
-  } elseif ($hash -ne $expected) {
-    throw "build-srt-win: hash mismatch: got $hash, expected $expected"
-  } else {
-    Write-Host "build-srt-win: hash matches the pin"
+  # The digest definition lives in core (authenticodeDigest) and so does
+  # the check: ask bun for it rather than reimplementing PE parsing here.
+  $probe = & bun -e "import{authenticodeDigest}from'./packages/core/src/fence/windows-launcher.ts';import{readFileSync}from'node:fs';console.log(authenticodeDigest(readFileSync(process.argv[1])))" $outExe 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $probe) { throw "build-srt-win: could not measure the Authenticode digest (needs bun)" }
+  $got = $probe.Trim().ToLower()
+  if ($got -ne $ExpectedDigest.ToLower()) {
+    throw "build-srt-win: Authenticode digest mismatch: got $got, expected $($ExpectedDigest.ToLower())"
   }
+  Write-Host "build-srt-win: Authenticode digest matches the pin"
 }
