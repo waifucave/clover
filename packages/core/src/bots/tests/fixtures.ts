@@ -115,6 +115,8 @@ export async function boot(opts: {
   userHome?: string;
   agents?: BotSideOptions["agents"];
   levelOf?: BotSideOptions["levelOf"];
+  routines?: BotSideOptions["routines"];
+  onSessionEnded?: BotSideOptions["onSessionEnded"];
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
@@ -132,6 +134,8 @@ export async function boot(opts: {
     ...(opts.userHome === undefined ? {} : { userHome: opts.userHome }),
     ...(opts.agents === undefined ? {} : { agents: opts.agents }),
     ...(opts.levelOf === undefined ? {} : { levelOf: opts.levelOf }),
+    ...(opts.routines === undefined ? {} : { routines: opts.routines }),
+    ...(opts.onSessionEnded === undefined ? {} : { onSessionEnded: opts.onSessionEnded }),
     assetUrl: (pluginId, path) => `clover-asset://${pluginId.replace("/", "--")}/${path}`,
     warn: (m) => warnings.push(m),
   });
