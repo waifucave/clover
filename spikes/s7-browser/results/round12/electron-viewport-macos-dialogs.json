@@ -1,0 +1,263 @@
+{
+  "meta": {
+    "label": "dialogs-macos",
+    "status": "done",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.6.0",
+    "cpus": 3,
+    "memGiB": 7,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "(default)",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": "",
+    "displays": [
+      "1024x768@1"
+    ],
+    "gpu": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "enabled_on",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "seconds": 25.2
+  },
+  "checks": {
+    "dialogs": [
+      {
+        "place": "offscreen tab",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":217ms",
+        "windowsBefore": [],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+382+321",
+            "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+          ],
+          "ms": 77
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+382+321",
+            "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+          ],
+          "ms": 81
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "offscreen tab",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":217ms | confirm:true:89ms",
+        "windowsBefore": [
+          "layer 0 alpha 1 260x96+382+321",
+          "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+382+321",
+            "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+          ],
+          "ms": 56
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+382+321",
+            "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+          ],
+          "ms": 55
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "offscreen tab",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":217ms | confirm:true:89ms",
+        "windowsBefore": [
+          "layer 0 alpha 1 260x96+382+321",
+          "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+        ],
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+382+321",
+            "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+          ],
+          "ms": 124
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+382+321",
+            "layer 0 alpha 1 1024x677+0+31 \"S7 viewport page\""
+          ],
+          "ms": 93
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "host window tab",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":158ms",
+        "windowsBefore": [
+          "layer 0 alpha 0 1x1+0+31 \"S7 tiny t2\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+0+31",
+            "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+          ],
+          "ms": 94
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+0+31",
+            "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+          ],
+          "ms": 56
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "host window tab",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":158ms | confirm:true:68ms",
+        "windowsBefore": [
+          "layer 0 alpha 1 260x96+0+31",
+          "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+0+31",
+            "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+          ],
+          "ms": 41
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+0+31",
+            "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+          ],
+          "ms": 50
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "host window tab",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":158ms | confirm:true:68ms",
+        "windowsBefore": [
+          "layer 0 alpha 1 260x96+0+31",
+          "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+        ],
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+0+31",
+            "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+          ],
+          "ms": 45
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [
+            "layer 0 alpha 1 260x96+0+31",
+            "layer 0 alpha 0 1x1+129+31 \"S7 tiny t2\""
+          ],
+          "ms": 63
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "offscreen tab, disableDialogs",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":0ms",
+        "windowsBefore": [],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [],
+          "ms": 54
+        },
+        "error": "handle: No dialog is showing",
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [],
+          "ms": 78
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "offscreen tab, disableDialogs",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":0ms | confirm:false:0ms",
+        "windowsBefore": [],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [],
+          "ms": 90
+        },
+        "error": "handle: No dialog is showing",
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [],
+          "ms": 59
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "offscreen tab, disableDialogs",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":0ms | confirm:false:0ms",
+        "windowsBefore": [],
+        "windowsDuring": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [],
+          "ms": 51
+        },
+        "windowsAfter": {
+          "tool": "CGWindowListCopyWindowInfo (on screen)",
+          "windows": [],
+          "ms": 65
+        },
+        "tabWindowVisibleAfter": false
+      }
+    ]
+  },
+  "errors": [],
+  "assertions": []
+}

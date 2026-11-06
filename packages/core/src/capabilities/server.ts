@@ -45,7 +45,7 @@
 // closure, not a lookup; `mode` cannot be another session's; and there is no unbound state to
 // refuse — `capabilityServer(spec, session)` takes a non-optional `CapabilitySession`, so "no
 // session" is a compile error rather than a runtime branch.
-import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { ComputerUseService } from "../agent/computer-use";
 import { ToolRegistry, type ToolContentItem, type ToolContext, type ToolDefinition } from "../agent/tools/registry";
 import { CLOVER_CAPABILITY_TOOLS, capabilityServerName, capabilityToolName, type CapabilityToolFacts, type SessionMode } from "./names";

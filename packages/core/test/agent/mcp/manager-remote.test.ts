@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryMcpOAuthStore, startMcpOAuthLogin, type McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { createMemoryMcpOAuthStore, startMcpOAuthLogin, type McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { McpManager } from "../../../src/agent/mcp/manager";
 import { TrustStore } from "../../../src/agent/trust";
 import { startFixtureAs, type FixtureAs } from "../../fixtures/mcp-oauth-fixture-as";
@@ -85,7 +85,7 @@ describe("McpManager's http/sse probe (WS-25)", () => {
       remote: { oauthStore: () => store },
       connect: async (opts) => {
         connects++;
-        const { connectMcpServer } = await import("@yanlinglabs/winter-agent-runtime/mcp-client");
+        const { connectMcpServer } = await import("@waifucave/clover-agent-runtime/mcp-client");
         return connectMcpServer(opts);
       },
     });

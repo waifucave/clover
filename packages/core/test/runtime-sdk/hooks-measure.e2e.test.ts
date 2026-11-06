@@ -1,7 +1,7 @@
 // P8c-7 MEASUREMENT (Lane 3, Task 3.1) — does a real, spawned `winter` child fire a
 // `PreToolUse`/`PostToolUse` `Options.hooks` callback back through the wrapper's stdio bridge, and
 // does a `PreToolUse` `deny` actually block the call? 8b's completion report named this unmeasured:
-// the wrapper (`@yanlinglabs/winter-agent-sdk`'s `index.js`) demonstrably CONVERTS `Options.hooks`
+// the wrapper (`@waifucave/clover-agent-sdk`'s `index.js`) demonstrably CONVERTS `Options.hooks`
 // (real, in-process `HookCallback` functions) into a metadata-only `RuntimeHooksConfig` for the wire
 // (`buildRuntimeHooksConfig`) and registers a `"hook"` control-request handler
 // (`controlRequestHandlers.set("hook", makeHookHandler(...))`) keyed by a synthesized `hookId` — but
@@ -18,16 +18,16 @@
 // child actually running it is whatever `Options.hooks` decides — which is precisely the seam this
 // file measures.
 //
-// SKIPS cleanly when `CLOVER_RUNTIME_EXECUTABLE` is unset; `CLOVER_RUNTIME_REQUIRE_BINARY=1` (CI) makes
-// a missing binary a FAILURE (P8b-2 contract, `describeWithWinterBinary`).
+// Never skips: it runs on the embedded runtime every session runs, and a missing one is a FAILURE (A-M1
+// review S7, `describeWithEmbeddedRuntime`).
 import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { query, type HookCallback, type HookInput, type Options } from "@yanlinglabs/winter-agent-sdk";
+import { query, type HookCallback, type HookInput, type Options, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 /** A raw wire message's `message.content` array, when it has one — the shape both
  *  `real-child.test.ts` and `transport-equivalence.test.ts` already key their own assertions off. */
@@ -40,7 +40,7 @@ function contentOf(m: unknown): Array<Record<string, unknown>> | undefined {
  *  returns every raw SDK message plus every `PreToolUse`/`PostToolUse` callback invocation. Mirrors
  *  `real-child.test.ts`'s `driveChild` — CONSTRUCTED env only, never `process.env` spread, so no
  *  developer home or credential ever reaches the child. */
-async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
+async function driveWithHooks(spawn: SpawnClaudeCodeProcess, hooks: Options["hooks"]): Promise<{
   messages: Array<Record<string, unknown>>;
 }> {
   const home = mkdtempSync(join(tmpdir(), "clover-hooks-measure-home-"));
@@ -51,7 +51,7 @@ async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
   const q = query({
     prompt: queue,
     options: {
-      pathToClaudeCodeExecutable: bin,
+      spawnClaudeCodeProcess: spawn,
       // The router injects the session's brand; a child driven directly is handed the daemon's own.
       brand: CORE_BRAND,
       model: "winter-test/lanec",
@@ -90,7 +90,7 @@ async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
  */
 function installedWrapperCarriesFailClosed(): boolean {
   try {
-    const entry = Bun.resolveSync("@yanlinglabs/winter-agent-sdk", import.meta.dir);
+    const entry = Bun.resolveSync("@waifucave/clover-agent-sdk", import.meta.dir);
     return ["query.js", "query.ts"].some((name) => {
       const file = join(dirname(entry), name);
       return existsSync(file) && readFileSync(file, "utf8").includes("failClosed");
@@ -100,14 +100,14 @@ function installedWrapperCarriesFailClosed(): boolean {
   }
 }
 
-describeWithWinterBinary("P8c-7 measurement — Options.hooks against a real winter child", (bin) => {
+describeWithEmbeddedRuntime("P8c-7 measurement — Options.hooks against a real winter child", (spawn) => {
   test("PreToolUse and PostToolUse callbacks fire for a real Bash tool call, with the pinned input shapes", async () => {
     const preToolUse: HookInput[] = [];
     const postToolUse: HookInput[] = [];
     const preCallback: HookCallback = async (input) => { preToolUse.push(input); return {}; };
     const postCallback: HookCallback = async (input) => { postToolUse.push(input); return {}; };
 
-    const { messages } = await driveWithHooks(bin, {
+    const { messages } = await driveWithHooks(spawn, {
       PreToolUse: [{ matcher: "Bash", hooks: [preCallback] }],
       PostToolUse: [{ matcher: "Bash", hooks: [postCallback] }],
     });
@@ -140,7 +140,7 @@ describeWithWinterBinary("P8c-7 measurement — Options.hooks against a real win
       },
     });
 
-    const { messages } = await driveWithHooks(bin, {
+    const { messages } = await driveWithHooks(spawn, {
       PreToolUse: [{ matcher: "Bash", hooks: [denyCallback] }],
     });
 
@@ -168,7 +168,7 @@ describeWithWinterBinary("P8c-7 measurement — Options.hooks against a real win
   test.skipIf(!installedWrapperCarriesFailClosed())("WS-23: a fail-closed floor that TIMES OUT denies the Bash call — it never runs", async () => {
     const hangingFloor: HookCallback = () => new Promise(() => { /* never answers */ });
     const failClosedGroup = { matcher: "Bash", timeout: 2, failClosed: true, hooks: [hangingFloor] };
-    const { messages } = await driveWithHooks(bin, { PreToolUse: [failClosedGroup] });
+    const { messages } = await driveWithHooks(spawn, { PreToolUse: [failClosedGroup] });
 
     const toolResultMsg = messages.find((m) => m.type === "user");
     const toolResultBlock = contentOf(toolResultMsg)?.[0] as { type?: string; content?: unknown; denied?: unknown } | undefined;

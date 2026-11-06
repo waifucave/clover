@@ -14,7 +14,7 @@ import { FileSecretStore } from "../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { SessionStore } from "../src/sessions/store";
 import { sessionLegOf } from "../src/runtime-sdk/leg";
-import { describeWithWinterBinary } from "./helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "./helpers/embedded-runtime";
 import { withTempHome } from "./runtime-state/support";
 
 class TestClient {
@@ -63,7 +63,7 @@ afterEach(async () => {
   await stopping;
 });
 
-describeWithWinterBinary("daemon.ts's boot wiring for the engine-era import door", (bin) => {
+describeWithEmbeddedRuntime("daemon.ts's boot wiring for the engine-era import door", () => {
   test("session.send imports an engine-era fixture end to end", async () => {
     await withTempHome(async (home) => {
       const cwd = home; // no separate workdir needed for this fixture
@@ -75,7 +75,7 @@ describeWithWinterBinary("daemon.ts's boot wiring for the engine-era import door
       writeFileSync(join(home, "settings.json"), JSON.stringify({
         schemaVersion: 2,
         provider: { type: "openai-compatible", model: "winter-test/echo", baseUrl: "http://127.0.0.1:9/v1" },
-        runtimes: { winterExecutable: bin, winterLeg: { code: true }, winterIdleTimeoutSec: 10 },
+        runtimes: { winterLeg: { code: true }, winterIdleTimeoutSec: 10 },
       }, null, 2));
 
       // The SAME fixture shape `test/e2e/import-legacy-real-child.test.ts` builds (a pre-8b daemon's

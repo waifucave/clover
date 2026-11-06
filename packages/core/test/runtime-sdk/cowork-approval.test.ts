@@ -4,7 +4,7 @@
 import { afterEach, expect, jest, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { CanUseTool, PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, PermissionResult } from "@waifucave/clover-agent-sdk";
 import { ApprovalRequestedEvent, type ApprovalPolicy, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";

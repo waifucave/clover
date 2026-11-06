@@ -1,8 +1,8 @@
-import { loadCatalog, type WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
-import { estimateCostUsd } from "@yanlinglabs/winter-provider-runtime";
+import { loadCatalog, type WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
+import { estimateCostUsd } from "@waifucave/clover-provider-runtime";
 
 // Pricing for the usage DB (`docs/claude/usage.md`): the SAME catalog and the SAME price function the Clover runtime
-// prices a generation with (`@yanlinglabs/winter-provider-runtime`'s `estimateCostUsd` over the pinned catalog's
+// prices a generation with (`@waifucave/clover-provider-runtime`'s `estimateCostUsd` over the pinned catalog's
 // `pricing` evidence — only `official-doc` evidence prices; anything else is "unknown", never a guess).
 //
 // Used for what the runtime did NOT price: a subscription row's tokens (codex-oauth — priced at its API twin,

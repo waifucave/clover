@@ -23,7 +23,7 @@
  * `internal-view.ts` (one line per change). A caller that gets a refusal skips its run, which is the
  * same "typed refusal over a silent wrong answer" discipline every RPC door in this codebase follows.
  */
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { SecretStore } from "../auth/secret-store";
 import { splitTag, type ModelTag } from "../runtime-sdk/model-tag";
 import {

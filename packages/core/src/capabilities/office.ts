@@ -12,7 +12,7 @@
 // EVENTS: `panel_command` only (no tab minting — office documents open into the panel through the
 // app's own command handling). Pinned against the registry door by
 // `test/capabilities/panel-emission-parity.test.ts` (P8b-20).
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { docsToolDefs, type DocsToolDeps } from "../agent/tools/docs";
 import { sheetsToolDefs, type SheetsToolDeps } from "../agent/tools/sheets";
 import { slidesToolDefs, type SlidesToolDeps } from "../agent/tools/slides";

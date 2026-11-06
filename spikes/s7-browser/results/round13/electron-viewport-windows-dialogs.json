@@ -1,0 +1,349 @@
+{
+  "meta": {
+    "label": "dialogs-windows",
+    "status": "done",
+    "platform": "win32",
+    "arch": "x64",
+    "osRelease": "10.0.26100",
+    "cpus": 4,
+    "memGiB": 16,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "(default)",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": "",
+    "displays": [
+      "1024x768@1"
+    ],
+    "gpu": {
+      "2d_canvas": "unavailable_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "webgl": "unavailable_software",
+      "webgpu": "unavailable_software",
+      "webnn": "unavailable_software"
+    },
+    "seconds": 32.23
+  },
+  "checks": {
+    "dialogs": [
+      {
+        "place": "offscreen tab",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":441ms",
+        "windowsBefore": [],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 414
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 386
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "offscreen tab",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":441ms | confirm:true:421ms",
+        "windowsBefore": [
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 395
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 381
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "offscreen tab",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":441ms | confirm:true:421ms",
+        "windowsBefore": [
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 386
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 385
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "host window tab",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":413ms",
+        "windowsBefore": [
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 387
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 381
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "host window tab",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":413ms | confirm:true:414ms",
+        "windowsBefore": [
+          "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+          "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 382
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 377
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "host window tab",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":413ms | confirm:true:414ms",
+        "windowsBefore": [
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+          "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 381
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \"S7 tiny t2\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 384
+        },
+        "tabWindowVisibleAfter": true
+      },
+      {
+        "place": "offscreen tab, disableDialogs",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":1ms",
+        "windowsBefore": [
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 377
+        },
+        "error": "handle: No dialog is showing",
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 380
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "offscreen tab, disableDialogs",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":1ms | confirm:false:0ms",
+        "windowsBefore": [
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 392
+        },
+        "error": "handle: No dialog is showing",
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 380
+        },
+        "tabWindowVisibleAfter": false
+      },
+      {
+        "place": "offscreen tab, disableDialogs",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":1ms | confirm:false:0ms",
+        "windowsBefore": [
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+          "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+        ],
+        "windowsDuring": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 385
+        },
+        "windowsAfter": {
+          "tool": "EnumWindows + IsWindowVisible",
+          "windows": [
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+0+0 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+266 ex 0x10101 \"Electron\"",
+            "#32770 366x125+321+270 ex 0x10101 \"Electron\""
+          ],
+          "ms": 377
+        },
+        "tabWindowVisibleAfter": false
+      }
+    ]
+  },
+  "errors": [],
+  "assertions": [
+    {
+      "name": "CDP sees every alert and confirm, offscreen, in the host window and with disableDialogs",
+      "ok": true,
+      "detail": "[\"offscreen tab alert: true\",\"offscreen tab confirm: true\",\"host window tab alert: true\",\"host window tab confirm: true\",\"offscreen tab, disableDialogs alert: true\",\"offscreen tab, disableDialogs confirm: true\"]"
+    },
+    {
+      "name": "a known gap, pinned: an alert answered over CDP still leaves a native box up (offscreen tab)",
+      "ok": true,
+      "detail": "{\"before\":[],\"after\":[\"#32770 366x125+321+270 ex 0x10101 \\\"Electron\\\"\"]}"
+    },
+    {
+      "name": "a known gap, pinned: an alert answered over CDP still leaves a native box up (host window tab)",
+      "ok": true,
+      "detail": "{\"before\":[\"#32770 366x125+321+266 ex 0x10101 \\\"Electron\\\"\",\"Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \\\"S7 tiny t2\\\"\",\"#32770 366x125+321+270 ex 0x10101 \\\"Electron\\\"\"],\"after\":[\"#32770 366x125+0+0 ex 0x10101 \\\"Electron\\\"\",\"Chrome_WidgetWin_1 48x40+-8+0 ex 0x82801a0 \\\"S7 tiny t2\\\"\",\"#32770 366x125+321+266 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+321+270 ex 0x10101 \\\"Electron\\\"\"]}"
+    },
+    {
+      "name": "with disableDialogs an alert puts up no window",
+      "ok": true,
+      "detail": "{\"before\":[\"#32770 366x125+321+266 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+0+0 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+321+266 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+321+270 ex 0x10101 \\\"Electron\\\"\"],\"after\":[\"#32770 366x125+321+266 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+0+0 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+321+266 ex 0x10101 \\\"Electron\\\"\",\"#32770 366x125+321+270 ex 0x10101 \\\"Electron\\\"\"]}"
+    }
+  ]
+}

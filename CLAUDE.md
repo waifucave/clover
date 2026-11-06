@@ -19,6 +19,7 @@ Names that still say Winter on purpose: the SDK's npm packages (`@yanlinglabs/wi
 
 ```sh
 bun install                          # bun is the runtime; pnpm workspaces orchestrate
+scripts/pinned-bun <args>            # the Bun .bun-version pins (CI's), beside any other: fetched and SHA-checked on first use
 
 pnpm test                            # every workspace, serially (`bun scripts/workspaces.ts run test` is CI's per-OS run)
 cd packages/core && bun test         # one package
@@ -37,7 +38,7 @@ cd apple/WinterProtocol && swift test   # also apple/WinterKit
 cd packages/cli && bun src/main.ts daemon run   # headless daemon; `-p "hello"` one-shot; no args = TUI (a throwaway home only, below)
 bun run build:winter                 # dist/winter from ../clover-sdk, for the built-binary e2e
 
-# Build and dev, on macOS, Linux and Windows (heavy: through scripts/heavy here)
+# Build and dev, on macOS, Linux and Windows (heavy: through scripts/heavy here, which runs the pinned Bun)
 bun run build:daemon                 # dist/daemon/<target>/clover-core; --target linux-x64,… or --all cross-compiles; --dry-run
 bun run build:app                    # apps/desktop, unsigned and unpacked (apps/desktop/out/dist); opens no window
 bun run dev:daemon --dry-run         # the dev daemon's plan; without --dry-run it builds and STARTS it (see Profiles)

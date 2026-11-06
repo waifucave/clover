@@ -1,0 +1,440 @@
+name: Spike S7 (the Clover Browser)
+
+# Lane L's M0: every check that launches Electron or a browser runs here, never on a developer's Mac.
+# spikes/s7-browser/README.md says what each job answers.
+
+# A push whose head commit's message says [cft only] runs the unit and Chrome for Testing jobs alone, and one that says
+# [viewport only] the unit and viewport jobs alone (only the head commit is read). Every runner exits 1 when an
+# assertion about the report's conclusions fails (round eight), so a green run means those held. M1 retargets the push
+# trigger when this becomes the browser suite.
+on:
+  push:
+    branches: [lane/l-m0]
+    paths:
+      - "spikes/s7-browser/**"
+      - "!spikes/s7-browser/results/**"
+      - ".github/workflows/spike-s7.yml"
+  workflow_dispatch:
+
+concurrency:
+  # a [cft only] or [viewport only] push gets a group of its own, so it doesn't cancel a full run still going
+  group: spike-s7-${{ github.ref }}${{ contains(github.event.head_commit.message, '[cft only]') && '-cft' || '' }}${{ contains(github.event.head_commit.message, '[viewport only]') && '-viewport' || '' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: spikes/s7-browser/prototype
+
+env:
+  CI: "true"
+  RESULTS: ${{ github.workspace }}/spikes/s7-browser/prototype/out/results
+
+jobs:
+  unit:
+    name: unit · typecheck and tests (launch nothing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+
+  # Round eleven: the daemon lock's test on the other two OSes (it takes and releases a file lock; it launches nothing)
+  unit-lock:
+    name: unit · the daemon lock on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun test test/lock.test.ts
+
+  electron:
+    name: electron · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos }
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-24.04, label: linux-x11 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Fetch the Electron binary
+        run: node node_modules/electron/install.js && node -p "require('electron')"
+      - run: bun run build
+      - name: The runner
+        run: |
+          mkdir -p "$RESULTS"
+          case "$RUNNER_OS" in
+            macOS) sw_vers; system_profiler SPDisplaysDataType | grep -E "Resolution|Retina|Display Type" || true ;;
+            Windows) cmd //c ver; powershell -NoProfile -Command "(Get-Process -Id \$PID).SessionId; query user 2>\$null; Get-CimInstance Win32_VideoController | Select-Object Name,CurrentHorizontalResolution,CurrentVerticalResolution | Format-List" || true ;;
+            Linux) lsb_release -a || true; echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)" ;;
+          esac
+      - name: Linux — Electron's sandbox without an AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq xvfb >/dev/null
+          set +e
+          timeout 60 xvfb-run -a "$(node -p "require('electron')")" out/electron/main.cjs --checks=none --out="$RESULTS/sandbox-no-profile.json" > "$RESULTS/linux-sandbox-no-profile.txt" 2>&1
+          echo "exit code $?" >> "$RESULTS/linux-sandbox-no-profile.txt"
+          tail -n 15 "$RESULTS/linux-sandbox-no-profile.txt"
+          rm -f "$RESULTS/sandbox-no-profile.json"
+          exit 0
+      - name: Linux — the AppArmor profile a deb would install, and xdotool and xwininfo for the host check
+        if: runner.os == 'Linux'
+        run: |
+          scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+          sudo apt-get install -y -qq xdotool x11-utils >/dev/null
+      - name: Probe (move, throttle, capture, cost, stream, wake, shared host, host invariants)
+        run: |
+          checks=move,throttle,capture,cost,stream,wake,shared,hostcheck
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=x11
+          else
+            bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }}
+          fi
+      - name: At a device scale factor of 2 (pictures, cost, the shared host)
+        if: success() || failure()
+        run: |
+          checks=capture,cost,shared
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}-dsf2.json" --label=${{ matrix.label }}-dsf2 -- --ozone-platform=x11 --force-device-scale-factor=2
+          else
+            bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}-dsf2.json" --label=${{ matrix.label }}-dsf2 -- --force-device-scale-factor=2
+          fi
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  wayland:
+    name: electron · linux-wayland (headless Weston)
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq weston >/dev/null
+      - run: scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Probe under Wayland (no X server at all)
+        run: |
+          mkdir -p "$RESULTS"
+          scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out="$RESULTS/electron-linux-wayland.json" --label=linux-wayland -- --ozone-platform=wayland
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-linux-wayland
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  ozone-headless:
+    name: "electron · ${{ matrix.label }} (no display, as on a server)"
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, label: linux-x64-ozone-headless }
+          - { os: ubuntu-24.04-arm, label: linux-arm64-ozone-headless }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - run: scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Probe with Ozone's headless platform (no X, no Wayland)
+        run: |
+          mkdir -p "$RESULTS"
+          env -u DISPLAY -u WAYLAND_DISPLAY bun scripts/probe.ts --checks=move,throttle,capture,cost,wake,shared,hostcheck --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=headless --ozone-override-screen-size=1920,1080
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  # Round twelve: Winter's model in Electron. Bot tabs drawn offscreen (never-shown OSR windows: GPU shared textures where
+  # this machine gives them, CPU bitmaps where not), one shown through a viewport page that draws its frames and sends
+  # input back, against a native view; then JavaScript dialogs answered over CDP, apart (a native box may stay up).
+  viewport:
+    name: electron · viewport · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos }
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-24.04, label: linux-x11 }
+          - { os: ubuntu-24.04, label: linux-wayland }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - name: Linux — a display server, the window tools and the AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          if [ "${{ matrix.label }}" = "linux-wayland" ]; then sudo apt-get install -y -qq weston >/dev/null; else sudo apt-get install -y -qq xvfb xdotool x11-utils >/dev/null; fi
+          scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Offscreen tabs, and one shown through the viewport
+        timeout-minutes: 20
+        run: |
+          mkdir -p "$RESULTS"
+          out="$RESULTS/electron-viewport-${{ matrix.label }}.json"
+          case "${{ matrix.label }}" in
+            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=x11 ;;
+            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=wayland ;;
+            *) bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$out" --label=viewport-${{ matrix.label }} ;;
+          esac
+      - name: JavaScript dialogs answered over CDP, offscreen and in the host window
+        if: success() || failure()
+        timeout-minutes: 8
+        run: |
+          out="$RESULTS/electron-viewport-${{ matrix.label }}-dialogs.json"
+          case "${{ matrix.label }}" in
+            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=dialogs --budget-min=6 --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=x11 ;;
+            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=dialogs --budget-min=6 --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=wayland ;;
+            *) bun scripts/probe.ts --checks=dialogs --budget-min=6 --out="$out" --label=dialogs-${{ matrix.label }} ;;
+          esac
+      - name: macOS — the viewport again with CPU bitmaps instead of shared textures (the cost of each road on one machine)
+        if: runner.os == 'macOS' && (success() || failure())
+        timeout-minutes: 20
+        env:
+          S7_VIEWPORT_MODE: bitmap
+        run: bun scripts/probe.ts --checks=viewport --budget-min=17 --out="$RESULTS/electron-viewport-macos-bitmap.json" --label=viewport-macos-bitmap
+      - name: Windows — the viewport again on WARP (Direct3D 11 in software), where shared textures may come
+        if: runner.os == 'Windows' && (success() || failure())
+        timeout-minutes: 20
+        run: bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$RESULTS/electron-viewport-windows-warp.json" --label=viewport-windows-warp -- --use-angle=d3d11-warp --ignore-gpu-blocklist
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-viewport-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  long:
+    name: electron · linux-x11 long run (past five hidden minutes)
+    # answered in the first round (results/); run again by hand
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - run: sudo apt-get install -y -qq xvfb >/dev/null && scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - run: |
+          mkdir -p "$RESULTS"
+          xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=long --out="$RESULTS/electron-linux-x11-long.json" --label=linux-x11-long -- --ozone-platform=x11
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-linux-x11-long
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  cft:
+    name: chrome for testing · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[viewport only]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos }
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-24.04, label: linux-x64 }
+          - { os: ubuntu-24.04-arm, label: linux-arm64 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Install both browsers from their pins (launches nothing)
+        run: |
+          mkdir -p "$RESULTS"
+          bun src/cft/run.ts --only=install --out="$RESULTS/cft-${{ matrix.label }}-install.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — load the AppArmor profiles a deb or rpm would install, for both browsers, before any start
+        if: runner.os == 'Linux'
+        run: |
+          echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
+          plat=$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux64)
+          root="$RUNNER_TEMP/clover-s7-home/browsers/cft/$(jq -r .version src/cft/pins.json)"
+          scripts/ci/apparmor.sh clover-s7-cft-shell "$root/chrome-headless-shell-$plat/chrome-headless-shell-$plat/chrome-headless-shell"
+          scripts/ci/apparmor.sh clover-s7-cft-chrome "$root/chrome-$plat/chrome-$plat/chrome"
+      - name: Start, tabs, media, screenshots, screencast, per-bot profiles, cost (sandboxed, as in production)
+        env:
+          S7_EXPECT_SANDBOX: "1"
+        run: bun src/cft/run.ts --out="$RESULTS/cft-${{ matrix.label }}.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — the same with the DevTools pipe read in a worker thread (round six's comparison)
+        if: runner.os == 'Linux' && (success() || failure())
+        env:
+          S7_EXPECT_SANDBOX: "1"
+        run: bun src/cft/run.ts --posix-reader=worker --artifacts=chrome-headless-shell,chrome --out="$RESULTS/cft-${{ matrix.label }}-worker.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — what a bare server lacks (clean ubuntu:24.04 container, pinned by digest)
+        if: runner.os == 'Linux' && (success() || failure())
+        run: |
+          plat=$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux64)
+          ver=$(jq -r .version src/cft/pins.json)
+          scripts/ci/cft-deps.sh "$RUNNER_TEMP/clover-s7-home/browsers/cft/$ver/chrome-headless-shell-$plat" "chrome-headless-shell-$plat/chrome-headless-shell" "$RESULTS/cft-${{ matrix.label }}-deps.txt"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-cft-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  pair:
+    name: the pair · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos, app: task }
+          - { os: windows-latest, label: windows-task, app: task }
+          - { os: windows-latest, label: windows-spawn, app: spawn }
+          - { os: windows-latest, label: windows-supervise, app: task, supervise: true }
+          - { os: ubuntu-24.04, label: linux, app: task }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - name: Build (with the compiled daemon)
+        run: bun scripts/build.ts --daemon
+      - name: The session
+        run: |
+          case "$RUNNER_OS" in
+            macOS) id; launchctl print "gui/$(id -u)" | head -n 12 || echo "no gui domain" ;;
+            Windows) powershell -NoProfile -Command "whoami; (Get-Process -Id \$PID).SessionId; query user 2>\$null; Get-ScheduledTask | Select-Object -First 3 | Format-Table TaskPath,TaskName,State" || true ;;
+            Linux) id; loginctl list-sessions || true ;;
+          esac
+      - name: Linux — a user manager, a display and the AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq xvfb >/dev/null
+          scripts/ci/linux-user-manager.sh
+          scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Run the pair
+        run: |
+          mkdir -p "$RESULTS"
+          electron="$(node -p "require('electron')")"
+          exe=""; [ "$RUNNER_OS" = "Windows" ] && exe=".exe"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 &
+            xvfb=$!
+            sleep 1
+            DISPLAY=:99 bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7" --electron="$electron" --app-dir=out/pair/app --display=:99 --out="$RESULTS/pair-${{ matrix.label }}.json"
+            kill $xvfb || true
+          else
+            bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7$exe" --electron="$electron" --app-dir=out/pair/app --windows-app-start=${{ matrix.app }} ${{ matrix.supervise && '--windows-supervise' || '' }} --out="$RESULTS/pair-${{ matrix.label }}.json"
+          fi
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-pair-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  summary:
+    name: summary
+    needs: [unit, unit-lock, electron, viewport, wayland, ozone-headless, long, cft, pair]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: spikes/s7-browser/prototype/out/all
+          pattern: s7-*
+      - run: bun install --frozen-lockfile
+      - name: Summarize
+        run: |
+          bun src/summarize.ts out/all > out/s7-summary.md
+          cat out/s7-summary.md >> "$GITHUB_STEP_SUMMARY"
+          for f in $(find out/all -name '*.txt'); do echo; echo "### $(basename "$f")"; echo '```'; cat "$f"; echo '```'; done >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-summary
+          path: |
+            spikes/s7-browser/prototype/out/s7-summary.md
+            spikes/s7-browser/prototype/out/all/

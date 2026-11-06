@@ -32,6 +32,13 @@ const BUN_LOCK = parseBunLock(readFileSync(join(REPO_ROOT, "bun.lock"), "utf8"))
  *  range that installs" vs. "the pin, as the exact version the code is written against"
  *  (`versions.ts`'s own doc: "The ^ ranges in package.json are what INSTALLS; these are what the
  *  tests PROVE installed"). */
+/** The version of a package core resolves through a `link:` (its own manifest, wherever the link points). */
+function linkedVersion(name: string): string {
+  const { createRequire } = require("node:module") as typeof import("node:module");
+  const manifest = createRequire(join(import.meta.dir, "../packages/core/package.json")).resolve(`${name}/package.json`);
+  return (JSON.parse(readFileSync(manifest, "utf8")) as { version: string }).version;
+}
+
 function bareVersion(range: string): string {
   return range.replace(/^[\^~]/, "");
 }
@@ -39,7 +46,7 @@ function bareVersion(range: string): string {
 /** `bun.lock`'s own `packages` entries are `"<name>": ["<name>@<version>", ...]` — the RESOLVED
  *  version bun actually installed, as opposed to package.json's own (possibly ranged) pin. The
  *  version always starts with a digit, which is what lets this regex not be fooled by the `@` in
- *  a scoped package name like `@yanlinglabs/winter-agent-sdk@0.0.4`. */
+ *  a scoped package name like `@waifucave/clover-agent-sdk@0.0.4`. */
 function lockedVersion(name: string): string {
   const entry = BUN_LOCK.packages?.[name];
   if (entry === undefined) throw new Error(`pins.test: bun.lock has no "packages" entry for ${JSON.stringify(name)}`);
@@ -60,7 +67,7 @@ describe("CI takes the `winter` binary from the installed platform package ONLY 
     const LOUD = "did not install — bun install is the ONLY winter source since";
     // A job needs the binary when it copies it to dist/winter or runs the gate that stages it.
     const needing = Object.keys(jobs).filter((id) => ["dist/winter", "verify:runtimes"].some((s) => JSON.stringify(jobs[id]).includes(s))).sort();
-    expect(needing).toEqual(["test-cli", "test-core", "test-scripts", "verify"]);
+    expect(needing).toEqual(["macos"]);
     for (const id of needing) expect([id, (jobs[id]!.steps ?? []).some((s) => s.run?.includes(LOUD) === true)]).toEqual([id, true]);
     expect((CI_YML.match(new RegExp(LOUD, "g")) ?? []).length).toBe(needing.length);
   });
@@ -68,15 +75,19 @@ describe("CI takes the `winter` binary from the installed platform package ONLY 
 
 describe("packages/core/package.json's SDK pins agree with versions.ts's REQUIRED_* (P8d-16)", () => {
   test("winter-agent-sdk", () => {
-    const range = CORE_PACKAGE_JSON.dependencies?.["@yanlinglabs/winter-agent-sdk"];
+    const range = CORE_PACKAGE_JSON.dependencies?.["@waifucave/clover-agent-sdk"];
     expect(range).toBeDefined();
-    expect(bareVersion(range!)).toBe(REQUIRED_WINTER_AGENT_SDK);
+    // A-M1: until `@waifucave/clover-*` is published the SDK is a local link (`bun link` in a clover-sdk
+    // checkout); the version the pin names is then the linked package's own.
+    expect(range!.startsWith("link:") ? linkedVersion("@waifucave/clover-agent-sdk") : bareVersion(range!)).toBe(REQUIRED_WINTER_AGENT_SDK);
   });
 
-  test("winter-runtime-sdk", () => {
-    const range = CORE_PACKAGE_JSON.dependencies?.["@yanlinglabs/winter-runtime-sdk"];
-    expect(range).toBeDefined();
-    expect(bareVersion(range!)).toBe(REQUIRED_WINTER_RUNTIME_SDK);
+  // A-M1 (spec §3.3): the router is archived, and what the daemon still needs of it lives in core
+  // (`runtime-sdk/host/`). Its pin names the release that code came from; no package installs it.
+  test("winter-runtime-sdk (the router) is no longer a daemon dependency", () => {
+    expect(CORE_PACKAGE_JSON.dependencies?.["@yanlinglabs/winter-runtime-sdk"]).toBeUndefined();
+    expect(BUN_LOCK.packages?.["@yanlinglabs/winter-runtime-sdk"]).toBeUndefined();
+    expect(REQUIRED_WINTER_RUNTIME_SDK).toBe("0.0.16");
   });
 
   // WS-23: the official leg is retired — the daemon depends on no claude-agent-sdk at all.
@@ -94,7 +105,40 @@ describe("packages/core/package.json's SDK pins agree with versions.ts's REQUIRE
 // refuse a genuinely-fine install or, worse, silently accept a DIFFERENT version than the one the
 // daemon is actually written against.
 describe("REQUIRED_WINTER_AGENT_SDK matches the wrapper's ACTUALLY RESOLVED version in bun.lock (P9a-8)", () => {
-  test("bun.lock's @yanlinglabs/winter-agent-sdk resolves to exactly REQUIRED_WINTER_AGENT_SDK", () => {
-    expect(lockedVersion("@yanlinglabs/winter-agent-sdk")).toBe(REQUIRED_WINTER_AGENT_SDK);
+  test("bun.lock's @waifucave/clover-agent-sdk resolves to exactly REQUIRED_WINTER_AGENT_SDK", () => {
+    const entry = (BUN_LOCK.packages?.["@waifucave/clover-agent-sdk"] as unknown[] | undefined)?.[0];
+    // A-M1: a `link:` entry carries no version; the linked package's own manifest does.
+    expect(typeof entry === "string" && entry.includes("@link:") ? linkedVersion("@waifucave/clover-agent-sdk") : lockedVersion("@waifucave/clover-agent-sdk")).toBe(REQUIRED_WINTER_AGENT_SDK);
+  });
+});
+
+// M1 review: every Bun pin follows `.bun-version`. A new workspace copied from an older one brings that one's
+// `@types/bun`, and the types then describe a Bun CI does not run (1.4's `signalCode` type differs from 1.3.14's).
+// Spikes are left out: each is frozen evidence with its own lockfile, measured on the Bun it names.
+describe("the Bun pins follow .bun-version", () => {
+  const PINNED_BUN = readFileSync(join(REPO_ROOT, ".bun-version"), "utf8").trim();
+  const manifests = Bun.spawnSync(["git", "ls-files", "*package.json"], { cwd: REPO_ROOT }).stdout.toString().split("\n")
+    .filter((f) => f.endsWith("package.json") && !f.startsWith("spikes/"));
+
+  test("every tracked package.json's @types/bun is exactly the pinned version", () => {
+    expect(manifests.length).toBeGreaterThan(10);
+    const drift: string[] = [];
+    for (const file of manifests) {
+      const pkg = JSON.parse(readFileSync(join(REPO_ROOT, file), "utf8")) as Record<string, Record<string, string> | undefined>;
+      for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+        const v = pkg[field]?.["@types/bun"];
+        if (v !== undefined && v !== PINNED_BUN) drift.push(`${file} ${field}: @types/bun ${v}`);
+      }
+    }
+    expect(drift).toEqual([]);
+  });
+
+  test("bun.lock resolves @types/bun to the pinned version", () => {
+    expect(lockedVersion("@types/bun")).toBe(PINNED_BUN);
+  });
+
+  test("the root package.json's engines.bun asks for at least the pinned version", () => {
+    const root = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as { engines?: { bun?: string } };
+    expect(root.engines?.bun).toBe(`>=${PINNED_BUN}`);
   });
 });

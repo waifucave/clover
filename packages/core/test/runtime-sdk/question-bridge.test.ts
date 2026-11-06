@@ -1,5 +1,5 @@
 import { test, expect, afterEach, jest } from "bun:test";
-import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import { QUESTION_PLACEHOLDER_MAX, QuestionAskedEvent, QuestionResolvedEvent, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";

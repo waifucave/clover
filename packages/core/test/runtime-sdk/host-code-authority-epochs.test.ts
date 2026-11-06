@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { WINTER_BRAND } from "@yanlinglabs/winter-agent-sdk";
+import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
 import { CanonicalHostCodeAuthority, type CanonicalHostCodePolicy } from "../../src/runtime-sdk/host-code-authority";
 import { SessionStore } from "../../src/sessions/store";
 import { TrustStore } from "../../src/agent/trust";

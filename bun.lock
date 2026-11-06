@@ -6,7 +6,7 @@
       "name": "winter-monorepo",
       "devDependencies": {
         "@resvg/resvg-js": "^2.6.2",
-        "@types/bun": "^1.3.0",
+        "@types/bun": "1.4.4",
         "typescript": "^5.6.0",
       },
     },
@@ -58,17 +58,19 @@
       "name": "@waifucave/clover-core",
       "version": "0.124.0",
       "dependencies": {
+        "@waifucave/clover-agent-runtime": "0.0.63",
+        "@waifucave/clover-agent-sdk": "0.0.63",
         "@waifucave/clover-protocol": "workspace:*",
-        "@yanlinglabs/winter-agent-runtime": "0.0.55",
-        "@yanlinglabs/winter-agent-sdk": "0.0.55",
-        "@yanlinglabs/winter-provider-catalog": "0.0.55",
-        "@yanlinglabs/winter-provider-runtime": "0.0.55",
-        "@yanlinglabs/winter-runtime-sdk": "^0.0.16",
+        "@waifucave/clover-provider-catalog": "0.0.63",
+        "@waifucave/clover-provider-runtime": "0.0.63",
         "unpdf": "^1.6.2",
-        "zod": "^4.0.0",
+        "zod": "^4.6.7",
       },
       "devDependencies": {
-        "@yanlinglabs/winter-provider-conformance": "0.0.55",
+        "@waifucave/clover-provider-conformance": "0.0.63",
+      },
+      "optionalDependencies": {
+        "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55",
       },
     },
     "packages/plugin-sdk": {
@@ -76,14 +78,14 @@
       "version": "0.124.0",
       "dependencies": {
         "@waifucave/clover-protocol": "workspace:*",
-        "zod": "^4.0.0",
+        "zod": "^4.6.7",
       },
     },
     "packages/protocol": {
       "name": "@waifucave/clover-protocol",
       "version": "0.124.0",
       "dependencies": {
-        "zod": "^4.0.0",
+        "zod": "^4.6.7",
       },
     },
     "packages/test-harness": {
@@ -102,19 +104,19 @@
       "name": "@waifucave/clover-plugin-alpha-tab",
       "version": "0.0.0",
       "devDependencies": {
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/base-theme": {
+    "plugins/clover/plugins/base-theme": {
       "name": "@waifucave/clover-plugin-base-theme",
       "version": "0.0.0",
       "devDependencies": {
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/base-theme/gallery": {
+    "plugins/clover/plugins/base-theme/gallery": {
       "name": "@waifucave/clover-lane-g-gallery",
       "version": "0.0.0",
       "dependencies": {
@@ -124,7 +126,7 @@
         "three": "0.186.1",
       },
       "devDependencies": {
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "@types/three": "0.186.0",
@@ -132,7 +134,7 @@
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/composer": {
+    "plugins/clover/plugins/composer": {
       "name": "@waifucave/clover-plugin-composer",
       "version": "0.0.0",
       "dependencies": {
@@ -144,13 +146,13 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/conversation": {
+    "plugins/clover/plugins/conversation": {
       "name": "@waifucave/clover-plugin-conversation",
       "version": "0.0.0",
       "dependencies": {
@@ -164,28 +166,36 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/forwarder": {
-      "name": "@waifucave/clover-plugin-forwarder",
+    "plugins/clover/plugins/fish-audio": {
+      "name": "@waifucave/clover-plugin-fish-audio",
       "version": "0.0.0",
       "devDependencies": {
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/island": {
+    "plugins/clover/plugins/forwarder": {
+      "name": "@waifucave/clover-plugin-forwarder",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/island": {
       "name": "@waifucave/clover-plugin-island",
       "version": "0.0.0",
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "react": "19.3.1",
@@ -197,7 +207,7 @@
         "react-dom": "^19.3.0",
       },
     },
-    "plugins/clover/panel": {
+    "plugins/clover/plugins/panel": {
       "name": "@waifucave/clover-plugin-panel",
       "version": "0.0.0",
       "dependencies": {
@@ -209,13 +219,13 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/panel-diff": {
+    "plugins/clover/plugins/panel-diff": {
       "name": "@waifucave/clover-plugin-panel-diff",
       "version": "0.0.0",
       "dependencies": {
@@ -227,13 +237,13 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/panel-files": {
+    "plugins/clover/plugins/panel-files": {
       "name": "@waifucave/clover-plugin-panel-files",
       "version": "0.0.0",
       "dependencies": {
@@ -245,13 +255,13 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/panel-terminal": {
+    "plugins/clover/plugins/panel-terminal": {
       "name": "@waifucave/clover-plugin-panel-terminal",
       "version": "0.0.0",
       "dependencies": {
@@ -263,20 +273,20 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/pill": {
+    "plugins/clover/plugins/pill": {
       "name": "@waifucave/clover-plugin-pill",
       "version": "0.0.0",
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "react": "19.3.1",
@@ -288,15 +298,15 @@
         "react-dom": "^19.3.0",
       },
     },
-    "plugins/clover/push": {
+    "plugins/clover/plugins/push": {
       "name": "@waifucave/clover-plugin-push",
       "version": "0.0.0",
       "devDependencies": {
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/settings": {
+    "plugins/clover/plugins/settings": {
       "name": "@waifucave/clover-plugin-settings",
       "version": "0.0.0",
       "dependencies": {
@@ -308,13 +318,13 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/shell": {
+    "plugins/clover/plugins/shell": {
       "name": "@waifucave/clover-plugin-shell",
       "version": "0.0.0",
       "dependencies": {
@@ -326,14 +336,14 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "playwright": "1.64.1",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/sidebar": {
+    "plugins/clover/plugins/sidebar": {
       "name": "@waifucave/clover-plugin-sidebar",
       "version": "0.0.0",
       "dependencies": {
@@ -345,13 +355,13 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "typescript": "5.9.3",
       },
     },
-    "plugins/clover/vrm": {
+    "plugins/clover/plugins/vrm": {
       "name": "@waifucave/clover-plugin-vrm",
       "version": "0.0.0",
       "dependencies": {
@@ -362,7 +372,7 @@
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
         "@testing-library/react": "16.3.3",
-        "@types/bun": "1.3.14",
+        "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "@types/three": "0.186.0",
@@ -734,7 +744,7 @@
 
     "@types/aria-query": ["@types/aria-query@5.0.4", "", {}, "sha512-rfT93uj5s0PRL7EzccGMs3brplhcrghnDoV26NqKhCAS1hVo+WdNsPvE/yb6ilfr5hi2MEk6d5EWJTKdxg8jVw=="],
 
-    "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
+    "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
     "@types/cacheable-request": ["@types/cacheable-request@6.0.3", "", { "dependencies": { "@types/http-cache-semantics": "*", "@types/keyv": "^3.1.4", "@types/node": "*", "@types/responselike": "^1.0.0" } }, "sha512-IQ3EbTzGxIigb1I3qPZc1rWJnH0BmSKv5QYTalEwweFvyBDLSAe24zP0le/hyi7ecGfZVlIVAg4BZqb8WBwKqw=="],
 
@@ -798,49 +808,63 @@
 
     "@vitest/utils": ["@vitest/utils@4.1.12", "", { "dependencies": { "@vitest/pretty-format": "4.1.12", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA=="],
 
+    "@waifucave/clover-agent-runtime": ["@waifucave/clover-agent-runtime@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.63/fb503dcdef12b8dbef5a6ac3628131808a144c2b", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@waifucave/clover-agent-sdk": "0.0.63", "@waifucave/clover-provider-catalog": "0.0.63", "@waifucave/clover-provider-runtime": "0.0.63", "@waifucave/clover-web": "0.0.63", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-y46S1zMP6NttnzndXZquhiE2C/LOILKIN9UMa0F1WhK2UJuO1XSYuzvmnxHrzeDlubp58pPWxA0AFX13jMo/tg=="],
+
+    "@waifucave/clover-agent-sdk": ["@waifucave/clover-agent-sdk@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.63/bf1407ba9ecaeaa7372b6fa41b2c44d37c59b6f0", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.63" }, "optionalDependencies": { "@waifucave/clover-agent-sdk-darwin-arm64": "0.0.63" } }, "sha512-znAdbSfjeSpm0hzjKlMYrKK4vPCAWI3om1Jb9lAztXQNndteYA/bn4OOMQ2gf8+7UTJgiRvVuQNwVpQBv7WvTg=="],
+
+    "@waifucave/clover-agent-sdk-darwin-arm64": ["@waifucave/clover-agent-sdk-darwin-arm64@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.63/22b2118609bddfddc9e3f1a558080b01b93cbe80", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-PcxCE71ehsgkwW2PrxoTMIupenXHa+BcK0ai8RkwIDdQctezzKgzCX5ua0DLFnPVsd5tnvWMBiTdQ0jnwyfSbQ=="],
+
     "@waifucave/clover-cli": ["@waifucave/clover-cli@workspace:packages/cli"],
 
     "@waifucave/clover-core": ["@waifucave/clover-core@workspace:packages/core"],
 
     "@waifucave/clover-desktop": ["@waifucave/clover-desktop@workspace:apps/desktop"],
 
-    "@waifucave/clover-lane-g-gallery": ["@waifucave/clover-lane-g-gallery@workspace:plugins/clover/base-theme/gallery"],
+    "@waifucave/clover-lane-g-gallery": ["@waifucave/clover-lane-g-gallery@workspace:plugins/clover/plugins/base-theme/gallery"],
 
     "@waifucave/clover-plugin-alpha-tab": ["@waifucave/clover-plugin-alpha-tab@workspace:plugins/alpha/tab"],
 
-    "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/base-theme"],
+    "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/plugins/base-theme"],
 
-    "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/composer"],
+    "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/plugins/composer"],
 
-    "@waifucave/clover-plugin-conversation": ["@waifucave/clover-plugin-conversation@workspace:plugins/clover/conversation"],
+    "@waifucave/clover-plugin-conversation": ["@waifucave/clover-plugin-conversation@workspace:plugins/clover/plugins/conversation"],
 
-    "@waifucave/clover-plugin-forwarder": ["@waifucave/clover-plugin-forwarder@workspace:plugins/clover/forwarder"],
+    "@waifucave/clover-plugin-fish-audio": ["@waifucave/clover-plugin-fish-audio@workspace:plugins/clover/plugins/fish-audio"],
 
-    "@waifucave/clover-plugin-island": ["@waifucave/clover-plugin-island@workspace:plugins/clover/island"],
+    "@waifucave/clover-plugin-forwarder": ["@waifucave/clover-plugin-forwarder@workspace:plugins/clover/plugins/forwarder"],
 
-    "@waifucave/clover-plugin-panel": ["@waifucave/clover-plugin-panel@workspace:plugins/clover/panel"],
+    "@waifucave/clover-plugin-island": ["@waifucave/clover-plugin-island@workspace:plugins/clover/plugins/island"],
 
-    "@waifucave/clover-plugin-panel-diff": ["@waifucave/clover-plugin-panel-diff@workspace:plugins/clover/panel-diff"],
+    "@waifucave/clover-plugin-panel": ["@waifucave/clover-plugin-panel@workspace:plugins/clover/plugins/panel"],
 
-    "@waifucave/clover-plugin-panel-files": ["@waifucave/clover-plugin-panel-files@workspace:plugins/clover/panel-files"],
+    "@waifucave/clover-plugin-panel-diff": ["@waifucave/clover-plugin-panel-diff@workspace:plugins/clover/plugins/panel-diff"],
 
-    "@waifucave/clover-plugin-panel-terminal": ["@waifucave/clover-plugin-panel-terminal@workspace:plugins/clover/panel-terminal"],
+    "@waifucave/clover-plugin-panel-files": ["@waifucave/clover-plugin-panel-files@workspace:plugins/clover/plugins/panel-files"],
 
-    "@waifucave/clover-plugin-pill": ["@waifucave/clover-plugin-pill@workspace:plugins/clover/pill"],
+    "@waifucave/clover-plugin-panel-terminal": ["@waifucave/clover-plugin-panel-terminal@workspace:plugins/clover/plugins/panel-terminal"],
 
-    "@waifucave/clover-plugin-push": ["@waifucave/clover-plugin-push@workspace:plugins/clover/push"],
+    "@waifucave/clover-plugin-pill": ["@waifucave/clover-plugin-pill@workspace:plugins/clover/plugins/pill"],
+
+    "@waifucave/clover-plugin-push": ["@waifucave/clover-plugin-push@workspace:plugins/clover/plugins/push"],
 
     "@waifucave/clover-plugin-sdk": ["@waifucave/clover-plugin-sdk@workspace:packages/plugin-sdk"],
 
-    "@waifucave/clover-plugin-settings": ["@waifucave/clover-plugin-settings@workspace:plugins/clover/settings"],
+    "@waifucave/clover-plugin-settings": ["@waifucave/clover-plugin-settings@workspace:plugins/clover/plugins/settings"],
 
-    "@waifucave/clover-plugin-shell": ["@waifucave/clover-plugin-shell@workspace:plugins/clover/shell"],
+    "@waifucave/clover-plugin-shell": ["@waifucave/clover-plugin-shell@workspace:plugins/clover/plugins/shell"],
 
-    "@waifucave/clover-plugin-sidebar": ["@waifucave/clover-plugin-sidebar@workspace:plugins/clover/sidebar"],
+    "@waifucave/clover-plugin-sidebar": ["@waifucave/clover-plugin-sidebar@workspace:plugins/clover/plugins/sidebar"],
 
-    "@waifucave/clover-plugin-vrm": ["@waifucave/clover-plugin-vrm@workspace:plugins/clover/vrm"],
+    "@waifucave/clover-plugin-vrm": ["@waifucave/clover-plugin-vrm@workspace:plugins/clover/plugins/vrm"],
 
     "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
+
+    "@waifucave/clover-provider-catalog": ["@waifucave/clover-provider-catalog@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.63/6f6b48faa7126564a0f9ab69967a084fea425e33", {}, "sha512-TbPEiAOnIndCY2L/AGerD0xTMEzGGP9notUvZQ4I80xIsAFvWPib/jLxUjXE4ojyumgXUG+2OvH/s1lJdCN5Cg=="],
+
+    "@waifucave/clover-provider-conformance": ["@waifucave/clover-provider-conformance@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.63/d6d98d984305deb7c602084d23552f0d37fec81c", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.63", "@waifucave/clover-provider-runtime": "0.0.63" } }, "sha512-VvxXDU/TRy/krgaOI4ByrBYw2VQSckpGRI5GK9lgdkYveCV0EflzEYM5wgBFbxQhXlK7EcyGCRJv6+/EuvECBg=="],
+
+    "@waifucave/clover-provider-runtime": ["@waifucave/clover-provider-runtime@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.63/65f27b1186c81e85c4ad35782ad67299f59fa58c", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.63" } }, "sha512-pHQ9z9C6HH03CjKe/8vPuXZWjG/LEkuFftVLIfRap/uQr6gGXiHwh/4Rbqs36ZiG78ju+O4thS2szJaM1WEPVQ=="],
 
     "@waifucave/clover-service-forwarder": ["@waifucave/clover-service-forwarder@workspace:services/forwarder"],
 
@@ -850,23 +874,13 @@
 
     "@waifucave/clover-test-harness": ["@waifucave/clover-test-harness@workspace:packages/test-harness"],
 
+    "@waifucave/clover-web": ["@waifucave/clover-web@0.0.63", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.63/938dfb7aed5f442c6445a22bc9580510914ae7de", {}, "sha512-l565tKc0yteGXUOHSkczpBC0JiMhWl3Four6/tvanNteao+K8DDEJfLqvxpZ8cy2OloMpgEfFfVlPOWy+kIzuA=="],
+
     "@winter-spike/bun-compile": ["@winter-spike/bun-compile@workspace:spikes/bun-compile"],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.15", "", {}, "sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA=="],
 
-    "@yanlinglabs/winter-agent-runtime": ["@yanlinglabs/winter-agent-runtime@0.0.55", "", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@yanlinglabs/winter-agent-sdk": "0.0.55", "@yanlinglabs/winter-provider-catalog": "0.0.55", "@yanlinglabs/winter-provider-runtime": "0.0.55", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-phmdKQPgrxeHAaOe5HWrgAk6XqerdAmuwgqX1xZ4FhLylYfCQ/Hgd9uOpz209yIcCWR5nAv1Uh2PkI0w9QoR/A=="],
-
-    "@yanlinglabs/winter-agent-sdk": ["@yanlinglabs/winter-agent-sdk@0.0.55", "", { "dependencies": { "@yanlinglabs/winter-provider-catalog": "0.0.55" }, "optionalDependencies": { "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55" } }, "sha512-hNtiSPscLKWprvYNMOtt8+r/1xZLdMkju9ND2NqnBREtatiLdol/XeSkUM1hWtNT0LUX9jAOhpxjbi9UidTJYA=="],
-
     "@yanlinglabs/winter-agent-sdk-darwin-arm64": ["@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.55", "", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-bL8IPF8FTCxFDDWxf/210RtMDh/x5z5YNPaZSEJA1Cg0aMu8f/cWMA0wxJ9jE2q17biO5wzTIburlrBNgX1f+g=="],
-
-    "@yanlinglabs/winter-provider-catalog": ["@yanlinglabs/winter-provider-catalog@0.0.55", "", {}, "sha512-DQmkUVJfkY2Y7iF2WPNh7Fg7ru3XDZpboPfjTlev3EnAQl6meLb5uOHnNNxBKSd/8HNKxxQ2gAJkTI61XajA2A=="],
-
-    "@yanlinglabs/winter-provider-conformance": ["@yanlinglabs/winter-provider-conformance@0.0.55", "", { "dependencies": { "@yanlinglabs/winter-provider-catalog": "0.0.55", "@yanlinglabs/winter-provider-runtime": "0.0.55" } }, "sha512-DuLgB7DDytxPRowobmmPylxHiDzTj3+twUwbTwk2JLkp4j4cvK4dmw3ikqDFmAkGdtXkmXXS1WNK+XHSAHLckw=="],
-
-    "@yanlinglabs/winter-provider-runtime": ["@yanlinglabs/winter-provider-runtime@0.0.55", "", { "dependencies": { "@yanlinglabs/winter-agent-sdk": "0.0.55", "@yanlinglabs/winter-provider-catalog": "0.0.55" } }, "sha512-Deb549YJprFco2mbQ7H0VVJnQVHD1OjpRJloV7WkByTgwOlXzj/VAAen5Uc2rUk3NwrkfA4bQSAzoEbtSFk4BQ=="],
-
-    "@yanlinglabs/winter-runtime-sdk": ["@yanlinglabs/winter-runtime-sdk@0.0.16", "", { "peerDependencies": { "@yanlinglabs/winter-agent-sdk": ">=0.0.21 <0.1.0", "@yanlinglabs/winter-conformance": ">=0.0.3 <0.1.0", "@yanlinglabs/winter-provider-catalog": ">=0.0.21 <0.1.0", "@yanlinglabs/winter-provider-conformance": ">=0.0.21 <0.1.0", "@yanlinglabs/winter-provider-runtime": ">=0.0.21 <0.1.0" }, "optionalPeers": ["@yanlinglabs/winter-conformance", "@yanlinglabs/winter-provider-conformance"] }, "sha512-O+DaIkAtZsxkIRAoqlAjoz4V1C+jQ/7svdZdQGZ7m5DCJurSo+PyL64CGiGSVSi6sUmytLvwsg4b/ZOUhfu2yQ=="],
 
     "abbrev": ["abbrev@4.0.0", "", {}, "sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA=="],
 
@@ -928,7 +942,7 @@
 
     "builder-util-runtime": ["builder-util-runtime@9.7.0", "", { "dependencies": { "debug": "^4.3.4", "sax": "^1.2.4" } }, "sha512-g/kR520giAFYkSXTzcmF3kqQq7wi8F6N6SzeDgZrqTBN+VHdmgWOyTdD1yD7AATDId/yXLvuP34CxW46/BwCdw=="],
 
-    "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "25.9.3" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
     "bytestreamjs": ["bytestreamjs@2.0.1", "", {}, "sha512-U1Z/ob71V/bXfVABvNr/Kumf5VyeQRBEm6Txb0PQ6S7V5GpBM3w4Cbqz/xPDicR5tN0uvDifng8C+5qECeGwyQ=="],
 
@@ -1706,7 +1720,7 @@
 
     "youch-core": ["youch-core@0.3.3", "", { "dependencies": { "@poppinss/exception": "^1.2.2", "error-stack-parser-es": "^1.0.5" } }, "sha512-ho7XuGjLaJ2hWHoK8yFnsUGy2Y5uDpqSTq1FkHLK4/oqKtyUU1AFbOOxY4IpC9f0fTLjwYbslUz0Po5BpD1wrA=="],
 
-    "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+    "zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
     "zwitch": ["zwitch@2.0.4", "", {}, "sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="],
 
@@ -1748,55 +1762,107 @@
 
     "@waifucave/clover-lane-g-gallery/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-lane-g-gallery/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-lane-g-gallery/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-lane-g-gallery/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-composer/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-composer/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-composer/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-composer/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-conversation/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-conversation/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-conversation/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-conversation/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-island/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-island/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-island/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-island/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-panel/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-panel/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-panel/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-panel/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-panel-diff/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-panel-diff/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-panel-diff/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-panel-diff/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-panel-files/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-panel-files/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-panel-files/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-panel-files/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-panel-terminal/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-panel-terminal/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-panel-terminal/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-panel-terminal/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-pill/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-pill/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-pill/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-pill/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-settings/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-settings/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-settings/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-settings/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-shell/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-shell/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-shell/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-shell/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-sidebar/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-sidebar/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-sidebar/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-sidebar/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-plugin-vrm/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
+    "@waifucave/clover-plugin-vrm/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
     "@waifucave/clover-plugin-vrm/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-vrm/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
     "@waifucave/clover-service-hello/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260730.1", "", {}, "sha512-3e1cBXcPTwXBk2ur0CfxZKQKL6X7vUZlOn1R7VYU0zZVJcSKFcq1AoOZM+ps0LuL0uTAxdcLg+qwXrBXVu+UuQ=="],
 
@@ -1899,6 +1965,32 @@
     "@electron/fuses/chalk/ansi-styles": ["ansi-styles@4.3.0", "", { "dependencies": { "color-convert": "^2.0.1" } }, "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="],
 
     "@electron/universal/minimatch/brace-expansion": ["brace-expansion@2.1.7", "", { "dependencies": { "balanced-match": "^1.0.0" } }, "sha512-uZbew1NqdmPDTMJ8ah1y+b+9QEJrfkXFk3RcTQw3X0jW/xRUvFKsg1CfQdSYGdTbXZWExtU3J3ccxtnfw1Fi0g=="],
+
+    "@waifucave/clover-lane-g-gallery/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-composer/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-conversation/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-island/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-panel-diff/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-panel-files/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-panel-terminal/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-panel/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-pill/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-settings/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-shell/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-sidebar/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-vrm/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 
     "app-builder-lib/@electron/get/env-paths": ["env-paths@2.2.1", "", {}, "sha512-+h1lkLKhZMTYjog1VEpJNG7NZJWcuc2DDk/qsqSTRRCOXiLjeQ1d1/udrUGhqMxUgAlwKNZ0cf2uqan5GLuS2A=="],
 

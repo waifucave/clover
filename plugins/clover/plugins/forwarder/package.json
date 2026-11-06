@@ -1,0 +1,23 @@
+{
+  "name": "@waifucave/clover-plugin-forwarder",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/forwarder: each computer's side of the waifucave forwarder (hooks.waifucave.com), filling webhook.ingress.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./client": "./src/client.ts",
+    "./ingress": "./src/ingress.ts",
+    "./keys": "./src/keys.ts",
+    "./wire/*": "./src/wire/*.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}
