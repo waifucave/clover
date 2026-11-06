@@ -9,6 +9,7 @@ import { AutomationFailure } from "../../src/computer-use/errors";
 import type { TabHandle } from "../../src/computer-use/worker/bridge";
 import type { FakePage } from "./browser-fake-transport";
 import { harness } from "./browser-harness";
+import { darwinTest } from "../helpers/darwin-only";
 
 const CSV = "https://shop.example.com/prices.csv";
 const PAGE: FakePage = {
@@ -45,7 +46,7 @@ async function opened(browser: "winter" | "chrome", page: FakePage = PAGE, o: Pa
 }
 
 describe("the built-in browser (its own download handler)", () => {
-  test("a link: downloaded in the tab with no navigation, into the session's temp folder, said fenced, counted", async () => {
+  darwinTest("a link: downloaded in the tab with no navigation, into the session's temp folder, said fenced, counted", async () => {
     const { h, r, p, fake, tmpRoot } = await opened("winter", PAGE, { nativeDownloads: ["winter"] });
     const got = await p("download", { target: 3 }) as { path: string; name: string; bytes: number; mime: string };
     expect(got).toEqual({ path: join(tmpRoot, "downloads", "prices.csv"), name: "prices.csv", bytes: 17, mime: "text/csv" });
@@ -58,7 +59,7 @@ describe("the built-in browser (its own download handler)", () => {
     r.end();
   });
 
-  test("a button: the tab is armed, the button clicked, the file caught; unarmed, a download is refused and the next state says so", async () => {
+  darwinTest("a button: the tab is armed, the button clicked, the file caught; unarmed, a download is refused and the next state says so", async () => {
     const page: FakePage = { ...PAGE, url: "https://shop.example.com/export", clickDownload: CSV };
     const { r, p } = await opened("winter", page, { nativeDownloads: ["winter"] });
     const got = await p("download", { target: 2 }) as { name: string };
@@ -78,7 +79,7 @@ describe("the built-in browser (its own download handler)", () => {
 });
 
 describe("a user's browser (Fetch interception)", () => {
-  test("a link: loaded in a TEMPORARY background tab, captured, the request failed Aborted, the tab closed — the bound tab never navigated", async () => {
+  darwinTest("a link: loaded in a TEMPORARY background tab, captured, the request failed Aborted, the tab closed — the bound tab never navigated", async () => {
     const { h, r, p, tab } = await opened("chrome");
     const before = new Set(h.chrome.tabs.keys());
     const got = await p("download", { target: 3 }) as { path: string; name: string; bytes: number; mime: string };
@@ -93,7 +94,7 @@ describe("a user's browser (Fetch interception)", () => {
     r.end();
   });
 
-  test("a button in the bound tab: armed, clicked, caught; the arm is always taken off", async () => {
+  darwinTest("a button in the bound tab: armed, clicked, caught; the arm is always taken off", async () => {
     const page: FakePage = { ...PAGE, url: "https://shop.example.com/export", clickDownload: CSV };
     const { h, r, p, tab } = await opened("chrome", page);
     const key = tab.id.split(":")[1]!;
@@ -103,7 +104,7 @@ describe("a user's browser (Fetch interception)", () => {
     r.end();
   });
 
-  test("both captures armed (the downloads permission on) and a SLOW Fetch read: bytes arriving keep it alive — not 'stalled'", async () => {
+  darwinTest("both captures armed (the downloads permission on) and a SLOW Fetch read: bytes arriving keep it alive — not 'stalled'", async () => {
     const big = "https://shop.example.com/big.bin";
     const page: FakePage = { ...PAGE, url: "https://shop.example.com/export", clickDownload: big };
     const { h, r, p } = await opened("chrome", page, { nativeDownloads: ["chrome"] });
@@ -127,7 +128,7 @@ describe("a user's browser (Fetch interception)", () => {
     r.end();
   });
 
-  test("a file the page makes itself (blob:): refused without the downloads permission; with it, moved out of the browser's folder", async () => {
+  darwinTest("a file the page makes itself (blob:): refused without the downloads permission; with it, moved out of the browser's folder", async () => {
     const page: FakePage = { ...PAGE, url: "https://shop.example.com/make", clickBlob: { name: "made.txt", body: "hello" } };
     const off = await opened("chrome", page);
     const e = await failure(off.p("download", { target: 5 }));
@@ -164,7 +165,7 @@ describe("a user's browser (Fetch interception)", () => {
 });
 
 describe("data: links, destinations, limits, policy", () => {
-  test("a data: link is decoded by Clover (no browser), named by its download attribute", async () => {
+  darwinTest("a data: link is decoded by Clover (no browser), named by its download attribute", async () => {
     const { r, p, h } = await opened("chrome");
     const got = await p("download", { target: 4 }) as { path: string; name: string; mime: string };
     expect(got).toMatchObject({ name: "inline.csv", mime: "text/csv" });
@@ -173,7 +174,7 @@ describe("data: links, destinations, limits, policy", () => {
     r.end();
   });
 
-  test("a bad destination fails before anything is fetched; at most 20 downloads per script", async () => {
+  darwinTest("a bad destination fails before anything is fetched; at most 20 downloads per script", async () => {
     const { h, r, p } = await opened("chrome");
     const tabsBefore = h.chrome.tabs.size;
     const e = await failure(p("download", { target: 3, to: ".git/hooks/x" }));
@@ -209,7 +210,7 @@ describe("what a Fetch capture takes, and the floor on every address (review LOW
   const FRAMED = "https://shop.example.com/frame.pdf";
   const exportPage: FakePage = { ...PAGE, url: "https://shop.example.com/export", clickDownload: FRAMED };
 
-  test("a frame's own document is the page's — continued, never read; an untyped top document is left to the browser; a frame's ATTACHMENT is taken", async () => {
+  darwinTest("a frame's own document is the page's — continued, never read; an untyped top document is left to the browser; a frame's ATTACHMENT is taken", async () => {
     const { h, r, p, tab } = await opened("chrome", exportPage);
     const key = tab.id.split(":")[1]!;
     const sent = (m: string) => h.chrome.sent.filter((x) => x.tabKey === key && x.method === m).length;
@@ -240,7 +241,7 @@ describe("what a Fetch capture takes, and the floor on every address (review LOW
     r.end();
   });
 
-  test("ask: the final address's host gets its site card (the wait's clock stopped meanwhile); allowed, the file is saved", async () => {
+  darwinTest("ask: the final address's host gets its site card (the wait's clock stopped meanwhile); allowed, the file is saved", async () => {
     const { h, r, p } = await opened("chrome", PAGE, { policy: "ask", dangerousAdded: ["evil.example"], answer: (s) => (s.includes("evil.example") ? "once" : "session") });
     h.chrome.files[CSV] = { ...FILES[CSV]!, redirectTo: "https://evil.example/prices.csv" };
     expect(await p("download", { target: 3 })).toMatchObject({ name: "prices.csv", bytes: 17 });

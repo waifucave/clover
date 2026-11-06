@@ -11,6 +11,7 @@ import { CoworkRepository } from "../../src/cowork/repository";
 import { runtimeStateOnline } from "../../src/runtime-state/wiring";
 import type { CoworkHostPorts } from "../../src/cowork/service";
 import { CoworkError } from "../../src/cowork/types";
+import { onDarwin } from "../helpers/darwin-only";
 let daemon: RunningDaemon | undefined;
 const homes: string[] = [], clients: CloverClient[] = [], sockets: Array<{ end(): void }> = [];
 afterEach(async () => { clients.splice(0).forEach(c => c.close()); sockets.splice(0).forEach(c => c.end()); if (daemon) { await daemon.stop(); daemon = undefined; } homes.splice(0).forEach(h => rmSync(h, { recursive: true, force: true })); });
@@ -239,7 +240,7 @@ test("W1b: live Unix hints arrive during2s of50ms writes instead of waiting for 
   await lease.detach();
 }, 10_000);
 
-const instructionFiles = process.platform === "darwin" && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
+const instructionFiles = onDarwin && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
 instructionFiles("composed real guidance mutation notifies local workspace watch with revision only", async () => {
  const f = await boot(), workspaceId = f.ids[0]!;
  // Trusted disposable provisioning only; no production issuer or RPC seed.

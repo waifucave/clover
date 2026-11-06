@@ -1,0 +1,28 @@
+{
+  "$comment": "The core suite's reviewed platform lists (scripts/platform-tests.ts; paths relative to packages/core). linuxKnownFailures: Linux product bugs the Linux shards skip until their owner fixes them; a listed file that starts passing fails CI, so the list only shrinks, and a new Linux failure fails its shard until it is fixed or reviewed here. linuxSkips: Linux files whose tests may skip, each with why. darwinGateAllowed: Linux files that name darwin near a test gate without gating on it.",
+  "linuxKnownFailures": {
+    "test/auth/credential-migration-lock.test.ts": { "owner": "C", "cause": "I-A: a process's start time reads null on Linux (the test wants epoch seconds, as from sysctl and ps on macOS)" },
+    "test/cowork/peer-inbox-sqlite.test.ts": { "owner": "H", "cause": "a failing rename of the scrubbed copy reports runtime-state.db corrupt on Linux instead of leaving the raw copy" },
+    "test/runtime-state/crash-matrix.test.ts": { "owner": "A", "cause": "repairRuntimeState doesn't restore the backup over a corrupt runtime-state.db (sidecars and all) on Linux" },
+    "test/e2e/mid-turn-fold-e2e.test.ts": { "owner": "D", "cause": "a steer to a running session folds twice, and TaskStop's cleared steer never closes the stopped turn on Linux" },
+    "test/e2e/per-call-tool-results-e2e.test.ts": { "owner": "A", "cause": "a Write and a sleeping Bash in one round: the Bash's tool_result lands before the Write's on Linux" },
+    "test/e2e/embedded-chat-dispatch-e2e.test.ts": { "owner": "A", "cause": "a CODE and a DISPATCH session's embedded Bash result lacks the command's output on Linux" }
+  },
+  "linuxSkips": {
+    "src/links/tests/sidecar.test.ts": "needs the built clover-link sidecar: the link job builds it and runs these on Linux, Windows and macOS",
+    "test/agent/mcp/oauth-doors.test.ts": "one drift guard runs only beside the linked SDK source, on every OS",
+    "test/cowork/guest-runtime.test.ts": "one test needs the candidate SDK's confined fixture, on every OS",
+    "test/cowork/guided-reader-adapter.test.ts": "one opt-in drift guard against the SDK source, on every OS",
+    "test/cowork/provider-broker.integration.test.ts": "an opt-in integration run (its env), skipped on every OS by default",
+    "test/ipc/session-set-model-review.test.ts": "one live model-convergence case runs only with its env, on every OS",
+    "test/platform/win-job.test.ts": "Windows' job objects: Windows only",
+    "test/platform/win-pipe.test.ts": "Windows' named pipes: Windows only",
+    "test/runtime-sdk/embedded-live-path-protection.test.ts": "a live run with its env only, on every OS",
+    "test/runtime-sdk/hooks-measure.e2e.test.ts": "one measurement needs the built runtime binary, on every OS",
+    "test/runtime-sdk/worker-churn-soak.test.ts": "a soak, run on demand with its env, on every OS",
+    "test/tree/conformance.test.ts": "R1 and R15 are pending (todo) until J-M2 (#177)"
+  },
+  "darwinGateAllowed": {
+    "test/lock.test.ts": "\"darwin\" is classifyLockFailure's platform argument (the errno table per OS), not a gate"
+  }
+}
