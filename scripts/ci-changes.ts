@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 
 export type CiArea =
   | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify" | "tree" | "link";
+  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
@@ -44,6 +44,9 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   cli: [...CORE, "packages/cli/"],
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
   scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
+  // the scripts' few macOS-only tests (scripts/**/*.darwin.test.ts, on a macOS runner): the scripts themselves only, so
+  // a change under apple/ alone takes no macOS runner for them (a push to main still runs every area)
+  scriptsmac: ["scripts/"],
   codegen: ["packages/protocol/", "apple/WinterProtocol/"],
   // the Swift kits: their own tree, the protocol's generated fixtures, and the core, whose daemon WinterKit's tests start
   // through bun (apple/WinterKit/Tests/WinterKitTests/support/RealDaemon.swift); a Bun or lockfile change comes in

@@ -8,7 +8,7 @@
 // own full-screen button; otherwise it is skipped and said so.
 //
 // The PLANNING (which element is harmless, which field is editable, what undoes a press) is plain functions below,
-// embedded into the scripts with `Function.prototype.toString` — the same code the dry run unit-tests (`generic.test.ts`)
+// embedded into the scripts with `Function.prototype.toString` — the same code the dry run unit-tests (`generic.darwin.test.ts`)
 // runs in the sandboxed worker. They reference nothing but their arguments and each other.
 import { MARKER } from "./lib";
 import { PRELUDE, type Scenario, type VerifyContext } from "./scenarios";

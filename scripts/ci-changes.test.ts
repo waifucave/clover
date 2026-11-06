@@ -52,7 +52,12 @@ describe("ci-changes", () => {
     expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos", "swift"]);
     expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
-    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
+    // An apple/ change: the Swift kits, and the scripts' tests on Linux, never the macos job (its scripts step runs only
+    // the scripts' own macOS tests, for a change to scripts/).
+    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["swift"]);
+    expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).not.toContain("scriptsmac");
+    expect(macJobs(["scripts/embed-runtimes.sh"])).toEqual(["macos"]);
+    expect(on(["scripts/embed-runtimes.sh"])).toEqual(expect.arrayContaining(["scripts", "scriptsmac"]));
     expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
