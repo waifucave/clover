@@ -29,7 +29,7 @@ import type { BotService } from "./service";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
 export { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
-import { MethodError, handler, requireUser, type MethodContext, type MethodHandler } from "../rpc/handler";
+import { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
 
 export interface SessionsMethodsDeps {
   home: string;

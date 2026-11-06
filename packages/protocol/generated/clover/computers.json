@@ -485,7 +485,8 @@
                           "plugin-ok",
                           "change",
                           "confirm",
-                          "elicitation"
+                          "elicitation",
+                          "person-browser"
                         ]
                       },
                       "computer": {
@@ -906,7 +907,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -5479,7 +5481,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -5933,7 +5936,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -6387,7 +6391,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -6847,7 +6852,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -7937,7 +7943,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -8807,7 +8814,8 @@
                       "plugin-ok",
                       "change",
                       "confirm",
-                      "elicitation"
+                      "elicitation",
+                      "person-browser"
                     ]
                   },
                   "computer": {
@@ -9314,7 +9322,8 @@
                           "plugin-ok",
                           "change",
                           "confirm",
-                          "elicitation"
+                          "elicitation",
+                          "person-browser"
                         ]
                       },
                       "computer": {
