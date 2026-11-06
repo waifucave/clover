@@ -15,5 +15,5 @@
     "noEmit": true
   },
   "include": ["protocol", "src", "scripts", "test", "../shared"],
-  "exclude": ["src/worker.ts"]
+  "exclude": ["src/worker.ts", "../shared/test"]
 }

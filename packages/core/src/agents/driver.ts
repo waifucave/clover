@@ -28,6 +28,9 @@ export interface AgentDriverOptions {
   coalesceMs?: number;
   /** Applied to every record and to each turn's text before they leave the driver. */
   redact?: <T>(value: T) => T;
+  /** Before each prompt: what changed since the last turn reaches the agent (the pause switch, its computer's level).
+   *  It may wait (paused); a `refused` error refuses the turn and keeps the agent. */
+  beforeTurn?(session: AgentSession): Promise<AgentSession | void>;
 }
 
 /** What the driver records in the session's log. */
@@ -110,6 +113,26 @@ export class AgentDriver implements SessionDriver {
       this.#origin = undefined;
       this.#signal = undefined;
       return this.#fail(err);
+    }
+    if (this.#opts.beforeTurn) {
+      try {
+        // It may hand back the agent restarted under a new bridge token (a token nearing its expiry).
+        const replaced = await this.#opts.beforeTurn(session);
+        if (replaced) {
+          this.#session = replaced;
+          session = replaced;
+        }
+      } catch (err) {
+        this.#origin = undefined;
+        this.#signal = undefined;
+        if (isContractError(err, "refused")) return { reason: "refusal", text: err instanceof Error ? err.message : String(err) };
+        return this.#fail(err);
+      }
+      if (ctl.signal.aborted) {
+        this.#origin = undefined;
+        this.#signal = undefined;
+        return { reason: "interrupted" };
+      }
     }
     const flusher = new TextRuns((e) => this.#record(ctl, e), this.#opts.coalesceMs ?? 250);
     const off = session.onEvent((e) => flusher.push(e));

@@ -25,7 +25,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@waifucave/clover-provider-conformance": "0.0.65"
+    "@waifucave/clover-provider-conformance": "0.0.65",
+    "@waifucave/clover-service-shared": "workspace:*",
+    "@waifucave/clover-test-harness": "workspace:*"
   },
   "optionalDependencies": {
     "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55"
