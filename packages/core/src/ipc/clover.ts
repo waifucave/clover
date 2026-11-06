@@ -78,7 +78,7 @@ export interface BridgeGate {
   onRevoke?(fn: (e: { sessionId: string; connection?: number }) => void): () => void;
 }
 
-/** K's handlers for the bridge's methods, by session (`agents/bridge/endpoint.ts`, `BridgeHandlers`). */
+/** K's handlers for the bridge's methods, by session (`agents/bridge/handlers.ts`, `BridgeHandlers`). */
 export interface BridgeMethods {
   tools(sessionId: string): Promise<{ tools: unknown[]; instructions: string }>;
   call(sessionId: string, call: { callId: string; tool: string; input: unknown }): Promise<{ content: unknown[]; isError: boolean }>;
