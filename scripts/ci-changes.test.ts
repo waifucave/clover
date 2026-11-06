@@ -23,9 +23,16 @@ describe("ci-changes", () => {
     expect(on(["docs/clover-plan.md", "docs/research/2026-11-05-x.md", "README.md"])).toEqual([]);
   });
 
-  test("a plugin lane's change: the workspace tests, the gallery and the typecheck, and nothing on macOS but its own tests", () => {
-    expect(on(["plugins/clover/plugins/shell/src/a.tsx", "plugins/clover/plugins/shell/test/a.test.ts"])).toEqual(["workspaces", "gallery", "typecheck"]);
-    expect(on(["plugins/clover/plugins/shell/package.json"])).toEqual(["workspaces", "gallery", "typecheck", "lockfiles"]);
+  test("a change to Clover's own plugins: their tests, the app that loads them, the gallery and the typecheck", () => {
+    expect(on(["plugins/clover/plugins/shell/src/a.tsx", "plugins/clover/plugins/shell/test/a.test.ts"])).toEqual(["workspaces", "app", "gallery", "typecheck"]);
+    expect(on(["plugins/clover/plugins/shell/package.json"])).toEqual(["workspaces", "app", "gallery", "typecheck", "lockfiles"]);
+    // Another top-level plugin (a bot's) is not loaded by the app's own build.
+    expect(on(["plugins/alpha/tab/theme.json"])).toEqual(["workspaces", "gallery", "typecheck"]);
+  });
+
+  test("the packages: packaging/ and the app's builder config build and open the Linux packages; an app change does too", () => {
+    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "scripts"]);
+    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
   });
 
   test("a service's change: its tests and the typecheck", () => {
@@ -50,10 +57,25 @@ describe("ci-changes", () => {
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
 
-  test("the core: its own, the CLI's and the scripts' tests, the daemon, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
+  test("the core: its own, the CLI's and the scripts' tests, the daemon, the packages that carry it, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
-    expect(core).toEqual(["workspaces", "daemon", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
+    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
     expect(core).not.toContain("app");
+  });
+
+  test("a model plugin alone runs the core's suite (lane A's catalog and generator check), and other plugins don't", () => {
+    expect(on(["plugins/clover/plugins/model-openai/clover.json"])).toContain("core");
+    expect(on(["plugins/clover/plugins/model-anthropic/src/catalog.ts"])).toContain("core");
+    expect(on(["plugins/clover/plugins/shell/src/a.tsx"])).not.toContain("core");
+  });
+
+  test("the tree job (Linux and Windows) runs for the tree's and the computers' code and tests, and their conformance suites", () => {
+    for (const f of ["packages/core/src/tree/index.ts", "packages/core/src/computers/registry.ts", "packages/core/test/tree/x.test.ts",
+      "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"]) {
+      expect(on([f]), f).toContain("tree");
+    }
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("tree");
+    expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
   });
 
   test("the Swift kits run for apple/, the protocol's generated fixtures and the core, and not for the rest of the protocol or the CLI", () => {
@@ -85,8 +107,15 @@ describe("ci-changes", () => {
 describe("CI on a merge-queue group", () => {
   const ci = Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as {
     on: Record<string, unknown>;
-    jobs: Record<string, { if?: string; steps?: { id?: string; run?: string; env?: Record<string, string> }[] }>;
+    jobs: Record<string, { if?: string; outputs?: Record<string, string>; steps?: { id?: string; run?: string; env?: Record<string, string> }[] }>;
   };
+
+  test("the changes job hands on every area: its outputs are exactly the areas ci-changes.ts writes", () => {
+    // A job keyed to an area the outputs leave out reads an empty string, is skipped every time, and the gate passes.
+    const outputs = ci.jobs.changes?.outputs ?? {};
+    expect(Object.keys(outputs).sort()).toEqual([...CI_AREA_NAMES].sort());
+    for (const [name, value] of Object.entries(outputs)) expect(value, name).toBe(`\${{ steps.areas.outputs.${name} }}`);
+  });
 
   test("ci.yml runs on merge_group, and gate runs whatever happened", () => {
     expect(Object.keys(ci.on)).toContain("merge_group");

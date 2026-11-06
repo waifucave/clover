@@ -4,6 +4,7 @@
   "private": true,
   "description": "Clover's desktop app (Electron).",
   "author": "waifucave",
+  "homepage": "https://github.com/waifucave/clover",
   "license": "Apache-2.0",
   "type": "module",
   "main": "out/main/index.js",
