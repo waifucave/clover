@@ -2,21 +2,27 @@
 // one plain card per method), and a phone that signs the user's approve for a card it is shown. The phone's key lives
 // in memory (lane B's FakeDevice); nothing touches the OS store.
 import { createHash, randomBytes } from "node:crypto";
-import { callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardContent, type SignedCardAnswer } from "@waifucave/clover-protocol";
+import { callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardContent, type SignedCardAnswer, type TreeTransferParams } from "@waifucave/clover-protocol";
 import type { AnswerDevices, CallCardRenderer } from "../../src/contracts/approval-broker";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64, type FakeDevice } from "../../src/contracts/fakes/device-registry";
+import { TREE_TRANSFER } from "@waifucave/clover-protocol";
+import { transferBinding } from "../../src/contracts/tree";
 import type { AnswerAsker, NeedsAnswer } from "../../src/tree/judge";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
-/** A computer's own card for a call: what it approves, bound to exactly that call. */
-export const renderCard: CallCardRenderer = ({ computer, method, params }) => ({
-  kind: "tool",
-  binds: { computer, method, params: sha256(callBindingInput(method, params)) },
-  fields: { title: { type: "text", text: method }, computer: { type: "text", text: computer } },
-  options: [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
-});
+/** A computer's own card for a call: what it approves, bound to exactly that call; a move or copy between two
+ *  computers binds both (R15's `transferBinding`), so either end rebuilds the same card. */
+export const renderCard: CallCardRenderer = ({ computer: self, method, params }) => {
+  const computer = method === TREE_TRANSFER ? (params as TreeTransferParams).destination : self;
+  return {
+    kind: "tool",
+    binds: method === TREE_TRANSFER ? transferBinding(params as TreeTransferParams, sha256) : { computer, method, params: sha256(callBindingInput(method, params)) },
+    fields: { title: { type: "text", text: method }, computer: { type: "text", text: computer } },
+    options: [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
+  };
+};
 
 export interface Phone {
   device: FakeDevice;

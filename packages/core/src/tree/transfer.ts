@@ -32,7 +32,7 @@ import { z } from "zod";
 import { Level, SessionId, SignedCardAnswer, TreePath, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Link, LinkStream, LinkTransport } from "../contracts/link-transport";
-import type { TreeChange } from "../contracts/tree";
+import { transferChange } from "../contracts/tree";
 import type { HolderCall, LocalHolder } from "./holder";
 import { atOps } from "./at";
 import { answerNeeded, type AnswerAsker, type NeedsAnswer } from "./judge";
@@ -61,12 +61,7 @@ export interface TransferResult {
   kept: number;
 }
 
-/** What both holders judge for the whole operation, and what one card binds (the controller's one-card ruling): the
- *  operation, both paths and both computers, each holder naming them from its own tree. The card binds the
- *  destination; each holder rebuilds the same card and checks the one answer against it. */
-export function transferChange(move: boolean, from: string, to: string, source: string, destination: string): TreeChange {
-  return { method: "tree.transfer", params: { op: move ? "move" : "copy", from, to, source, destination } } as unknown as TreeChange;
-}
+export { transferChange };
 
 /** One holder's part: the destination judges the whole operation, the source a move (a copy only reads there). A
  *  holder whose own rule is stricter (read-only) refuses whatever the answer. */

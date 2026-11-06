@@ -32,12 +32,12 @@ import {
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { judge as fenceJudge, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
-import { splitTreePath, treeCallBinding, type TreeChange, type TreeData } from "../contracts/tree";
+import { judge as fenceJudge, nonAsciiAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
 import { atOps, type AtOps } from "./at";
 import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
 import { FolderWatches, type TreeWatchEvent } from "./watch";
-import { judgePeer, type PeerReviewer } from "./judge";
+import { judgePeer } from "./judge";
 
 /** Who a call is for, and what a peer's change carries (review N2). */
 export interface HolderCall {
@@ -101,8 +101,8 @@ export interface LocalHolderOptions {
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   /** This computer's folder watches (one set per computer). */
   watches?: FolderWatches;
-  /** This computer's reviewer for a peer's change at `ask-risky` (R1; lane C's). */
-  reviewer?: PeerReviewer;
+  /** This computer's reviewer for a peer's change at `ask-risky` (R1; lane C's): B-M1's `TreeReviewer`. */
+  reviewer?: TreeReviewer;
 }
 
 interface Located {
@@ -750,7 +750,9 @@ export class LocalHolder implements Holder {
     return this.#check({ op: "read", path: real }).allowed;
   }
 
-  /** A change under the Clover home names only ASCII below it. */
+  /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where Clover names things under its home (its top
+   *  level, and any folder there that holds a fenced item) is refused, whatever a disk might fold it to. A bot's memory
+   *  notes and a plugin's assets may have any name. */
   #asciiUnderCloverHome(real: string): void {
     if (!this.#o.cloverHome) return;
     // The home's real path, as the paths it is compared with are (`/var` is `/private/var` on a Mac).
@@ -761,15 +763,8 @@ export class LocalHolder implements Holder {
         return this.#o.cloverHome!;
       }
     })();
-    const home = this.#cloverHomeReal;
-    const fold = (p: string) => foldPath(p, this.os).replace(/\/+$/, "");
-    const h = fold(home);
-    const p = fold(real);
-    if (p !== h && !p.startsWith(`${h}/`)) return;
-    // The real path's own spelling below the home, not the fold (which may have made it ASCII).
-    const below = real.slice(home.replace(/[\\/]+$/, "").length);
-    if (/[^\x00-\x7f]/.test(below)) {
-      throw new ContractError("fenced", `names under the Clover home are ASCII; ${below.replace(/^[\\/]/, "")} isn't`, { computer: this.#o.name(), reason: "clover-home" });
+    if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], this.#cloverHomeReal, this.os)) {
+      throw new ContractError("fenced", `names Clover keeps under its home are ASCII; ${basename(real)} isn't`, { computer: this.#o.name(), reason: "clover-home" });
     }
   }
 
@@ -797,7 +792,8 @@ export class LocalHolder implements Holder {
       ...(boundTo === undefined ? {} : { boundTo }),
       computer: this.#o.name(), ownLevel: this.#o.level?.(), callLevel: call.level, effect,
       method: change.method, params: change.params, as: call.as, now: this.#o.clock.now(), answers: this.#answers,
-      ...(call.answer ? { answer: call.answer } : {}), ...(this.#o.reviewer ? { reviewer: this.#o.reviewer } : {}),
+      ...(call.answer ? { answer: call.answer } : {}),
+      ...(this.#o.reviewer ? { reviewer: (c: { computer: string; as: Caller }) => this.#o.reviewer!({ ...change, computer: c.computer, as: c.as }) } : {}),
     });
   }
 

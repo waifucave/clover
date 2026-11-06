@@ -18,9 +18,10 @@ import {
 } from "../contracts/approval-broker";
 import { ContractError, isContractError } from "../contracts/common";
 
-/** The holder's reviewer for a peer's call at `ask-risky` (lane C's; the shape of B-M1's `TreeReviewer`): `safe` runs;
- *  `risky`, or `unavailable` (no model can run), needs the user's answer. */
-export type PeerReviewer = (call: { computer: string; method: string; params: unknown; as: Caller; effect: ActionEffect }) => Promise<"safe" | "risky" | "unavailable">;
+/** The reviewer for a peer's call at `ask-risky` (lane C's): `safe` runs; `risky`, or `unavailable` (no model can run),
+ *  needs the user's answer. A peer's command gets its effect too; a tree change is B-M1's `TreeReviewer`, which any
+ *  `PeerReviewer` also is. */
+export type PeerReviewer = (call: { computer: string; method: string; params: unknown; as: Caller; effect?: ActionEffect }) => Promise<"safe" | "risky" | "unavailable">;
 
 export interface Answers {
   devices: AnswerDevices;
@@ -83,7 +84,8 @@ export async function judgePeer(o: {
     throw needsAnswer(o.boundTo ?? o.computer, o.method, o.params, o.answers?.render, `${o.computer} needs the user's answer for this, signed and bound to it`);
   }
   if (!o.answers) throw new ContractError("refused", `${o.computer} takes no signed answers`);
-  const verdict = await verifySignedAnswer(o.answer, { self: o.boundTo ?? o.computer, method: o.method, params: o.params, now: o.now, sha256, ...o.answers });
+  // Each end checks the one answer as itself: for `tree.transfer` its card binds both computers (`bindsComputer`).
+  const verdict = await verifySignedAnswer(o.answer, { self: o.computer, method: o.method, params: o.params, now: o.now, sha256, ...o.answers });
   // An answer spent already, or too old, is the user's real answer to an earlier try: the card goes back to them
   // (#177's review), and the caller asks again. Anything else is refused outright.
   if (verdict === "used" || verdict === "bad-time") {

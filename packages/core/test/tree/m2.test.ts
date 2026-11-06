@@ -120,7 +120,7 @@ describe("the direct path: copies, and mv and cp in Bash (item 89)", () => {
   test("an answer spent already sends the card back to the user rather than dead-ending", async () => {
     const { studio, laptop, phone } = await two();
     writeFileSync(join(studio.home, "a.txt"), "a");
-    const whole = { op: "move", from: "home/Studio/a.txt", to: "home/Laptop1/a.txt", source: "Studio", destination: "Laptop1" };
+    const whole = { operation: "move", from: "home/Studio/a.txt", to: "home/Laptop1/a.txt", source: "Studio", destination: "Laptop1" };
     const answer = await phone.approve("Laptop1", "tree.transfer", whole);
     await studio.node.tree.move("home/Studio/a.txt", "home/Laptop1/a.txt", { as: BOT, answer });
     expect(phone.shown).toEqual([]);
