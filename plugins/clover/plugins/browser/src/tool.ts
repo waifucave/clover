@@ -62,7 +62,7 @@ const failure = (text: string): ToolResult => ({ content: [{ type: "text", text 
 function sameOwner(a: TabOwner, b: TabOwner): boolean {
   if (a.kind === "bot") return b.kind === "bot" && a.bot === b.bot;
   if (a.kind === "session") return b.kind === "session" && a.session === b.session;
-  if (a.kind === "plugin") return b.kind === "plugin" && a.plugin === b.plugin;
+  if (a.kind === "plugin") return b.kind === "plugin" && a.pluginId === b.pluginId;
   return b.kind === "user";
 }
 

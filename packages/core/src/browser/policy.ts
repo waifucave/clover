@@ -27,8 +27,8 @@ export function partitionFor(owner: TabOwner): string {
   }
   if (owner.kind === "plugin") {
     // A plugin's id follows the same rule as a bot's (a bot is a plugin); a child's `/` becomes `--` the same way.
-    if (!isBotId(owner.plugin)) throw new BrowserError("bad_owner", `"${owner.plugin}" is not a plugin's id`);
-    return `persist:plugin-${owner.plugin.replace("/", "--")}`;
+    if (!isBotId(owner.pluginId)) throw new BrowserError("bad_owner", `"${owner.pluginId}" is not a plugin's id`);
+    return `persist:plugin-${owner.pluginId.replace("/", "--")}`;
   }
   if (!isBotId(owner.bot)) throw new BrowserError("bad_owner", `"${owner.bot}" is not a bot's id`);
   return `persist:bot-${owner.bot.replace("/", "--")}`;
@@ -37,7 +37,7 @@ export function partitionFor(owner: TabOwner): string {
 export function sameOwner(a: TabOwner, b: TabOwner): boolean {
   if (a.kind === "bot") return b.kind === "bot" && a.bot === b.bot;
   if (a.kind === "session") return b.kind === "session" && a.session === b.session;
-  if (a.kind === "plugin") return b.kind === "plugin" && a.plugin === b.plugin;
+  if (a.kind === "plugin") return b.kind === "plugin" && a.pluginId === b.pluginId;
   return b.kind === "user";
 }
 

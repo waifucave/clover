@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 export type TabOwner =
   | { kind: "bot"; bot: string }
   | { kind: "session"; session: string }
-  | { kind: "plugin"; plugin: string }
+  | { kind: "plugin"; pluginId: string }
   | { kind: "user" };
 
 /** Where a tab is: `headless` (drawing for a bot at 1280×800), `shown` (in a browser view at the view's size) or
@@ -39,6 +39,8 @@ export interface TabView {
   loading: boolean;
   /** The user holds it in the view; an agent's commands are refused meanwhile. */
   heldByUser: boolean;
+  /** The view showing it live, while it is `shown` (lane B's B-M1 field, ruling R8). */
+  view?: string;
 }
 
 export type ScreenshotFormat = "png" | "jpeg" | "webp";
@@ -60,7 +62,22 @@ export type AppTabCommand =
   | { kind: "navigate"; url: string }
   | { kind: "place"; place: TabPlace; view?: string; viewport?: Viewport }
   | { kind: "screenshot"; format: ScreenshotFormat; quality?: number }
-  | { kind: "cdp"; method: string; params?: Record<string, unknown> };
+  | { kind: "cdp"; method: string; params?: Record<string, unknown> }
+  /** Starts or stops streaming the tab as video to another device (`browser.stream`, spec §12.1): the chunks come back
+   *  through the host's `streamData`, tagged with `stream`. */
+  | { kind: "stream"; stream: string; on: boolean; maxKbps?: number; codecs?: StreamCodec[] }
+  /** While a stream runs: a keyframe next, and/or a new target bitrate (the sender fell behind, or caught up). */
+  | { kind: "stream-control"; stream: string; keyframe?: boolean; kbps?: number };
+
+/** The codecs a tab's stream may use: H.264 where a hardware encoder exists, else VP8 (spec §12.1, S7); JPEG frames
+ *  where no encoder runs at all (the headless shell's screencast). Which a receiver decodes is lane I's contract. */
+export type StreamCodec = "h264" | "vp8" | "jpeg";
+
+/** One piece of a tab's stream, from the app (or the headless shell) to the daemon, which frames it onto the link. */
+export type StreamChunk =
+  | { kind: "config"; codec: StreamCodec; width: number; height: number; /** The codec string, e.g. `avc1.42E01F`. */ codecString: string }
+  | { kind: "frame"; key: boolean; /** Microseconds. */ timestamp: number; data: Uint8Array }
+  | { kind: "ended"; reason: "stopped" | "closed" | "failed"; message?: string };
 
 /** What the app reports back (`browser.report`). */
 export type AppTabEvent =
@@ -142,10 +159,10 @@ export function partitionFor(owner: TabOwner): string {
     return `persist:session-${createHash("sha256").update(owner.session).digest("hex").slice(0, 32)}`;
   }
   if (owner.kind === "plugin") {
-    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.plugin) || owner.plugin.length > 81) {
-      throw new Error(`"${owner.plugin}" is not a plugin's id`);
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.pluginId) || owner.pluginId.length > 81) {
+      throw new Error(`"${owner.pluginId}" is not a plugin's id`);
     }
-    return `persist:plugin-${owner.plugin.replace("/", "--")}`;
+    return `persist:plugin-${owner.pluginId.replace("/", "--")}`;
   }
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.bot) || owner.bot.length > 81) {
     throw new Error(`"${owner.bot}" is not a bot's id`);

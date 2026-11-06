@@ -23,7 +23,7 @@ describe("the contract mirrors", () => {
     expect([...appContract.CDP_DENIED_METHODS]).toEqual([...CORE_DENIED_METHODS]);
     for (const m of CORE_DENIED_METHODS) expect(appContract.isCdpCallAllowed(m)).toBe(false);
     expect(appContract.isCdpCallAllowed("Page.reload")).toBe(true);
-    for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }, { kind: "session", session: "sess_1" }, { kind: "session", session: "a:b.c-d" }, { kind: "plugin", plugin: "acme/tool" }] as const) {
+    for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }, { kind: "session", session: "sess_1" }, { kind: "session", session: "a:b.c-d" }, { kind: "plugin", pluginId: "acme/tool" }] as const) {
       expect(appContract.partitionFor(owner)).toBe(corePartitionFor(owner));
     }
   });

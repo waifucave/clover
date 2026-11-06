@@ -33,7 +33,7 @@ export const VIEW = "browser";
 const MAX_SIDE = 16_384;
 
 const sameOwner = (a: TabOwner, b: TabOwner): boolean =>
-  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : a.kind === "plugin" ? b.kind === "plugin" && a.plugin === b.plugin : b.kind === "user";
+  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : a.kind === "plugin" ? b.kind === "plugin" && a.pluginId === b.pluginId : b.kind === "user";
 
 /** The list with `tab` in it: replaced where it is, or added at the end. */
 const upsert = (list: TabView[], tab: TabView): TabView[] => (list.some((t) => t.id === tab.id) ? list.map((t) => (t.id === tab.id ? tab : t)) : [...list, tab]);

@@ -144,6 +144,9 @@ export class BrowserHost {
         return tab.screenshot(command.format, command.quality);
       case "cdp":
         return tab.cdp(command.method, command.params);
+      case "stream":
+      case "stream-control":
+        throw new Error("this app doesn't stream tabs yet");
     }
   }
 
