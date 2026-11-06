@@ -81,7 +81,7 @@ export const CLOVER_EXEMPT_PATHS: readonly string[] = [
 
 /** Tracked paths the path pass never moves, though a component spells `winter`. */
 export const CLOVER_KEEP_PATHS: readonly RegExp[] = [
-  /^scripts\/build-winter(\.test)?\.ts$/, // Winter's coding agent's build (`build:winter`); lane K names it
+  /^scripts\/build-winter(\.test|\.darwin\.test)?\.ts$/, // Winter's coding agent's build (`build:winter`); lane K names it
   /(^|\/)helpers\/winter-binary\.ts$/, // the test helpers that need that binary
   /^packages\/core\/src\/computer-use\/browser\/headless\/winter-engine\.ts$/, // the "winter" headless engine (computer use)
   /^scripts\/cu-live\/swift\//, // a Swift fixture for the Winter Computer Use helper
