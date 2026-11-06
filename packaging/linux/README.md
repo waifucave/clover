@@ -39,8 +39,8 @@ The repository's metadata is signed and lists each package's SHA-256 (`repo_gpgc
 
 1. CI's release workflow builds the packages on each architecture and, in its `linux-repo` job, the repositories' unsigned metadata (`linux-repo.ts metadata`: apt-ftparchive, createrepo_c).
 2. On the owner's Mac, `linux-repo.ts sign --dir <the downloaded artifact>` signs apt's Release (InRelease and Release.gpg) and dnf's repomd.xml with the key in the login Keychain, after checking it is the committed one.
-3. `linux-repo.ts upload --dir <dir>` checks every signature against the committed key, then prints the upload (with the wrangler the repo pins); `--yes` runs it. Nothing else uploads, and `sign`, `upload` and `key` refuse to run in CI or off the Mac.
+3. `linux-repo.ts upload --dir <dir>` checks every signature against the committed key, then prints the upload (with the wrangler the repo pins); `--yes` runs it. Nothing else uploads, and `sign`, `refresh`, `upload` and `key` refuse to run in CI or off the Mac.
 
-apt's Release is valid for 30 days (`Valid-Until`, `RELEASE_VALID_DAYS`): within that window the repository must be signed and uploaded again, even with no new release, or apt stops accepting it. For now that is the owner's hand step; whether the window grows or the re-sign is automated is the owner's decision, still open.
+apt's Release is valid for 30 days (`Valid-Until`, `RELEASE_VALID_DAYS`): within that window the repository must be signed and uploaded again, even with no new release, or apt stops accepting it. That needs no CI run: on the owner's Mac, `linux-repo.ts refresh --dir <the signed tree>` rewrites only `Date` and `Valid-Until` in each suite's Release (every hash it lists still holds) and signs the tree again, then `upload` sends it. For now that is the owner's hand step; whether the window grows or the refresh is automated is the owner's decision, still open.
 
 The key is made once, by the owner: `linux-repo.ts key --generate` keeps the private half in the login Keychain and writes the public half to `clover-archive-keyring.asc`, to commit. `key --check` confirms they match. The private half is never written anywhere else.

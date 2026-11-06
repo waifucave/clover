@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  archOf, generateRepoKey, installLines, KEYRING_FILE, ownerOnly, releaseConfig, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey, signRelease, suiteFor,
-  uploadArgs, uploadPlan, verifyDetached, verifyInRelease, verifyTree, type RepoKeyStore,
+  archOf, generateRepoKey, installLines, KEYRING_FILE, ownerOnly, refreshRelease, refreshTree, releaseConfig, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey,
+  signRelease, signTree, suiteFor, uploadArgs, uploadPlan, verifyDetached, verifyInRelease, verifyTree, type RepoKeyStore,
 } from "./linux-repo";
 
 const memory = (): RepoKeyStore & { items: Map<string, string> } => {
@@ -55,6 +55,37 @@ describe("the Linux repositories", () => {
     expect(archOf("clover-1.2.3.x86_64.rpm")).toEqual({ kind: "rpm", arch: "x86_64" });
     expect(archOf("Clover-1.2.3-x86_64.AppImage")).toBeUndefined();
   });
+
+  test("refresh rewrites only Date and Valid-Until in each Release, and the tree is signed again", async () => {
+    const release = "Origin: Clover\nLabel: Clover\nSuite: stable\nCodename: stable\nDate: Fri, 06 Nov 2026 00:00:00 UTC\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC\nArchitectures: amd64 arm64\nComponents: main\nSHA256:\n abc 1 main/binary-amd64/Packages\n";
+    const now = new Date(Date.UTC(2026, 11, 1, 12));
+    const out = refreshRelease(release, now);
+    expect(out).toBe(release.replace("Date: Fri, 06 Nov 2026 00:00:00 UTC", "Date: Tue, 01 Dec 2026 12:00:00 UTC").replace("Valid-Until: Sun, 06 Dec 2026 00:00:00 UTC", "Valid-Until: Thu, 31 Dec 2026 12:00:00 UTC"));
+    // Only those two lines differ.
+    const diff = release.split("\n").filter((l, i) => l !== out.split("\n")[i]);
+    expect(diff).toEqual(["Date: Fri, 06 Nov 2026 00:00:00 UTC", "Valid-Until: Sun, 06 Dec 2026 00:00:00 UTC"]);
+    expect(() => refreshRelease("Origin: Clover\nDate: x\n", now)).toThrow(/0 Valid-Until fields/);
+    expect(() => refreshRelease(`${release}Date: again\n`, now)).toThrow(/2 Date fields/);
+    // A signed tree, refreshed: the new Release is what the signatures cover.
+    const k = await generateRepoKey();
+    const key = await (await import("openpgp")).readPrivateKey({ armoredKey: k.privateKey });
+    const dir = mkdtempSync(join(tmpdir(), "clover-repo-refresh-"));
+    mkdirSync(join(dir, "apt", "dists", "beta"), { recursive: true });
+    writeFileSync(join(dir, "apt", "dists", "beta", "Release"), release.replaceAll("stable", "beta"));
+    await signTree(dir, key, k.publicKey);
+    expect(refreshTree(dir, now)).toBe(1);
+    expect(await verifyTree(dir, k.publicKey)).toEqual(["apt/dists/beta/InRelease doesn't verify", "apt/dists/beta/Release.gpg doesn't verify"]);
+    await signTree(dir, key, k.publicKey);
+    expect(await verifyTree(dir, k.publicKey)).toEqual([]);
+    expect(readFileSync(join(dir, "apt", "dists", "beta", "InRelease"), "utf8")).toContain("Valid-Until: Thu, 31 Dec 2026 12:00:00 UTC");
+    expect(readFileSync(join(dir, "clover-archive-keyring.asc"), "utf8")).toBe(k.publicKey);
+    expect(() => refreshTree(mkdtempSync(join(tmpdir(), "clover-repo-none-")))).toThrow(/no apt Release/);
+    // The owner's step: refused in CI like sign, and the key is checked before the tree changes.
+    const src = readFileSync(join(import.meta.dir, "linux-repo.ts"), "utf8");
+    expect(src).toContain('if (cmd === "sign" || cmd === "refresh" || cmd === "upload" || cmd === "key")');
+    const body = src.slice(src.indexOf('if (cmd === "refresh") {'));
+    expect(body.indexOf("repoSigningKey(")).toBeLessThan(body.indexOf("refreshTree(dir)"));
+  }, 30_000);
 
   test("the install lines name the one base URL, a signed-by keyring, and dnf's signed metadata", () => {
     const { apt, dnf } = installLines("stable");

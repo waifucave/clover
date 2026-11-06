@@ -425,15 +425,15 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - name: gpgv and sqv
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gpgv sqv
+      - name: gpgv, sqv and apt-ftparchive
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gpgv sqv apt-utils
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: The signatures verify with gpgv and sqv
+      - name: The signatures verify with gpgv and sqv, and apt-get update takes the signed repository
         run: bun scripts/release/linux-repo-verify.ts
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody

@@ -9,6 +9,9 @@
 //   bun scripts/release/linux-repo.ts sign --dir <dir>                                            (the owner's Mac)
 //       signs apt's Release (InRelease, Release.gpg) and dnf's repomd.xml (repomd.xml.asc) with the Keychain's key,
 //       after checking it is the one committed in packaging/linux/clover-archive-keyring.asc
+//   bun scripts/release/linux-repo.ts refresh --dir <dir>                                         (the owner's Mac)
+//       the 30-day keep-alive with no CI run: rewrites only Date and Valid-Until in each suite's Release (nothing else
+//       changes, so every hash it lists still holds) and signs the tree again, as `sign` does
 //   bun scripts/release/linux-repo.ts upload --dir <dir> [--yes]                                  (the owner's Mac)
 //       prints the upload of the signed tree (wrangler r2 object put, one file each); runs it only with --yes
 //   bun scripts/release/linux-repo.ts key --generate | --check                                    (the owner's Mac)
@@ -43,8 +46,8 @@ export const RELEASE_VALID_DAYS = 30;
 export function releaseConfig(suite: string, now: Date = new Date()): string[] {
   const until = new Date(now.getTime() + RELEASE_VALID_DAYS * 86_400_000);
   return [
-    "-o", `APT::FTPArchive::Release::Date=${now.toUTCString().replace("GMT", "UTC")}`,
-    "-o", `APT::FTPArchive::Release::Valid-Until=${until.toUTCString().replace("GMT", "UTC")}`,
+    "-o", `APT::FTPArchive::Release::Date=${aptDate(now)}`,
+    "-o", `APT::FTPArchive::Release::Valid-Until=${aptDate(until)}`,
     "-o", "APT::FTPArchive::Release::Origin=Clover",
     "-o", "APT::FTPArchive::Release::Label=Clover",
     "-o", `APT::FTPArchive::Release::Suite=${suite}`,
@@ -52,6 +55,25 @@ export function releaseConfig(suite: string, now: Date = new Date()): string[] {
     "-o", "APT::FTPArchive::Release::Architectures=amd64 arm64",
     "-o", "APT::FTPArchive::Release::Components=main",
   ];
+}
+
+/** apt's date form, as apt-ftparchive writes it (RFC 1123, in UTC). */
+const aptDate = (d: Date): string => d.toUTCString().replace("GMT", "UTC");
+
+/**
+ * Release with a new Date (`now`) and Valid-Until (`now` + RELEASE_VALID_DAYS), every other byte as it was. Fails
+ * unless each field is there exactly once: a Release without them isn't one this repository wrote.
+ */
+export function refreshRelease(text: string, now: Date = new Date()): string {
+  const until = new Date(now.getTime() + RELEASE_VALID_DAYS * 86_400_000);
+  let out = text;
+  for (const [field, value] of [["Date", aptDate(now)], ["Valid-Until", aptDate(until)]] as const) {
+    const re = new RegExp(`^${field}: .*$`, "gm");
+    const n = (out.match(re) ?? []).length;
+    if (n !== 1) throw new Error(`Release has ${n} ${field} fields, not one`);
+    out = out.replace(re, `${field}: ${value}`);
+  }
+  return out;
 }
 
 /** The lines a user adds, for the docs and the repository's own index page. */
@@ -92,7 +114,8 @@ export function archOf(name: string): { kind: "deb" | "rpm"; arch: string } | un
   return undefined;
 }
 
-function metadata(from: string[], channel: Channel, out: string): void {
+/** The unsigned layout and metadata (Linux: apt-ftparchive, createrepo_c); `now` dates the Release. */
+export function metadata(from: string[], channel: Channel, out: string, now: Date = new Date()): void {
   const suite = suiteFor(channel);
   for (const dir of from) {
     for (const name of readdirSync(dir)) {
@@ -111,7 +134,7 @@ function metadata(from: string[], channel: Channel, out: string): void {
     writeFileSync(join(bin, "Packages"), packages);
     writeFileSync(join(bin, "Packages.gz"), Bun.gzipSync(new TextEncoder().encode(packages)));
   }
-  writeFileSync(join(apt, "dists", suite, "Release"), run(["apt-ftparchive", ...releaseConfig(suite), "release", join("dists", suite)], apt));
+  writeFileSync(join(apt, "dists", suite, "Release"), run(["apt-ftparchive", ...releaseConfig(suite, now), "release", join("dists", suite)], apt));
   for (const arch of ["x86_64", "aarch64"]) {
     const repo = join(out, "rpm", suite, arch);
     if (existsSync(repo)) run(["createrepo_c", "--quiet", repo], out);
@@ -211,6 +234,24 @@ export function ownerOnly(env: Record<string, string | undefined>, platform: str
 async function sign(dir: string, root: string): Promise<void> {
   const committed = existsSync(join(root, KEYRING_FILE)) ? readFileSync(join(root, KEYRING_FILE), "utf8") : undefined;
   const key = await repoSigningKey(repoKeychain, committed);
+  await signTree(dir, key, committed!);
+}
+
+/** Every Release in a tree, refreshed (refreshRelease); how many. Fails when there is none. */
+export function refreshTree(dir: string, now: Date = new Date()): number {
+  let n = 0;
+  for (const suite of ["stable", "beta"]) {
+    const release = join(dir, "apt", "dists", suite, "Release");
+    if (!existsSync(release)) continue;
+    writeFileSync(release, refreshRelease(readFileSync(release, "utf8"), now));
+    n++;
+  }
+  if (n === 0) throw new Error(`${dir} holds no apt Release to refresh`);
+  return n;
+}
+
+/** Signs every Release and repomd.xml in a tree with `key`, puts the keyring beside them, and checks it all. */
+export async function signTree(dir: string, key: openpgp.PrivateKey, keyring: string): Promise<void> {
   for (const suite of ["stable", "beta"]) {
     const release = join(dir, "apt", "dists", suite, "Release");
     if (existsSync(release)) {
@@ -223,8 +264,8 @@ async function sign(dir: string, root: string): Promise<void> {
       if (existsSync(repomd)) writeFileSync(`${repomd}.asc`, (await signRelease(new Uint8Array(readFileSync(repomd)), key)).detached);
     }
   }
-  copyFileSync(join(root, KEYRING_FILE), join(dir, "clover-archive-keyring.asc"));
-  const problems = await verifyTree(dir, committed!);
+  writeFileSync(join(dir, "clover-archive-keyring.asc"), keyring);
+  const problems = await verifyTree(dir, keyring);
   if (problems.length > 0) throw new Error(`the signatures don't verify: ${problems.join("; ")}`);
 }
 
@@ -258,7 +299,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       console.log(`linux-repo: the ${suiteFor(parseChannel(value("--channel")))} repositories' metadata is in ${out} (unsigned)`);
       return 0;
     }
-    if (cmd === "sign" || cmd === "upload" || cmd === "key") {
+    if (cmd === "sign" || cmd === "refresh" || cmd === "upload" || cmd === "key") {
       const refused = ownerOnly(process.env, process.platform);
       if (refused !== undefined) throw new Error(refused);
     }
@@ -267,6 +308,17 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (dir === undefined) throw new Error("sign takes --dir <dir>");
       await sign(dir, root);
       console.log(`linux-repo: signed ${dir}`);
+      return 0;
+    }
+    if (cmd === "refresh") {
+      const dir = value("--dir");
+      if (dir === undefined) throw new Error("refresh takes --dir <dir> (the signed tree that is served)");
+      // The key is checked before anything in the tree changes.
+      const committed = existsSync(join(root, KEYRING_FILE)) ? readFileSync(join(root, KEYRING_FILE), "utf8") : undefined;
+      const key = await repoSigningKey(repoKeychain, committed);
+      const n = refreshTree(dir);
+      await signTree(dir, key, committed!);
+      console.log(`linux-repo: refreshed and signed ${n} Release file(s) in ${dir}, valid ${RELEASE_VALID_DAYS} days; upload it next`);
       return 0;
     }
     if (cmd === "upload") {
@@ -301,7 +353,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
         return 0;
       }
     }
-    console.error("usage: linux-repo metadata --from <dirs> --channel latest|beta --out <dir> | sign --dir <dir> | upload --dir <dir> [--yes] | key --generate|--check");
+    console.error("usage: linux-repo metadata --from <dirs> --channel latest|beta --out <dir> | sign --dir <dir> | refresh --dir <dir> | upload --dir <dir> [--yes] | key --generate|--check");
     return 2;
   } catch (err) {
     console.error(`linux-repo: ${(err as Error).message}`);
