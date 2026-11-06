@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { guestTabs, isReservedPluginName, isReservedTab } from "../src/model/tabs";
+import { guestTabs, isOwnPlugin, isReservedPluginName, isReservedTab } from "../src/model/tabs";
 import { nameSkeleton, readsAs, shownName } from "../src/model/names";
 import {
   cardGeometry,
@@ -551,6 +551,33 @@ describe("guest tabs (the review's spoofing fix)", () => {
     ]);
     expect(isReservedPluginName("Homelab")).toBe(false);
     expect(shownName("A\u202Eb\u00A0 c")).toBe("Ab c");
+  });
+
+  test("the clover tree's children (lane B ids them clover/<folder>) are the island's own; a look-alike id is not", () => {
+    const tabs = guestTabs([
+      { id: "usage", title: "Usage", pluginId: "clover/usage", pluginName: "Usage", attention: "badge" as const },
+      { id: "devices", title: "Devices", pluginId: "clover/island", pluginName: "Island", attention: "badge" as const },
+      { id: "x", title: "X", pluginId: "clover-extras", pluginName: "Extras", attention: "expand" as const },
+      { id: "y", title: "Y", pluginId: "cloverx/usage", pluginName: "Y plugin" },
+    ]);
+    expect(tabs.map((t) => [t.id, t.title, t.attention])).toEqual([
+      ["usage", "Usage", "badge"],
+      ["devices", "Devices", "badge"],
+      ["clover-extras#x", "X · Extras", "never"],
+      ["cloverx/usage#y", "Y · Y plugin", "never"],
+    ]);
+    expect([isOwnPlugin("clover"), isOwnPlugin("clover/usage"), isOwnPlugin("clover-x"), isOwnPlugin(undefined)]).toEqual([true, true, false, false]);
+  });
+
+  test("another plugin named as a bot gets no tab: \"Servers · Alpha\" would read as Alpha's", () => {
+    const entries = [
+      { id: "servers", title: "Servers", pluginId: "evil", pluginName: "\u0410lpha" },
+      { id: "servers", title: "Servers", pluginId: "evil2", pluginName: "luna" },
+      { id: "servers", title: "Servers", pluginId: "homelab", pluginName: "Homelab" },
+      { id: "own", title: "Alpha's room", pluginId: "clover/alpha-room", pluginName: "Alpha" },
+    ];
+    expect(guestTabs(entries, ["Alpha", "alpha", "Luna", "luna"]).map((t) => t.id)).toEqual(["homelab#servers", "own"]);
+    expect(guestTabs(entries).map((t) => t.id)).toEqual(["evil#servers", "evil2#servers", "homelab#servers", "own"]);
   });
 
   test("the skeleton folds what reads alike, and keeps apart what doesn't", () => {

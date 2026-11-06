@@ -183,7 +183,10 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       // The lip-sync parameters take the speech through Mochi2D's live input, mixed by `replace` per parameter: a motion
       // or an expression that moves the mouth never overrides what the bot is saying. The other mouth parameters (the
       // form, a motion-sync setting's own) are set as base values.
-      m.runtime.setLiveLipSync({ next: () => mouth.current.open }, (live, _current, id) => mouth.current.values.get(id) ?? live);
+      // A model with no `LipSync` group has no lip sync in Mochi2D (`setLiveLipSync` says false): then its mouth is
+      // written with `setParameter` like the rest, and nothing goes through the live input.
+      const live = m.runtime.setLiveLipSync({ next: () => mouth.current.open }, (value, _current, id) => mouth.current.values.get(id) ?? value);
+      if (!live) plan.current = { ...plan.current, lipSync: new Set<string>() };
       setStatus({ state: "ready", model });
       latest.current.onReady?.(model);
     })().catch((error: unknown) => {

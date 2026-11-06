@@ -1,0 +1,21 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.live2d.gettingReady": "Getting {name} ready…",
+    "clover.live2d.cantShow": "{name}'s avatar can't be shown",
+    "clover.live2d.noWebgl": "This computer can't draw the avatar here.",
+    "clover.live2d.refused.too-large": "The avatar is too large to load here.",
+    "clover.live2d.refused.too-many-files": "The avatar has too many files.",
+    "clover.live2d.refused.outside-folder": "The avatar points to files outside itself.",
+    "clover.live2d.refused.missing": "A file the avatar needs is missing.",
+    "clover.live2d.refused.archive": "The avatar's archive is damaged.",
+    "clover.live2d.refused.settings": "The avatar's settings file is damaged.",
+    "clover.live2d.refused.moc": "The avatar's model file is damaged.",
+    "clover.live2d.refused.texture": "The avatar's textures can't be drawn here.",
+    "clover.live2d.refused.motion": "One of the avatar's motions is damaged.",
+    "clover.live2d.refused.physics": "The avatar's physics file is damaged.",
+    "clover.live2d.refused.budget": "The avatar is too heavy to draw here.",
+    "clover.live2d.refused.unreadable": "The avatar could not be read."
+  }
+}

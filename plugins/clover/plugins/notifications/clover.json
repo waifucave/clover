@@ -6,6 +6,7 @@
   "host": { "entry": "host/index.ts", "runtime": "bun" },
   "capabilities": ["bots.read"],
   "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
     "notifiers": [
       { "id": "desktop", "name": "Desktop notifications", "handler": "notifier", "runsOn": "each" }
     ]
