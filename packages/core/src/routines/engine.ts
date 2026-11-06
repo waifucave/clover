@@ -265,9 +265,16 @@ export class RoutineEngine {
     return out;
   }
 
-  /** The routines here with a webhook trigger (the ingress registers each). */
-  webhookRoutines(): string[] {
-    return [...this.#loaded.entries()].filter(([key, l]) => !key.includes("@") && l.state === "active" && l.routine.triggers.some((t) => t.type === "webhook")).map(([key]) => key);
+  /** The routines here with a webhook trigger, each with the ingress its trigger names (the ingress registers each,
+   *  and again when the name changes). */
+  webhookRoutines(): { id: string; ingress?: string }[] {
+    const out: { id: string; ingress?: string }[] = [];
+    for (const [key, l] of this.#loaded) {
+      if (key.includes("@") || l.state !== "active") continue;
+      const t = l.routine.triggers.find((x): x is Extract<RoutineTrigger, { type: "webhook" }> => x.type === "webhook");
+      if (t !== undefined) out.push({ id: key, ...(t.ingress === undefined ? {} : { ingress: t.ingress }) });
+    }
+    return out;
   }
 
   /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the

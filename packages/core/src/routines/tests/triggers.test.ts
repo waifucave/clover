@@ -124,4 +124,43 @@ describe("the bundled triggers", () => {
     await ingress.register("r_first001", "k1", "tunnel");
     expect(calls.at(-1)).toEqual({ plugin: "clover/forwarder", method: "unregister", args: { routine: "r_first001" } });
   });
+
+  test("the loop registers a webhook routine it finds, and again where its file names a new ingress", async () => {
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    const calls: { plugin: string; method: string; routine?: string }[] = [];
+    for (const plugin of ["clover/forwarder", "pack/tunnel"]) {
+      host.define(plugin, {
+        ingress: {
+          register: async (a: { routine: string }) => (calls.push({ plugin, method: "register", routine: a.routine }), { url: `https://${plugin}/${a.routine}` }),
+          unregister: async (a: { routine: string }) => (calls.push({ plugin, method: "unregister", routine: a.routine }), { released: true }),
+        },
+      } as never);
+    }
+    const registry = { entries: () => [
+      { pluginId: "clover/forwarder", entryId: "waifucave", state: "active", value: { handler: "ingress" } },
+      { pluginId: "pack/tunnel", entryId: "tunnel", state: "active", value: { handler: "ingress" } },
+    ] } as never;
+    let named: string | undefined;
+    let present = true;
+    const ingress: WebhookIngress = new WebhookIngress({
+      registry, host, clock: new FakeClock(),
+      engine: {
+        deliverWebhook: async () => "accepted",
+        webhookRoutines: () => (present ? [{ id: "r_hook0003", ...(named === undefined ? {} : { ingress: named }) }] : []),
+        webhook: async (id: string) => ({ url: await ingress.register(id, "k", named), key: "k" }),
+      },
+    });
+    await ingress.sync();
+    await ingress.sync();
+    expect(calls).toEqual([{ plugin: "clover/forwarder", method: "register", routine: "r_hook0003" }]);
+    named = "tunnel";
+    await ingress.sync();
+    expect(calls.slice(1)).toEqual([
+      { plugin: "pack/tunnel", method: "register", routine: "r_hook0003" },
+      { plugin: "clover/forwarder", method: "unregister", routine: "r_hook0003" },
+    ]);
+    present = false;
+    await ingress.sync();
+    expect(calls.at(-1)).toEqual({ plugin: "pack/tunnel", method: "unregister", routine: "r_hook0003" });
+  });
 });
