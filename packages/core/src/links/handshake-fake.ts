@@ -434,6 +434,16 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
         if (parts.length === 3 && req.method === "GET") {
           return Response.json({ group: id, members: memberList(g), lease: g.lease });
         }
+        if (parts[3] === "rollback" && parts[4] && req.method === "GET") {
+          // What a quorum's removal of the target would undo, without doing it.
+          const copy: Group = { ...g, members: new Map(g.members), removed: new Map(g.removed), changes: [...g.changes], lease: { ...g.lease } };
+          const before = new Set(copy.members.keys());
+          rollBack(copy, parts[4], new Set());
+          return Response.json({
+            restores: [...copy.members.keys()].filter((k) => !before.has(k)),
+            drops: [...before].filter((k) => k !== parts[4] && !copy.members.has(k)),
+          });
+        }
         if (parts[3] === "members" && parts[4] && req.method === "DELETE") {
           const gone = parts[4];
           const member = g.members.get(gone);
@@ -442,16 +452,22 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           let keeps = new Set<string>();
           if (gone !== who) {
             // Another member: a quorum of the voters other than it, leaving out the keys it admitted lately.
-            const b = body() as { t?: unknown; removes?: unknown; keeps?: unknown } | undefined;
-            const kept = Array.isArray(b?.keeps) ? (b.keeps as unknown[]).filter((k): k is string => typeof k === "string") : [];
+            const b = body() as { t?: unknown; removes?: unknown; keep?: unknown } | undefined;
+            const kept = Array.isArray(b?.keep) ? (b.keep as unknown[]).filter((k): k is string => typeof k === "string") : [];
             const since = now() - rollbackMs;
             const its = new Set(g.changes.filter((c) => c.kind === "admit" && c.at >= since && c.signers.includes(gone)).map((c) => c.target));
             const eligible = new Set([...g.members].filter(([k, m]) => k !== gone && !its.has(k) && votes(m)).map(([k]) => k));
             const agreed = new Set<string>();
             if (eligible.has(who)) agreed.add(who);
-            if (typeof b?.t === "number" && Math.abs(b.t - now()) <= 600_000 && Array.isArray(b.removes)) {
+            if (typeof b?.t === "number" && Array.isArray(b.removes)) {
+              if (Math.abs(b.t - now()) > 600_000) return err(401, "unauthorized");
+              if (b.t <= member.joinedAt) return err(409, "stale");
               for (const r of b.removes as { by?: unknown; sig?: unknown }[]) {
-                if (typeof r?.by === "string" && typeof r.sig === "string" && eligible.has(r.by) && sigOk(r.by, removeStatement(id, gone, b.t, kept), r.sig)) agreed.add(r.by);
+                if (typeof r?.by !== "string" || typeof r.sig !== "string") return err(400, "bad_request");
+                // A signer that doesn't count is refused, as lane I's service does.
+                if (!eligible.has(r.by)) return err(403, "not_voter");
+                if (!sigOk(r.by, removeStatement(id, gone, b.t, kept), r.sig)) return err(401, "unauthorized");
+                agreed.add(r.by);
               }
             }
             const need = quorumOf(eligible.size);

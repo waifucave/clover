@@ -34,10 +34,11 @@ export const joinStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t)].join("\n"));
 export const admitStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} admit`, group, key, String(t)].join("\n"));
-/** A voter's agreement to remove a member other than itself (PROTOCOL.md "Group recovery", proposed), and to keep
- *  the keys it names that the removal's rollback would otherwise drop, sorted, one a line (none: the four lines). */
-export const removeStatement = (group: string, key: string, t: number, keeps: readonly string[] = []): Bytes =>
-  utf8([`${HANDSHAKE_PREFIX} remove`, group, key, String(t), ...[...keeps].sort()].join("\n"));
+/** A voter's agreement to remove a member other than itself, and to keep the keys its rollback would otherwise drop
+ *  (PROTOCOL.md "Group recovery", as agreed with lane I): the kept keys sorted and joined by ",", the last line, empty
+ *  when nothing is kept. */
+export const removeStatement = (group: string, key: string, t: number, keep: readonly string[] = []): Bytes =>
+  utf8([`${HANDSHAKE_PREFIX} remove`, group, key, String(t), [...keep].sort().join(",")].join("\n"));
 
 // ---- group recovery (PROTOCOL.md "Group recovery", lane I's proposal adopted for H-M2) ----
 
@@ -260,11 +261,22 @@ export class HandshakeClient {
 
   /** Removes a member: itself with its own signature alone, another with the removes of a quorum of voters
    *  (`quorum`; refused `403 no_quorum` short of one). */
-  async removeGroupMember(group: string, signer: Ed25519Key, member: string, quorum?: { t: number; removes: { by: string; sig: string }[]; keeps?: string[] }): Promise<void> {
+  async removeGroupMember(group: string, signer: Ed25519Key, member: string, quorum?: { t: number; removes: { by: string; sig: string }[]; keep?: string[] }): Promise<void> {
     try {
       await this.#signed(`group:${group}`, signer, "DELETE", `/v1/groups/${group}/members/${member}`, quorum);
     } catch (err) {
       if (err instanceof HandshakeError && (err.status === 410 || err.status === 404)) return;
+      throw err;
+    }
+  }
+
+  /** What a removal of `target` would roll back: the members it removed lately that come back, the keys it let in
+   *  that go (`GET /v1/groups/<g>/rollback/<target>`). Undefined from a service without it. */
+  async rollbackPreview(group: string, key: Ed25519Key, target: string): Promise<{ restores: string[]; drops: string[] } | undefined> {
+    try {
+      return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}/rollback/${target}`)).json() as Promise<{ restores: string[]; drops: string[] }>;
+    } catch (err) {
+      if (err instanceof HandshakeError && err.status === 404 && err.code === "not_found") return undefined;
       throw err;
     }
   }

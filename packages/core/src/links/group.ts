@@ -152,7 +152,10 @@ export class GroupKeeper {
     const now = this.#o.handshake.now();
     const name = (device && this.#o.registry.get(device)?.name) ?? "the device";
     // The keys its removal would roll back: the user keeps the ones they recognise (the controller's ruling).
-    const keeps = await this.#keepsFor(g, group, member, name, rolledBack(read.members, member, now));
+    // The service's own preview when it has one, else this computer's reading of the same rule.
+    const preview = await this.#o.handshake.rollbackPreview(group, key, member).catch(() => undefined);
+    const dropped = preview ? read.members.filter((m) => preview.drops.includes(m.key)) : rolledBack(read.members, member, now);
+    const keeps = await this.#keepsFor(g, group, member, name, dropped);
     const eligible = eligibleVoters(read.members, member, now);
     const need = quorumOf(eligible.length);
     const t = now;
@@ -167,7 +170,7 @@ export class GroupKeeper {
     if (eligible.length === 0 || removes.length < need) {
       throw new ContractError("refused", `removing it takes ${need} of your devices' agreement (${removes.length} so far)`, { need, have: removes.length });
     }
-    await this.#o.handshake.removeGroupMember(group, key, member, { t, removes, ...(keeps.length > 0 ? { keeps: [...keeps] } : {}) });
+    await this.#o.handshake.removeGroupMember(group, key, member, { t, removes, ...(keeps.length > 0 ? { keep: [...keeps] } : {}) });
   }
 
   /** Asks this device's user which of the keys a removal would roll back to keep: one card, a checkbox each, none
