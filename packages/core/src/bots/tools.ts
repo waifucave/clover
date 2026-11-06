@@ -8,11 +8,14 @@
 //   message (`from: "bot"`), naming the bot and the session it came from, so it folds in like any bot's message
 //   and never counts as the user's.
 // * **Where it goes:** a bot, by id or name, means its main conversation, wherever that runs (`BotService.deliverTo`
-//   relays it to the computer running the bot); a session id means that session, here. A session can't message
-//   itself, and an ended one takes nothing.
+//   relays it to the computer running the bot); a session id means that session, here. An ended one takes nothing.
+// * **The one rule** (the controller's ruling on K-M1's review; this tool is the door, for agents too): a session
+//   reaches another bot only through that bot's own conversation, and otherwise only sessions of its own bot (its
+//   bot's conversation, side threads and background agents), never itself. Another bot's agents and side threads, and
+//   the user's own coding sessions, are refused (`sendMessageRefusal`).
 import { type SessionView } from "@waifucave/clover-protocol";
 import { isContractError } from "../contracts/common";
-import type { Disposition } from "../contracts/session-host";
+import type { DeliveredInput, Disposition } from "../contracts/session-host";
 import type { DurableSessionHost } from "../sessions/durable-host";
 import { plainText, type BotService } from "./service";
 
@@ -58,6 +61,16 @@ function str(input: unknown, key: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/** Why `from` may not message `target`, or undefined when it may (the one rule above). */
+export function sendMessageRefusal(from: { sessionId: string; bot: string }, target: Pick<SessionView, "id" | "kind" | "bot">): string | undefined {
+  if (target.id === from.sessionId) return "That is this conversation; SendMessage reaches another one.";
+  // Another bot is reached through its own conversation.
+  if (target.kind === "bot") return undefined;
+  if (target.bot === from.bot) return undefined;
+  if (target.bot === undefined) return `${target.id} is the user's own ${target.kind} session; SendMessage reaches only your bot's sessions and other bots' conversations.`;
+  return `${target.id} belongs to the bot ${target.bot}; message that bot's conversation instead (SendMessage with to: "${target.bot}").`;
+}
+
 function what(disposition: Disposition): string {
   switch (disposition) {
     case "folded":
@@ -96,12 +109,12 @@ export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[
     {
       name: "SendMessage",
       description: [
-        "Send a message to another bot or to any running session: a bot's conversation, a side thread, a background",
-        "agent or a coding session the user started. Name a bot by its id or name to reach its main conversation, or",
-        "give a session id from ListAgents. The message joins the target's running turn after its next tool call, or",
-        "starts its next turn when it is idle; a background agent gets it as its next prompt. It reaches them as a",
-        "message from you, never as the user's. Use it to hand over work, report back or ask another bot something;",
-        "their answer, if any, comes back to you the same way.",
+        "Send a message to another bot's conversation, or to one of your own bot's sessions: its conversation, its side",
+        "threads (routine runs) and its background agents. Name a bot by its id or name to reach its conversation, or",
+        "give a session id of your bot's from ListAgents. The message joins the target's running turn after its next",
+        "tool call, or starts its next turn when it is idle; a background agent gets it as its next prompt. It reaches",
+        "them as a message from you, never as the user's. Use it to hand over work, report back or ask another bot",
+        "something; their answer, if any, comes back to you the same way.",
       ].join(" "),
       inputSchema: {
         type: "object",
@@ -125,8 +138,12 @@ export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[
         const bot = bots.has(to) ? to : byName.length === 1 ? byName[0]! : undefined;
         if (byName.length > 1 && !bots.has(to)) return fail(`More than one bot is called "${to}" (${byName.join(", ")}); name one by its id.`);
         const target = bot !== undefined ? bots.mainSession(bot) : to;
-        if (target === sessionId) return fail("That is this conversation; SendMessage reaches another one.");
-        const input2 = { from: "bot" as const, bot: caller.bot, session: sessionId, text: message };
+        const from = { sessionId, bot: caller.bot };
+        if (target === sessionId) return fail(sendMessageRefusal(from, { id: target, kind: "bot", bot: caller.bot })!);
+        // An agent's message reads as its own (`agent_message`); a bot's session's as the bot's.
+        const input2: DeliveredInput = caller.sessionKind === "agent"
+          ? { from: "agent", agent: sessionId, text: message }
+          : { from: "bot", bot: caller.bot, session: sessionId, text: message };
         try {
           if (bot !== undefined) {
             const { disposition } = await bots.deliverTo(bot, input2);
@@ -134,6 +151,8 @@ export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[
           }
           const view = host.get(target);
           if (view === undefined) return fail(`No bot or session "${to}". ListAgents shows who is running.`);
+          const refused = sendMessageRefusal(from, view);
+          if (refused !== undefined) return fail(refused);
           if (isEnded(view)) return fail(`The session ${target} has ended (${view.status}); it takes no messages.`);
           const { disposition } = await host.deliver(target, input2);
           return { text: `Sent to ${target} (${view.kind}${view.bot === undefined ? "" : ` of ${names.get(view.bot) ?? view.bot}`}): ${what(disposition)}.`, isError: false };

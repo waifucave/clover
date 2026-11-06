@@ -384,6 +384,29 @@ describe("calls that never ended", () => {
   });
 });
 
+describe("a failed turn's cards", () => {
+  test("resolve cancelled, whether the session ends (an agent) or goes on (a bot)", async () => {
+    const cancelled: string[] = [];
+    const approvals = { withdrawSession: () => 0, cancelSession: (id: string) => (cancelled.push(id), 1) };
+    const host = new DurableSessionHost({ home: tempHome(), clock: new FakeClock(), approvals });
+    const bot = openBot(host);
+    const agent = new FakeSessionDriver({ canFold: false });
+    host.open({ id: "s_agent", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Studio", backend: "codex" }, agent);
+    await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "b_alpha", text: "go" });
+    await host.deliver("b_alpha", fromBot);
+    await flush();
+    agent.end({ reason: "failed", failure: "crashed" });
+    await flush();
+    expect(cancelled).toEqual(["s_agent"]);
+    expect(host.get("s_agent")!.status).toBe("failed");
+    bot.end({ reason: "failed", failure: "error" });
+    await flush();
+    expect(cancelled).toEqual(["s_agent", "b_alpha"]);
+    // The bot goes on: its conversation never ends.
+    expect(host.get("b_alpha")!.status).toBe("idle");
+  });
+});
+
 describe("callers and core-only records", () => {
   test("a side thread and an agent carry their bot, from their own meta or their parent's", () => {
     const { host } = hostOn();

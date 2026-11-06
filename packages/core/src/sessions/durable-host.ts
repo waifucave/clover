@@ -888,6 +888,8 @@ export class DurableSessionHost implements SessionHost {
       this.#setStatus(s, "idle");
       return;
     }
+    // A failed turn's cards have no turn left to answer (the broker's rule 7): they resolve cancelled.
+    if (end.reason === "failed") this.#approvals?.cancelSession(s.meta.id);
     if (end.reason === "failed" && s.meta.kind === "bot") {
       // A bot's one conversation never ends (§6.3): the failed turn is recorded with why, and what waits runs next.
       this.#setStatus(s, "idle");

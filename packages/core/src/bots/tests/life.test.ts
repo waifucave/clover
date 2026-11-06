@@ -15,7 +15,7 @@ import { botPaths } from "../paths";
 import { MEMORY_INDEX_MAX_LINES, memoryBlock, readMemoryIndex } from "../prompt";
 import { MethodError, peerSessionMethods, sessionsMethods, type MethodContext } from "../rpc";
 import type { BotRelay } from "../service";
-import { botToolDefs } from "../tools";
+import { botToolDefs, sendMessageRefusal } from "../tools";
 import { ALPHA_FOLDER, boot, botManifest, pluginFromFolder, removeTemps, tempDir, writePlugin, type Boot } from "./fixtures";
 
 afterEach(() => removeTemps());
@@ -291,18 +291,42 @@ describe("SendMessage and ListAgents (§6.7, §9.3)", () => {
     await b.shutdown();
   });
 
-  test("a side thread sends as its bot; a session id reaches an agent as its next prompt", async () => {
+  test("a side thread sends as its bot; a session id of its bot reaches an agent as its next prompt", async () => {
     const b = await boot({ home: tempDir(), plugins: await withLuna() });
     b.host.open({ id: "s_side", kind: "side-thread", bot: "alpha", parent: "b_alpha", computer: "Studio", routine: "r1" }, new FakeSessionDriver());
     const agent = new FakeSessionDriver({ canFold: false });
-    b.host.open({ id: "s_agent", kind: "agent", bot: "luna", parent: "b_luna", computer: "Studio", backend: "codex" }, agent);
+    b.host.open({ id: "s_agent", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Studio", backend: "codex" }, agent);
     const [send] = botToolDefs({ host: b.host, bots: b.bots }, "s_side");
     expect(callerOf(b, "s_side").bot).toBe("alpha");
     const r = await send!.run({ to: "s_agent", message: "Also run the linter." });
     expect(r.isError).toBe(false);
-    expect(r.text).toContain("agent of Luna");
+    expect(r.text).toContain("agent of Alpha");
     await flush();
     expect(agent.turns[0]!.input).toEqual({ from: "bot", bot: "alpha", session: "s_side", text: "Also run the linter." });
+    await b.shutdown();
+  });
+
+  test("the one rule: another bot only through its conversation, otherwise only its own bot's sessions, never itself", async () => {
+    const b = await boot({ home: tempDir(), plugins: await withLuna() });
+    b.host.open({ id: "s_lunas", kind: "agent", bot: "luna", parent: "b_luna", computer: "Studio", backend: "gemini" }, new FakeSessionDriver({ canFold: false }));
+    b.host.open({ id: "s_lunaside", kind: "side-thread", bot: "luna", parent: "b_luna", computer: "Studio", routine: "r2" }, new FakeSessionDriver());
+    b.host.open({ id: "s_code", kind: "coding", computer: "Studio", backend: "claude-code" }, new FakeSessionDriver({ canFold: false }));
+    const mine = new FakeSessionDriver({ canFold: false });
+    b.host.open({ id: "s_mine", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Studio", backend: "codex" }, mine);
+    const [send] = botToolDefs({ host: b.host, bots: b.bots }, "b_alpha");
+    expect((await send!.run({ to: "s_lunas", message: "hi" })).text).toContain('belongs to the bot luna; message that bot\'s conversation instead');
+    expect((await send!.run({ to: "s_lunaside", message: "hi" })).isError).toBe(true);
+    expect((await send!.run({ to: "s_code", message: "hi" })).text).toContain("the user's own coding session");
+    // Another bot's conversation, by its session id too.
+    expect((await send!.run({ to: "b_luna", message: "hi" })).isError).toBe(false);
+    // An agent, through the same door: never itself, its own bot yes, as the agent's own message; another bot's agent no.
+    const [agentSend] = botToolDefs({ host: b.host, bots: b.bots }, "s_mine");
+    expect((await agentSend!.run({ to: "s_mine", message: "hi" })).text).toContain("this conversation");
+    expect((await agentSend!.run({ to: "s_lunas", message: "hi" })).isError).toBe(true);
+    expect((await agentSend!.run({ to: "alpha", message: "Halfway there." })).isError).toBe(false);
+    await flush();
+    expect(b.drivers.for("b_alpha").turns[0]!.input).toEqual({ from: "agent", agent: "s_mine", text: "Halfway there." });
+    expect(sendMessageRefusal({ sessionId: "s_x", bot: "alpha" }, { id: "s_y", kind: "agent", bot: "alpha" })).toBeUndefined();
     await b.shutdown();
   });
 
