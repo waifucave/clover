@@ -11,7 +11,7 @@
 //
 // Pure apart from the injected dial, launcher and clock, so the tests drive it against a fake daemon under Bun.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { APP_METHODS, type CloverHelloParams, type CloverHelloResult } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, APP_METHODS, type CloverHelloParams, type CloverHelloResult } from "@waifucave/clover-protocol";
 import { dial as dialSocket, RpcCallError, type DaemonClient, type RequestHandler } from "../protocol/client";
 import type { DaemonLauncher } from "./login";
 
@@ -93,7 +93,10 @@ export async function proveServer(client: Pick<DaemonClient, "request">, appToke
   try {
     r = await client.request<{ proof?: unknown; pid?: unknown }>("protocol.prove", { nonce }, timeoutMs);
   } catch (err) {
-    return { why: `it gave no proof: ${err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err)}`, refused: true };
+    // Lane C's refusal for the ambiguous pid (Windows) is its own code; a method that doesn't exist, a dead pipe or
+    // anything else says the endpoint can't prove itself at all — said once, not retried.
+    const refused = err instanceof RpcCallError && err.code === CLOVER_ERR.PROCESS_REFUSED;
+    return { why: `it gave no proof: ${err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err)}`, refused };
   }
   if (r.pid !== pid) return { why: "it sees another process at the other end", refused: false };
   const want = Buffer.from(daemonProof(appToken, nonce, pid));

@@ -1,17 +1,18 @@
 // This desktop's answer key (spec §5.5, decision 91; lane H's ask in H-M1): an Ed25519 key the app holds apart from
 // the core's link key, which signs this desktop's answers to cards and the user's own messages (E-M3), so plugin code
-// can't sign with it where the OS keeps it from them. The app makes it once, keeps it in the OS's protected store, and
-// registers its public half with the core on every connection (`device.answerKey.set`, with the app's signature over
+// can't sign with it where the OS keeps it from them. The app makes it once and registers its public half with the
+// core on every connection (`device.answerKey.set`, with the app's signature over
 // `clover/answer-key/1\n<device>\n<public key>\n<holder>`, which lane H's registry checks).
 //
-// Where it is kept: Electron's safeStorage, whose key is the OS's: on macOS a Keychain item only the signed app reads
-// without asking ("app-keychain"); on Windows DPAPI and on Linux the Secret Service, which plugin code running as the
-// user could also reach, so the core hears "none", the risk the owner accepted. The key never goes into a log line, an
-// error message or the core. A headless run and the tests use a vault in memory and never touch the OS's store.
-//
-// safeStorage adds no user-presence or biometric gate on any OS — no Touch ID, Windows Hello or passcode prompt, ever
-// (the owner's decision, folded at E-M2): the stores above keep it at rest with none. Signing a card's answer takes the
-// key from memory and never prompts. The one place an OS auth check may appear at all is pairing or revoking a device,
+// Where it is kept: the OS's own store, with no user-presence or biometric gate on any OS — no Touch ID, Windows Hello
+// or passcode prompt, ever (the owner's decision, folded at E-M2). A packaged app keeps it through Electron's
+// safeStorage, whose key is the OS's: on macOS a Keychain item only the signed app reads without asking
+// ("app-keychain"); on Windows DPAPI; on Linux the Secret Service (`gnome_libsecret`) — its `basic_text` backend is
+// no secret store at all, so the key stays in memory there, and the core hears it (S3). On Windows and the Linux
+// Secret Service, which plugin code running as the user could also reach, the core hears "none", the risk the owner
+// accepted. An unpackaged app keeps the key in memory alone, so a dev build never brings a Keychain or keyring dialog
+// up (S4, the no-prompt rule). The key never goes into a log line, an error message or the core; signing reads it
+// from memory and never prompts. The one place an OS auth check may appear at all is pairing or revoking a device,
 // and only if it is asked for later.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

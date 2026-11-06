@@ -20,39 +20,41 @@ export interface SeenKey {
 /** How soon after the key press its part must hand it over. */
 export const KEY_MATCH_MS = 1_000;
 
-/** Each window's recent key presses, as the main process saw them; each is used once. */
+/** Each focused frame's recent key presses, as the main process saw them; each is used once. The frame's own identity
+ *  (`processId:routingId`), never the window's: a paste meant for the frame the user typed in must not be claimed by
+ *  another part of the same window (the review's S2). */
 export class KeyLog {
-  private readonly keys = new Map<number, SeenKey[]>();
+  private readonly keys = new Map<string, SeenKey[]>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  saw(windowId: number, key: Omit<SeenKey, "at">): void {
-    const list = (this.keys.get(windowId) ?? []).filter((k) => this.now() - k.at <= KEY_MATCH_MS);
+  saw(frameId: string, key: Omit<SeenKey, "at">): void {
+    const list = (this.keys.get(frameId) ?? []).filter((k) => this.now() - k.at <= KEY_MATCH_MS);
     list.push({ ...key, at: this.now() });
-    this.keys.set(windowId, list.slice(-64));
+    this.keys.set(frameId, list.slice(-64));
   }
 
-  /** The oldest unused press of `key` in the window, within the second; it is used up. */
-  take(windowId: number, key: string): SeenKey | undefined {
-    const list = this.keys.get(windowId) ?? [];
+  /** The oldest unused press of `key` in that frame, within the second; it is used up. */
+  take(frameId: string, key: string): SeenKey | undefined {
+    const list = this.keys.get(frameId) ?? [];
     const i = list.findIndex((k) => k.key === key && this.now() - k.at <= KEY_MATCH_MS);
     if (i < 0) return undefined;
     const [k] = list.splice(i, 1);
     return k;
   }
 
-  /** The paste chord, pressed in the window within the second (⌘V on macOS; Ctrl+V, Ctrl+Shift+V or Shift+Insert
+  /** The paste chord, pressed in that frame within the second (⌘V on macOS; Ctrl+V, Ctrl+Shift+V or Shift+Insert
    *  elsewhere); it is used up. */
-  takePaste(windowId: number, platform: NodeJS.Platform): boolean {
-    const list = this.keys.get(windowId) ?? [];
+  takePaste(frameId: string, platform: NodeJS.Platform): boolean {
+    const list = this.keys.get(frameId) ?? [];
     const i = list.findIndex((k) => this.now() - k.at <= KEY_MATCH_MS && isPasteChord(k, platform));
     if (i < 0) return false;
     list.splice(i, 1);
     return true;
   }
 
-  forget(windowId: number): void {
-    this.keys.delete(windowId);
+  forget(frameId: string): void {
+    this.keys.delete(frameId);
   }
 }
 

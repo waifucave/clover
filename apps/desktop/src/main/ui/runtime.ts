@@ -848,9 +848,14 @@ export class UiRuntime {
     return { windowId: doc.windowId, steps };
   }
 
-  /** Checks that a part is in the document `frame` (throws otherwise); its plugin's id. */
+  /** Checks that a part is in the document `frame` (throws otherwise) and gives its plugin's id. A part whose
+   *  document isn't its own plugin's layer — a layout part drawn inline in another plugin's document — acts in no
+   *  plugin's name: rat calls, open and the terminal hand-over all refused for it (the review's S1). */
   partOf(frame: FrameRef, mountId: string): string {
-    return this.partIn(frame, mountId).plugin?.id ?? "core";
+    const part = this.partIn(frame, mountId);
+    const doc = this.docOf(part);
+    if (part.kind === "inline" && part.plugin !== undefined && doc !== undefined && part.plugin.layer !== doc.layer) throw new LayerError("a layout part acts only in its own layer's document");
+    return part.plugin?.id ?? "core";
   }
 
   /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). */
@@ -960,11 +965,13 @@ export class UiRuntime {
     return { windowId: part.windowId, pluginId: part.plugin.id };
   }
 
-  /** A message to every document that holds a part of this plugin (its connection's events). */
+  /** A message to every document that holds a part of this plugin (its connection's events). An inline part whose
+   *  document isn't its plugin's layer hears nothing: its own layer's documents do (the review's S1). */
   pluginMessage(pluginId: string, message: LayerMessage): void {
     const docs = new Set<string>();
     for (const m of this.mounts.values()) {
       if (m.plugin?.id !== pluginId) continue;
+      if (m.kind === "inline" && m.plugin.layer !== this.docOf(m)?.layer) continue;
       const doc = this.docOf(m);
       if (doc?.frame !== undefined && doc.kind === "frame") docs.add(doc.id);
     }

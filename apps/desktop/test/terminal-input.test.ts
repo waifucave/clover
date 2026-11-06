@@ -7,17 +7,17 @@ import { KEY_MATCH_MS, KeyLog, PasteModes, isPasteChord, keyBytes, preparePaste 
 const key = (k: string, mods: Partial<{ control: boolean; alt: boolean; shift: boolean; meta: boolean }> = {}) => ({ key: k, code: "", control: false, alt: false, shift: false, meta: false, ...mods });
 
 describe("key presses", () => {
-  test("a press the main process saw, in that window, within a second, once", () => {
+  test("a press the main process saw, in that frame, within a second, once", () => {
     let now = 0;
     const log = new KeyLog(() => now);
-    log.saw(1, key("a"));
-    expect(log.take(2, "a")).toBeUndefined();
-    expect(log.take(1, "b")).toBeUndefined();
-    expect(log.take(1, "a")?.key).toBe("a");
-    expect(log.take(1, "a")).toBeUndefined();
-    log.saw(1, key("a"));
+    log.saw("f1", key("a"));
+    expect(log.take("f2", "a")).toBeUndefined();
+    expect(log.take("f1", "b")).toBeUndefined();
+    expect(log.take("f1", "a")?.key).toBe("a");
+    expect(log.take("f1", "a")).toBeUndefined();
+    log.saw("f1", key("a"));
     now += KEY_MATCH_MS + 1;
-    expect(log.take(1, "a")).toBeUndefined();
+    expect(log.take("f1", "a")).toBeUndefined();
   });
 
   test("its bytes, as an xterm-style terminal sends them; the app's own ⌘ shortcuts send nothing", () => {
@@ -44,10 +44,10 @@ describe("the paste door", () => {
     expect(isPasteChord(key("V", { control: true, shift: true }), "linux")).toBe(true);
     expect(isPasteChord(key("Insert", { shift: true }), "linux")).toBe(true);
     const log = new KeyLog();
-    expect(log.takePaste(1, "darwin")).toBe(false);
-    log.saw(1, key("v", { meta: true }));
-    expect(log.takePaste(1, "darwin")).toBe(true);
-    expect(log.takePaste(1, "darwin")).toBe(false);
+    expect(log.takePaste("f1", "darwin")).toBe(false);
+    log.saw("f1", key("v", { meta: true }));
+    expect(log.takePaste("f1", "darwin")).toBe(true);
+    expect(log.takePaste("f1", "darwin")).toBe(false);
   });
 
   test("bracketed when the program turned it on, even across two pieces of output; off again when it says so", () => {

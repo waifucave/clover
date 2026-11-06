@@ -155,7 +155,7 @@ async function ready(): Promise<void> {
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
     api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
-    terminalInput: (windowId, pluginId, terminalId, input) => terminalInput(windowId, pluginId, terminalId, input),
+    terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     userSend: async (windowId, to, message) => {
       // One key press or click the main process saw come to the window covers one send (§5.5).
       if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
@@ -273,10 +273,18 @@ function makePair(): Pair {
   return p;
 }
 
-/** The answer key, in the OS's protected store (a headless run's in memory: it never touches the OS's store). */
+/** The answer key (a headless run's in memory: it never touches the OS's store) and the no-prompt rule's limits: an
+ *  unpackaged app keeps it in memory alone (S4: no Keychain or keyring dialog from a dev build), and a Linux whose
+ *  safeStorage would fall back to `basic_text` — no secret store at all — keeps it in memory, said once (S3). */
 let answerKeyValue: AnswerKey | undefined;
 function answerKey(): AnswerKey {
-  answerKeyValue ??= new AnswerKey(headless ? memoryVault("none") : safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage), log);
+  if (answerKeyValue === undefined) {
+    if (headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    else if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") {
+      log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
+      answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    } else answerKeyValue = new AnswerKey(safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage), log);
+  }
   return answerKeyValue;
 }
 
@@ -670,17 +678,17 @@ const layerLinks = new LayerLinks({
 const keys = new KeyLog();
 const pasteModes = new PasteModes();
 
-async function terminalInput(windowId: number, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void> {
+async function terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void> {
   if (input.kind === "key") {
-    const seen = keys.take(windowId, input.key);
-    if (seen === undefined) throw new LayerError("only a key press the app saw reaches a terminal");
+    const seen = keys.take(frameId, input.key);
+    if (seen === undefined) throw new LayerError("only a key press the app saw in this frame reaches a terminal");
     const data = keyBytes(seen, process.platform);
-    if (data !== undefined) await layerLinks.call(pluginId, "terminal.write", { terminalId, data });
+    if (data !== undefined) await layerLinks.hand(pluginId, "terminal.write", { terminalId, data });
     return;
   }
-  // The paste door: the chord the app saw, the clipboard the app reads, bracketed when the program asked, and the
-  // user's OK before more than one line goes.
-  if (!keys.takePaste(windowId, process.platform)) throw new LayerError("only a paste the app saw reaches a terminal");
+  // The paste door: the chord the app saw in this frame, the clipboard the app reads, bracketed when the program
+  // asked, and the user's OK before more than one line goes.
+  if (!keys.takePaste(frameId, process.platform)) throw new LayerError("only a paste the app saw in this frame reaches a terminal");
   const text = await clipboard.readText();
   if (text === "") return;
   const paste = preparePaste(text, pasteModes.bracketed(terminalId));
@@ -688,7 +696,7 @@ async function terminalInput(windowId: number, pluginId: string, terminalId: str
     log("terminal: a paste of several lines was turned down");
     return;
   }
-  await layerLinks.call(pluginId, "terminal.write", { terminalId, data: paste.data, paste: true });
+  await layerLinks.hand(pluginId, "terminal.write", { terminalId, data: paste.data, paste: true });
 }
 
 /** Asks before a paste of more than one line goes to a terminal (a headless run answers with CLOVER_TEST_PASTE_OK). */
@@ -821,11 +829,15 @@ function browserHost(): BrowserHost {
  *  placed in it. (The guards come from `web-contents-created`.) */
 function watchWindow(win: BrowserWindow): void {
   const id = win.id;
-  win.webContents.on("before-input-event", (_event, input) => {
+  win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
       sends.input(id);
-      keys.saw(id, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
+      // The record is per focused frame (the review's S2), the frame the key came to: the part that hands it over
+      // idents itself from that same frame. No focused frame records nothing.
+      const f = win.webContents.focusedFrame;
+      if (f === null || f.detached) return;
+      keys.saw(`${f.processId}:${f.routingId}`, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
@@ -839,12 +851,13 @@ function watchWindow(win: BrowserWindow): void {
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
-    keys.forget(id);
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);
     webViews.dropWindow(id);
     activeSessions.delete(id);
+    // The keys' and pastes' record is per frame and expires within a second anyway; the window's gone frames are
+    // left to that.
   });
 }
 

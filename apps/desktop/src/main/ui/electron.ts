@@ -235,8 +235,9 @@ export interface IpcHooks {
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
   /** A part's plugin-API call, on its plugin's own connection to the core. */
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
-  /** A key press or paste in a terminal part's element, to write what the main process derives from its own input. */
-  terminalInput(windowId: number, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
+  /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
+   *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
+  terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
   userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }): Promise<{ seq?: number }>;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
@@ -441,7 +442,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || terminalId === undefined) throw new LayerError("bad request");
     const checked = input.kind === "paste" ? { kind: "paste" as const } : input.kind === "key" && typeof input.key === "string" && input.key.length <= 32 ? { kind: "key" as const, key: input.key } : undefined;
     if (checked === undefined) throw new LayerError("not a key press or a paste");
-    return hooks.terminalInput(s.windowId, runtime.partOf(s.frame, mount), terminalId, checked);
+    return hooks.terminalInput(s.windowId, `${s.frame.processId}:${s.frame.routingId}`, runtime.partOf(s.frame, mount), terminalId, checked);
   });
   handle("clover:user-send", (event, a) => {
     const s = sender(event);

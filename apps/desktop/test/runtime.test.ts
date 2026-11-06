@@ -354,6 +354,19 @@ describe("a bot's layout (§5.5)", () => {
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
     expect((tab as { layout: unknown }).layout).toEqual({ kind: "text", text: "" });
   });
+
+  test("a layout part acts in no plugin's name in another plugin's document: its api, its open and its terminal hand-over ask refused, and its plugin's events reach only the documents of its own layer (the review's S1)", () => {
+    const s = setup([composerFixture()[0]!, layoutBot(LAYOUT, FILES)]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout" });
+    expect(() => s.rt.partOf(shell.shellFrame, tab.mount)).toThrow("a layout part acts only in its own layer's document");
+    // The layout's plugin's events go only to documents of that plugin's own layer: one inline part in the shell's
+    // layer's document hears nothing (the sheet and token messages the mount built before are the rest of `sent`).
+    s.sent.length = 0;
+    s.rt.pluginMessage("luna", { type: "api-event", pluginId: "luna", method: "core.event", params: {} } as never);
+    expect(s.sent).toEqual([]);
+  });
 });
 
 describe("each document's strings (§5.5's translations)", () => {

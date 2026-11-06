@@ -27,8 +27,8 @@ export interface FakeOptions {
   /** Answer `plugin.list` (and `plugin.setEnabled`, `plugin.remove`) from `ui`, for the plugin manager. */
   listPlugins?: boolean;
   /** `protocol.prove`: the pid it says it sees at the other end (default: its own, for an app in this process), or
-   *  `refuse` to give no proof, or `wrong` to give a bad one. */
-  prove?: number | "refuse" | "wrong";
+   *  a refusal: `refuse` (an old daemon with no method at all), `peak` (lane C's ambiguous-pid code) or `wrong`. */
+  prove?: number | "refuse" | "peak" | "wrong";
 }
 
 export interface FakeModel {
@@ -119,6 +119,7 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     // Lane C's proof, before the hello: an HMAC under the app token over the app's nonce and the pid at the other end.
     if (method === "protocol.prove" && !authed.has(s)) {
       if (opts.prove === "refuse") return fail(-32601, "no protocol.prove");
+      if (opts.prove === "peak") return fail(-32020, "the pid at this end of the pipe is ambiguous");
       const pid = typeof opts.prove === "number" ? opts.prove : process.pid;
       const proof = createHmac("sha256", opts.prove === "wrong" ? "not-the-token" : token).update(`clover-daemon-proof\0${String(params.nonce)}\0${pid}`).digest("base64url");
       return reply({ proof, pid });

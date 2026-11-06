@@ -52,4 +52,12 @@ describe("a layer's connection to the core", () => {
       await expect(links.call("clover/panel-terminal", m, {})).rejects.toThrow(`a layer doesn't call ${m}`);
     }
   });
+
+  test("terminal.write goes only from the main process's own path: the general door refuses it, the app's really own way (the key and the paste checks onward) doesn't", async () => {
+    const { home, links } = await setup();
+    await expect(links.call("clover/panel-terminal", "terminal.write", { terminalId: "t1", data: "whoami" })).rejects.toThrow("terminal.write goes only from the main process");
+    // The main process's own door: `terminalInput`'s own bytes.
+    await links.hand("clover/panel-terminal", "terminal.write", { terminalId: "t1", data: "no" });
+    expect(readCalls(home).some((c) => c.method === "terminal.write")).toBe(true);
+  });
 });

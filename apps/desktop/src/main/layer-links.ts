@@ -12,6 +12,11 @@ import type { DaemonClient } from "./protocol/client";
 /** What a layer may ask the core: the `layer` role's methods. */
 export const LAYER_METHODS: ReadonlySet<string> = allowedMethods("layer");
 
+/** What a layer may not call through the general plugin-API door at all: `terminal.write`'s bytes are written only by
+ *  the main process, from a key press or paste it saw come to the frame itself (`index.ts`'s `terminalInput` sends it
+ *  on here directly). A part handing over its own bytes would lose the check's whole point (§5.5). */
+export const MAIN_ONLY: ReadonlySet<string> = new Set(["terminal.write"]);
+
 /** The most a layer's call may carry, serialized. */
 export const LAYER_CALL_MAX = 2_000_000;
 
@@ -35,9 +40,22 @@ export class LayerLinks {
 
   constructor(private readonly deps: LayerLinkDeps) {}
 
-  /** A part's call, on its plugin's own connection. */
+  /** A part's call, on its plugin's own connection. The one door a part may open; it refuses the main-process-only
+   *  methods (the general door would let a part write any bytes to a terminal). */
   async call(pluginId: string, method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
     if (!LAYER_METHODS.has(method)) throw new Error(`a layer doesn't call ${method}`);
+    if (MAIN_ONLY.has(method)) throw new Error(`${method} goes only from the main process`);
+    return this.hand(pluginId, method, params, timeoutMs);
+  }
+
+  /** The main process's own call on a plugin's connection: the checks that the general door would skip ride the
+   *  caller instead (the key and paste record and the paste's OK, in `terminalInput`). */
+  async hand(pluginId: string, method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
+    if (!LAYER_METHODS.has(method)) throw new Error(`the app doesn't call ${method} for a layer`);
+    return this.write(pluginId, method, params, timeoutMs);
+  }
+
+  private async write(pluginId: string, method: string, params: unknown, timeoutMs: number): Promise<unknown> {
     if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new Error("the call is too large");
     const client = await this.link(pluginId);
     return client.request(method, params ?? {}, timeoutMs);
@@ -62,7 +80,7 @@ export class LayerLinks {
     const why = await proveServer(client, appToken, this.deps.pid, 5_000);
     if (why !== undefined) {
       client.close();
-      throw new Error(`the endpoint isn't this user's daemon (${why})`);
+      throw new Error(`the endpoint isn't this user's daemon (${why.why})`);
     }
     client.onNotification((method, params) => this.deps.onEvent(pluginId, method, params));
     const hello: CloverHelloParams = { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "layer", token, clientName: `clover-app/${this.deps.appVersion} layer`, pluginId };

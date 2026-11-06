@@ -277,7 +277,8 @@ describe("the daemon's proof before the hello (lane C's protocol.prove, on the s
 
   test("an endpoint that refuses every prove says it can't be verified, after a few tries, and never connects", async () => {
     const home = tempHome();
-    fakes.push(await startFakeDaemon({ home, prove: "refuse" }));
+    // lane C's ambiguous-pid refusal: the daemon answers the prove with PROCESS_REFUSED, its own code.
+    fakes.push(await startFakeDaemon({ home, prove: "peak" }));
     const { pair } = pairFor(home, fakeLauncher(home), { prove: true });
     await pair.start();
     // Windows' ambiguous case: a prove that the daemon refused can clear on a fresh connection, so the pair dials
@@ -287,6 +288,16 @@ describe("the daemon's proof before the hello (lane C's protocol.prove, on the s
     expect(pair.state, JSON.stringify(pair.state)).toMatchObject({ kind: "unverified", reason: "can't verify the Clover daemon" });
     expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
     expect(readCalls(home).filter((c) => c.method === "protocol.prove").length).toBeGreaterThanOrEqual(Pair.PROVE_TRIES);
+  });
+
+  test("an old daemon whose prove method is missing is said once, not retried into the verdict", async () => {
+    const home = tempHome();
+    fakes.push(await startFakeDaemon({ home, prove: "refuse" }));
+    const { pair } = pairFor(home, fakeLauncher(home), { prove: true });
+    await pair.start();
+    expect(pair.state, JSON.stringify(pair.state)).toMatchObject({ kind: "unavailable" });
+    expect(pair.state).not.toMatchObject({ kind: "unverified" });
+    expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
   });
 
   test("a laptop suspends: the app releases the lease without leaving (lane H's ask)", async () => {
