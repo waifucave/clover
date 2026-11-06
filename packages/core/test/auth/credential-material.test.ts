@@ -213,7 +213,8 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // 0.0.65 → 0.0.66 (A-M3: plain plugin errors): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.64 → 0.0.65 (A-M2's review): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.63 → 0.0.64 (A-M2: every provider a model plugin): keychain-store.ts diff EMPTY; the mirror stands.
-    expect(pkg.version).toBe("0.0.66");
+    // 0.0.66 → 0.0.67 (A-M3: shadowBuiltins, hostToolSearch): keychain-store.ts diff EMPTY; the mirror stands.
+    expect(pkg.version).toBe("0.0.67");
   });
 
 

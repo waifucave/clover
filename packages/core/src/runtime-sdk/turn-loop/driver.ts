@@ -35,7 +35,6 @@ import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contr
 import type { BotSessionContext } from "../../bots/service";
 import { writeJsonAtomic } from "../../sessions/atomic-file";
 import { createProjector, type Projector } from "../../projector";
-import { buildCoreBrand } from "../brand";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
@@ -44,6 +43,7 @@ import { NO_HOOKS, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput } from "./input";
+import { embeddedSessionOptions } from "./embedded-session";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
@@ -140,10 +140,26 @@ const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
 
 /** Servers that share a name prefix (the bundled tree's children all read `mcp__clover__…`: the browser's, the web
  *  plugin's) are one server to the runtime, with every tool; a tool name two of them give keeps the first, by plugin
- *  id, as the registry keeps a name (§6.7 "Tool names are unique"). */
-export function mergedServers(servers: readonly BotMcpServer[]): BotMcpServer[] {
+ *  id, as the registry keeps a name (§6.7 "Tool names are unique"). Only one plugin tree may hold a name (§6.7: one
+ *  enabled plugin per namespace): the name belongs to the plugin tree whose top-level id it is (`clover` for
+ *  `mcp__clover__…`), else to the first tree by plugin id; a server of any other tree under it is left out, never merged
+ *  in (`onRefused`), so no plugin can slip its tools under another's name. */
+export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: BotMcpServer, holder: string) => void): BotMcpServer[] {
+  const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
+  const sorted = [...servers].sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0));
+  // Who holds each name: the tree whose top-level id is the name (`clover` holds `mcp__clover__…`), else the first.
+  const holder = new Map<string, string>();
+  for (const s of sorted) {
+    const h = holder.get(s.server);
+    if (h === undefined || (top(s.plugin) === s.server && h !== s.server)) holder.set(s.server, top(s.plugin));
+  }
   const out = new Map<string, BotMcpServer>();
-  for (const s of [...servers].sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0))) {
+  for (const s of sorted) {
+    const h = holder.get(s.server)!;
+    if (top(s.plugin) !== h) {
+      onRefused?.(s, h);
+      continue;
+    }
     const had = out.get(s.server);
     if (had === undefined) {
       out.set(s.server, { ...s, tools: [...s.tools] });
@@ -153,6 +169,13 @@ export function mergedServers(servers: readonly BotMcpServer[]): BotMcpServer[] 
     out.set(s.server, { ...had, tools: [...had.tools, ...s.tools.filter((t) => !names.has(t.name))] });
   }
   return [...out.values()];
+}
+
+/** The servers `mergedServers` keeps, each as its plugin gave it (for the prompt, which lists every server's text). */
+export function keptServers(servers: readonly BotMcpServer[]): BotMcpServer[] {
+  const refused = new Set<BotMcpServer>();
+  mergedServers(servers, (r) => refused.add(r));
+  return servers.filter((s) => !refused.has(s));
 }
 
 /** A uuid from a session id: the runtime keys its transcript by a uuid. */
@@ -237,8 +260,45 @@ export class BotSessionDriver implements SessionDriver {
     }));
   }
 
+  /** The pause and the lease (§6.4, §9.2): undefined when the session may act now, after waiting while the pause
+   *  switch holds it; otherwise why the call is refused (the lease went elsewhere, or the turn ended). */
+  async #gate(signal: AbortSignal): Promise<string | undefined> {
+    if (!this.#ctx.mayAct()) {
+      try {
+        await this.#ctx.whenMayAct(AbortSignal.any([signal, ...(this.#turn ? [this.#turn.ctl.signal] : [])]));
+      } catch {
+        return "Stopped: this computer may not act for the bot now (the user paused bots, or another computer runs them).";
+      }
+    }
+    return this.#ctx.mayAct() ? undefined : "Stopped: this computer no longer runs the bot.";
+  }
+
+  /** A queued MCP call id the runtime won't use: its call was refused or failed before it reached the router. */
+  #dropCallId(name: string, id: string | undefined): void {
+    if (id === undefined || !name.startsWith("mcp__")) return;
+    const q = this.#callIds.get(name);
+    const i = q?.indexOf(id) ?? -1;
+    if (q !== undefined && i >= 0) q.splice(i, 1);
+  }
+
+  /** The approval check, then the pause and the lease again (review B1): the switch may have come on, or the lease
+   *  gone, while the card was open, and an allow given then must not run the call. */
+  #gatedCanUseTool(inner: CanUseTool): CanUseTool {
+    return async (name, input, opts) => {
+      const r = await inner(name, input, opts);
+      if (r.behavior !== "allow") {
+        this.#dropCallId(name, opts.toolUseID);
+        return r;
+      }
+      const stop = await this.#gate(opts.signal);
+      if (stop === undefined) return r;
+      this.#dropCallId(name, opts.toolUseID);
+      return { behavior: "deny", message: stop };
+    };
+  }
+
   /** The tool hooks: the pause and the lease first, then the plugins' `tool.before`; `tool.after` after the call. */
-  #toolHooks(): Partial<Record<"PreToolUse" | "PostToolUse", HookCallbackMatcher[]>> {
+  #toolHooks(): Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure", HookCallbackMatcher[]>> {
     const pre: HookCallbackMatcher = {
       // A hook that breaks must never wave the call through.
       failClosed: true,
@@ -247,23 +307,17 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         const callId = input.tool_use_id ?? toolUseId ?? "";
-        if (!this.#ctx.mayAct()) {
-          try {
-            await this.#ctx.whenMayAct(AbortSignal.any([signal, ...(this.#turn ? [this.#turn.ctl.signal] : [])]));
-          } catch {
-            return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Stopped: this computer may not act for the bot now (the user paused bots, or another computer runs them)." } };
-          }
-        }
-        if (!this.#ctx.mayAct()) {
-          return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Stopped: this computer no longer runs the bot." } };
-        }
-        if (name.startsWith("mcp__")) {
+        const stop = await this.#gate(signal);
+        if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
+        const r = await this.#hooks.toolBefore(this.#hookSession, { name, callId }, input.tool_input, signal);
+        if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
+        // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
+        // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
+        if (name.startsWith("mcp__") && callId !== "") {
           const q = this.#callIds.get(name) ?? [];
           q.push(callId);
           this.#callIds.set(name, q);
         }
-        const r = await this.#hooks.toolBefore(this.#hookSession, { name, callId }, input.tool_input, signal);
-        if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
         const changed = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
         if (r.ask !== undefined || changed) {
           return {
@@ -282,12 +336,20 @@ export class BotSessionDriver implements SessionDriver {
       hooks: [async (raw, toolUseId, { signal }) => {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
+        this.#dropCallId(name, input.tool_use_id ?? toolUseId);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);
         if (result === input.tool_response) return {};
         return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],
     };
-    return { PreToolUse: [pre], PostToolUse: [post] };
+    const failed: HookCallbackMatcher = {
+      hooks: [async (raw, toolUseId) => {
+        const input = raw as ToolUseInput;
+        this.#dropCallId(input.tool_name ?? "", input.tool_use_id ?? toolUseId);
+        return {};
+      }],
+    };
+    return { PreToolUse: [pre], PostToolUse: [post], PostToolUseFailure: [failed] };
   }
 
   readonly #callIdSource: CallIds = {
@@ -302,7 +364,13 @@ export class BotSessionDriver implements SessionDriver {
     const bot = ctx.current();
     const state = this.#readState();
     const resume = await this.#hasTranscript(state.backendSessionId);
-    const servers = this.#mcpServers();
+    const all = this.#mcpServers();
+    const refused = new Set<string>();
+    const merged = mergedServers(all, (r, holder) => {
+      refused.add(`${r.plugin}\u0000${r.server}`);
+      this.#log(`bot driver ${ctx.sessionId}: ${r.plugin}'s MCP server ${r.server} is left out: ${holder} holds that name`);
+    });
+    const servers = all.filter((s) => !refused.has(`${s.plugin}\u0000${s.server}`));
     const promptServers = this.#promptServers(servers);
     const systemPrompt = harnessPrompt({
       bot: { id: bot.id, name: typeof bot.name === "string" ? bot.name : (bot.name as { en: string }).en, instructions: bot.instructions },
@@ -316,12 +384,12 @@ export class BotSessionDriver implements SessionDriver {
     // The core tools, and `Glossary` over everything the session has (spec §6.8): it loads the on-demand tools.
     const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME);
     const glossary = glossaryTool({
-      tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...this.#mcpServers().flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
+      tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
     if (this.#d.mcp !== undefined) {
-      for (const server of mergedServers(servers)) {
+      for (const server of merged) {
         if (server.server === "clover_core" || mcpServers[server.server] !== undefined) continue;
         mcpServers[server.server] = routedMcpServer({
           server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource,
@@ -334,34 +402,18 @@ export class BotSessionDriver implements SessionDriver {
     const queue = createHostPromptQueue();
     const abort = new AbortController();
     const testProvider = testProviderNameFor(bot.model);
-    const env: Record<string, string> = {};
-    for (const key of ["PATH", "HOME", "TMPDIR", "LANG"] as const) {
-      const v = process.env[key];
-      if (typeof v === "string" && v !== "") env[key] = v;
-    }
-    Object.assign(env, this.#d.env);
-    env.CLOVER_HOME = this.#d.home;
-    env.CLOVER_PROFILE = this.#d.profile ?? "";
-    if (testProvider !== undefined) env.WINTER_TEST_PROVIDER = testProvider;
     const sandbox = this.#d.sandbox?.(ctx);
     const options: Options = {
-      brand: buildCoreBrand(undefined, this.#d.home),
-      model: bot.model,
-      ...(bot.effort === undefined ? {} : { effort: bot.effort as Options["effort"] }),
-      cwd,
-      env,
+      ...embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd }),
       systemPrompt,
-      spawnClaudeCodeProcess: this.#d.spawn,
       tools: [...BOT_BUILTIN_TOOLS],
       // `Glossary` finds and loads what isn't loaded (the agent SDK's `hostToolSearch`); `Glob` and `Grep` start
       // on-demand (§6.7 [D]), as do plugin tools their manifest doesn't preload.
-      // (agent SDK 0.0.67's option; spread untyped until core pins it)
-      ...({ hostToolSearch: GLOSSARY_TOOL_NAME } as {}),
+      hostToolSearch: GLOSSARY_TOOL_NAME,
       toolSearchEnabled: true,
       deferTools: ON_DEMAND_BUILTINS.map((t) => t.name),
-      settingSources: [],
       mcpServers,
-      canUseTool: this.#d.canUseTool(ctx, origin),
+      canUseTool: this.#gatedCanUseTool(this.#d.canUseTool(ctx, origin)),
       hooks: this.#toolHooks(),
       permissionMode: "default",
       abortController: abort,
@@ -522,8 +574,9 @@ export class BotSessionDriver implements SessionDriver {
     }
     const notes = await this.#hooks.turnStart(hs, ctl.signal).catch(() => []);
     const first = await this.#hooks.messageIn(hs, formatTurnInput(input, this.#ctx.kind), ctl.signal).catch(() => formatTurnInput(input, this.#ctx.kind));
-    const mcpNote = mcpChangesSince(this.#builtMcp, this.#promptServers(this.#mcpServers()));
-    if (mcpNote !== undefined) this.#builtMcp = mcpFingerprint(this.#promptServers(this.#mcpServers()));
+    const nowServers = this.#promptServers(keptServers(this.#mcpServers()));
+    const mcpNote = mcpChangesSince(this.#builtMcp, nowServers);
+    if (mcpNote !== undefined) this.#builtMcp = mcpFingerprint(nowServers);
     const carried = this.#carry.splice(0);
     const lead = [
       ...(mcpNote === undefined ? [] : [mcpNote]),

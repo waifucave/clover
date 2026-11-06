@@ -55,6 +55,30 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     expect(session.state()).toBe("stopped");
   }, 60_000);
 
+  test("review B2: the delegating bot's pause holds every tool call, read-only ones too, until the user resumes", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    let paused = true;
+    const listeners = new Set<() => void>();
+    const gate = { mayAct: () => !paused, watch: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); } };
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => gate }).start(spec(root, "winter-test/calls"));
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    const events: AgentEvent[] = [];
+    session.onEvent((e) => events.push(e));
+    try {
+      const p = session.prompt({ text: `CALL Read {"file_path":${JSON.stringify(join(root, "nothing.txt"))}}` });
+      await Bun.sleep(1_500);
+      expect(events.some((e) => e.type === "tool_call_update")).toBe(false);
+      paused = false;
+      for (const fn of listeners) fn();
+      const end = await p;
+      expect(end.stopReason).toBe("end_turn");
+      expect(events.some((e) => e.type === "tool_call_update")).toBe(true);
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
   test("cancel ends a running turn cancelled", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");

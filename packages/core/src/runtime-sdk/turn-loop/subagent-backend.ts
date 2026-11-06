@@ -14,16 +14,16 @@
 // * **Events** are K's `AgentEvent`s: the reply's text, thinking, each tool call and its end, usage, and progress for
 //   the stall watchdog.
 import { mkdirSync } from "node:fs";
-import { query as sdkQuery, type CanUseTool, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type Options, type Query } from "@waifucave/clover-agent-sdk";
 import type { Unsubscribe } from "../../contracts/common";
 import type {
   AgentBackend, AgentDetection, AgentEvent, AgentPermissionAnswer, AgentPermissionAsk, AgentQuirks, AgentSession, AgentSessionState, AgentStartSpec,
   AgentTurnEnd,
 } from "../../contracts/agent-backend";
 import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
-import { buildCoreBrand } from "../brand";
+import type { AgentPauseGate } from "../../agents/manager";
+import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
-import { testProviderNameFor } from "../provider-selection";
 import { cloverSessions } from "../sessions";
 
 export const IN_PROCESS_BACKEND_ID = "clover";
@@ -49,14 +49,14 @@ export const IN_PROCESS_QUIRKS: AgentQuirks = {
   marks: [],
 };
 
-export interface InProcessBackendDeps {
-  home: string;
-  profile?: string;
-  spawn: SpawnClaudeCodeProcess;
+/** The seam lane K's in-process agents share (`EmbeddedSessionDeps`: home, spawn hook, provider fill). */
+export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   /** The model when the delegation names none (the user's default). */
   defaultModel(): string;
-  /** Fills a real model's provider and credentials (the daemon's); a `winter-test/*` model needs nothing. */
-  provider?(model: string, options: Options): void | Promise<void>;
+  /** The delegating bot's pause switch (lane K's `AgentPauseGate`, from lane D's gate; the owner's ruling of November
+   *  6: the pause holds background agents too). While it says no, every tool call waits at its start and again after
+   *  its approval, the read-only ones included. Without it nothing is held. */
+  pauseGateFor?(spec: AgentStartSpec): AgentPauseGate | undefined;
   /** Test seam. */
   query?: typeof sdkQuery;
   pluginId?: string;
@@ -93,7 +93,52 @@ class InProcessSession implements AgentSession {
     }
   }
 
+  #gate: AgentPauseGate | undefined;
+
+  /** Waits while the pause switch holds this agent; false when the call should not go on (the turn was cancelled). */
+  async #holdWhilePaused(signal: AbortSignal): Promise<boolean> {
+    const gate = this.#gate;
+    if (gate === undefined || gate.mayAct()) return true;
+    const stop = AbortSignal.any([signal, this.#abort.signal]);
+    await new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof setInterval> | undefined;
+      let off: (() => void) | undefined;
+      const done = () => {
+        if (timer !== undefined) clearInterval(timer);
+        off?.();
+        stop.removeEventListener("abort", done);
+        resolve();
+      };
+      const check = () => { if (gate.mayAct()) done(); };
+      stop.addEventListener("abort", done, { once: true });
+      off = gate.watch?.(check);
+      // Also looked at once a second, where the gate can't say it moved (lane K's PAUSE_POLL_MS).
+      timer = setInterval(check, 1_000);
+      check();
+    });
+    this.#progressAt = Date.now();
+    return !stop.aborted && gate.mayAct();
+  }
+
+  /** Every tool call, read-only ones too, holds here at its start while the pause is on (fail-closed). */
+  readonly #hooks: Partial<Record<"PreToolUse", HookCallbackMatcher[]>> = {
+    PreToolUse: [{
+      failClosed: true,
+      timeout: 86_400,
+      hooks: [async (_raw, _id, { signal }) => (await this.#holdWhilePaused(signal))
+        ? {}
+        : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Stopped: the user paused bots and their agents." } }],
+    }],
+  };
+
   readonly #canUseTool: CanUseTool = async (toolName, input, opts) => {
+    const answer = await this.#ask(toolName, input, opts);
+    // The pause may have come on while the card was open: an allow given then waits for the user's resume (review B2).
+    if (answer.behavior === "allow" && !(await this.#holdWhilePaused(opts.signal))) return { behavior: "deny", message: "Stopped: the user paused bots and their agents." };
+    return answer;
+  };
+
+  readonly #ask: CanUseTool = async (toolName, input, opts) => {
     const ask = this.#permission;
     if (ask === undefined) return { behavior: "deny", message: "No one can answer this agent's request now." };
     const toolUseId = (opts as { toolUseID?: string } | undefined)?.toolUseID ?? `call-${crypto.randomUUID()}`;
@@ -117,29 +162,16 @@ class InProcessSession implements AgentSession {
       try { await cloverSessions(deps.home).getSessionInfo(spec.reattach.agentSessionId); resume = true; } catch { resume = false; }
     }
     const model = spec.model ?? deps.defaultModel();
-    const env: Record<string, string> = {};
-    for (const key of ["PATH", "HOME", "TMPDIR", "LANG"] as const) {
-      const v = process.env[key];
-      if (typeof v === "string" && v !== "") env[key] = v;
-    }
-    env.CLOVER_HOME = deps.home;
-    env.CLOVER_PROFILE = deps.profile ?? "";
-    const testProvider = testProviderNameFor(model);
-    if (testProvider !== undefined) env.WINTER_TEST_PROVIDER = testProvider;
+    this.#gate = deps.pauseGateFor?.(spec);
     const queue = createHostPromptQueue();
     const fence = spec.fence;
     const options: Options = {
-      brand: buildCoreBrand(undefined, deps.home),
-      model,
-      ...(spec.effort === undefined ? {} : { effort: spec.effort as Options["effort"] }),
-      cwd: spec.root,
-      env,
+      ...embeddedSessionOptions(deps, { model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root }),
       systemPrompt: spec.instructions === undefined || spec.instructions.trim() === "" ? SYSTEM_PROMPT : `${SYSTEM_PROMPT}\n\n<bridge>\n${spec.instructions.trim()}\n</bridge>`,
-      spawnClaudeCodeProcess: deps.spawn,
       tools: [...SUBAGENT_TOOLS],
-      settingSources: [],
       mcpServers: { [spec.bridge.name]: { type: "stdio", command: spec.bridge.command, args: [...spec.bridge.args], env: { ...spec.bridge.env } } },
       canUseTool: this.#canUseTool,
+      hooks: this.#hooks,
       permissionMode: "default",
       abortController: this.#abort,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
@@ -149,7 +181,7 @@ class InProcessSession implements AgentSession {
       },
       ...(resume ? { resume: spec.reattach!.agentSessionId } : { sessionId: this.agentSessionId }),
     };
-    if (testProvider === undefined) await deps.provider?.(model, options);
+    await fillProvider(deps, options);
     this.#queue = queue;
     this.#query = (deps.query ?? sdkQuery)({ prompt: queue, options });
     this.#pump = this.#run(this.#query);

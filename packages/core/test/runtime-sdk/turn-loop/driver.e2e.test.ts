@@ -167,6 +167,60 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("review B1: the pause that comes on while a card is open holds the allowed call; a lease lost then refuses it", async () => {
+    const home = tempHome();
+    let may = true;
+    let resume: () => void = () => {};
+    let leaseLost = false;
+    const ctx = context(home, "winter-test/calls", {
+      mayAct: () => may,
+      whenMayAct: () => (leaseLost ? Promise.reject(new Error("lease lost")) : new Promise<void>((r) => { resume = () => { may = true; r(); }; })),
+    });
+    const ran: number[] = [];
+    const core: CoreToolDef[] = [{ name: "ListAgents", description: "List agents.", inputSchema: { type: "object", properties: {} }, run: async () => { ran.push(Date.now()); return { text: "none", isError: false }; } }];
+    // The card: the pause comes on while it is open, then the user allows.
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (_n, input) => { may = false; return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { coreTools: () => core, canUseTool }));
+    try {
+      const p = driver.turn(user("CALL ListAgents {}"), control());
+      await Bun.sleep(1_500);
+      expect(ran).toEqual([]);
+      const resumedAt = Date.now();
+      resume();
+      expect(results(await p)[0]!.content).toBe("none");
+      expect(ran[0]!).toBeGreaterThanOrEqual(resumedAt);
+      leaseLost = true;
+      const end = await driver.turn(user("CALL ListAgents {}"), control());
+      expect(results(end)[0]!.content).toContain("may not act");
+      expect(ran).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("review S1: a refused MCP call never leaves its id for the next call of the tool", async () => {
+    const home = tempHome();
+    const ids: string[] = [];
+    const runner: McpRunner = { async run(_s, _t, _i, c) { ids.push(c.callId); return { result: { content: [{ type: "text", text: "ok" }] }, computer: "Studio" }; } };
+    let first = true;
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (_n, input) => {
+      if (first) { first = false; return { behavior: "deny", message: "no" }; }
+      return { behavior: "allow", updatedInput: input as Record<string, unknown> };
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool,
+      mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
+    }));
+    try {
+      const end = await driver.turn(user(['CALL mcp__blender__Render {"n":1}', 'CALL mcp__blender__Render {"n":2}'].join("\n")), control());
+      expect(results(end).map((r) => r.content)).toEqual(["no", "ok"]);
+      expect(ids).toHaveLength(1);
+      expect(ids[0]).toMatch(/-2$/);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("Glob and Grep start on-demand; Glossary finds and loads them, and returns a skill's instructions", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");

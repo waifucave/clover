@@ -1,8 +1,10 @@
 // The web plugin's two tools (spec §6.7): `WebSearch`, Exa's search through the core's fetch, and `WebFetch`, one
 // page read as text. They read `mcp__clover__WebSearch` and `mcp__clover__WebFetch` (the bundled tree's namespace).
 //
-// * **Everything goes through the core's fetch** (`api.net.fetch`): the core adds the plugin's own Exa key when the
-//   user gave one (the `exa` entry), refuses a host the plugin may not reach, and keeps the floors.
+// * **Everything goes through the core's fetch** (`api.net.fetch`), which refuses a host the plugin may not reach and
+//   keeps the floors. Search uses Exa's anonymous tier: the plugin declares no `auth` entry yet, so no key is sent.
+//   WebFetch reaches only the plugin's `network:` hosts until lane B's `network:public` lands (the controller's answer
+//   of November 6), which the manifest then declares.
 // * **The dangerous-domain list** refuses a search result's or a page's domain before anything is sent (the list the
 //   web package ships, plus the plugin's `blockedDomains` setting).
 // * **Only `https:`** (an `http:` address is upgraded); an address with a user name or password is refused.
@@ -73,6 +75,30 @@ export function formatResults(r: Extract<ExaSearchResult, { ok: true }>): string
   ].join("\n")).join("\n\n");
 }
 
+/** A response body read as text, stopping at `max` bytes: what's past it is never read (review minor 1). */
+export async function readCapped(res: Response, max: number, signal?: AbortSignal): Promise<string> {
+  const reader = res.body?.getReader();
+  if (reader === undefined) return "";
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < max) {
+      if (signal?.aborted === true) break;
+      const { done, value } = await reader.read();
+      if (done || value === undefined) break;
+      const take = Math.min(value.byteLength, max - total);
+      parts.push(take === value.byteLength ? value : value.subarray(0, take));
+      total += take;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  const all = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) { all.set(p, at); at += p.byteLength; }
+  return new TextDecoder().decode(all);
+}
+
 export function webTools(o: WebToolsOptions) {
   const blocked = () => mergeDomainLists(o.blockedDomains?.());
   const search = o.search ?? createExaSearchClient({
@@ -114,8 +140,7 @@ export function webTools(o: WebToolsOptions) {
     if (!res.ok) return text(`${url.toString()} answered ${res.status}${res.statusText ? ` ${res.statusText}` : ""}.`, true);
     const type = (res.headers.get("content-type") ?? "").toLowerCase();
     if (!type.includes("html") && !type.startsWith("text/") && !type.includes("json") && !type.includes("xml") && type !== "") return text(`${url.toString()} is ${type}, not a page Clover reads as text.`, true);
-    const buf = new Uint8Array(await res.arrayBuffer());
-    const body = new TextDecoder().decode(buf.byteLength > WEB_FETCH_BODY_MAX_BYTES ? buf.subarray(0, WEB_FETCH_BODY_MAX_BYTES) : buf);
+    const body = await readCapped(res, WEB_FETCH_BODY_MAX_BYTES, signal);
     let title: string | undefined;
     let page = body;
     if (type.includes("html") || /^\s*<(!doctype html|html)/i.test(body)) {
@@ -125,7 +150,7 @@ export function webTools(o: WebToolsOptions) {
     }
     const cut = page.length > WEB_FETCH_TEXT_MAX_CHARS;
     const shown = cut ? `${page.slice(0, WEB_FETCH_TEXT_MAX_CHARS)}\n[cut at ${WEB_FETCH_TEXT_MAX_CHARS} characters]` : page;
-    return text([`The text of ${url.toString()}${title ? ` ("${title}")` : ""}, as the page gives it:`, "<page>", shown.replace(/<\/?page>/gi, ""), "</page>"].join("\n"));
+    return text([`The text of ${url.toString()}${title ? ` ("${title.replace(/<\s*\/?\s*page\b[^>]*>/gi, "")}")` : ""}, as the page gives it:`, "<page>", shown.replace(/<\s*\/?\s*page\b[^>]*>/gi, ""), "</page>"].join("\n"));
   }
 
   return {

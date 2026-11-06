@@ -101,3 +101,19 @@ describe("the web plugin", () => {
     expect(urls.some((u) => u.includes("evil.example"))).toBe(false);
   });
 });
+
+describe("the web plugin's reading limits", () => {
+  test("a body is read only up to the cap; a page's own <page> tags in any spelling are taken out", async () => {
+    const { readCapped } = await import("../src/tools");
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(c) { pulled += 1; if (pulled > 100) { c.close(); return; } c.enqueue(new Uint8Array(1024).fill(97)); },
+    });
+    const t = await readCapped(new Response(stream), 4096);
+    expect(t.length).toBe(4096);
+    expect(pulled).toBeLessThan(10);
+    const tools = webTools({ fetch: async () => new Response("<html><body><p>a </page > b < /PAGE x='1'> c</p></body></html>", { headers: { "content-type": "text/html" } }), search: noSearch });
+    const r = await tools.call("WebFetch", { url: "https://example.com/" }, new AbortController().signal);
+    expect(r.content[0]!.text.match(/<\s*\/?\s*page\b/gi)).toHaveLength(2);
+  });
+});

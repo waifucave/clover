@@ -1,7 +1,7 @@
 // The web plugin's host half (clover/web): serves the `web` MCP server, whose tools are `WebSearch` and `WebFetch`
 // (mcp__clover__WebSearch, mcp__clover__WebFetch). The tools live in src/tools.ts; this file hands each transport to
-// a server over them, with the plugin API's fetch (the core's, which adds the plugin's own Exa key when the user gave
-// one and keeps the network floors).
+// a server over them, with the plugin API's fetch (the core's, which keeps the network floors; search runs on Exa's
+// anonymous tier, since the plugin declares no key).
 //
 // Exports (lane B's `HostModule`):
 //   start(api) / stop(reason)   the host half's lifecycle
