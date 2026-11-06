@@ -253,6 +253,29 @@ export class HandshakeClient {
     return (await this.#send("GET", "/v1/accounts/self", undefined, { authorization: `Bearer ${token}` })).json() as Promise<{ online: string[]; records: unknown[]; lease: LeaseRecord }>;
   }
 
+  /** This device's latest record of a kind for another device of the account; false when the service holds a newer one. */
+  async putAccountRecord(token: string, to: string, kind: HandshakeKind, body: { gen: number; ttl: number; box: string }): Promise<boolean> {
+    try {
+      await this.#send("PUT", `/v1/accounts/self/records/${kind}/${encodeURIComponent(to)}`, body, { authorization: `Bearer ${token}` });
+      return true;
+    } catch (err) {
+      if (err instanceof HandshakeError && err.code === "stale") return false;
+      throw err;
+    }
+  }
+
+  async sendAccountMessage(token: string, body: { to: string; kind: HandshakeKind; ttl: number; box: string }): Promise<{ id: string; delivered: boolean }> {
+    return (await this.#send("POST", "/v1/accounts/self/messages", body, { authorization: `Bearer ${token}` })).json() as Promise<{ id: string; delivered: boolean }>;
+  }
+
+  async accountInbox(token: string): Promise<InboxMessage[]> {
+    return ((await (await this.#send("POST", "/v1/accounts/self/inbox", undefined, { authorization: `Bearer ${token}` })).json()) as { messages: InboxMessage[] }).messages;
+  }
+
+  async accountTicket(token: string): Promise<{ url: string; expiresAt: number }> {
+    return (await this.#send("POST", "/v1/accounts/self/tickets", undefined, { authorization: `Bearer ${token}` })).json() as Promise<{ url: string; expiresAt: number }>;
+  }
+
   /** The account's lease; its holder is a device id. A refusal answers `conflict` with the current lease. */
   async accountLease(token: string, body: LeaseOpBody): Promise<LeaseRecord> {
     try {

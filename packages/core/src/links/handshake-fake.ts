@@ -30,6 +30,8 @@ export interface FakeHandshake {
   readonly groups: ReadonlyMap<string, { members: ReadonlyMap<string, number>; lease: LeaseRecord }>;
   /** The account channel's leases, by account. */
   readonly accountLeases: ReadonlyMap<string, LeaseRecord>;
+  /** The account channel's records addressed to a device, as the service holds them (sealed). */
+  accountRecordsFor(device: string): { from: string; kind: string; gen: number; box: string }[];
   /** Requests answered, by `METHOD path-pattern`. */
   readonly log: string[];
   stop(): void;
@@ -56,6 +58,9 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
   const clock = opts.now ?? Date.now;
   const now = () => clock() + state.skewMs;
   const accountLeases = new Map<string, LeaseRecord>();
+  /** The account channel's records (`<sub>|<to>` → by sender and kind) and queued messages (by `<sub>|<to>`). */
+  const accountRecords = new Map<string, Rec[]>();
+  const accountMessages = new Map<string, Msg[]>();
   const limit = opts.registrationsPerMinute ?? 10;
 
   const err = (status: number, error: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
@@ -139,6 +144,15 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           p.messages = p.messages.filter((x) => x.to !== ws.data.key);
           for (const r of p.records.filter((x) => x.from !== ws.data.key)) ws.send(JSON.stringify({ t: "record", ...r }));
           push(`pair:${scopeId}`, peer, { t: "presence", online: true });
+        } else if (kind === "account") {
+          const lease = accountLeases.get(scopeId) ?? { holder: null, epoch: 0, expiresAt: null };
+          const online = [...sockets.keys()].filter((k) => k.startsWith(`account:${scopeId}|`)).map((k) => k.slice(`account:${scopeId}|`.length)).filter((d) => d !== ws.data.key);
+          ws.send(JSON.stringify({ t: "hello", v: 1, scope: "account", online, lease }));
+          const queued = (accountMessages.get(`${scopeId}|${ws.data.key}`) ?? []).filter((m) => m.expiresAt > now());
+          accountMessages.delete(`${scopeId}|${ws.data.key}`);
+          for (const m of queued) ws.send(JSON.stringify({ t: "message", id: m.id, from: m.from, kind: m.kind, at: m.at, expiresAt: m.expiresAt, box: m.box }));
+          for (const r of (accountRecords.get(`${scopeId}|${ws.data.key}`) ?? []).filter((x) => x.expiresAt > now())) ws.send(JSON.stringify({ t: "record", ...r }));
+          for (const k of sockets.keys()) if (k.startsWith(`account:${scopeId}|`) && k !== id) sockets.get(k)!.send(JSON.stringify({ t: "presence", device: ws.data.key, online: true }));
         } else {
           const g = groups.get(scopeId);
           if (!g) return ws.close(4003, "ended");
@@ -156,6 +170,8 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           const p = pairs.get(scopeId);
           const peer = p?.keys.find((k) => k !== ws.data.key);
           if (peer) push(`pair:${scopeId}`, peer, { t: "presence", online: false });
+        } else if (kind === "account") {
+          for (const k of sockets.keys()) if (k.startsWith(`account:${scopeId}|`)) sockets.get(k)!.send(JSON.stringify({ t: "presence", device: ws.data.key, online: false }));
         }
       },
     },
@@ -271,11 +287,61 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
         const who = m ? opts.accountOf?.(m[1]!) : undefined;
         if (!who) return err(401, "unauthorized");
         const lease = accountLeases.get(who.sub) ?? { holder: null, epoch: 0, expiresAt: null };
-        if (parts.length === 3 && req.method === "GET") return Response.json({ online: [], records: [], lease });
+        const scope = `account:${who.sub}`;
+        const mine = `${who.sub}|${who.dev}`;
+        const live = <T extends { expiresAt: number }>(xs: T[]) => xs.filter((x) => x.expiresAt > now());
+        if (parts.length === 3 && req.method === "GET") {
+          const online = [...sockets.keys()].filter((k) => k.startsWith(`${scope}|`)).map((k) => k.slice(scope.length + 1)).filter((d) => d !== who.dev);
+          return Response.json({ online, records: live(accountRecords.get(mine) ?? []), lease });
+        }
+        if (parts[3] === "records" && parts[4] && parts[5] && req.method === "PUT") {
+          const kind = parts[4] as HandshakeKind;
+          const spec = KINDS[kind];
+          if (!spec?.record) return err(400, "bad_kind");
+          const b = body();
+          if (!b || typeof b.gen !== "number" || typeof b.box !== "string") return err(400, "bad_request");
+          const to = decodeURIComponent(parts[5]);
+          const key = `${who.sub}|${to}`;
+          const list = live(accountRecords.get(key) ?? []);
+          const current = list.find((r) => r.from === who.dev && r.kind === kind);
+          if (current && b.gen <= current.gen) return err(409, "stale");
+          const ttl = Math.min(typeof b.ttl === "number" ? b.ttl : spec.defTtl, spec.maxTtl);
+          const rec: Rec = { from: who.dev, kind, gen: b.gen, expiresAt: now() + ttl * 1000, box: b.box };
+          accountRecords.set(key, [...list.filter((r) => !(r.from === who.dev && r.kind === kind)), rec]);
+          push(scope, to, { t: "record", ...rec });
+          return new Response(null, { status: 204 });
+        }
+        if (parts[3] === "messages" && req.method === "POST") {
+          const b = body();
+          const kind = b?.kind as HandshakeKind;
+          const spec = KINDS[kind];
+          if (!b || !spec || spec.record || typeof b.to !== "string" || typeof b.box !== "string") return err(400, "bad_kind");
+          const ttl = Math.min(typeof b.ttl === "number" ? b.ttl : spec.defTtl, spec.maxTtl);
+          const msg: Msg = { id: toBase64Url(randomBytes(9)), from: who.dev, to: b.to, kind, at: now(), expiresAt: now() + ttl * 1000, box: b.box };
+          const sock = sockets.get(`${scope}|${b.to}`);
+          if (sock) {
+            sock.send(JSON.stringify({ t: "message", id: msg.id, from: msg.from, kind: msg.kind, at: msg.at, expiresAt: msg.expiresAt, box: msg.box }));
+            return Response.json({ id: msg.id, delivered: true }, { status: 202 });
+          }
+          const key = `${who.sub}|${b.to}`;
+          accountMessages.set(key, [...live(accountMessages.get(key) ?? []), msg].slice(-16));
+          return Response.json({ id: msg.id, delivered: false }, { status: 202 });
+        }
+        if (parts[3] === "inbox" && req.method === "POST") {
+          const queued = live(accountMessages.get(mine) ?? []);
+          accountMessages.delete(mine);
+          return Response.json({ messages: queued.map(({ to: _to, ...m }) => m) });
+        }
+        if (parts[3] === "tickets" && req.method === "POST") {
+          const ticket = toBase64Url(randomBytes(18));
+          tickets.set(ticket, { scope, key: who.dev, expiresAt: now() + 60_000 });
+          return Response.json({ url: `ws://127.0.0.1:${srv.port}/v1/socket?ticket=${ticket}`, expiresAt: now() + 60_000 });
+        }
         if (parts[3] === "lease" && parts.length === 4 && req.method === "POST") {
           const r = leaseOp(lease, who.dev, body());
           if (r instanceof Response) return r;
           accountLeases.set(who.sub, r);
+          for (const k of sockets.keys()) if (k.startsWith(`${scope}|`)) sockets.get(k)!.send(JSON.stringify({ t: "lease", lease: r }));
           return Response.json({ lease: r });
         }
         if (parts[3] === "devices" && parts[4] && req.method === "DELETE") {
@@ -358,6 +424,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
     ended,
     groups,
     accountLeases,
+    accountRecordsFor: (device: string) => [...accountRecords].filter(([k]) => k.endsWith(`|${device}`)).flatMap(([, v]) => v.map((r) => ({ ...r }))),
     log,
     stop() {
       server.stop(true);
