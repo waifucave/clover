@@ -35,11 +35,11 @@ describe("ci-changes", () => {
     expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "installers", "typecheck", "scripts"]);
   });
 
-  test("the installers' release build runs for what makes them and for CI's own files, never for code or a lockfile alone", () => {
-    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json", ".github/workflows/ci.yml"]) {
+  test("the installers' release build runs for what makes them, never for code, CI's own files or a lockfile alone", () => {
+    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json"]) {
       expect(areasFor([f]).installers).toBe(true);
     }
-    for (const f of ["bun.lock", ".bun-version", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {
+    for (const f of ["bun.lock", ".bun-version", ".github/workflows/ci.yml", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {
       expect(areasFor([f]).installers).toBe(false);
     }
     expect(areasFor(undefined).installers).toBe(true);
@@ -59,8 +59,9 @@ describe("ci-changes", () => {
         return wanted && mac ? [id] : [];
       });
     };
-    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos", "swift"]);
-    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
+    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
+    expect(macJobs([".github/workflows/ci.yml"])).toEqual(["machine", "macos", "swift"]);
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
     expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
     expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
@@ -69,7 +70,7 @@ describe("ci-changes", () => {
 
   test("the core: its own, the CLI's and the scripts' tests, the daemon, the packages that carry it, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
-    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
+    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "verify"]);
     expect(core).not.toContain("app");
   });
 
@@ -115,11 +116,17 @@ describe("ci-changes", () => {
     expect(on(["packages/protocol/generated/fixtures/x.json"])).toContain("swift");
     expect(on(["packages/protocol/src/methods.ts"])).not.toContain("swift");
     expect(on(["packages/cli/src/main.ts"])).not.toContain("swift");
+    // Only apple/, the root Package.swift, the generated fixtures and CI's own definition run the Swift kits: not the
+    // core (main's push run still covers WinterKit's daemon tests), not the toolchain or a lockfile.
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("swift");
+    for (const g of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([g]), g).not.toContain("swift");
+    expect(on(["scripts/ci-changes.ts"])).toContain("swift");
+    expect(on(["Package.swift"])).toContain("swift");
   });
 
-  test("CI itself, the toolchain, the root manifest or a lockfile run every area (the installers only for CI itself); so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
-    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "installers"));
+  test("CI itself runs every area but the installers; the toolchain, the root manifest or a lockfile every area but the Swift kits and the installers; so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "installers"));
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift" && a !== "installers"));
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
   });
 
