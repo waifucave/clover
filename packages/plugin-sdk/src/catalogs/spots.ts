@@ -10,6 +10,7 @@
 // `needs` and `keep` come from the spec; the props are the least each spot obviously hands over, for E and F to settle
 // at E-M1 and F-M2 through the controller.
 import { z } from "zod";
+import { utf16 } from "@waifucave/clover-protocol";
 import { HandlerName, Path, Text } from "../manifest/fields";
 
 export interface SpotInfo {
@@ -70,7 +71,7 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef, selected: z.boolean(), state: z.string(), needsYou: z.object({ cards: z.number().int(), questions: z.number().int() }) }),
     doc: "A bot's row in the sidebar, keyed by bot: its state and what waits for the user." },
   { name: "sidebar.app", shape: "list", declaredBy: "shell", inBotTab: false,
-    fields: z.object({ title: Text, icon: Path, opens: z.string().min(1).max(128) }), props: none,
+    fields: z.object({ title: Text, icon: Path, opens: utf16(128, 1) }), props: none,
     doc: "App buttons in the sidebar; `opens` names the `main` and `panel` key it shows." },
   { name: "main", shape: "keyed", declaredBy: "shell", inBotTab: false, keys: MAIN_ROUTES, fields: none,
     props: z.object({ route: z.string(), params: z.record(z.string(), z.string()) }),
@@ -132,9 +133,32 @@ export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
 }
 
-/** A title as reserved titles and bot names compare it: NFKC (width folded), case folded, spaces collapsed. */
+/** Letters from other scripts that read as Latin ones (a short table after Unicode's confusables, UTS #39), and the
+ *  digits and strokes that read as letters. */
+const CONFUSABLES: Readonly<Record<string, string>> = Object.fromEntries([
+  // Cyrillic
+  ..."АaВbЕeКkМmНhОoРpСcТtХxУyІiЈjЅsҮyҺhӀlԚqԜwаaеeоoрpсcуyхxіiјjѕsԁdһhӏlԛqԝwүyёeїi".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Greek
+  ..."ΑaΒbΕeΖzΗhΙiΚkΜmΝnΟoΡpΤtΥyΧxαaβbεeιiκkνvοoρpτtυuχxγyωw".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Latin lookalikes, Armenian, digits and strokes
+  ..."ıiɩiɑaɡgʏyℓlǀlօoսuցgհhոn0o1l|l".match(/../gu)!.map((p) => [...p] as [string, string]),
+]);
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
+
+/** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review): NFKC
+ *  (width folded), invisible characters dropped (zero-width spaces and joiners, bidi marks, variation selectors), each
+ *  letter's confusable skeleton (a Cyrillic "о" is "o"), accents dropped, case folded, and every run of anything but
+ *  letters and digits one space. Folding too much only reserves more. */
 export function foldTitle(title: string): string {
-  return title.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  const visible = title.normalize("NFKC").replace(INVISIBLE, "");
+  const skeleton = [...visible].map((ch) => CONFUSABLES[ch] ?? ch).join("");
+  return skeleton.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/** Every title some spot reserves for the `clover` tree, folded. */
+export function reservedTitles(): ReadonlySet<string> {
+  return new Set(SPOTS.flatMap((s) => s.reserved?.titles ?? []).map(foldTitle));
 }
 
 /** Whether a keyed spot's entry key covers a key: exact, or a `*` pattern after the exact ones (§5.5). */

@@ -130,7 +130,7 @@ export class FakePluginHost implements PluginHost {
           computer: this.computer,
           signal: abort.signal,
           deadline: this.#clock.now() + limit,
-          api: this.#apiFor(req.pluginId, req.caller),
+          api: this.#apiFor(req.pluginId, req.caller, () => !settled),
         };
         try {
           const result = await target.fn.call(target.self, structuredClone(req.args), ctx);
@@ -166,6 +166,7 @@ export class FakePluginHost implements PluginHost {
     req.signal?.addEventListener("abort", onAbort, { once: true });
     h.calls.add(call);
     let iterator: AsyncIterator<unknown, unknown> | undefined;
+    let ended = false;
     try {
       await Promise.race([this.ensureStarted(req.pluginId), failure]);
       const target = resolveHandler(h.module, req.handler, req.method);
@@ -176,7 +177,7 @@ export class FakePluginHost implements PluginHost {
         computer: this.computer,
         signal: abort.signal,
         deadline: this.#clock.now() + limit,
-        api: this.#apiFor(req.pluginId, req.caller),
+        api: this.#apiFor(req.pluginId, req.caller, () => !ended),
         ...(req.input === undefined ? {} : { input: req.input }),
       };
       const out = (await Promise.race([Promise.resolve(target.fn.call(target.self, structuredClone(req.args), ctx)), failure])) as AsyncIterable<unknown> | undefined;
@@ -192,6 +193,7 @@ export class FakePluginHost implements PluginHost {
     } catch (err) {
       throw err instanceof ContractError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err));
     } finally {
+      ended = true;
       this.#clock.clearTimeout(timer);
       req.signal?.removeEventListener("abort", onAbort);
       h.calls.delete(call);
@@ -373,14 +375,19 @@ export class FakePluginHost implements PluginHost {
     };
   }
 
-  /** A plugin API whose every call, at any depth, goes to the router by its dotted path. */
-  #apiFor(pluginId: string, caller: Caller): PluginApi {
+  /** A plugin API whose every call, at any depth, goes to the router by its dotted path. A call's own `ctx.api` works
+   *  only while `live` says the call runs (#179's review, S1): kept past its end, it is `closed`, so a plugin can't go
+   *  on acting as that session from a timer or another call. */
+  #apiFor(pluginId: string, caller: Caller, live?: () => boolean): PluginApi {
     const router = () => this.#router;
     const process = () => this.#hosted.get(pluginId)?.process ?? "shared";
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
         get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
-        apply: (_t, _this, args: unknown[]) => router()({ pluginId, process: process(), path: path.join("."), args, caller }),
+        apply: (_t, _this, args: unknown[]) => {
+          if (live && !live()) return Promise.reject(new ContractError("closed", `${path.join(".")}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`));
+          return router()({ pluginId, process: process(), path: path.join("."), args, caller });
+        },
       });
     return make([]) as PluginApi;
   }

@@ -5,7 +5,7 @@
 // the policy a sandbox enforces.
 import { describe, expect, test } from "bun:test";
 import { type FakeFence } from "../fakes/fence";
-import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, judge, type FencedKind } from "../fence";
+import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, foldName, foldPath, judge, type FencedKind } from "../fence";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -115,8 +115,8 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(fence("windows").policy().closedDoors).toContain("schtasks");
     });
 
-    test("a fenced name in another case, not on disk yet, is refused on case-insensitive file systems (J-M1's review, B1)", () => {
-      for (const os of ["macos", "windows"] as const) {
+    test("a fenced name in another case, not on disk yet, is refused on every OS (J-M1's review, B1)", () => {
+      for (const os of ["macos", "windows", "linux"] as const) {
         const f = fence(os);
         for (const path of [`${CLOVER}/RULES/allow.json`, `${CLOVER}/Settings/settings.json`, `${CLOVER}/LEVELS/computer.json`, `${HOME}/.Clover/trust/x.json`]) {
           expect([os, path, f.check({ op: "write", path }).allowed]).toEqual([os, path, false]);
@@ -125,9 +125,32 @@ export function runFenceConformance(make: FenceFactory): void {
         expect(f.touches([`${CLOVER}/Rules`])).not.toBeNull();
         expect(f.checkAgentRoot(`${HOME}/.CLOVER`).allowed).toBe(false);
       }
-      // Linux compares names exactly, as its file systems do: another case is another file.
-      expect(fence("linux").check({ op: "write", path: `${CLOVER}/RULES/allow.json` }).allowed).toBe(true);
-      expect(fence("linux").check({ op: "write", path: `${CLOVER}/rules/allow.json` }).allowed).toBe(false);
+    });
+
+    test("names a disk folds beyond lower case are refused: the long s, the Kelvin sign, ß (#179's review, F1)", () => {
+      for (const os of ["macos", "windows", "linux"] as const) {
+        const f = fence(os);
+        // ſ (U+017F) upper-cases to S; the Kelvin sign (U+212A) is K; both open the fenced folder on APFS and NTFS.
+        expect(f.check({ op: "write", path: `${CLOVER}/\u017Fettings/settings.json` })).toEqual({ allowed: false, reason: "settings", path: `${CLOVER}/settings` });
+        expect(f.check({ op: "write", path: `${CLOVER}/rule\u017F/allow.json` })).toMatchObject({ allowed: false, reason: "saved-rules" });
+        expect(f.check({ op: "write", path: `${CLOVER}/tru\u017Ft/x.json` })).toMatchObject({ allowed: false, reason: "trust" });
+        expect(f.check({ op: "write", path: `${CLOVER}/plugins-state/o\u212As/x.json` })).toMatchObject({ allowed: false, reason: "plugin-oks" });
+        expect(f.check({ op: "move", path: `${HOME}/a`, to: `${CLOVER}/\u212Aeys` })).toMatchObject({ allowed: false, reason: "clover-home" });
+        expect(f.touches([`${CLOVER}/\u017Fettings`])).toMatchObject({ kind: "settings" });
+        // ß folds to ss, and a name that isn't ASCII where Clover names things is refused whatever it folds to.
+        expect(f.check({ op: "write", path: `${CLOVER}/\u00DFettings/x.json` })).toEqual({ allowed: false, reason: "clover-home", path: CLOVER });
+        expect(f.check({ op: "write", path: `${CLOVER}/plugins-state/\u00F6ks/x.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
+        expect(f.check({ op: "read", path: `${CLOVER}/\u0455ettings/settings.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
+        // Where Clover doesn't name things (a bot's notes, a plugin's files), any name is the user's own.
+        expect(f.check({ op: "write", path: `${CLOVER}/bots/luna/memory/\u65E5\u8A18.md` }).allowed).toBe(true);
+        expect(f.check({ op: "write", path: `${CLOVER}/plugins/tarot/assets/caf\u00E9.png` }).allowed).toBe(true);
+        expect(f.check({ op: "write", path: `${HOME}/\u017Fettings.json` }).allowed).toBe(true);
+      }
+      expect(foldName("Stra\u00DFe")).toBe("strasse");
+      expect(foldName("\u212A")).toBe("k");
+      expect(foldName("\u017F")).toBe("s");
+      expect(foldName(".clover. ", "windows")).toBe(".clover");
+      expect(foldPath("C:\\Users\\Me", "windows")).toBe("c:/users/me");
     });
 
     test("judge is the shared rule, usable over any set", () => {

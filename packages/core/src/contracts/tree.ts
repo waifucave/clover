@@ -35,7 +35,10 @@
 // * Glob and grep run where the files are and send back only results.
 // * Tree paths are taken literally: `%2e%2e` is a file name, not `..`. No layer that puts tree paths in a URL (a
 //   `clover-tree:` link, an editor tab) may decode them back into segments.
-import type { Caller, FileStat, Level, SignedCardAnswer, TreePath } from "@waifucave/clover-protocol";
+import {
+  TREE_TRANSFER, callBindingInput, type CallBinding, type Caller, type FileStat, type Level, type SignedCardAnswer, type TreePath,
+  type TreeTransferParams,
+} from "@waifucave/clover-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
 import type { Unsubscribe } from "./common";
 
@@ -68,7 +71,9 @@ export type TreeChange =
   | { method: "tree.remove"; params: { path: string; recursive?: boolean } }
   | { method: "tree.move"; params: { from: string; to: string } }
   | { method: "tree.mkdir"; params: { path: string } }
-  | { method: "tree.symlink"; params: { path: string; target: string } };
+  | { method: "tree.symlink"; params: { path: string; target: string } }
+  /** A move or copy between two computers (R15): the one call both holders judge and one card binds. */
+  | { method: typeof TREE_TRANSFER; params: TreeTransferParams };
 
 /** A watched folder's news. */
 export type TreeWatchEvent = { type: "changed"; paths: string[] } | { type: "resync" };
@@ -77,11 +82,24 @@ export type TreeWatchEvent = { type: "changed"; paths: string[] } | { type: "res
  *  (no model can run) counts as risky. */
 export type TreeReviewer = (change: TreeChange & { computer: string; as: Caller }) => Promise<"safe" | "risky" | "unavailable">;
 
-/** What a signed answer for a peer's tree change binds (review N2): the method and its params as the caller sent
- *  them, with no `session`, `level` or `answer` (an answer can't bind itself). Keys left out stay out. */
-export function treeCallBinding(method: TreeChange["method"], params: Record<string, unknown>): TreeChange {
+/** What a signed answer for a peer's tree change on one computer binds (review N2): the method and its params as the
+ *  caller sent them, with no `session`, `level` or `answer` (an answer can't bind itself). Keys left out stay out. A
+ *  move or copy between computers binds `transferChange` instead. */
+export function treeCallBinding(method: Exclude<TreeChange["method"], typeof TREE_TRANSFER>, params: Record<string, unknown>): TreeChange {
   const { session: _s, level: _l, answer: _a, ...rest } = params;
   return { method, params: rest } as TreeChange;
+}
+
+/** R15's one call for a move or copy between two computers (#179's review, F2), as lane J's holders build it: the
+ *  operation, both tree paths, and both computers, each holder naming them from its own tree. */
+export function transferChange(move: boolean, from: string, to: string, source: string, destination: string): TreeChange {
+  return { method: TREE_TRANSFER, params: { operation: move ? "move" : "copy", from, to, source, destination } };
+}
+
+/** The binding on R15's one card: `computer` is the destination, `source` the source, so either end checks the one
+ *  answer against the card it rebuilds (`bindsComputer`). A holder's `CallCardRenderer` uses this for `tree.transfer`. */
+export function transferBinding(params: TreeTransferParams, sha256: (text: string) => string): CallBinding {
+  return { computer: params.destination, source: params.source, method: TREE_TRANSFER, params: sha256(callBindingInput(TREE_TRANSFER, params)) };
 }
 
 /** How the holder judges a peer's tree change (review N2, ruling R1): at the stricter of its own levels (both
@@ -109,6 +127,7 @@ export interface Tree {
   glob(pattern: string, opts: TreeCallOptions & { cwd: string }): Promise<string[]>;
   grep(pattern: string, opts: TreeCallOptions & { path: string; glob?: string; ignoreCase?: boolean; limit?: number }): Promise<{ path: string; line: number; text: string }[]>;
   /** Follows a folder's changes; the unsubscribe ends it. Fenced as a listing; rejects as `list` would. */
+  /** Rejects `invalid` for a whole home (`home/<Computer>/` itself): a watch follows one folder in it. */
   watch(path: string, opts: TreeCallOptions, fn: (event: TreeWatchEvent) => void): Promise<Unsubscribe>;
   /** The computers an action on these tree paths touches, for the strictest-level rule (§9.1). */
   computersFor(paths: readonly string[]): string[];

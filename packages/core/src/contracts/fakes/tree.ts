@@ -9,7 +9,7 @@ import { ContractError, isInside, normalizePosix, type Unsubscribe } from "../co
 import type { Fence, FenceOp } from "../fence";
 import { MemoryAnswerLedger } from "./approval-broker";
 import {
-  peerTreeDecision, splitTreePath, treeCallBinding,
+  peerTreeDecision, splitTreePath, transferChange, treeCallBinding,
   type Tree, type TreeCallOptions, type TreeChange, type TreeData, type TreeLocation, type TreeReviewer, type TreeWatchEvent,
 } from "../tree";
 
@@ -48,26 +48,32 @@ export class FakeTree implements Tree {
   readonly #fs = new Map<string, Map<string, Node>>();
   readonly #botComputer: (bot: string) => string | undefined;
   readonly #devices: AnswerDevices;
-  readonly #ledger: AnswerLedger;
+  readonly #ledgers = new Map<string, AnswerLedger>();
+  readonly #ledgerOf: (computer: string) => AnswerLedger;
   readonly #render: CallCardRenderer;
   readonly #reviewer: TreeReviewer;
   readonly #watches = new Set<{ computer: string; path: string; treeBase: string; fn: (e: TreeWatchEvent) => void }>();
 
-  /** `devices`, `ledger` and `render` check a peer's signed answers (none counts by default); `reviewer` is the
+  /** `devices`, `ledgers` and `render` check a peer's signed answers (none counts by default; each computer keeps its
+   *  own ledger, as each holder does, unless `ledgers` names one); `reviewer` is the
    *  holder's safety reviewer for a peer's change at "ask for risky actions" (unavailable by default, so it asks). */
   constructor(opts: {
     clock: Pick<Clock, "now">;
     computers: Record<string, FakeTreeComputer>;
     botComputer: (bot: string) => string | undefined;
     devices?: AnswerDevices;
-    ledger?: AnswerLedger;
+    ledgers?: Record<string, AnswerLedger>;
     render?: CallCardRenderer;
     reviewer?: TreeReviewer;
   }) {
     this.#clock = opts.clock;
     this.#botComputer = opts.botComputer;
     this.#devices = opts.devices ?? NO_DEVICES;
-    this.#ledger = opts.ledger ?? new MemoryAnswerLedger();
+    this.#ledgerOf = (computer) => {
+      let l = opts.ledgers?.[computer] ?? this.#ledgers.get(computer);
+      if (!l) this.#ledgers.set(computer, (l = new MemoryAnswerLedger()));
+      return l;
+    };
     this.#render = opts.render ?? (() => undefined);
     this.#reviewer = opts.reviewer ?? (async () => "unavailable");
     for (const [name, c] of Object.entries(opts.computers)) this.addComputer(name, c);
@@ -183,7 +189,9 @@ export class FakeTree implements Tree {
       this.#fenced(src.computer, { op: "delete", path: src.path }, opts.as);
       this.#fenced(dst.computer, { op: "write", path: dst.path }, opts.as);
     }
-    await this.#peerJudged([...new Set([src.computer, dst.computer])], treeCallBinding("tree.move", { from, to }), "move", opts);
+    // Between two computers it is R15's one call, which each holder judges and checks the one answer against.
+    const change = src.computer === dst.computer ? treeCallBinding("tree.move", { from, to }) : transferChange(true, from, to, src.computer, dst.computer);
+    await this.#peerJudged([...new Set([src.computer, dst.computer])], change, "move", opts);
     const sfs = this.#fs.get(src.computer)!;
     const dfs = this.#fs.get(dst.computer)!;
     if (!sfs.get(src.path)) throw new ContractError("not_found", `${from} doesn't exist`);
@@ -200,6 +208,10 @@ export class FakeTree implements Tree {
 
   async watch(path: string, opts: TreeCallOptions, fn: (event: TreeWatchEvent) => void): Promise<Unsubscribe> {
     const loc = this.#reach(path, { op: "list", path: "" }, opts);
+    const home = this.#computers.get(loc.computer)?.home;
+    if (loc.area === "home" && home !== undefined && normalizePosix(loc.path) === normalizePosix(home)) {
+      throw new ContractError("invalid", `${path} is a whole home; a watch follows one folder in it, a session's own`);
+    }
     const node = this.#fs.get(loc.computer)!.get(loc.path);
     if (!node) throw new ContractError("not_found", `${path} doesn't exist`);
     if (node.type !== "dir") throw new ContractError("invalid", `${path} isn't a folder`);
@@ -265,8 +277,8 @@ export class FakeTree implements Tree {
     if (!this.#computers.get(computer)?.online) throw new ContractError("computer_offline", `${computer} is offline`, { computer });
   }
 
-  /** A peer's change, judged at the strictest of the holders' levels and the call's (review N2); the first computer
-   *  is the one the call came to, which a signed answer binds. */
+  /** A peer's change, judged at the strictest of the holders' levels and the call's (review N2). One computer's change
+   *  binds that computer; a transfer between two binds both, and each holder checks the answer with its own ledger. */
   async #peerJudged(computers: string[], change: TreeChange, effect: "edit" | "delete" | "move", opts: TreeCallOptions): Promise<void> {
     if (opts.as.kind !== "peer") return;
     if (opts.level === undefined) throw new ContractError("invalid", "a peer's change says its level");
@@ -277,11 +289,13 @@ export class FakeTree implements Tree {
     // At "ask for risky actions" the holder's own reviewer judges it first (ruling R1): safe runs.
     if (decision === "review" && (await this.#reviewer({ ...change, computer: computers[0]!, as: opts.as })) === "safe") return;
     if (!opts.answer) throw new ContractError("refused", "this change needs the user's answer, signed and bound to it");
-    const verdict = await verifySignedAnswer(opts.answer, {
-      self: computers[0]!, method: change.method, params: change.params, now: this.#clock.now(), sha256,
-      devices: this.#devices, ledger: this.#ledger, render: this.#render,
-    });
-    if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this change (${verdict})`);
+    for (const self of computers) {
+      const verdict = await verifySignedAnswer(opts.answer, {
+        self, method: change.method, params: change.params, now: this.#clock.now(), sha256,
+        devices: this.#devices, ledger: this.#ledgerOf(self), render: this.#render,
+      });
+      if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this change at ${self} (${verdict})`);
+    }
   }
 
   /** Every caller but the user on this computer and the core is fenced: a peer always (review N2). */

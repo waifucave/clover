@@ -7,16 +7,16 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
-  callBindingInput, cardAnswerSigningInput, cardHashInput, type Caller, type Card, type CardOption, type SignedCardAnswer,
+  TREE_TRANSFER, callBindingInput, cardAnswerSigningInput, cardHashInput, type Caller, type Card, type CardOption, type SignedCardAnswer,
+  type TreeTransferParams,
 } from "@waifucave/clover-protocol";
 import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
-import { MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { splitTreePath, treeCallBinding } from "../tree";
+import { splitTreePath, transferBinding, transferChange, treeCallBinding } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -144,9 +144,16 @@ export function runTreeConformance(make: TreeFactory): void {
       const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }];
       const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
       // The holder's own card for a tree change, from its built-in tables.
-      const render: CallCardRenderer = (call) => call.method.startsWith("tree.")
-        ? { kind: "tool", fields: { title: { type: "text", text: `${call.method} on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) }
-        : undefined;
+      const render: CallCardRenderer = (call) => {
+        if (call.method === TREE_TRANSFER) {
+          // R15: both ends render the same card, its text and binding from the params alone.
+          const p = call.params as TreeTransferParams;
+          return { kind: "tool", fields: { title: { type: "text", text: `Move ${p.from} to ${p.to}` } }, options, binds: transferBinding(p, sha256) };
+        }
+        return call.method.startsWith("tree.")
+          ? { kind: "tool", fields: { title: { type: "text", text: `${call.method} on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) }
+          : undefined;
+      };
       const tree = make({
         clock,
         computers: {
@@ -155,15 +162,14 @@ export function runTreeConformance(make: TreeFactory): void {
         },
         botComputer: () => undefined,
         devices: registry,
-        ledger: new MemoryAnswerLedger(),
         render,
       });
       const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
       let n = 0;
-      const answer = async (computer: string, method: string, params: unknown, title = `${method} on ${computer}`): Promise<SignedCardAnswer> => {
+      const answer = async (computer: string, method: string, params: unknown, title = `${method} on ${computer}`, bound = binds(computer, method, params)): Promise<SignedCardAnswer> => {
         const unhashed = {
           id: `card_0011223344556677889900${String(++n).padStart(2, "0")}`, kind: "tool" as const, computer, origin: "user" as const,
-          issuedAt: clock.now(), expiresAt: null, fields: { title: { type: "text" as const, text: title } }, options, binds: binds(computer, method, params),
+          issuedAt: clock.now(), expiresAt: null, fields: { title: { type: "text" as const, text: title } }, options, binds: bound,
         };
         const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
         const at = clock.now();
@@ -209,6 +215,18 @@ export function runTreeConformance(make: TreeFactory): void {
       tree.setLevel("Studio", "read-only");
       expect(await code(tree.move("home/Laptop1/old.log", "home/Studio/old.log", { as: PEER, level: "automatic" }))).toBe("refused");
       expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
+      // R15 (#179's review, F2): between computers the move is one call, `tree.transfer`, and one card binds both ends;
+      // each holder checks the one answer against its own card, with its own ledger.
+      tree.setLevel("Studio", "ask-risky");
+      const t = transferChange(true, "home/Laptop1/old.log", "home/Studio/old.log", "Laptop1", "Studio");
+      let one = await answer("Studio", t.method, t.params, "Move home/Laptop1/old.log to home/Studio/old.log");
+      const move = () => tree.move("home/Laptop1/old.log", "home/Studio/old.log", { as: PEER, level: "automatic", answer: one });
+      expect(await code(move())).toBe("refused"); // bound to the destination alone, as a one-computer call: neither end takes it
+      one = await answer("Laptop1", t.method, t.params, "Move home/Laptop1/old.log to home/Studio/old.log", transferBinding(t.params as TreeTransferParams, sha256));
+      expect(await code(move())).toBe("ok");
+      expect(await tree.stat("home/Studio/old.log", { as: USER })).not.toBeNull();
+      await tree.move("home/Studio/old.log", "home/Laptop1/old.log", { as: USER });
+      expect(await code(move())).toBe("refused"); // used, at both ends
     });
 
     test("at ask-risky the holder's own reviewer judges a peer's change: safe runs, risky needs a bound answer (ruling R1)", async () => {
@@ -247,16 +265,23 @@ export function runTreeConformance(make: TreeFactory): void {
       expect(seen).toEqual([{ type: "changed", paths: ["home/Laptop1/p/b.txt"] }, { type: "changed", paths: ["home/Laptop1/p/a.txt"] }]);
       expect(isContractError(await rejection(tree.watch("home/Laptop1/.clover/run", { as: BOT }, () => {})), "fenced")).toBe(true);
       expect(isContractError(await rejection(tree.watch("home/Laptop1/nowhere", { as: BOT }, () => {})), "not_found")).toBe(true);
+      // Never a whole home, for anyone (#179's review).
+      for (const whole of ["home/Laptop1", "home/Laptop1/", "home/OldLaptop"]) {
+        expect([whole, isContractError(await rejection(tree.watch(whole, { as: USER }, () => {})), "invalid")]).toEqual([whole, true]);
+      }
     });
 
-    test("a fenced name in another case, not on disk yet, is refused on case-insensitive file systems (J-M1's review, B1)", async () => {
+    test("a fenced name in another case or a folded spelling is refused on every computer (J-M1's review B1, #179's F1)", async () => {
       const { tree } = setup();
-      for (const path of ["home/Studio/.clover/RULES/allow.json", "home/Studio/.clover/Settings/settings.json", "home/Studio/.clover/LEVELS/computer.json"]) {
-        expect([path, isContractError(await rejection(tree.write(path, utf8("{}"), { as: BOT })), "fenced")]).toEqual([path, true]);
+      // Studio runs macOS and Laptop1 Linux; the fence folds on both (a Linux home can be case-folding ext4 or APFS).
+      for (const computer of ["Studio", "Laptop1"]) {
+        for (const rel of [".clover/RULES/allow.json", ".clover/Settings/settings.json", ".clover/LEVELS/computer.json",
+          ".clover/\u017Fettings/settings.json", ".clover/tru\u017Ft/x.json", ".clover/plugins-state/o\u212As/x.json", ".clover/\u00DFettings/x.json"]) {
+          const path = `home/${computer}/${rel}`;
+          expect([path, isContractError(await rejection(tree.write(path, utf8("{}"), { as: BOT })), "fenced")]).toEqual([path, true]);
+        }
       }
-      // Laptop1 runs Linux, whose file systems compare names exactly: another case is another file there.
-      await tree.write("home/Laptop1/.clover/RULES/allow.json", utf8("{}"), { as: BOT });
-      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/rules/allow.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
+      await tree.write("home/Studio/.clover/bots/alpha/memory/\u65E5\u8A18.md", utf8("x"), { as: BOT });
     });
 
     test("computersFor lists the computers an action touches", () => {

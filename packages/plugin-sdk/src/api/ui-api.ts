@@ -211,36 +211,39 @@ export interface UiApi {
   useT(): (key: string, params?: Record<string, string | number>) => string;
   /** Pending cards without their text (ids, computers, options), for a plugin with `approvals`. */
   useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
+  // The ten hooks from here on are optional until lane E's runtime has them (E-M2); B-M2 makes them required. A part
+  // that needs one checks for it.
   /** Where this part is. */
-  useMountContext(): MountContext;
+  useMountContext?(): MountContext;
   /** A spot this component declares, as a list of its entries, to draw one at a time with `<Spot entry>`. Only the
    *  declaring part lists a spot. */
-  useSpotEntries(name: string, spotKey?: string): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe };
+  useSpotEntries?(name: string, spotKey?: string): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe };
   /** Shows a menu at a point in the part; resolves with the chosen item's id, or null. */
-  useMenu(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null>;
+  useMenu?(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null>;
   /** Drags between parts, through the core: `offer` returns a token the drop target `claim`s. */
-  useDrag(): { offer(offer: DragOffer): Promise<string | undefined>; claim(token: string): Promise<DragOffer | undefined> };
+  useDrag?(): { offer(offer: DragOffer): Promise<string | undefined>; claim(token: string): Promise<DragOffer | undefined> };
   /** Steers the surface window this part's root placed (an `app.surface` entry): show or hide it, size and place it,
    *  and say where it takes clicks. */
-  useSurface(): (request: SurfaceRequest) => void;
+  useSurface?(): (request: SurfaceRequest) => void;
   /** Where this part's surface window lives, kept current as the display changes; undefined outside a surface window
    *  and until the core answers. */
-  useSurfaceEnvironment(): SurfaceEnvironment | undefined;
+  useSurfaceEnvironment?(): SurfaceEnvironment | undefined;
   /** Opens a place in the main window (Settings at a section and an item, a bot's tab): for the `clover` tree's parts
    *  only, in 1.111.1. */
-  useOpen(): (target: OpenTarget) => Promise<void>;
+  useOpen?(): (target: OpenTarget) => Promise<void>;
   /** Places a native view the core draws over this part (the Clover Browser's live view, `name` "browser"): the ref
    *  callback goes on the element the view covers (a DOM element; the SDK carries no DOM types), and the core keeps the
    *  view on it, clipped to this part's own frame. Only a plugin with `browser` places one; with two parts placing the
    *  same view, the one the person used last has it (ruling R8). */
-  useViewFrame(name: string): (element: unknown) => void;
+  useViewFrame?(name: string): (element: unknown) => void;
   /** Questions waiting in any session the plugin may read, with their text (`conversation.read`). */
-  useQuestions(): { readonly questions: readonly PendingQuestion[]; subscribe(listener: () => void): Unsubscribe };
+  useQuestions?(): { readonly questions: readonly PendingQuestion[]; subscribe(listener: () => void): Unsubscribe };
   /** Sends the user's own words (lane G's ask, the pill), in place of `conversation.send`, whose turns are the
    *  plugin's. Only the bundled `clover` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise
-   *  refuses it and sends nothing, so a script can't speak as the user. */
-  useUserSend(): ((to: UserSendTarget, message: UserSendMessage) => Promise<void>) | undefined;
+   *  refuses it and sends nothing, so a script can't speak as the user. The app's main process carries the words to the
+   *  daemon as `pill.send`, an `app`-role method no layer may call (#179's review, S2). */
+  useUserSend?(): ((to: UserSendTarget, message: UserSendMessage) => Promise<void>) | undefined;
 }
 
 // `useLayerMessage()` (the app's commands from shortcuts and menus) stays lane E's, for the `clover` layer only, and

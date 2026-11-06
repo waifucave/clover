@@ -33,7 +33,9 @@
 //   core looks the caller up by that id. The core never trusts a caller the plugin supplies: no `_meta` caller, no
 //   argument. An MCP request the core sends carries the id as `_meta["clover/invocation"]`, which the host takes off
 //   before the server sees it, and an id that isn't an open call to that plugin is refused. A call made outside any
-//   (a timer, a `start` task) acts as the plugin.
+//   (a timer, a `start` task) acts as the plugin. A call's `ctx.api` ends with the call (#179's review, S1): kept and
+//   used later, from a timer or while serving another call, it rejects `closed`, so a plugin can't go on acting as
+//   that session after its call is done.
 // * `stream` runs a handler that returns an async iterable (a model adapter's output, a voice's audio; review S16):
 //   values arrive in order, the iterable's return value ends the stream, and `input` feeds a handler that takes one
 //   (a voice's microphone audio) as `ctx.input`. The limits, cancelling, crashes and reloads are `invoke`'s.

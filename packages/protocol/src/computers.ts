@@ -98,6 +98,10 @@ const ViaPeer = {
   answer: SignedCardAnswer.optional(),
 };
 
+/** A peer asks the receiver to change its own level (levels per computer, J-M2): a lowering applies; a raise needs the
+ *  user's answer signed for the receiver's own card (`levelRaiseCall`), or it is refused with `NeedsAnswer`. */
+const PeerSetLevel = z.strictObject({ level: Level, answer: SignedCardAnswer.optional() });
+
 export const COMPUTERS_METHODS = {
   computerList: defineMethod({
     name: "computer.list", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read",
@@ -111,13 +115,9 @@ export const COMPUTERS_METHODS = {
   }),
   computerSetLevel: defineMethod({
     name: "computer.setLevel", owner: "J", roles: ["app", "cli", "remote", "peer"], userOnly: true, change: "sensitive",
-    params: z.union([
-      z.object({ name: ComputerName, level: Level }),
-      /** A peer asks the receiver to change its own level (levels per computer, J-M2): a lowering applies; a raise
-       *  needs the user's answer signed for the receiver's own card (`levelRaiseCall`), or it is refused with
-       *  `NeedsAnswer`. */
-      z.object({ level: Level, answer: SignedCardAnswer.optional() }),
-    ]),
+    params: z.union([z.strictObject({ name: ComputerName, level: Level }), PeerSetLevel]),
+    /** From a peer, only its own variant: `name` is refused (#179's review, S3). */
+    peerParams: PeerSetLevel,
     result: z.union([ChangeResult, z.object({ applied: z.literal(true) })]),
     doc: "Changes a computer's approval level: a sealed card unless made in the user's own terminal (§5.5); from a peer, the receiver's own level.",
   }),
@@ -249,7 +249,8 @@ export const COMPUTERS_METHODS = {
     name: "tree.receive", owner: "J", roles: ["peer"],
     params: z.object({
       from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level,
-      /** The one signed answer for the whole operation (R15), bound to `tree.move` or `tree.copy` with `from` and `to`. */
+      /** The one signed answer for the whole operation (R15): its card binds `tree.transfer` (`TreeTransferParams`, with
+       *  `operation`, `from`, `to`, `source` and `destination`), and each holder checks it against its own card. */
       answer: SignedCardAnswer.optional(),
     }),
     result: z.object({ files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), kept: z.number().int().nonnegative() }),

@@ -83,7 +83,8 @@ export interface Fence {
   fencedSet(): readonly FencedPath[];
   /** One file operation by a bot, an agent or a plugin. A write, delete or move is refused inside a fenced item and
    *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. Names
-   *  compare folded where the file system folds them (`FENCE_FOLDS_CASE`), whether or not the item exists yet. */
+   *  compare folded on every OS (`foldName`), whether or not the item exists yet, and a name that isn't ASCII where
+   *  Clover names things under its home is refused (`nonAsciiAlias`). */
   check(op: FenceOp): FenceVerdict;
   /** The first fenced item any of `paths` reaches, for any access: an agent's request touching one is always a card,
    *  at every level (§9.3). */
@@ -105,27 +106,65 @@ export const CLOSED_DOORS: Record<Os, readonly string[]> = {
 /** Cloud metadata endpoints (§9.2): the bash fence blocks them, so a bot can't lift a VM's credentials. */
 export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "fd00:ec2::254", "metadata.google.internal"];
 
-/** Whether an OS's file systems compare names folded by default: macOS's APFS and Windows' NTFS do, Linux's don't. The
- *  fence then compares names folded too (J-M1's review, B1), so `.clover/RULES/allow.json` is the fenced
- *  `.clover/rules/allow.json`, even before either exists on disk. */
-export const FENCE_FOLDS_CASE: Record<Os, boolean> = { macos: true, windows: true, linux: false };
-
-/** A path as a case-folding file system compares it: Unicode NFC, then lower case. */
-export function foldPath(path: string): string {
-  return path.normalize("NFC").toLowerCase();
+/** One name as a case-folding file system could compare it: Unicode NFC, then upper case and back to lower, then NFC
+ *  again. The round trip folds what lower case alone leaves: the long s (`ſettings` opens `settings` on APFS and NTFS),
+ *  the dotless i, the Kelvin sign, and ß to ss. On Windows the trailing dots and spaces Win32 drops go too (`.clover.`
+ *  opens `.clover`). Folding more than a disk does only refuses more. The fence folds on every OS: Linux has
+ *  case-folding ext4 folders and mounted APFS, NTFS and exFAT homes (#179's review, F1). One function for every lane
+ *  that compares names against the fenced set: the fence, the tree's holders, the core's own checks. */
+export function foldName(name: string, os?: Os): string {
+  const s = name.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
+  return os === "windows" ? s.replace(/[. ]+$/, "") : s;
 }
 
-/** `isInside`, folded when the file system folds. */
-export function isInsideFolded(path: string, root: string, fold: boolean): boolean {
-  return fold ? isInside(foldPath(path), foldPath(root)) : isInside(path, root);
+/** A whole path folded name by name, with `/` between; a `\` is read as `/` first, so `C:\Users\me` meets the fence's
+ *  `C:/Users/me`. */
+export function foldPath(path: string, os?: Os): string {
+  return path.replace(/\\/g, "/").split("/").map((seg) => (seg === "" ? seg : foldName(seg, os))).join("/");
 }
 
-/** The verdict for `op` against a fenced set; the fake and any implementation share it. `fold`: compare names folded,
- *  as the computer's file system does (`FENCE_FOLDS_CASE`). */
-export function judge(set: readonly FencedPath[], op: FenceOp, fold = false): FenceVerdict {
+/** `isInside`, with both sides folded (`foldPath`). */
+export function isInsideFolded(path: string, root: string, os?: Os): boolean {
+  return isInside(foldPath(path, os), foldPath(root, os));
+}
+
+const NON_ASCII = /[^\x00-\x7f]/;
+const namesOf = (path: string): string[] => path.replace(/\\/g, "/").split("/").filter((s) => s !== "");
+const sameFolded = (a: readonly string[], b: readonly string[], os?: Os): boolean =>
+  a.length === b.length && a.every((n, i) => foldName(n, os) === foldName(b[i]!, os));
+
+/** The second wall (#179's review, F1): a name that isn't ASCII, where Clover names things itself, is refused, whatever
+ *  a file system might fold it to. That is the Clover home's own top level and any folder under it that holds a fenced
+ *  item (`plugins-state/` for `plugins-state/oks`). Clover never names one of those in another script, so a name there
+ *  could only be an attempt at an alias by a rule this fold doesn't know. A bot's memory note or a plugin's asset may
+ *  still have any name: those folders hold no fenced item. */
+export function nonAsciiAlias(path: string, set: readonly FencedPath[], cloverHome: string, os?: Os): boolean {
+  const names = namesOf(path);
+  const home = namesOf(cloverHome);
+  if (names.length <= home.length || !sameFolded(names.slice(0, home.length), home, os)) return false;
+  const holders = set.map((item) => namesOf(item.path));
+  for (let depth = home.length; depth < names.length; depth++) {
+    if (!NON_ASCII.test(names[depth]!)) continue;
+    const folder = names.slice(0, depth);
+    if (depth === home.length || holders.some((item) => item.length > depth && sameFolded(item.slice(0, depth), folder, os))) return true;
+  }
+  return false;
+}
+
+export interface JudgeOptions {
+  /** The computer's OS, for its folding rules (`foldName`). */
+  os?: Os;
+  /** The Clover home, for the second wall (`nonAsciiAlias`). */
+  cloverHome?: string;
+}
+
+/** The verdict for `op` against a fenced set; the fake and any implementation share it. Names compare folded
+ *  (`foldName`) on every OS, and with `cloverHome` a name that isn't ASCII where Clover names things is refused as
+ *  `clover-home` (`nonAsciiAlias`). */
+export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions = {}): FenceVerdict {
   const writes = op.op === "write" || op.op === "delete" || op.op === "move";
   const paths = op.op === "move" ? [op.path, op.to] : [op.path];
-  const inside = (p: string, r: string) => isInsideFolded(p, r, fold);
+  const inside = (p: string, r: string) => isInsideFolded(p, r, o.os);
   for (const path of paths) {
     for (const item of set) {
       if (writes) {
@@ -133,6 +172,11 @@ export function judge(set: readonly FencedPath[], op: FenceOp, fold = false): Fe
       } else if (item.deny === "read-write" && inside(path, item.path)) {
         return { allowed: false, reason: item.kind, path: item.path };
       }
+    }
+  }
+  if (o.cloverHome !== undefined) {
+    for (const path of paths) {
+      if (nonAsciiAlias(path, set, o.cloverHome, o.os)) return { allowed: false, reason: "clover-home", path: o.cloverHome };
     }
   }
   return { allowed: true };

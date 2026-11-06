@@ -130,10 +130,12 @@ export interface NotifierUpdate {
   /** When it happened, on the shared clock. */
   at: number;
   notification?: { title: string; body?: string };
-  /** Who asked to show `notification`: the plugin that called `notify.send`, by id and name, or `clover` for the
-   *  core's own notices (lane G's ask). A notifier shows a plugin's under its name ("Home: …"), so no plugin speaks as
-   *  a bot. */
-  sender?: { pluginId: string; name: string };
+  /** Who the update is from, always (#179's review): `clover` (name "Clover") for the core's own (a message, a card, a
+   *  question, a routine's result, an agent finishing, its own notices), or the plugin that called `notify.send`, by id
+   *  and name (lane G's ask). `thirdParty` is true for a plugin outside the bundled `clover` tree: a notifier shows its
+   *  notification marked as a plugin's ("Home, a plugin: …"), never as Clover's or a bot's, so no plugin named like a
+   *  bot ("Luna") speaks as one. */
+  sender: { pluginId: string; name: string; thirdParty: boolean };
 }
 
 /** A `webhook.ingress` entry's handler (§7): an object of handlers the webhook trigger calls through `points.call`
@@ -463,10 +465,13 @@ export interface ComputersApi {
   get(name: string): Promise<ComputerView>;
   watch(listener: (computer: ComputerView) => void): Unsubscribe;
   holds(computer: string): Promise<{ holds: HoldView[]; userWorking: boolean }>;
-  takeHold(computer: string, target: HoldTarget, opts?: { session?: string }): Promise<{ held: true; hold: HoldView } | { held: false; reason: "held-by-other" | "user-working" | "computer-offline"; by?: string }>;
+  /** A hold for the session whose tool call the plugin is serving (R7): the core takes the session from the call it
+   *  bound, never from the plugin (#179's review, S1). Outside a tool call the hold is the plugin's own. */
+  takeHold(computer: string, target: HoldTarget): Promise<{ held: true; hold: HoldView } | { held: false; reason: "held-by-other" | "user-working" | "computer-offline"; by?: string }>;
   releaseHold(holdId: string): Promise<void>;
   setUserWorking(computer: string, on: boolean, target?: HoldTarget): Promise<void>;
-  setActionRunning(computer: string, running: boolean, opts?: { session?: string }): Promise<void>;
+  /** For the bound session too, as `takeHold` is. */
+  setActionRunning(computer: string, running: boolean): Promise<void>;
   cloverWindows(computer: string): Promise<CloverWindow[]>;
 }
 
@@ -525,10 +530,17 @@ export interface TerminalInputEvent {
 }
 
 /** `browser`: the Clover Browser's API (§12.1); DevTools calls pass only allowlisted domains. */
-/** A plugin's calls carry the plugin as their caller, or, while it serves a tool call, that call's session (R7). On a
- *  tab the user holds, only a session's calls are refused (`held`): the user's layers and a plugin's own code pass, so
- *  a view's back button works while held (L's question). A layer's calls carry `{ kind: "plugin", pluginId }`, never
- *  the user. `computer` is a computer's name, as `api.plugin.computer` gives this one. */
+/** A plugin's calls carry the plugin as their caller, or, while it serves a tool call, that call's session (R7).
+ *
+ *  Whose tabs a call may open (#179's review, S1): acting as itself, a plugin opens tabs only in its own partition
+ *  (`owner: { kind: "plugin", pluginId }` with its own id); serving a tool call, only for that session or the session's
+ *  own bot; and the person's own partition (`user`) only for a session the user gave its card (ruling R10). Anything
+ *  else is refused.
+ *
+ *  On a tab the user holds, a session's calls and a plugin's own code are refused (`held`). Only a layer's command that
+ *  the app saw come from the user's own click or key in that layer passes, so a view's back button works while held
+ *  (L's question). A layer's calls carry `{ kind: "plugin", pluginId }`, never the user. `computer` is a computer's
+ *  name, as `api.plugin.computer` gives this one. */
 export interface BrowserApi {
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
   /** Opens a tab headless, or shown at once in the view `show` names (L's question). */

@@ -3,7 +3,7 @@
 import type { Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, FENCE_FOLDS_CASE, isInsideFolded, judge, READ_DENIED_KINDS,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, isInsideFolded, judge, READ_DENIED_KINDS,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -71,24 +71,22 @@ export class FakeFence implements Fence {
   }
 
   check(op: FenceOp): FenceVerdict {
-    return judge(this.fencedSet(), op, FENCE_FOLDS_CASE[this.os]);
+    return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome });
   }
 
   touches(paths: readonly string[]): FencedPath | null {
-    const fold = FENCE_FOLDS_CASE[this.os];
     for (const path of paths) {
       for (const item of this.fencedSet()) {
-        if (isInsideFolded(path, item.path, fold) || isInsideFolded(item.path, path, fold)) return item;
+        if (isInsideFolded(path, item.path, this.os) || isInsideFolded(item.path, path, this.os)) return item;
       }
     }
     return null;
   }
 
   checkAgentRoot(root: string): FenceVerdict {
-    const fold = FENCE_FOLDS_CASE[this.os];
-    if (isInsideFolded(this.#cloverHome, root, fold)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    if (isInsideFolded(this.#cloverHome, root, this.os)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     for (const dev of this.#layout["dev-folders"] ?? this.#devFolders) {
-      if (isInsideFolded(dev, root, fold) || isInsideFolded(root, dev, fold)) return { allowed: false, reason: "dev-folders", path: normalizePosix(dev) };
+      if (isInsideFolded(dev, root, this.os) || isInsideFolded(root, dev, this.os)) return { allowed: false, reason: "dev-folders", path: normalizePosix(dev) };
     }
     return { allowed: true };
   }

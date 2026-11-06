@@ -14,7 +14,7 @@ import {
 import { CAPABILITIES, capabilityOkText, isCapability, parseCapability } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
-import { SPOT_NAMES, foldTitle, spotInfo } from "../catalogs/spots";
+import { SPOT_NAMES, foldTitle, reservedTitles, spotInfo } from "../catalogs/spots";
 import { treePathProblem } from "../formats/tree-hash";
 import { parseJsonc } from "../jsonc";
 import { isRange, satisfies } from "../semver";
@@ -349,6 +349,10 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
       f.error("plugin", "id_reserved", ["id"], `"${declaredId}" is one of the plugins Clover ships`);
     }
     if (namespace === BUNDLED_ROOT_PLUGIN) f.error("plugin", "namespace_reserved", ["namespace"], "the namespace `clover` is reserved for the plugins Clover ships");
+  }
+  // A plugin named like a reserved title would label its tab with it (#179's review): "Needs you" is Clover's own.
+  if (topId !== BUNDLED_ROOT_PLUGIN && typeof top.name === "string" && reservedTitles().has(foldTitle(top.name))) {
+    f.error("plugin", "name_reserved", ["name"], `"${top.name}" is the name of one of Clover's own entries`);
   }
 
   const capabilities = Array.isArray(top.capabilities) ? top.capabilities.filter((c): c is string => typeof c === "string") : [];
@@ -751,7 +755,7 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   if (spot?.reserved && !bundledTree) {
     const id = typeof e.id === "string" ? e.id : spotName;
-    if (spot.reserved.ids.includes(id)) {
+    if (spot.reserved.ids.some((r) => foldTitle(r) === foldTitle(id))) {
       f.error("entry", "ui_reserved", [...at, "id"], `"${id}" is reserved for Clover's own ${spotName} entry`);
       return false;
     }

@@ -276,6 +276,23 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       expect(callers).toEqual([["browser.tabs", SESSION], ["browser.tabs", { kind: "plugin", pluginId: "browser" }]]);
     });
 
+    test("a call's ctx.api ends with the call: kept and used later, it is closed (#179's review, S1)", async () => {
+      const { host } = setup();
+      const callers: unknown[] = [];
+      host.serveApi(async (call) => void callers.push(call.path));
+      const SESSION: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" };
+      let kept: HandlerContext["api"] | undefined;
+      host.define("browser", {
+        tabs: async (_a: unknown, ctx: HandlerContext) => {
+          kept = ctx.api;
+          await ctx.api.browser!.tabs();
+        },
+      });
+      await host.invoke({ pluginId: "browser", handler: "tabs", args: null, caller: SESSION, session: "s_alpha" });
+      expect(isContractError(await rejection(Promise.resolve(kept!.browser!.tabs())), "closed")).toBe(true);
+      expect(callers).toEqual(["browser.tabs"]);
+    });
+
     test("the core's call id on an MCP request never reaches the plugin's server (R7)", async () => {
       const { host } = setup();
       const seen: unknown[] = [];

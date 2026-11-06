@@ -9,7 +9,7 @@
 // allowlisted DevTools domains; while the user holds a tab, an agent's commands on it are refused.
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { BotId, ComputerName, Ok, SessionId, Timestamp } from "./common";
+import { AnyPluginId, BotId, ComputerName, Ok, SessionId, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 /** DevTools domains the API never passes (§12.1). */
@@ -58,10 +58,12 @@ export function isBrowserUrlAllowed(url: string): boolean {
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). */
 /** Whose tab it is. A session without a bot (a coding session) has a partition of its own (ruling R10); the
- *  person's own logged-in partition (`user`) needs an explicit card per session, and is never the default. */
+ *  person's own logged-in partition (`user`) needs an explicit card per session, and is never the default. A plugin
+ *  acting as itself opens tabs only in its own partition, `plugin-<id>` (#179's review, S1). */
 export const TabOwner = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bot"), bot: BotId }),
   z.object({ kind: z.literal("session"), session: SessionId }),
+  z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
   z.object({ kind: z.literal("user") }),
 ]);
 export type TabOwner = z.infer<typeof TabOwner>;

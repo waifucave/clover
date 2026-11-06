@@ -212,6 +212,17 @@ describe("points and spots", () => {
     expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "ＮＥＥＤＳ  you" })).toEqual(["ui_reserved:/contributes/ui/0/title"]);
     expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "Lights" })).toEqual([]);
     expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Needs you" }, CLOVER)).toEqual([]);
+    // Invisible characters, lookalike letters, accents and punctuation don't make it another title (#179's review).
+    for (const title of ["Needs\u200B you", "Needs y\u043Eu", "N\u0435eds you", "Ne\u0301eds you!", "needs_you", "NEEDS\u2060 YOU"]) {
+      expect([title, entry({ spot: "island.tab", id: "lights", component: "Tab", title })]).toEqual([title, ["ui_reserved:/contributes/ui/0/title"]]);
+    }
+    expect(entry({ spot: "island.tab", id: "needs_you", component: "Tab", title: "Lights" })).toEqual(["ui_reserved:/contributes/ui/0/id"]);
+    // Nor may a plugin be named so: the island labels a tab with its plugin's name.
+    const named = (name: string, bundled = false) => validateManifest({ manifest: 1, ...(bundled ? {} : { id: "home" }), name }, bundled ? { parent: CLOVER, folderName: "home", bundled: true } : { folderName: "home" })
+      .issues.map((i) => `${i.code}:${i.path}`);
+    expect(named("Needs\u200B y\u043Eu")).toEqual(["name_reserved:/name"]);
+    expect(named("Needs you", true)).toEqual([]);
+    expect(named("Lights")).toEqual([]);
     // Always-on-top surfaces are the clover tree's in 1.111.1 (R12).
     expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } })).toEqual(["ui_always_on_top:/contributes/ui/0/window/alwaysOnTop"]);
     expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } }, CLOVER)).toEqual([]);

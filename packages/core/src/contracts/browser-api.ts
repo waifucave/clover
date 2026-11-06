@@ -19,10 +19,16 @@
 //   app's and core's own `clover…` schemes), however the request starts: `open` and `navigate` refuse it at once
 //   (`refused`), and the partition's session blocks it from a link, a redirect, a frame or DevTools' `Page.navigate`,
 //   which fails as a blocked load (review S17). The check lives in the session, not in reading DevTools parameters.
-// * A Point from a screenshot taken at another size is refused (`refused`), as is a session's command on a tab the user
-//   holds (`held`, the inherited browser tool's control lease). The user's own commands, a layer's (whose caller is its
-//   plugin, never the user) and a plugin's own code are never refused for a hold, so a view's back button works while
-//   held. A plugin's call made while it serves a tool call is that call's session (R7), bound by the core.
+// * Who may open a tab for which owner (#179's review, S1; `mayOpenFor`), judged on the call's own caller, which the
+//   core binds (R7): a plugin acting as itself only in its own partition (`{ kind: "plugin" }`, `plugin-<id>`); a
+//   session for itself or for its own bot; the person's partition (`user`) only for a session with its R10 card; the
+//   user and the core for any owner. Anything else is `refused`.
+// * A Point from a screenshot taken at another size is refused (`refused`). On a tab the user holds (`held`, the
+//   inherited browser tool's control lease) only the user's own commands pass, and a layer's command the app's main
+//   process saw come from the user's own input in that layer (`BrowserInput.userInput`; a layer's caller is its plugin,
+//   never the user), so a view's back button works while held (`mayActOnHeldTab`). A session's command, and a
+//   plugin's own code acting as itself, are refused (`held`), so a plugin can't carry a tool call's action past the
+//   hold on a timer. A plugin's call made while it serves a tool call is that call's session (R7), bound by the core.
 // * A host that stopped drawing gives an error, never a stale picture (S7 "What M1 should start with" item 4).
 import {
   AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed,
@@ -34,7 +40,14 @@ export { AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed };
 
 export type BrowserChange = { type: "changed"; tab: TabView } | { type: "closed"; id: string; by: "user" | "page" | "crash" | "api" };
 
-export interface CdpOptions {
+/** What the app's main process vouches for a layer's command (#179's review, S1): `userInput` when it saw the command
+ *  come from the user's own input in that layer's view (a trusted click or key, inside its user activation, as for
+ *  `useUserSend`). The core takes it only from the app's own connection, never from the layer's params. */
+export interface BrowserInput {
+  userInput?: boolean;
+}
+
+export interface CdpOptions extends BrowserInput {
   /** The viewport the Point in this call came from; refused if the tab's differs now (§12.1). */
   viewport?: Viewport;
 }
@@ -43,18 +56,21 @@ export interface BrowserApi {
   /** This browser's computer. */
   readonly computer: string;
   tabs(filter?: { owner?: TabOwner }): TabView[];
+  /** Refused for an owner the caller may not name (`mayOpenFor`). */
   open(req: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport } }, as: Caller): Promise<TabView>;
-  close(id: string, as: Caller): Promise<void>;
-  navigate(id: string, url: string, as: Caller): Promise<TabView>;
+  close(id: string, as: Caller, input?: BrowserInput): Promise<void>;
+  navigate(id: string, url: string, as: Caller, input?: BrowserInput): Promise<TabView>;
   /** Moves a tab into a browser view, laid out at the view's size. */
   show(id: string, view: string, viewport: Viewport): Promise<TabView>;
   /** Moves a tab back to headless at the agent's 1280×800. */
   hide(id: string): Promise<TabView>;
-  screenshot(id: string, as: Caller, opts?: { format?: Screenshot["format"]; quality?: number }): Promise<Screenshot>;
+  screenshot(id: string, as: Caller, opts?: { format?: Screenshot["format"]; quality?: number } & BrowserInput): Promise<Screenshot>;
   cdp(id: string, method: string, params: Record<string, unknown> | undefined, as: Caller, opts?: CdpOptions): Promise<unknown>;
   onCdpEvent(id: string, fn: (method: string, params: unknown) => void): Unsubscribe;
   /** The user takes a tab in the view, or gives it back (the app's main process saw their gesture). */
   setHeld(id: string, held: boolean): void;
+  /** A session's R10 card was answered: it may open tabs in the person's own partition, or no longer may. */
+  setUserPartition(session: string, allowed: boolean): void;
   watch(fn: (change: BrowserChange) => void): Unsubscribe;
 }
 
@@ -64,9 +80,35 @@ export const CDP_PATH_PARAMS: Readonly<Record<string, readonly string[]>> = {
   "Page.setDownloadBehavior": ["downloadPath"],
 };
 
-/** Whether a command from `as` may act on a tab the user holds: only the user's own. */
-export function mayActOnHeldTab(as: Caller): boolean {
-  return as.kind === "user";
+/** Whether a command from `as` may act on a tab the user holds: the user's own, and a layer's that the app saw come
+ *  from the user's input (`input.userInput`; a layer's caller is its plugin). A session's, a peer's, the core's and a
+ *  plugin's own code acting as itself are refused (#179's review, S1). */
+export function mayActOnHeldTab(as: Caller, input: BrowserInput = {}): boolean {
+  return as.kind === "user" || (as.kind === "plugin" && input.userInput === true);
+}
+
+/** Whether `as` may open a tab for `owner` (#179's review, S1): a plugin acting as itself only in its own partition; a
+ *  session for itself or its own bot; the person's own partition only for a session with its R10 card
+ *  (`userPartition`); the user and the core for any owner. */
+export function mayOpenFor(owner: TabOwner, as: Caller, userPartition: (session: string) => boolean): boolean {
+  if (as.kind === "user" || as.kind === "core") return true;
+  if (as.kind === "plugin") return owner.kind === "plugin" && owner.pluginId === as.pluginId;
+  if (as.kind !== "session") return false;
+  if (owner.kind === "session") return owner.session === as.sessionId;
+  if (owner.kind === "bot") return as.bot !== undefined && owner.bot === as.bot;
+  if (owner.kind === "user") return userPartition(as.sessionId);
+  return false;
+}
+
+/** The partition a tab's owner gives it: `persist:bot-<id>`, `persist:session-<id>`, `persist:plugin-<id>` (a
+ *  plugin's id with `/` as `--`), or `persist:user`. */
+export function partitionFor(owner: TabOwner): string {
+  switch (owner.kind) {
+    case "bot": return `persist:bot-${owner.bot.replace(/\//g, "--")}`;
+    case "session": return `persist:session-${owner.session}`;
+    case "plugin": return `persist:plugin-${owner.pluginId.replace(/\//g, "--")}`;
+    case "user": return "persist:user";
+  }
 }
 
 export function sameViewport(a: Viewport, b: Viewport): boolean {
