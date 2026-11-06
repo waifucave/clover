@@ -50,6 +50,22 @@ describe("the daemon's links", () => {
     expect(await link.request<string>("who", null)).toBe("laptop again");
   });
 
+  test("the links register the lease's renew with the update gate, and the memory sync's hook with lane J's node", async () => {
+    const net = new MemoryNetwork();
+    const hooks = new Set<() => Promise<void> | void>();
+    const updateGate = { beforeRestart: (fn: () => Promise<void> | void) => (hooks.add(fn), () => void hooks.delete(fn)) };
+    const links = await startDeviceLinks({
+      home: mkdtempSync(join(tmpdir(), "clover-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Studio", os: "macos" },
+      wire: (key) => net.endpoint(key.publicKey), updateGate,
+    });
+    expect(hooks.size).toBe(1);
+    // A lone computer's lease is its own (no record to renew): the hook is a no-op there, never a failure.
+    await Promise.all([...hooks].map((fn) => fn()));
+    expect(typeof computerNodeLinks(links).memoryChanged).toBe("function");
+    await links.close();
+    expect(hooks.size).toBe(0);
+  });
+
   test("lane J's computer node gets the transport, the registry and this computer's tree name", async () => {
     const net = new MemoryNetwork();
     const a = await daemon(net, "Studio");

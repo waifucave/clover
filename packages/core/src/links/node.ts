@@ -15,7 +15,7 @@ import type { AccountClient } from "../identity/account";
 import { BoxKey } from "../identity/box-key";
 import { DeviceKey } from "../identity/device-key";
 import { retryRevokes, syncAccountDevices, type RevokeOptions } from "../devices/account-devices";
-import { startMainComputer, type MainComputerHandle, type MainComputerOptions } from "../lease/main";
+import { startMainComputer, type MainComputerHandle, type MainComputerOptions, type UpdateRestartGate } from "../lease/main";
 import { AccountLeaseScope, GroupLeaseScope, type LeaseScope } from "../lease/scope";
 import { SharedClock, type TimeSource } from "../clock/shared-clock";
 import { AccountDirectory } from "./account-directory";
@@ -70,6 +70,9 @@ export interface DeviceLinksOptions {
   /** The bots' memories across computers (sync/memory.ts): on by default; `mailbox` is a relay plugin's mail
    *  (`relayMailbox`), without which memory reaches a computer only over its link. False for none. */
   memory?: false | Pick<MemorySyncOptions, "mailbox" | "mailDelayMs" | "entitled" | "limits">;
+  /** The daemon's update gate (`RunningDaemon.updateGate`, lane M's #198): the lease renews just before an update's
+   *  restart, so the bots stay here through it (`MainComputerHandle.beforeUpdateRestart`). */
+  updateGate?: UpdateRestartGate;
 }
 
 export interface DeviceLinks {
@@ -277,6 +280,11 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     }));
   }
   sharedClock.start();
+  // An update's restart keeps the lease: it renews just before, and the new daemon renews the same epoch.
+  if (main && o.updateGate) {
+    const m = main;
+    offs.push(o.updateGate.beforeRestart(() => m.beforeUpdateRestart()));
+  }
 
   // The group: members' keys over the links, merges (R18), quorum removals and recovery, fresh signatures.
   const groups = o.handshake

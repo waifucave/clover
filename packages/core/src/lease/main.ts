@@ -46,7 +46,16 @@ export interface MainComputerHandle {
   setHandBack(fn: (() => Promise<void>) | undefined): void;
   /** The scope changed (signed in or out, a group made or merged). */
   scopeChanged(): void;
+  /** Just before an update's restart (lane M's `UpdateGate.beforeRestart`): a holder renews now, so the restart runs
+   *  inside a full lease from this moment. Nothing is released and the epoch stays: an update's restart isn't Hand over
+   *  and quit, and the new daemon renews the same lease. A computer that doesn't hold it does nothing. */
+  beforeUpdateRestart(): Promise<void>;
   close(): void;
+}
+
+/** What the daemon's update gate takes (lane M's `UpdateGate`, #198), structurally. */
+export interface UpdateRestartGate {
+  beforeRestart(fn: () => Promise<void> | void): () => void;
 }
 
 export function startMainComputer(o: MainComputerOptions): MainComputerHandle {
@@ -89,6 +98,12 @@ export function startMainComputer(o: MainComputerOptions): MainComputerHandle {
     scopeChanged: () => {
       lease.scopeChanged();
       c.wake();
+    },
+    async beforeUpdateRestart() {
+      // A lease held locally (a lone computer, no handshake) has nothing to renew; one on a record renews there.
+      if (!lease.holds() || !lease.hasScope()) return;
+      await lease.renew();
+      o.log?.(`[lease] renewed before an update's restart (epoch ${lease.state().epoch})`);
     },
     close() {
       for (const off of offs.splice(0)) off();
