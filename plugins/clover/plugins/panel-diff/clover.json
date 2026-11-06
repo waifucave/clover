@@ -11,16 +11,18 @@
       "client/styles.css"
     ]
   },
-  "capabilities": [
-    "files"
-  ],
+  "capabilities": [],
   "contributes": {
     "ui": [
       {
         "spot": "panel",
+        "id": "diff",
         "key": "diff",
         "title": "Changes",
-        "component": "DiffPanel"
+        "component": "DiffEntry",
+        "when": {
+          "session": "coding"
+        }
       }
     ]
   }

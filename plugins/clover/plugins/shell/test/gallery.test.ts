@@ -8,7 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGallery } from "../gallery/build";
 import { CATALOG_SNAPSHOT } from "../gallery/catalog";
-import { screenStories } from "../gallery/screens";
+import { M2_SCREENS, screenStories } from "../gallery/screens";
+import { shellStories } from "../gallery/stories";
 import { stories as composerStories } from "../../composer/gallery/stories";
 import { stories as conversationStories } from "../../conversation/gallery/stories";
 import { diffStories } from "../../panel-diff/gallery/stories";
@@ -17,6 +18,12 @@ import { terminalStories } from "../../panel-terminal/gallery/stories";
 import { panelStories } from "../../panel/gallery/stories";
 import { settingsStories } from "../../settings/gallery/stories";
 import { stories as sidebarStories } from "../../sidebar/gallery/stories";
+import { botEditorStories } from "../../bot-editor/gallery/stories";
+import { pluginIndexStories } from "../../plugin-index/gallery/stories";
+import { archiveStories } from "../../archive/gallery/stories";
+import * as archiveTokens from "../../archive/client/tokens";
+import * as botEditorTokens from "../../bot-editor/client/tokens";
+import * as pluginIndexTokens from "../../plugin-index/client/tokens";
 import * as composerTokens from "../../composer/client/tokens";
 import * as conversationTokens from "../../conversation/client/tokens";
 import * as diffTokens from "../../panel-diff/client/tokens";
@@ -30,6 +37,8 @@ import * as shellTokens from "../client/tokens";
 const outdir = mkdtempSync(join(tmpdir(), "lane-f-gallery-"));
 const errors: string[] = [];
 let root: HTMLElement | undefined;
+// The gallery pins the clock to its fixtures' day; the other test files get theirs back.
+const realNow = Date.now;
 
 async function until(check: () => boolean, ms = 10_000) {
   const start = Date.now();
@@ -50,7 +59,7 @@ beforeAll(async () => {
   };
   try {
     (0, eval)(readFileSync(join(outdir, "main.js"), "utf8"));
-    await until(() => root!.querySelector("[data-gallery-ready]") !== null);
+    await until(() => root!.querySelector("[data-gallery-ready]") !== null, 30_000);
   } finally {
     console.error = original;
   }
@@ -58,6 +67,7 @@ beforeAll(async () => {
 
 // Every test file shares one document: take the gallery out of it, so no other file finds it.
 afterAll(() => {
+  Date.now = realNow;
   root?.remove();
   document.documentElement.removeAttribute("data-theme");
   rmSync(outdir, { recursive: true, force: true });
@@ -66,8 +76,12 @@ afterAll(() => {
 describe("the gallery", () => {
   const all = [
     ...screenStories, ...conversationStories, ...composerStories, ...sidebarStories, ...panelStories,
-    ...terminalStories, ...diffStories, ...filesStories, ...settingsStories,
+    ...terminalStories, ...diffStories, ...filesStories, ...settingsStories, ...botEditorStories, ...pluginIndexStories,
+    ...archiveStories, ...shellStories,
   ];
+  /** The screens of a tab (a bot's, an agent's, a coding session's), not a page of its own. */
+  const PAGES = ["screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
+  const tabScreens = screenStories.filter((s) => !PAGES.includes(s.id));
 
   test("builds a page, a script and a stylesheet", () => {
     const html = readFileSync(join(outdir, "index.html"), "utf8");
@@ -86,10 +100,12 @@ describe("the gallery", () => {
     expect(errors).toEqual([]);
   });
 
-  test("every whole-window screen holds the sidebar, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(29);
+  test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
+    expect(screenStories.length).toBe(40);
+    expect(M2_SCREENS).toHaveLength(11);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
-    for (const story of screenStories) {
+    for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
+    for (const story of tabScreens) {
       const frame = root!.querySelector(`[data-story="${story.id}"]`);
       expect(frame?.querySelector(".cl-window .cl-sidebar")).toBeTruthy();
       expect(frame?.querySelector(".cl-window__toggles .cl-panel-toggles")).toBeTruthy();
@@ -124,21 +140,25 @@ describe("the gallery", () => {
   });
 
   test("a bot's tab never shows the terminal, the changes or the files; a code session has them all (the owner's scope ruling)", () => {
-    const toggles = (story: Element) => [...story.querySelectorAll(".cl-window__toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
+    const toggles = (story: Element) => [...story.querySelectorAll(".cl-window__toggles .cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
     for (const story of screenStories) {
       const frame = root!.querySelector(`[data-story="${story.id}"]`)!;
-      const bot = frame.querySelector('.cl-panel-toggles[data-kind="bot"]') !== null;
-      if (bot) {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser", "More panels"]]);
+      const kind = frame.querySelector(".cl-panel-toggles")?.getAttribute("data-kind");
+      if (PAGES.includes(story.id)) {
+        expect([story.id, kind]).toEqual([story.id, undefined]);
+      } else if (kind === "bot") {
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser"]]);
         expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
         // The slim column, if open, has nothing about a folder.
-        expect([story.id, frame.querySelector('.cl-session[data-kind="code"]')]).toEqual([story.id, null]);
+        expect([story.id, frame.querySelector('.cl-session[data-kind="coding"]')]).toEqual([story.id, null]);
+      } else if (kind === "agent") {
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Browser"]]);
       } else {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Browser", "Files", "More panels"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Browser", "Files"]]);
       }
     }
-    const bots = screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="bot"]`));
-    expect(bots.length).toBe(12);
+    const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
+    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([17, 1, 17]);
   });
 
   test("a bot's slim column shows its agents, and one opens in the panel with its own composer and model picker", () => {
@@ -165,7 +185,7 @@ describe("the gallery", () => {
   });
 
   test("every catalog token a part names is in lane B's catalog; the rest are part-local requests", () => {
-    const parts = { composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens };
+    const parts = { composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, botEditorTokens, pluginIndexTokens, archiveTokens };
     for (const [part, t] of Object.entries(parts)) {
       expect([part, t.CATALOG_TOKENS.filter((n: string) => !CATALOG_SNAPSHOT.has(n))]).toEqual([part, []]);
       expect([part, t.PART_TOKENS.filter((n: string) => !n.startsWith("plugin.clover."))]).toEqual([part, []]);
@@ -174,7 +194,7 @@ describe("the gallery", () => {
 
   test("the gallery theme sets every token any part wears", () => {
     const theme = readFileSync(join(import.meta.dir, "../gallery/theme.css"), "utf8");
-    const parts = [composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens];
+    const parts = [composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, botEditorTokens, pluginIndexTokens, archiveTokens];
     const missing = parts.flatMap((t) => t.TOKENS.map(t.cssVariable)).filter((v) => !theme.includes(`${v}:`));
     expect(missing).toEqual([]);
   });
@@ -193,6 +213,50 @@ describe("the gallery", () => {
     };
     walk(parts);
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
+  const frame = (id: string) => root!.querySelector(`[data-story="screen/${id}-1440"]`)!;
+
+  test("each page fills `main` from its own part", () => {
+    expect(frame("plugin-index").querySelector(".cl-window__content .cl-plugin-index .cl-plugin-index__result")).toBeTruthy();
+    expect(frame("plugin-index-for-panel").querySelector(".cl-plugin-index__looking")?.textContent).toContain("the terminal panel");
+    expect(frame("bot-editor").querySelector(".cl-window__content .cl-bot-editor__title")?.textContent).toBe("Edit Alpha");
+    expect(frame("bot-editor").querySelectorAll(".cl-bot-editor__avatar")).toHaveLength(4);
+    expect(frame("archive").querySelectorAll(".cl-archive__session")).toHaveLength(5);
+    // The old session reads through the conversation part, its approval as a note.
+    const old = frame("archive-session").querySelector(".cl-archive__transcript .cl-conv")!;
+    expect(old.textContent).toContain("Draft the release notes for 0.123");
+    expect(old.textContent).toContain("Asked to use Bash");
+  });
+
+  test("Settings shows the plugins' states and each computer's level from the core", () => {
+    const plugins = frame("settings-plugins").querySelector(".cl-window__dialog .cl-settings")!;
+    expect(plugins.textContent).toContain("Waits for your OK");
+    expect(plugins.textContent).toContain("Stopped after three crashes in two minutes");
+    expect(plugins.textContent).toContain("Reaches api.weather.example");
+    const levels = [...frame("settings-levels").querySelectorAll(".cl-window__dialog select")].map((s) => (s as HTMLSelectElement).value);
+    expect(levels).toEqual(["ask-risky", "ask", "automatic"]);
+    const devices = frame("settings-devices").querySelector(".cl-window__dialog .cl-settings")!;
+    expect(devices.querySelector('[aria-label="Make Laptop the main computer"]')).toBeTruthy();
+    expect(devices.querySelector('[aria-label="Pair a device"]')).toBeTruthy();
+    const atItem = frame("settings-device-item").querySelector(".cl-window__dialog .cl-settings")!;
+    expect([...atItem.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.textContent)).toEqual([expect.stringContaining("Laptop")]);
+  });
+
+  test("an agent's live tab: its status over its composer", () => {
+    const tab = frame("agent-tab").querySelector('.cl-window__content .cl-agent-tab[data-place="main"]')!;
+    expect(tab.querySelector(".cl-agent-tab__status")?.textContent).toContain("Codex on Studio");
+    expect(tab.querySelector(".cl-composer")).toBeTruthy();
+  });
+
+  test("add-ons: a header button, reactions under answers, a status line and an app button, beside the parts", () => {
+    const f = frame("addons");
+    expect(f.querySelector('.cl-window__toggles [aria-label="Draw a card"]')).toBeTruthy();
+    expect(f.querySelectorAll(".story-addon-reactions").length).toBeGreaterThan(0);
+    expect(f.querySelector(".cl-window__status")?.textContent).toContain("Usage today");
+    expect([...f.querySelectorAll(".cl-sidebar button")].some((b) => b.textContent?.includes("Tarot"))).toBe(true);
   });
 });
 

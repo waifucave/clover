@@ -21,6 +21,7 @@
   --clover-color-text-placeholder: #737373;
   --clover-color-text-inverse: #FFFFFF;
   --clover-color-accent: #2F6FDF;
+  --clover-color-accent-fill: #2F6FDF;
   --clover-color-accent-text: #1F5FCC;
   --clover-color-accent-soft: #E8F0FC;
   --clover-color-accent-contrast: #FFFFFF;
@@ -179,6 +180,7 @@
   --clover-color-text-placeholder: #9A9A9A;
   --clover-color-text-inverse: #191919;
   --clover-color-accent: #4180E3;
+  --clover-color-accent-fill: #3570D8;
   --clover-color-accent-text: #A7C4E6;
   --clover-color-accent-soft: #1F2633;
   --clover-color-attention: #ECD575;

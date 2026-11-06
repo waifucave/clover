@@ -13,25 +13,123 @@
   },
   "capabilities": [
     "conversation.read",
-    "approvals"
+    "approvals",
+    "bots.read",
+    "devices.read"
   ],
   "contributes": {
     "ui": [
       {
         "spot": "conversation",
-        "component": "ConversationView",
+        "component": "ConversationEntry",
         "declares": {
           "conversation.message": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "object"
+                },
+                "ctx": {
+                  "type": "object"
+                }
+              }
+            },
+            "keep": [
+              "approval"
+            ],
+            "needs": [
+              "conversation.read"
+            ],
+            "context": [
+              "bot"
+            ],
+            "doc": "One message, keyed by kind; the approval cell can't be hidden."
           },
           "conversation.message.extra": {
             "shape": "list",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "object"
+                },
+                "ctx": {
+                  "type": "object"
+                }
+              }
+            },
+            "needs": [
+              "conversation.read"
+            ],
+            "context": [
+              "bot"
+            ],
+            "doc": "Add-ons under each message."
           },
           "tool.result": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "object"
+                },
+                "ctx": {
+                  "type": "object"
+                }
+              }
+            },
+            "needs": [
+              "conversation.read"
+            ],
+            "context": [
+              "bot"
+            ],
+            "doc": "A tool's result, keyed by tool name."
           }
         }
       }
