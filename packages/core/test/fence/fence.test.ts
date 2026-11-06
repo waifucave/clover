@@ -126,4 +126,20 @@ describe("the real fence on a real disk", () => {
     expect(p["login-start"]).toContain("/Users/me/Library/LaunchAgents");
     expect(p["agent-installs"]).toEqual(["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"]);
   });
+
+  test("development folders follow the plugin registry's list (B's PluginFolders, #197)", () => {
+    const { home, clover, fence } = make();
+    let list = [join(home, "dev", "luna")];
+    let notify: () => void = () => {};
+    let changes = 0;
+    fence.watch(() => changes++);
+    const stop = fence.followDevFolders({ devFolderPaths: () => list, onDevFoldersChanged: (fn) => { notify = fn; return () => { notify = () => {}; }; } });
+    expect(fence.check({ op: "write", path: join(home, "dev", "luna", "x.ts") })).toMatchObject({ allowed: false, reason: "dev-folders" });
+    list = [];
+    notify();
+    expect(fence.check({ op: "write", path: join(home, "dev", "luna", "x.ts") })).toEqual({ allowed: true });
+    expect(changes).toBe(2);
+    stop();
+    void clover;
+  });
 });

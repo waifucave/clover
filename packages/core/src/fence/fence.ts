@@ -172,6 +172,19 @@ export class CloverFence implements Fence {
     return this.#listeners.add(fn);
   }
 
+  /** Follows the plugin registry's development folders (B's `PluginFolders.devFolderPaths()` and
+   *  `onDevFoldersChanged()`, #197): the set is replaced on each change, and watchers are told. Returns the stop. */
+  followDevFolders(source: { devFolderPaths(): readonly string[]; onDevFoldersChanged(fn: () => void): () => void }): () => void {
+    const sync = () => {
+      const next = [...new Set(source.devFolderPaths().map((p) => this.#canonical(p)))];
+      if (next.length === this.#devFolders.length && next.every((p, i) => p === this.#devFolders[i])) return;
+      this.#devFolders = next;
+      this.#listeners.emit();
+    };
+    sync();
+    return source.onDevFoldersChanged(sync);
+  }
+
   /** A development folder was turned on (§5.6). */
   addDevFolder(path: string): void {
     const p = this.#canonical(path);
