@@ -1628,13 +1628,14 @@ async function runDaemonStart(): Promise<void> {
 async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
   const {
     SANDBOX_EXIT,
-    CLOVER_WFP_SUBLAYER,
     srtWinPath,
     srtWinArch,
     launcherProblem,
     setupArgs,
     removeArgs,
     statusArgs,
+    userStatusArgs,
+    sandboxPool,
     parseSrtStatus,
     setupExitMessage,
     NET_SESSION_PROBE,
@@ -1642,7 +1643,6 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     protectedCopyPath,
     isProtectedCopy,
     installerTargetSid,
-    principalNameFromSid,
     warmUpArgs,
     profileQueryArgs,
     parseProfileImagePath,
@@ -1691,14 +1691,25 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     const v = r.out.trim();
     return r.code === 0 && v !== "" ? v : null;
   };
-  // This user's principal. From the protected copy the installer target names it; anywhere else (status
-  // from a per-user install) the install marker does, falling back to the live token's name for the
-  // not-set-up verdict.
-  const resolvePrincipal = async (): Promise<{ ownerSid: string; principal: string } | null> => {
-    if (targetSid !== null) return { ownerSid: targetSid, principal: principalNameFromSid(targetSid) };
-    const ownerSid = currentUserSid();
-    if (ownerSid === null) return null;
-    return { ownerSid, principal: principalNameFromSid(ownerSid) };
+  // A pool member's live SID, from `srt-win user status --user`.
+  const memberSid = async (launcherPath: string, principal: string): Promise<{ exists: boolean; sid: string | null }> => {
+    const r = await run([...userStatusArgs(launcherPath, principal)]);
+    if (r.code !== 0) return { exists: false, sid: null };
+    try {
+      const u = (JSON.parse(r.out) as { user?: { exists?: unknown; user?: { exists?: unknown; sid?: unknown }; sid?: unknown } }).user;
+      const inner = u?.user && typeof u.user === "object" ? (u.user as { exists?: unknown; sid?: unknown }) : undefined;
+      const exists = (inner?.exists ?? u?.exists) === true;
+      const sid = typeof inner?.sid === "string" ? inner.sid : (typeof u?.sid === "string" ? u.sid : null);
+      return { exists, sid };
+    } catch {
+      return { exists: false, sid: null };
+    }
+  };
+  // A principal's profile root by SID, or null when it cannot be resolved.
+  const memberProfile = async (principalSid: string): Promise<string | null> => {
+    const reg = await run([...profileQueryArgs(principalSid)]);
+    if (reg.code !== 0) return null;
+    return parseProfileImagePath(reg.out);
   };
   switch (sub ?? "status") {
     case "setup": {
@@ -1715,13 +1726,8 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = 1;
         return;
       }
-      const id = await resolvePrincipal();
-      if (id === null) {
-        console.error("sandbox setup: could not read the current user SID; set up again");
-        process.exitCode = 1;
-        return;
-      }
-      const { ownerSid, principal } = id;
+      const ownerSid = targetSid;
+      const pool = sandboxPool(ownerSid);
       const launcher = srtWinPath();
       const problem = launcherProblem(launcher, arch);
       if (problem !== null) {
@@ -1747,55 +1753,13 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         return;
       }
       const force = rest.includes("--force");
-      const { code, out } = await run([...setupArgs(launcher, CLOVER_WFP_SUBLAYER, principal), ...(force ? ["--force"] : [])]);
-      const message = setupExitMessage(code);
-      if (message !== null) {
-        console.error(`sandbox setup: ${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
-        process.exitCode = 1;
-        return;
-      }
-      // The install provisioned the principal. Finish the profile work in the same call (brief item 5):
-      // stamp the owner SID, warm up (first logon creates the profile), resolve by SID, lock down Startup.
-      const stamp = await run([...setDescriptionArgs(principal, ownerSid)]);
-      if (stamp.code !== 0) {
-        console.error(`sandbox setup: stamping the owner SID failed (exit ${stamp.code})${stamp.out.trim() ? `\n${stamp.out.trim().slice(0, 2000)}` : ""}`);
-        process.exitCode = 1;
-        return;
-      }
       const systemDir = await knownFolder("System");
       if (systemDir === null) {
         console.error("sandbox setup: could not resolve the System folder");
         process.exitCode = 1;
         return;
       }
-      const warm = await run([...warmUpArgs({ launcher, systemRoot: dirname(systemDir) })]);
-      if (warm.code !== 0) {
-        console.error(`sandbox setup: the first logon failed (exit ${warm.code})${warm.out.trim() ? `\n${warm.out.trim().slice(0, 2000)}` : ""}`);
-        process.exitCode = 1;
-        return;
-      }
-      const st = await run([...statusArgs(launcher, CLOVER_WFP_SUBLAYER)]);
-      let principalSid: string | null = null;
-      if (st.code === 0) {
-        try {
-          const u = (JSON.parse(st.out) as { user?: { user?: { sid?: unknown }; sid?: unknown } }).user;
-          const sid = u?.user && typeof u.user === "object" ? (u.user as { sid?: unknown }).sid : u?.sid;
-          if (typeof sid === "string") principalSid = sid;
-        } catch { /* unresolved below */ }
-      }
-      if (principalSid === null) {
-        console.error("sandbox setup: the principal's SID isn't reported; set up again");
-        process.exitCode = 1;
-        return;
-      }
-      const reg = await run([...profileQueryArgs(principalSid)]);
-      const profileRoot = reg.code === 0 ? parseProfileImagePath(reg.out) : null;
-      const check = profileLaunchCheck(profileRoot === null ? null : { sid: principalSid, path: profileRoot });
-      if (!check.ok) {
-        console.error(`sandbox setup: ${check.reason}; set up again`);
-        process.exitCode = 1;
-        return;
-      }
+      const systemRoot = dirname(systemDir);
       // Profile paths come from ProfileList, never from the environment (should-fix): the elevated
       // token and its env may name the elevating administrator instead of the installer target.
       const ownerReg = await run([...profileQueryArgs(ownerSid)]);
@@ -1806,29 +1770,45 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = 1;
         return;
       }
-      const allStartups = startupFolders({ profileRoot: profileRoot!, realUserProfile, commonStartup });
-      const startups = realUserProfile !== profileRoot
-        ? allStartups
-        : [allStartups[0]!, allStartups[2]!];
-      for (const path of startups) {
-        const mkdir = await run([...mkdirArgs(path)]);
-        if (mkdir.code !== 0) {
-          console.error(`sandbox setup: creating ${path} failed (exit ${mkdir.code})${mkdir.out.trim() ? `\n${mkdir.out.trim().slice(0, 2000)}` : ""}`);
-          process.exitCode = 1;
-          return;
+      // One install per pool member: each principal gets its own account, WFP filters (per-slot
+      // sublayer), warm-up logon, resolved profile and locked-down Startup folders.
+      const members: { principal: string; principalSid: string; sublayer: string }[] = [];
+      let failed = false;
+      for (const slot of pool) {
+        const { principal, sublayer } = slot;
+        const fail = (msg: string) => { console.error(`sandbox setup: ${principal}: ${msg}`); process.exitCode = 1; failed = true; };
+        const { code, out } = await run([...setupArgs(launcher, sublayer, principal), ...(force ? ["--force"] : [])]);
+        const message = setupExitMessage(code);
+        if (message !== null) { fail(`${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break; }
+        // Finish the profile work in the same call (brief item 5): stamp the owner SID, warm up
+        // (first logon creates the profile), resolve by SID, lock down Startup.
+        const stamp = await run([...setDescriptionArgs(principal, ownerSid)]);
+        if (stamp.code !== 0) { fail(`stamping the owner SID failed (exit ${stamp.code})${stamp.out.trim() ? `\n${stamp.out.trim().slice(0, 2000)}` : ""}`); break; }
+        const warm = await run([...warmUpArgs({ launcher, systemRoot })]);
+        if (warm.code !== 0) { fail(`the first logon failed (exit ${warm.code})${warm.out.trim() ? `\n${warm.out.trim().slice(0, 2000)}` : ""}`); break; }
+        const { sid: principalSid } = await memberSid(launcher, principal);
+        if (principalSid === null) { fail("the principal's SID isn't reported; set up again"); break; }
+        const profileRoot = await memberProfile(principalSid);
+        const check = profileLaunchCheck(profileRoot === null ? null : { sid: principalSid, path: profileRoot });
+        if (!check.ok) { fail(`${check.reason}; set up again`); break; }
+        const allStartups = startupFolders({ profileRoot: profileRoot!, realUserProfile, commonStartup });
+        const startups = realUserProfile !== profileRoot ? allStartups : [allStartups[0]!, allStartups[2]!];
+        for (const path of startups) {
+          const made = await run([...mkdirArgs(path)]);
+          if (made.code !== 0) { fail(`creating ${path} failed (exit ${made.code})${made.out.trim() ? `\n${made.out.trim().slice(0, 2000)}` : ""}`); break; }
         }
-      }
-      for (const path of startups) {
-        const deny = await run([...icaclsDenyArgs(path, principalSid)]);
-        if (deny.code !== 0) {
-          console.error(`sandbox setup: denying ${path} failed (exit ${deny.code})${deny.out.trim() ? `\n${deny.out.trim().slice(0, 2000)}` : ""}`);
-          process.exitCode = 1;
-          return;
+        if (failed) break;
+        for (const path of startups) {
+          const deny = await run([...icaclsDenyArgs(path, principalSid)]);
+          if (deny.code !== 0) { fail(`denying ${path} failed (exit ${deny.code})${deny.out.trim() ? `\n${deny.out.trim().slice(0, 2000)}` : ""}`); break; }
         }
+        if (failed) break;
+        members.push({ principal, principalSid, sublayer });
       }
-      // Record this install for the next setup/remove (ruling 3): owner, principal and sublayer.
+      if (failed) return;
+      // Record this install for the next setup/remove (ruling 3): owner plus every pool member.
       await mkdir(dirname(markerFile), { recursive: true });
-      await writeFile(markerFile, formatInstallMarker({ version: 1, ownerSid, principal, principalSid, sublayer: CLOVER_WFP_SUBLAYER }), "utf8");
+      await writeFile(markerFile, formatInstallMarker({ version: 2, ownerSid, members }), "utf8");
       console.log("Bash is set up under Clover's fence");
       return;
     }
@@ -1844,31 +1824,30 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = 1;
         return;
       }
-      const id = await resolvePrincipal();
-      if (id === null) {
-        console.error("sandbox remove: could not read the current user SID");
-        process.exitCode = 1;
-        return;
-      }
-      const { ownerSid, principal } = id;
+      const ownerSid = targetSid;
+      const pool = sandboxPool(ownerSid);
       const launcher = srtWinPath();
-      // Remove uninstalls the install's principal and WFP filters. Deleting the protected-copy folder
-      // itself belongs to the installer, which removes it after `remove` exits 0 (Addendum 8).
+      // Remove uninstalls each pool member's principal and WFP filters. Deleting the protected-copy
+      // folder itself belongs to the installer, which removes it after `remove` exits 0 (Addendum 8).
       const problem = launcherProblem(launcher, arch);
       if (problem !== null) {
-        const probe = await run(["net", "user", principal]);
-        if (probe.code !== 0) {
+        // Refuse only if something is actually installed: probe every pool member.
+        let anyPresent = false;
+        for (const slot of pool) {
+          if ((await run(["net", "user", slot.principal])).code === 0) { anyPresent = true; break; }
+        }
+        if (!anyPresent) {
           console.log("Bash's fence is removed");
           return;
         }
-        console.error(`sandbox remove refused: the principal exists but ${problem}`);
+        console.error(`sandbox remove refused: a principal exists but ${problem}`);
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
       {
-        // Ownership first (Addendum 9 + ruling 3): the marker's account must be one of the caller's own
-        // principals, and the live description must name this user. A hash collision can never remove
-        // another user's principal, and --force across owners is refused.
+        // Ownership first (Addendum 9 + ruling 3): the marker must belong to this user, and each live
+        // principal's description must name this user. A hash collision can never remove another
+        // user's principal.
         const programData = await knownFolder("CommonApplicationData");
         if (programData === null) {
           console.error("sandbox remove: could not resolve ProgramData");
@@ -1878,58 +1857,47 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         const { readFile, unlink } = await import("node:fs/promises");
         const markerFile = installMarkerPath(programData, ownerSid);
         const marker = await readFile(markerFile, "utf8").then((t) => parseInstallMarker(t), () => null);
-        const gate = markerAllowsRemove(marker, ownerSid, principal);
+        const gate = markerAllowsRemove(marker, ownerSid);
         if (!gate.ok) {
           console.error(`sandbox remove refused: ${gate.reason}`);
           process.exitCode = 1;
           return;
         }
-        const st = await run([...statusArgs(launcher, CLOVER_WFP_SUBLAYER)]);
-        let principalSid: string | null = null;
-        let principalExists = false;
-        if (st.code === 0) {
-          try {
-            const u = (JSON.parse(st.out) as { user?: { exists?: unknown; user?: { sid?: unknown }; sid?: unknown } }).user;
-            principalExists = u?.exists === true || ((u?.user as { exists?: unknown } | undefined)?.exists === true);
-            const sid = u?.user && typeof u.user === "object" ? u.user.sid : u?.sid;
-            if (typeof sid === "string") principalSid = sid;
-          } catch { /* exists stays false */ }
-        }
-        if (principalExists) {
-          const desc = await run([...getDescriptionArgs(principal)]);
-          if (!(desc.code === 0 && descriptionMatches(desc.out, ownerSid))) {
-            console.error("sandbox remove refused: the principal belongs to another user");
-            process.exitCode = 1;
-            return;
+        const ownerReg = await run([...profileQueryArgs(ownerSid)]);
+        const realUserProfile = ownerReg.code === 0 ? parseProfileImagePath(ownerReg.out) : null;
+        const commonStartup = await knownFolder("CommonStartup");
+        let failed = false;
+        const fail = (msg: string) => { console.error(`sandbox remove: ${msg}`); process.exitCode = 1; failed = true; };
+        for (const slot of pool) {
+          const { principal, sublayer } = slot;
+          const { exists: principalExists, sid: liveSid } = await memberSid(launcher, principal);
+          const principalSid = liveSid ?? marker?.members.find((m) => m.principal === principal)?.principalSid ?? null;
+          if (principalExists) {
+            const desc = await run([...getDescriptionArgs(principal)]);
+            if (!(desc.code === 0 && descriptionMatches(desc.out, ownerSid))) {
+              fail(`${principal} belongs to another user`); break;
+            }
+          }
+          // The profile for the reset below, resolved before the uninstall.
+          const profileRoot = principalSid !== null ? await memberProfile(principalSid) : null;
+          // Full remove (principal + filters) for this member.
+          const { code, out } = await run([...removeArgs(launcher, sublayer, principal)]);
+          if (code !== 0) {
+            fail(`${principal}: remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break;
+          }
+          // Undo what setup did outside srt-win (best effort: the uninstall already took the account).
+          // A temporary profile is shared and keyless: never delete it or its (absent) key.
+          if (profileRoot !== null && principalSid !== null && !isTemporaryProfile(profileRoot)) {
+            await run(["reg", "unload", `HKU\\${principalSid}`]);
+            await run(["reg", "delete", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${principalSid}`, "/f"]);
+            await run([...removeDirArgs(profileRoot)]);
+            if (realUserProfile !== null && commonStartup !== null) {
+              const startups = startupFolders({ profileRoot, realUserProfile, commonStartup });
+              for (const path of startups) await run([...icaclsRemoveDenyArgs(path, principalSid)]);
+            }
           }
         }
-        // The profile for the reset below, resolved before the uninstall.
-        let profileRoot: string | null = null;
-        if (principalSid !== null) {
-          const reg = await run([...profileQueryArgs(principalSid)]);
-          if (reg.code === 0) profileRoot = parseProfileImagePath(reg.out);
-        }
-        // Full remove (principal + filters).
-        const { code, out } = await run([...removeArgs(launcher, CLOVER_WFP_SUBLAYER)]);
-        if (code !== 0) {
-          console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
-          process.exitCode = 1;
-          return;
-        }
-        // Undo what setup did outside srt-win (best effort: the uninstall already took the account).
-        // A temporary profile is shared and keyless: never delete it or its (absent) key.
-        if (profileRoot !== null && principalSid !== null && !isTemporaryProfile(profileRoot)) {
-          await run(["reg", "unload", `HKU\\${principalSid}`]);
-          await run(["reg", "delete", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${principalSid}`, "/f"]);
-          await run([...removeDirArgs(profileRoot)]);
-          const ownerReg = await run([...profileQueryArgs(ownerSid)]);
-          const realUserProfile = ownerReg.code === 0 ? parseProfileImagePath(ownerReg.out) : null;
-          const commonStartup = await knownFolder("CommonStartup");
-          if (realUserProfile !== null && commonStartup !== null) {
-            const startups = startupFolders({ profileRoot, realUserProfile, commonStartup });
-            for (const path of startups) await run([...icaclsRemoveDenyArgs(path, principalSid)]);
-          }
-        }
+        if (failed) return;
         await unlink(markerFile).catch(() => {});
         console.log("Bash's fence is removed");
         return;
@@ -1947,57 +1915,67 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
-      const id = await resolvePrincipal();
-      if (id === null) {
+      const ownerSid = targetSid ?? currentUserSid();
+      if (ownerSid === null) {
         console.error("sandbox status: could not read the current user SID");
         process.exitCode = 1;
         return;
       }
-      // The installed principal's name comes from this install's marker when present (never the env).
-      const programData = await knownFolder("CommonApplicationData");
-      let principal = id.principal;
-      if (programData !== null) {
-        const { readFile } = await import("node:fs/promises");
-        const marker = await readFile(installMarkerPath(programData, id.ownerSid), "utf8").then((t) => parseInstallMarker(t), () => null);
-        if (marker !== null) principal = marker.principal;
-      }
-      const { code, out } = await run([...statusArgs(launcher, CLOVER_WFP_SUBLAYER)]);
-      if (code !== 0) {
-        console.error(`sandbox status failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
-        process.exitCode = 1;
-        return;
-      }
-      const base = parseSrtStatus(out, { launcher, arch });
-      // The owner-SID check (Addendum 9): the principal's description must name this user, so a hash
-      // collision can never report — or remove — another user's principal as ready.
-      const ownerSid = id.ownerSid;
-      let owned: boolean | null = null;
-      if (base.user?.exists === true) {
-        const desc = await run([...getDescriptionArgs(principal)]);
-        owned = desc.code === 0 && descriptionMatches(desc.out, ownerSid);
-      }
-      // The profile check (brief item 7): resolve by SID, fail closed on missing or temporary.
-      const principalSid = base.user?.sid ?? null;
-      let profile: { sid: string; path: string } | null = null;
-      if (principalSid !== null) {
-        const reg = await run([...profileQueryArgs(principalSid)]);
-        const root = reg.code === 0 ? parseProfileImagePath(reg.out) : null;
-        if (root !== null) profile = { sid: principalSid, path: root };
-      }
-      let st = base;
-      if (base.ready) {
-        if (owned === false) {
-          st = { ...base, ready: false, reason: "the principal belongs to another user; set it up again", exit: SANDBOX_EXIT.FAILED };
-        } else {
-          st = parseSrtStatus(out, { launcher, arch, profile, profileChecked: true });
+      // Every pool member reports: per-principal user status plus its slot's WFP filters.
+      const pool = sandboxPool(ownerSid);
+      const members: { principal: string; ready: boolean; reason: string | null }[] = [];
+      let firstUser: unknown = null;
+      for (const slot of pool) {
+        const ust = await run([...userStatusArgs(launcher, slot.principal)]);
+        if (ust.code !== 0) {
+          members.push({ principal: slot.principal, ready: false, reason: `user status failed (exit ${ust.code})` });
+          continue;
         }
+        let user: unknown = null;
+        let wfp: unknown = null;
+        try {
+          user = (JSON.parse(ust.out) as { user?: unknown }).user ?? null;
+        } catch { /* not ready below */ }
+        const st = await run([...statusArgs(launcher, slot.sublayer)]);
+        if (st.code === 0) {
+          try {
+            wfp = (JSON.parse(st.out) as { wfp?: unknown }).wfp ?? null;
+          } catch { /* not ready below */ }
+        }
+        if (members.length === 0) firstUser = user;
+        const merged = JSON.stringify({ user, wfp });
+        const base = parseSrtStatus(merged, { launcher, arch });
+        // The owner-SID check (Addendum 9): the principal's description must name this user.
+        let owned: boolean | null = null;
+        if (base.user?.exists === true) {
+          const desc = await run([...getDescriptionArgs(slot.principal)]);
+          owned = desc.code === 0 && descriptionMatches(desc.out, ownerSid);
+        }
+        // The profile check (brief item 7): resolve by SID, fail closed on missing or temporary.
+        const principalSid = base.user?.sid ?? null;
+        let profile: { sid: string; path: string } | null = null;
+        if (principalSid !== null) {
+          const root = await memberProfile(principalSid);
+          if (root !== null) profile = { sid: principalSid, path: root };
+        }
+        let verdict = base;
+        if (base.ready) {
+          if (owned === false) {
+            verdict = { ...base, ready: false, reason: `${slot.principal} belongs to another user; set it up again`, exit: SANDBOX_EXIT.FAILED };
+          } else {
+            verdict = parseSrtStatus(merged, { launcher, arch, profile, profileChecked: true });
+          }
+        }
+        members.push({ principal: slot.principal, ready: verdict.ready, reason: verdict.reason });
       }
+      const ready = members.length === pool.length && members.every((m) => m.ready);
+      const reason = ready ? null : (members.find((m) => !m.ready)?.reason ?? "a pool member isn't set up");
       if (rest.includes("--json")) {
-        console.log(JSON.stringify({ ready: st.ready, reason: st.reason, user: st.user }));
+        console.log(JSON.stringify({ ready, reason, user: firstUser, members }));
         return;
       }
-      console.log(st.ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${st.reason ?? "unknown"}`);
-      process.exitCode = st.exit;
+      console.log(ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${reason ?? "unknown"}`);
+      process.exitCode = ready ? SANDBOX_EXIT.OK : SANDBOX_EXIT.FAILED;
       return;
     }
     default:
