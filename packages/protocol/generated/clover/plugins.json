@@ -518,10 +518,6 @@
                 }
               }
             ]
-          },
-          "okHash": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
           }
         },
         "required": [
@@ -1210,7 +1206,7 @@
       }
     },
     "plugin.install": {
-      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
+      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, whoever installed it.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
