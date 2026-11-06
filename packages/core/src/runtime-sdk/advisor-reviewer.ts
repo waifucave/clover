@@ -7,7 +7,7 @@
 // WS-23: this file also built the retired official leg's advisor — a daemon-side `ReviewerResolver`
 // the router handed that leg's standing advisor tool, with its own OpenAI and Anthropic reviewer
 // providers. That half is gone with the leg; the family table is what remains.
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { facingNameToTag, splitTag, type ModelTag } from "./model-tag";
 
 /** Which of Clover's three D30-relevant families a catalog-recognised model belongs to. `"other"` is

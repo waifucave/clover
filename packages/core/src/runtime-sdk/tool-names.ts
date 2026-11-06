@@ -1,4 +1,4 @@
-import { WINTER_DEFAULT_TOOL_DEFINITIONS } from "@yanlinglabs/winter-agent-sdk/tools";
+import { WINTER_DEFAULT_TOOL_DEFINITIONS } from "@waifucave/clover-agent-sdk/tools";
 
 /**
  * **The runtime ↔ host tool-name pairs** (P8b-25) — ONE literal table, both directions derived

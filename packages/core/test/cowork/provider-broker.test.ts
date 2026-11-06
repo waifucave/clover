@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { CredentialMaterial, ProviderAdapter, ProviderEvent, ResolvedModel } from "@yanlinglabs/winter-provider-runtime";
+import type { CredentialMaterial, ProviderAdapter, ProviderEvent, ResolvedModel } from "@waifucave/clover-provider-runtime";
 import { CoworkProviderBroker, type CoworkProviderAdmission, type CoworkProviderRequest, type CoworkProviderScope } from "../../src/cowork/provider-broker";
 const scope: CoworkProviderScope = { homeId: "home", workspaceId: "workspace", sessionId: "logical-session", backendSessionId: "sdk-backend", taskId: "task", incarnationId: "incarnation", bootId: "boot", leaseEpoch: 1, grantRevision: 2, accountRevision: 3, modelRevision: 4 };
 const KEY = "fixture-host-provider-key-never-transfer";

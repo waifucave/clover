@@ -40,7 +40,7 @@
 // standing messaging server — the `__<key>` suffix guarantees that. The Mac/iOS renderers key tool
 // rows on Clover's names (P8b-25). `mcpToolName` is TWO-ARG — it takes the brand and the WHOLE tool
 // token — so the `<server>__<tool>` join happens here.
-import { mcpToolName } from "@yanlinglabs/winter-agent-sdk";
+import { mcpToolName } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../runtime-sdk/brand";
 import type { SessionMode } from "../runtime-sdk/create";
 

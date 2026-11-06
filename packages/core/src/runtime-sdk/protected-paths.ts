@@ -24,10 +24,10 @@ import { homedir, tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { canonicalizeForWrite, resolveLeafSymlinks, sdkHomeFor } from "../agent/paths";
 import type { Mode as SessionMode } from "../agent/tools/registry";
-import { RESUME_STAGING_PREFIX } from "@yanlinglabs/winter-runtime-sdk";
+import { RESUME_STAGING_PREFIX } from "./host";
 import { WRITE_CLASS_TOOL_NAMES, homeFenceTarget, writeTargetPathsIn } from "./control-plane";
 import { fsRootAnchored } from "./mode-options";
-import { PROTECTED_ITEM_DIRS } from "@yanlinglabs/winter-runtime-sdk";
+import { PROTECTED_ITEM_DIRS } from "./host";
 import { projectWalk } from "./project-walk";
 
 export { projectWalk };

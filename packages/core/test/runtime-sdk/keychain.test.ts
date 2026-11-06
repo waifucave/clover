@@ -10,11 +10,11 @@ import { keychainService } from "../../src/profile";
 import { OPENAI_API_KEY_SECRET } from "../../src/providers/manager";
 import { CODEX_SECRET_NAMES, CodexAuthStore, writeOpenAiApiKey } from "../../src/auth/credential-material";
 import { credentialInventory, credentialPresenceFrom, credentialPresentProbe, credentialRefFor, isInScopeApiKeyProvider, refMaterialPresent, CLOVER_CREDENTIAL_INVENTORY, ANTHROPIC_CREDENTIAL_SECRET_NAME, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { ANTHROPIC_CONSOLE_CREDENTIAL_ACCOUNT } from "@yanlinglabs/winter-provider-runtime";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { ANTHROPIC_CONSOLE_CREDENTIAL_ACCOUNT } from "@waifucave/clover-provider-runtime";
 import { Settings } from "../../src/settings";
 
-// The real `CredentialRef` (`@yanlinglabs/winter-agent-sdk` protocol/config.d.ts:317-333) is a
+// The real `CredentialRef` (`@waifucave/clover-agent-sdk` protocol/config.d.ts:317-333) is a
 // discriminated union with NO `api_key` kind and NO `provider`/`secretName` fields — the brief's
 // `{ kind: "api_key", provider, secretName }` placeholder does not exist on the installed type.
 // The kind that names a Keychain-backed secret is `{ kind: "keychain"; account: string; service?:

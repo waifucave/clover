@@ -1,7 +1,7 @@
 // Turns a sender's webhook request into what is sealed for the user's computers: the method, the query less
 // the routine's key, the sender's headers less credentials and Cloudflare's own, the sender's address and the body.
 
-import { HOOK_KEY_RE } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { HOOK_KEY_RE } from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 
 /** Methods a webhook may not use: they carry no payload or are not requests a sender makes. */
 export const REFUSED_METHODS = new Set(["HEAD", "OPTIONS", "CONNECT", "TRACE"]);

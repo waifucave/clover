@@ -90,3 +90,13 @@ try {
     if (left > 0) throw new Error(`${left} host-storage policy consumer(s) left registered at the end of a test file; stop every daemon / drivers / embedded host the file creates. Registered from: ${hostStoragePolicyConsumerOrigins().join(" ; ")}`);
   });
 } catch { /* not inside the test runner */ }
+
+// A-M1 review (the SDK has no default brand): core installs CORE_BRAND as the SDK's process brand when it loads
+// (`runtime-sdk/process-identity.ts`, through `src/index.ts`, `daemon.ts` and the CLI). A test that imports core
+// piecemeal gets the same brand here, so an unthreaded SDK call reads Clover's names as it does in production.
+// Imported dynamically, after the environment above is set: `CORE_BRAND` resolves its Keychain service from it.
+{
+  const { installBrand } = await import("@waifucave/clover-agent-sdk");
+  const { CORE_BRAND } = await import("../src/runtime-sdk/brand");
+  installBrand(CORE_BRAND);
+}

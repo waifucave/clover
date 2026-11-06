@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { startFixtureAs, type FixtureAs } from "../fixtures/mcp-oauth-fixture-as";
 
 class TestClient {
@@ -80,7 +80,7 @@ async function until(check: () => boolean | Promise<boolean>, ms: number, what: 
   }
 }
 
-describeWithWinterBinary("WS-25: a live code child reconnects a signed-out-then-signed-in OAuth server (built binary, real daemon)", (bin) => {
+describeWithEmbeddedRuntime("WS-25: a live code child reconnects a signed-out-then-signed-in OAuth server (built binary, real daemon)", () => {
   const SERVER = "gh";
   let home: string;
   let cwd: string;
@@ -102,7 +102,7 @@ describeWithWinterBinary("WS-25: a live code child reconnects a signed-out-then-
       provider: { type: "openai-compatible", model: "winter-test/echo", baseUrl: "http://127.0.0.1:9/v1" },
       // A long idle timeout: the red run spends ~60 s in reconnects, and an idle-ended child would turn the
       // second reconnect into `CloverLegUnsupported` rather than the failure under test.
-      runtimes: { winterExecutable: bin, winterLeg: { code: true }, winterIdleTimeoutSec: 600 },
+      runtimes: { winterLeg: { code: true }, winterIdleTimeoutSec: 600 },
     }, null, 2));
     // The user-scope OAuth http server, like the live `github` entry.
     writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { [SERVER]: { type: "http", url: fx.mcpUrl } } }, null, 2));

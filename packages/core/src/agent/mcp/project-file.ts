@@ -72,7 +72,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { join, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { validateMcpOAuthConfig } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { validateMcpOAuthConfig } from "@waifucave/clover-agent-runtime/mcp-auth";
 
 /**
  * The per-entry shape `parseProjectMcpServers` validates a project's `.mcp.json` entries against.
@@ -107,7 +107,7 @@ export const McpVersionNegotiationSetting = z.union([
  * undeclared key, and a stripped `oauth` block would silently turn a pre-registered client into DCR.
  *
  * The structure here is LOOSE on purpose, and the rules are the SDK's: `refineMcpOAuth` hands the block to
- * `validateMcpOAuthConfig(oauth, url)` (`@yanlinglabs/winter-agent-runtime/mcp-auth`), the ONE validator the
+ * `validateMcpOAuthConfig(oauth, url)` (`@waifucave/clover-agent-runtime/mcp-auth`), the ONE validator the
  * runtime itself applies -- so an unknown key, a `clientSecret` VALUE (refused by name: a config is
  * model-readable and echoed by `mcp.get`), a `clientSecretRef` that names an account or a service (review
  * C1: the secret's Keychain account is DERIVED from the server URL, never config-named), a loopback

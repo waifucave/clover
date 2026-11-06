@@ -1,4 +1,4 @@
-import type { PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import type { PermissionResult } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import type { BridgedApprovalRequest } from "./approval-bridge";

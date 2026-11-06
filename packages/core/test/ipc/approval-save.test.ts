@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type NewSessionEvent, type WritableSocket } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";

@@ -26,7 +26,7 @@
 // *when* to call `refreshAnthropicBearer` again), not provider logic, and stays in core under the
 // same ruling that moved the spawn/redaction/write logic to the SDK.
 //
-// P10a integration (v0.0.6 pin flip): `@yanlinglabs/winter-provider-runtime` published these five
+// P10a integration (v0.0.6 pin flip): `@waifucave/clover-provider-runtime` published these five
 // names at 0.0.6 exactly as Lane S described above — wired below as `REAL_SDK`, now the default
 // `sdk` dependency. `UNAVAILABLE_SDK` stays as an explicit, still-tested defensive fallback shape
 // (never the default any more) rather than being deleted outright.
@@ -40,7 +40,7 @@ import {
   refreshAnthropicBearer as sdkRefreshAnthropicBearer,
   startAnthropicConsoleBrokerLogin as sdkStartAnthropicConsoleBrokerLogin,
   type CredentialStore,
-} from "@yanlinglabs/winter-provider-runtime";
+} from "@waifucave/clover-provider-runtime";
 import type { SecretStore } from "./secret-store";
 import { keychainService } from "../profile";
 import { ANTHROPIC_PROFILE_NAME, anthropicConfigDirFor, ensurePrivateDir } from "../runtime-sdk/anthropic-paths";
@@ -56,7 +56,7 @@ import { CONSOLE_BROKER_SDK_MIN, REQUIRED_WINTER_AGENT_SDK, versionAtLeast } fro
 if (DEFAULT_ANTHROPIC_CONSOLE_PROFILE !== ANTHROPIC_PROFILE_NAME) {
   throw new Error(
     `console-profile-broker: ANTHROPIC_PROFILE_NAME (${JSON.stringify(ANTHROPIC_PROFILE_NAME)}) no longer matches ` +
-      `@yanlinglabs/winter-provider-runtime's DEFAULT_ANTHROPIC_CONSOLE_PROFILE (${JSON.stringify(DEFAULT_ANTHROPIC_CONSOLE_PROFILE)})`,
+      `@waifucave/clover-provider-runtime's DEFAULT_ANTHROPIC_CONSOLE_PROFILE (${JSON.stringify(DEFAULT_ANTHROPIC_CONSOLE_PROFILE)})`,
   );
 }
 
@@ -94,7 +94,7 @@ export interface AnthropicRefreshResult {
 
 /** The SDK surface this adapter drives. Injectable so this file's own tests use a FAKE; production
  *  wiring (`daemon.ts`, O6) passes nothing and gets `REAL_SDK` — the real
- *  `@yanlinglabs/winter-provider-runtime` v0.0.6 exports, wired below. */
+ *  `@waifucave/clover-provider-runtime` v0.0.6 exports, wired below. */
 export interface AnthropicConsoleSdk {
   startAnthropicConsoleBrokerLogin(store: CredentialStore, options: AnthropicLoginOptions): Promise<AnthropicLoginHandle>;
   refreshAnthropicBearer(store: CredentialStore, options: AnthropicLoginOptions): Promise<AnthropicRefreshResult>;
@@ -132,17 +132,17 @@ export const CONSOLE_LOGOUT_INCOMPLETE_REASON = "console_logout_incomplete";
 
 /** Fix round 1 item 4: the exact package + minimum version `UNAVAILABLE_SDK`'s own error messages
  *  name — confirmed by reading the SDK worktree's own `packages/provider-runtime/package.json`
- *  (name `@yanlinglabs/winter-provider-runtime`; Lane S's `console-broker.ts` ships in it). The
+ *  (name `@waifucave/clover-provider-runtime`; Lane S's `console-broker.ts` ships in it). The
  *  controller bumps this constant only if the carrying package ever changes — the version floor is
  *  "≥ 0.0.6" per the coordinator's own note (the exact tag Lane S's work publishes under). */
-const REQUIRED_PROVIDER_RUNTIME = "@yanlinglabs/winter-provider-runtime >= 0.0.6";
+const REQUIRED_PROVIDER_RUNTIME = "@waifucave/clover-provider-runtime >= 0.0.6";
 
 function unavailableSdkError(): Error {
   return new Error(`${CONSOLE_BROKER_UNAVAILABLE_REASON}: ${REQUIRED_PROVIDER_RUNTIME} is not installed/wired yet — the controller wires the real import after that package publishes`);
 }
 
 /**
- * DEFENSIVE FALLBACK ONLY (Winter Phase 10a, v0.0.6 wiring): `@yanlinglabs/winter-provider-runtime`
+ * DEFENSIVE FALLBACK ONLY (Winter Phase 10a, v0.0.6 wiring): `@waifucave/clover-provider-runtime`
  * v0.0.6 IS installed and its `console-broker.ts` exports ARE wired below as `REAL_SDK` — this is no
  * longer the default `sdk` a production broker gets (see `createConsoleProfileBroker`). It is kept,
  * exported, and still covered by tests only as the deliberate "SDK unavailable" shape a caller can
@@ -160,7 +160,7 @@ export const UNAVAILABLE_SDK: AnthropicConsoleSdk = {
 };
 
 /**
- * THE REAL SDK (Winter Phase 10a, v0.0.6 wiring): `@yanlinglabs/winter-provider-runtime`'s
+ * THE REAL SDK (Winter Phase 10a, v0.0.6 wiring): `@waifucave/clover-provider-runtime`'s
  * `adapters/anthropic/console-broker.ts` (Lane S), now the default `sdk` dependency for every
  * production `ConsoleProfileBroker` (`createConsoleProfileBroker` below never wires `UNAVAILABLE_SDK`
  * itself — only a caller that passes it explicitly, or a test, does). `startAnthropicConsoleBrokerLogin`
@@ -223,7 +223,7 @@ export interface ConsoleProfileBrokerDeps {
   /** Test seams for `startRefresher`'s timer — default to the real `setTimeout`/`clearTimeout`. */
   setTimeoutFn?: (fn: () => void, delayMs: number) => unknown;
   clearTimeoutFn?: (handle: unknown) => void;
-  /** Test/defensive seam — defaults to `REAL_SDK` (the wired `@yanlinglabs/winter-provider-runtime`
+  /** Test/defensive seam — defaults to `REAL_SDK` (the wired `@waifucave/clover-provider-runtime`
    *  v0.0.6 exports); tests pass a fake, and a caller can still pass `UNAVAILABLE_SDK` explicitly
    *  (see that constant's own doc). */
   sdk?: AnthropicConsoleSdk;
@@ -327,7 +327,7 @@ export function createConsoleProfileBroker(deps: ConsoleProfileBrokerDeps): Cons
     if (!versionAtLeast(pinnedAgentSdkVersion, CONSOLE_BROKER_SDK_MIN)) {
       throw new Error(
         `${CONSOLE_BROKER_SDK_UNSUPPORTED_REASON}: the console login/logout door needs ` +
-          `@yanlinglabs/winter-agent-sdk >= ${CONSOLE_BROKER_SDK_MIN} (pinned ${pinnedAgentSdkVersion}) — below that floor its ` +
+          `@waifucave/clover-agent-sdk >= ${CONSOLE_BROKER_SDK_MIN} (pinned ${pinnedAgentSdkVersion}) — below that floor its ` +
           `own SDK spawns claude auth login/logout --console into Clover's own CLAUDE_CONFIG_DIR instead of the intended ` +
           `ant-driven door; wait for the pin to catch up`,
       );
