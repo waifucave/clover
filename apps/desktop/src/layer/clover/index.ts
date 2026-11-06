@@ -19,6 +19,7 @@ import * as settings from "@clover-child/settings";
 import * as shell from "@clover-child/shell";
 import * as sidebar from "@clover-child/sidebar";
 import * as vrm from "@clover-child/vrm";
+import { IslandHosted, PillHosted } from "./hosts";
 import type { CloverChildId } from "./ids";
 
 export const modules: Record<CloverChildId, Record<string, unknown>> = {
@@ -35,7 +36,7 @@ export const modules: Record<CloverChildId, Record<string, unknown>> = {
   "clover/archive": archive,
   "clover/bot-editor": botEditor,
   "clover/plugin-index": pluginIndex,
-  "clover/island": island,
-  "clover/pill": pill,
+  "clover/island": { ...island, IslandApp: IslandHosted },
+  "clover/pill": { ...pill, PillApp: PillHosted },
   "clover/vrm": vrm,
 };
