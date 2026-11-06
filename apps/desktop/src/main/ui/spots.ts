@@ -31,7 +31,7 @@ export interface CellContext {
   /** The kind of session the part shows (`coding`, `bot`, …), for `when.session`. */
   session?: string;
   safeMode?: boolean;
-  /** The bot layout's `prefer` lists, by spot (rule 3). Layouts are E-M2's; empty until then. */
+  /** The bot layout's `prefer` lists, by spot (rule 3), from the tab's bot's layout (layout.ts). */
   prefer?: Readonly<Record<string, readonly string[]>>;
   /** A plugin's setting, for `when.setting`; unknown settings don't hold an entry back. */
   setting?: (pluginId: string, key: string) => unknown;

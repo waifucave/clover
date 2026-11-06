@@ -19,6 +19,7 @@ import type {
 } from "../api/ui-api";
 import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
+import { LayoutRoot } from "./layout";
 
 export * from "./bridge";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
@@ -402,11 +403,26 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
     tokens,
     context: item.context,
   }), [item, tokens, spot, spotKey]);
+  const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
+  const marks = { "data-clover-entry": item.ref, "data-clover-part": item.mount, "data-clover-tab": item.tab, "data-clover-styled": item.styled === true ? "" : undefined };
+  if (item.layout !== undefined) {
+    // A bot's layout: data the runtime draws as the tab's part, its spots the part's own. A layout's root fills the
+    // place it is in, so it gets a box of its own (the theme's `contain` reaches it).
+    const layout = item.layout;
+    return (
+      <div {...marks} data-clover-layout-part="" style={{ display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0, height: "100%", ...own }}>
+        <PartContext.Provider value={part}>
+          <PartBoundary name={item.ref}>
+            <LayoutRoot layout={layout} renderSpot={(spot, key) => <Spot name={spot} {...(key !== undefined ? { spotKey: key } : {})} />} />
+          </PartBoundary>
+        </PartContext.Provider>
+      </div>
+    );
+  }
   const component = findComponent(r.modules.get(item.pluginId), item.component);
   if (component === undefined) return <div className="clover-part-missing" role="status" data-clover-entry={item.ref}>This part has no component {item.component}.</div>;
-  const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
   return (
-    <div data-clover-entry={item.ref} data-clover-part={item.mount} data-clover-tab={item.tab} data-clover-styled={item.styled === true ? "" : undefined} style={{ display: "contents", ...own }}>
+    <div {...marks} style={{ display: "contents", ...own }}>
       <EntryView part={part} component={component} props={props} />
     </div>
   );

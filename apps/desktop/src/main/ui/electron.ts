@@ -126,8 +126,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       return fileResponse(file, type, layerHeaders(type));
     }
     if (url.pathname.startsWith("/_t/")) {
-      // A theme's images and fonts, in every layer its sheets reach (§5.5): only a plugin with themes or style
-      // entries, only images and fonts, inside its folder. Never a document: an SVG opened as a page gets no origin.
+      // A theme's or a layout's images and fonts, in every layer they reach (§5.5): only a plugin with themes, style
+      // entries or a bot's layout, only images and fonts, inside its folder. Never a document: an SVG opened as a
+      // page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
       let id: string;
       let path: string;
@@ -137,7 +138,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      const plugin = runtime.registry.find((p) => p.id === id && (p.themes.length > 0 || p.entries.some((e) => e.style !== undefined)));
+      const plugin = runtime.registry.find((p) => p.id === id && (p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {

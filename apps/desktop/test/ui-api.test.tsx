@@ -97,14 +97,15 @@ const hooks: { t?: (key: string, params?: Record<string, string | number>) => st
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
+  const views: Record<string, SpotView> = {};
   const seen: unknown[] = [];
 
   beforeAll(() => {
-    fake = fakeBridge({
+    fake = fakeBridge(Object.assign(views, {
       "m1:sidebar": { spot: "sidebar", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m2", ref: "clover/sidebar#sidebar", pluginId: "clover/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX, tokens: { "color.accent": "#123456" } }] },
       "m1:composer": { spot: "composer", shape: "single", hidden: false, conflict: false, items: [{ kind: "frame", mount: "m3", ref: "vn#composer", pluginId: "vn", entryId: "composer", layer: "vn", url: "clover-plugin://vn/?mount=abc" }] },
       "m1:status": { spot: "status", shape: "list", hidden: true, conflict: false, items: [] },
-    });
+    }));
     const Shell = ({ props, tokens }: { props: { title: string }; tokens: Record<string, unknown> }) =>
       h("main", { "data-title": props.title, "data-accent": String(tokens["color.accent"]) },
         h(ui.Spot, { name: "sidebar", props: { route: "alpha" } }),
@@ -256,6 +257,37 @@ describe("the UI API in a layer", () => {
     expect(hooks.t!("clover.sidebar.files", { count: 1 })).toBe("1 fichier");
     expect(hooks.t!("clover.sidebar.files", { count: 1200 })).toBe("1\u202f200 fichiers");
     expect(document.documentElement.lang).toBe("fr");
+  });
+
+  test("a bot's layout draws as its tab's part: rows and columns, images, markdown as elements, spots as the part's own", async () => {
+    views["m1:never-declared"] = { spot: "never-declared", shape: "single", hidden: false, conflict: false, items: [{
+      kind: "inline", mount: "m20", ref: "luna#layout", pluginId: "luna", entryId: "layout", component: "$layout", context: CTX, tab: "luna",
+      layout: { kind: "row", children: [
+        { kind: "column", size: "240px", className: "clv-luna__side", children: [
+          { kind: "image", src: "/_t/luna/a.png" },
+          { kind: "markdown", markdown: "# Luna\nLikes *stars* and [the moon](https://example.com).\n\n- one\n- two" },
+          { kind: "text", text: "only when wide", hideBelow: 5000 },
+        ] },
+        { kind: "column", grow: 1, children: [{ kind: "spot", spot: "conversation" }, { kind: "spacer" }] },
+      ] },
+    }] };
+    views["m20:conversation"] = { spot: "conversation", shape: "single", hidden: false, conflict: false, items: [{ kind: "inline", mount: "m21", ref: "clover/sidebar#sidebar", pluginId: "clover/sidebar", entryId: "sidebar", component: "Sidebar", context: CTX }] };
+    await act(async () => fake.emit({ type: "respot" }));
+    await tick();
+    const part = document.querySelector('[data-clover-part="m20"]')!;
+    expect(part.getAttribute("data-clover-tab")).toBe("luna");
+    expect(part.querySelector('[data-clover-layout="row"] > [data-clover-layout="column"].clv-luna__side')).not.toBeNull();
+    expect(part.querySelector("img")?.getAttribute("src")).toBe("/_t/luna/a.png");
+    expect(part.querySelector("h1")?.textContent).toBe("Luna");
+    expect(part.querySelector("em")?.textContent).toBe("stars");
+    // A link shows as its text: a layout loads and opens nothing.
+    expect(part.querySelector("a")).toBeNull();
+    expect(part.textContent).toContain("the moon");
+    expect(part.querySelectorAll("li").length).toBe(2);
+    expect(part.textContent).not.toContain("only when wide");
+    // Its spot resolves as the layout part's.
+    expect(fake.calls).toContainEqual({ op: "resolve", args: ["m20", "conversation", undefined] });
+    expect(part.querySelector('[data-clover-part="m21"] nav')).not.toBeNull();
   });
 
   test("props across a frame's edge: functions become markers; markers become functions", () => {

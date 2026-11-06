@@ -7,6 +7,7 @@
 // Until they are, `readUiPlugins` takes them from `plugin.list` and the plugin's detail when given, and otherwise
 // falls back to: bundled for the `clover` tree and `alpha`, the order the daemon listed them in, and no capabilities.
 import { UiPluginView as UiPluginViewSchema, type UiPluginView } from "@waifucave/clover-protocol";
+import { SPOTS } from "@waifucave/clover-plugin-sdk";
 
 /** Where a plugin came from, as the resolver's rule 5 sees it. */
 export type UiSource = "bundled" | "installed" | "dev";
@@ -43,6 +44,8 @@ export interface UiEntry {
   component?: string;
   /** A theme-format file, relative to the plugin's folder. */
   style?: string;
+  /** A bot's layout file (§5.5): the core draws it in the tab, as data; its component is `LAYOUT_COMPONENT`. */
+  layout?: string;
   web?: Readonly<Record<string, unknown>>;
   window?: { type: "overlay" | "window"; alwaysOnTop?: boolean; transparent?: boolean; placement?: Readonly<Record<string, string>> };
   declares: Readonly<Record<string, PointDeclaration>>;
@@ -74,9 +77,27 @@ export interface UiPlugin {
   name?: string;
   /** For a bot: the theme its tab wears (`bot.theme`), one of `themes`. */
   botTheme?: string;
+  /** For a bot: the layout its tab is arranged by (`bot.layout`), a file in its folder. */
+  botLayout?: string;
   themes: readonly { id: string; file: string }[];
   locales: readonly { lang: string; file: string }[];
   entries: readonly UiEntry[];
+}
+
+/** The component name a layout entry renders with: the core's own, which runs no plugin code. */
+export const LAYOUT_COMPONENT = "$layout";
+
+/** The spots a bot's tab declares (the catalog's `bot-tab` spots). */
+const BOT_TAB_SPOTS: Readonly<Record<string, PointDeclaration>> = Object.fromEntries(
+  SPOTS.filter((s) => s.declaredBy === "bot-tab").map((s) => [s.name, { shape: s.shape, ...(s.needs !== undefined ? { needs: [...s.needs] } : {}) }]),
+);
+
+/** A bot's layout as the entry that fills its tab: it declares the tab's spots and the bot's own, so its `{ spot }`
+ *  nodes may place them. */
+export function layoutEntry(pluginId: string, file: string, own: readonly UiEntry[]): UiEntry {
+  const declares: Record<string, PointDeclaration> = { ...BOT_TAB_SPOTS };
+  for (const e of own) for (const [name, d] of Object.entries(e.declares)) declares[name] ??= d;
+  return { pluginId, id: "layout", spot: "bot.tab", kind: "component", component: LAYOUT_COMPONENT, layout: file, declares, fields: {} };
 }
 
 /** The plugins whose UI runs in safe mode (§5.8): only the app's own. */
@@ -98,6 +119,7 @@ export interface UiPluginExtras {
   capabilities?: readonly string[];
   isBot?: boolean;
   botTheme?: string;
+  botLayout?: string;
   name?: string;
   css?: readonly string[];
 }
@@ -171,6 +193,7 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
     ...(strings(v.capabilities) ? { capabilities: strings(v.capabilities)! } : {}),
     ...(typeof v.isBot === "boolean" ? { isBot: v.isBot } : {}),
     ...(typeof v.botTheme === "string" ? { botTheme: v.botTheme } : {}),
+    ...(typeof v.botLayout === "string" ? { botLayout: v.botLayout } : {}),
     ...(typeof v.name === "string" ? { name: v.name } : {}),
     ...(strings(v.css) ? { css: strings(v.css)! } : {}),
   };
@@ -200,6 +223,8 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
     const x: UiPluginExtras = { ...fromView(view as unknown as Record<string, unknown>), ...extras[view.pluginId] };
     const top = topIdOf(view.pluginId);
     const entries = view.ui.map((raw) => readUiEntry(view.pluginId, raw)).filter((e): e is UiEntry => e !== undefined);
+    // A bot's layout is its tab, drawn by the core, unless the bot's own component fills the tab.
+    if ((x.isBot ?? false) && x.botLayout !== undefined && !entries.some((e) => e.spot === "bot.tab" && e.kind !== "style")) entries.push(layoutEntry(view.pluginId, x.botLayout, entries));
     return {
       id: view.pluginId,
       topId: top,
@@ -215,6 +240,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       isBot: x.isBot ?? false,
       ...(x.name !== undefined ? { name: x.name } : {}),
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
+      ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
       themes: view.themes,
       locales: view.locales,
       entries,

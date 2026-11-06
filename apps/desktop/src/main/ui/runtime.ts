@@ -19,6 +19,7 @@ import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./b
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
+import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
 
 /** A frame as Electron describes it. */
@@ -133,6 +134,7 @@ export class UiRuntime {
   private readonly grants = new Map<string, { offer: DragOffer; windowId: number; at: number }>();
   private readonly themes: ThemeStore;
   private readonly strings: StringStore;
+  private readonly layouts: LayoutStore;
   private readonly tables = new Map<string, StringTable>();
   private readonly now: () => number;
   private readonly token: () => string;
@@ -147,6 +149,7 @@ export class UiRuntime {
     this.send = opts.send ?? (() => {});
     this.themes = opts.themes ?? new ThemeStore(this.log);
     this.strings = new StringStore(this.log);
+    this.layouts = new LayoutStore(this.log);
   }
 
   get safeMode(): boolean {
@@ -166,6 +169,7 @@ export class UiRuntime {
     this.tree = new SpotTree(this.plugins);
     this.themes.clear();
     this.strings.clear();
+    this.layouts.clear();
     this.changed(true);
   }
 
@@ -231,6 +235,18 @@ export class UiRuntime {
     return parent?.ctx.bot === m.ctx.bot ? undefined : m.ctx.bot;
   }
 
+  private entryOf(m: Mount): UiEntry | undefined {
+    return m.plugin?.entries.find((e) => e.id === m.entryId);
+  }
+
+  /** A bot's layout's `prefer` lists, for the cells in its tab (rule 3). */
+  private preferFor(bot: string): Readonly<Record<string, readonly string[]>> | undefined {
+    const plugin = this.plugins.find((p) => p.isBot && p.id === bot);
+    if (plugin?.botLayout === undefined) return undefined;
+    const prefer = this.layouts.prefer(plugin, plugin.botLayout);
+    return Object.keys(prefer).length > 0 ? prefer : undefined;
+  }
+
   private styledOf(m: Mount): boolean {
     return m.styles.some((c) => c.entry.style !== undefined);
   }
@@ -255,6 +271,13 @@ export class UiRuntime {
       if (b === undefined) continue;
       const css = this.themes.themeSheet(b.plugin, b.theme, { root: partSelector(m.id), limit: "[data-clover-tab]:not(:scope)" });
       if (css !== "") out.push({ id: `bot:${bot}:${m.id}`, css });
+    }
+    for (const m of inDoc) {
+      const file = this.entryOf(m)?.layout;
+      if (file === undefined || m.plugin === undefined) continue;
+      // The layout's own CSS dresses its own nodes: it stops at every part inside it.
+      const css = this.layouts.sheet(m.plugin, file, { root: partSelector(m.id), limit: "[data-clover-part]:not(:scope)" });
+      if (css !== "") out.push({ id: `layout:${m.plugin.id}:${m.id}`, css });
     }
     for (const m of inDoc) {
       for (const c of m.styles) {
@@ -550,6 +573,9 @@ export class UiRuntime {
     const session = doc.layer === "clover" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
     if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
+    const prefer = ctx.bot === undefined ? undefined : this.preferFor(ctx.bot);
+    if (prefer !== undefined) ctx.prefer = prefer;
+    else delete ctx.prefer;
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     let shown = cell.shown;
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
@@ -581,14 +607,15 @@ export class UiRuntime {
   }
 
   private place(parent: Mount, doc: Mount, c: Candidate, spot: string, key: string | undefined, ctx: CellContext, styles: Candidate[], session: string | undefined): Mount {
-    const inline = c.plugin.layer === doc.layer && c.entry.kind === "component";
+    // A layout is data: it draws inline in whatever document shows the tab.
+    const inline = (c.plugin.layer === doc.layer && c.entry.kind === "component") || c.entry.layout !== undefined;
     const kind: Mount["kind"] = c.entry.kind === "web" ? "web" : inline ? "inline" : "frame";
     const m: Mount = {
       id: this.mountId(),
       kind,
       parent: parent.id,
       windowId: parent.windowId,
-      layer: c.plugin.layer,
+      layer: inline ? doc.layer : c.plugin.layer,
       plugin: c.plugin,
       entryId: c.entry.id,
       ...(c.entry.component !== undefined ? { component: c.entry.component } : {}),
@@ -615,6 +642,7 @@ export class UiRuntime {
 
   private item(m: Mount, parent: Mount): SpotItem {
     const ref = `${m.plugin!.id}#${m.entryId}`;
+    const layout = this.entryOf(m)?.layout;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
     if (m.kind === "frame") {
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true };
@@ -631,6 +659,7 @@ export class UiRuntime {
       context: this.context(m),
       ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
       ...(this.styledOf(m) ? { styled: true } : {}),
+      ...(layout !== undefined ? { layout: (m.plugin && this.layouts.view(m.plugin, layout, this.language)) || { kind: "text", text: "" } } : {}),
     };
   }
 

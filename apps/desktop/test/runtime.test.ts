@@ -288,6 +288,74 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
   });
 });
 
+describe("a bot's layout (§5.5)", () => {
+  function layoutBot(layout: unknown, files: Record<string, string> = {}, extra: Record<string, unknown> = {}): UiPlugin {
+    const dir = mkdtempSync(join(tmpdir(), "clover-layout-"));
+    writeFileSync(join(dir, "layout.json"), JSON.stringify(layout));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+    return readUiPlugins([{ pluginId: "luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
+  }
+  const LAYOUT = {
+    layout: 1,
+    css: "layout.css",
+    background: "bg.png",
+    root: { row: [
+      { column: [{ image: "art/luna.png", size: 120 }, { text: { en: "Hello", fr: "Bonjour" } }, { markdown: "about.md" }], size: "240px", hideBelow: 700, class: "side" },
+      { column: [{ spot: "conversation", grow: 1 }, { spot: "composer", prefer: ["clover/composer"] }], grow: 1 },
+    ] },
+  };
+  const FILES = { "layout.css": ".side { padding: 8px } .side img { border-radius: 50% }", "about.md": "# Luna\nLikes *stars*." };
+
+  test("a data-only bot's tab is its layout, drawn inline by the runtime as data: sizes, classes, images, text and markdown resolved", () => {
+    const s = setup([...composerFixture(), layoutBot(LAYOUT, FILES)]);
+    s.rt.setChoices({ picks: [], lists: [], language: "fr" });
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout", component: "$layout", tab: "luna" });
+    const layout = (tab as { layout: unknown }).layout;
+    expect(layout).toEqual({ kind: "row", children: [
+      { kind: "column", size: "240px", hideBelow: 700, className: "clv-luna__side", children: [
+        { kind: "image", src: "/_t/luna/art/luna.png", size: "120px" },
+        { kind: "text", text: "Bonjour" },
+        { kind: "markdown", markdown: "# Luna\nLikes *stars*." },
+      ] },
+      { kind: "column", grow: 1, children: [{ kind: "spot", spot: "conversation", grow: 1 }, { kind: "spot", spot: "composer" }] },
+    ] });
+  });
+
+  test("its spots are the tab's; its `prefer` is rule 3 there (the bundled composer over an installed one)", () => {
+    const s = setup([...composerFixture(), layoutBot(LAYOUT, FILES)]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "clover/composer#composer" }]);
+    // Without the layout's preference the installed composer wins (rule 5), as in Alpha's tab.
+    const alpha = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    expect(s.rt.resolve(shell.shellFrame, alpha.mount, "composer").items).toMatchObject([{ kind: "frame", ref: "fixture-composer#composer" }]);
+    // A spot the tab doesn't declare waits.
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "sidebar")).toMatchObject({ undeclared: true });
+  });
+
+  test("its CSS is cleaned with its classes prefixed, scoped to the tab and stopping at the parts inside it", () => {
+    const s = setup([layoutBot(LAYOUT, FILES)]);
+    const shell = mountShell(s);
+    s.sent.length = 0;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
+    const sheet = sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!;
+    const scope = `@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-part]:not(:scope))`;
+    expect(sheet.css).toBe(`${scope}{:scope{background-image:url("/_t/luna/bg.png");background-size:cover;background-position:center}}\n${scope}{.clv-luna__side{padding:8px}.clv-luna__side img{border-radius:50%}}`);
+  });
+
+  test("a bot whose own component fills its tab keeps it; a broken layout shows nothing", () => {
+    const own = layoutBot(LAYOUT, FILES, { clientEntry: "client/index.js", ui: [{ spot: "bot.tab", component: "LunaTab" }] });
+    expect(own.entries.map((e) => e.id)).toEqual(["bot.tab"]);
+    const s = setup([layoutBot({ layout: 1, root: { row: [{ script: "x" }] } })]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect((tab as { layout: unknown }).layout).toEqual({ kind: "text", text: "" });
+  });
+});
+
 describe("each document's strings (§5.5's translations)", () => {
   test("the core root reads the core's own; a layer reads its plugin's keys; a new language reaches every document", () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-locale-"));

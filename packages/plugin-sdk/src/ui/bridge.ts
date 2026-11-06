@@ -76,6 +76,8 @@ export type SpotItem =
     /** The part is a bot's tab (its bot), or is dressed by a style entry: the document's sheets find it so. */
     tab?: string;
     styled?: boolean;
+    /** A bot's layout (§5.5), which the runtime draws in place of a component: data only. */
+    layout?: LayoutView;
   }
   | {
     kind: "frame";
@@ -89,8 +91,34 @@ export type SpotItem =
     /** The frame is asleep (far from the screen a while); it wakes rebuilt from the core's state. */
     asleep?: boolean;
   }
-  /** A web page entry (§5.5 "Web pages"): an isolated view, E-M2's. Shown as a placeholder until then. */
+  /** A web page entry (§5.5 "Web pages"): an isolated view with its own session, which the core draws over the
+   *  place the part reports (`webFrame`). */
   | { kind: "web"; mount: string; ref: string; pluginId: string; entryId: string };
+
+/** A node of a bot's layout as the core hands it to the runtime: sizes as CSS lengths, classes already prefixed with
+ *  the plugin's id, images as the core's asset URLs, text in the user's language and markdown as its text. */
+export interface LayoutAttrs {
+  size?: string;
+  min?: string;
+  max?: string;
+  grow?: number;
+  /** Hidden while the window is narrower than this, in CSS pixels. */
+  hideBelow?: number;
+  className?: string;
+  gap?: string;
+  padding?: string;
+  align?: "start" | "center" | "end" | "stretch";
+}
+
+export type LayoutView = LayoutAttrs & (
+  | { kind: "row" | "column" | "stack"; children: LayoutView[] }
+  | { kind: "tabs"; tabs: { title: string; node: LayoutView }[] }
+  | { kind: "spot"; spot: string; key?: string }
+  | { kind: "image"; src: string }
+  | { kind: "text"; text: string }
+  | { kind: "markdown"; markdown: string }
+  | { kind: "spacer" }
+);
 
 /** What a `<Spot>` shows, as the core resolved it. */
 export interface SpotView {
