@@ -6,7 +6,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
-import type { SettingsModalProps, SettingsSection } from "./types";
+import type { SettingsModalProps, SettingsPlugin as SettingsPluginRow, SettingsSection } from "./types";
 
 export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots"];
 
@@ -48,6 +48,24 @@ function Row({ label, detail, mark, children }: { label: string; detail?: string
     </div>
   );
 }
+
+/** What a plugin's row offers (review S2): a found plugin's OK is reviewed on a sealed card, never by a switch; a
+ *  blocked, refused or invalid one has nothing to switch; and Clover's own plugin, which Settings is part of, stays on. */
+function PluginSwitch({ plugin: p, props }: { plugin: SettingsPluginRow; props: SettingsModalProps }) {
+  if (p.id === CLOVER_ID) return <span className="cl-settings__detail">{S.pluginBuiltIn}</span>;
+  if (p.state === "found") {
+    return props.onReviewOk ? (
+      <button type="button" className="cl-settings__button cl-settings__button--primary" aria-label={S.reviewOkFor(p.name)} onClick={() => props.onReviewOk?.(p.id)}>
+        {S.reviewOk}
+      </button>
+    ) : null;
+  }
+  if (NO_SWITCH.has(p.state)) return null;
+  return <Toggle label={p.name} on={p.enabled} onChange={(v) => props.onChange(`plugins.${p.id}.enabled`, v)} />;
+}
+
+const CLOVER_ID = "clover";
+const NO_SWITCH: ReadonlySet<SettingsPluginRow["state"]> = new Set(["blocked", "refused", "invalid"]);
 
 function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
   return (
@@ -238,7 +256,7 @@ function Page({ props }: { props: SettingsModalProps }) {
                     {S.pluginLogs}
                   </button>
                 )}
-                <Toggle label={p.name} on={p.enabled} onChange={(v) => onChange(`plugins.${p.id}.enabled`, v)} />
+                <PluginSwitch plugin={p} props={props} />
               </div>
             </div>
           ))}

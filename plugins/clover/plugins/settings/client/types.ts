@@ -84,6 +84,8 @@ export interface SettingsModalProps {
   onChange: (path: string, value: unknown) => void;
   onOpenLanguage: () => void;
   onOpenPluginManager?: () => void;
+  /** A found plugin's OK, reviewed on a sealed card (§5.1, §5.5): loading it is a sensitive change. */
+  onReviewOk?: (id: string) => void;
   /** A plugin's logs (spec §5.8). */
   onOpenPluginLogs?: (id: string) => void;
   /** Ask to change a computer's level: always a sealed card (spec §5.5). */

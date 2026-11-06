@@ -40,6 +40,8 @@ export interface PluginIndexProps {
   looking?: { spot: string; key?: string };
   installs?: Record<string, InstallState>;
   onInstall: (result: IndexResult) => void;
+  /** The 18+ gate before an adult plugin installs (§5.7): its name, and the user's answer. */
+  gate?: { name: string; onConfirm: () => void; onCancel: () => void };
   /** Settings' Plugins page, for what is installed. */
   onOpenInstalled?: () => void;
   /** The clock and how to show times. */

@@ -20,6 +20,29 @@ function lookingFor(looking: NonNullable<PluginIndexProps["looking"]>): string {
   return looking.key ? S.spotKey(looking.spot, looking.key) : looking.spot;
 }
 
+/** The 18+ gate (§5.7): an adult plugin installs only after the user confirms their age, and then asks for its OK on a
+ *  sealed card like any other (the controller's ruling S1). */
+function AdultGate({ name, onConfirm, onCancel }: NonNullable<PluginIndexProps["gate"]>) {
+  return (
+    <div className="cl-plugin-index__gate" role="alertdialog" aria-modal="true" aria-labelledby="cl-plugin-index-gate" onKeyDown={(e) => e.key === "Escape" && onCancel()}>
+      <div className="cl-plugin-index__gate-box">
+        <h2 className="cl-plugin-index__subhead" id="cl-plugin-index-gate">
+          {S.gateTitle}
+        </h2>
+        <p className="cl-plugin-index__note">{S.gateText(name)}</p>
+        <div className="cl-plugin-index__gate-actions">
+          <button type="button" className="cl-plugin-index__secondary" onClick={onCancel} autoFocus>
+            {S.gateCancel}
+          </button>
+          <button type="button" className="cl-plugin-index__install" onClick={onConfirm}>
+            {S.gateConfirm}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Result({ r, state, onInstall }: { r: IndexResult; state: InstallState | undefined; onInstall: () => void }) {
   const installed = r.installed !== undefined;
   const newer = installed && r.version !== undefined && r.version !== r.installed;
@@ -138,6 +161,7 @@ export function PluginIndex(props: PluginIndexProps) {
           ))}
         </ul>
       </div>
+      {props.gate && <AdultGate {...props.gate} />}
     </div>
   );
 }

@@ -323,6 +323,13 @@
   background: var(--clover-color-hover);
 }
 
+/* A primary action (reviewing a plugin's OK): the filled accent, its label in the accent's contrast colour. */
+.cl-settings__button--primary,
+.cl-settings__button--primary:hover {
+  background: var(--clover-color-accent-fill);
+  color: var(--clover-color-accent-contrast);
+}
+
 .cl-settings__button--wide {
   margin-top: var(--clover-space-l);
 }

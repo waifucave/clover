@@ -110,6 +110,39 @@ describe("the settings window", () => {
     expect(screen.getByText("Usage today")).toBeTruthy();
   });
 
+  test("a plugin's row (S2): a found plugin's OK is reviewed on a card, no switch when blocked, refused or invalid, and Clover's own stays on", () => {
+    const onReviewOk = mock((_id: string) => undefined);
+    const row = (id: string, name: string, state: SettingsModalProps["values"]["plugins"][number]["state"], enabled = false) => ({ id, name, source: "index", state, enabled, oks: [] });
+    const plugins = [
+      row("clover", "Clover", "running", true),
+      row("tarot", "Tarot", "found"),
+      row("blocked-one", "Blocked one", "blocked"),
+      row("refused-one", "Refused one", "refused"),
+      row("invalid-one", "Invalid one", "invalid"),
+      row("weather", "Weather", "running", true),
+      row("story", "Story", "off"),
+    ];
+    const h = setup({ section: "plugins", values: { ...VALUES, plugins }, onReviewOk });
+    const controls = (name: string) => {
+      const r = screen.getByRole("group", { name });
+      return [within(r).queryAllByRole("switch").length, within(r).queryAllByRole("button", { name: /OK/ }).length];
+    };
+    expect(plugins.map((p) => [p.name, ...controls(p.name)])).toEqual([
+      ["Clover", 0, 0],
+      ["Tarot", 0, 1],
+      ["Blocked one", 0, 0],
+      ["Refused one", 0, 0],
+      ["Invalid one", 0, 0],
+      ["Weather", 1, 0],
+      ["Story", 1, 0],
+    ]);
+    expect(within(screen.getByRole("group", { name: "Clover" })).getByText("Part of Clover")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review Tarot's OK" }));
+    expect(onReviewOk).toHaveBeenCalledWith("tarot");
+    fireEvent.click(within(screen.getByRole("group", { name: "Weather" })).getByRole("switch"));
+    expect(h.onChange).toHaveBeenCalledWith("plugins.weather.enabled", false);
+  });
+
   test("an item marks its row on each page that has rows: a device, a plugin, a computer, a bot", () => {
     const h = setup({ section: "devices", item: "d2" });
     const marked = () => [...document.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.dataset.item);

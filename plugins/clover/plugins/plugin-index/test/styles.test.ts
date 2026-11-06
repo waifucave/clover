@@ -9,8 +9,9 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 /** Leaves that may move or fade: they never hold a sealed frame. */
 const LEAVES: string[] = [];
 
-/** None. */
-const POSITIONED: string[] = [];
+
+// The 18+ gate covers the page (inside the part: the page is its containing block).
+const POSITIONED: string[] = [".cl-plugin-index__gate"];
 
 describe("the plugin-index stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {

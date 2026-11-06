@@ -13,6 +13,7 @@ async function mount(params: { spot?: string; key?: string } = {}, installState:
   const core = fakeCore({
     "plugin.index.list": () => ({ indexes: INDEXES }),
     "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || plain(e.name).toLowerCase().includes(query.toLowerCase())) }),
+    "plugin.confirmAdult": () => ({ ok: true }),
     "plugin.install": ({ source }) => {
       const id = source.from === "index" ? source.id : "local";
       return id === "terminal-plus" ? Promise.reject(new Error("hash mismatch")) : { id, state: installState };
@@ -76,6 +77,32 @@ describe("the plugin index", () => {
     expect(within(rows()[1]!).getByRole("status").textContent).toBe("Waiting for your OK");
     expect(within(rows()[3]!).getByRole("status").textContent).toBe("Couldn't install");
     expect(within(rows()[3]!).getByRole("button", { name: "Install Terminal plus" })).toBeTruthy();
+  });
+
+  test("an install is never its own OK (S1): it lands as found, waiting for the card, and nothing says installed", async () => {
+    const { core } = await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Install Weather routine" }));
+    await act(() => settle());
+    expect(within(rows()[1]!).getByRole("status").textContent).toBe("Waiting for your OK");
+    expect(screen.queryByText("Installed")).toBeNull();
+    expect(core.calls.filter((c) => c.method === "plugin.install")).toHaveLength(1);
+  });
+
+  test("an adult plugin passes the 18+ gate first, then installs and waits for its OK like any other", async () => {
+    const { core } = await mount();
+    const installs = () => core.calls.filter((c) => c.method === "plugin.install" || c.method === "plugin.confirmAdult").map((c) => c.method);
+    fireEvent.click(screen.getByRole("button", { name: "Install Story mode" }));
+    const gate = screen.getByRole("alertdialog", { name: "Adult content" });
+    expect(gate.textContent).toContain("Story mode says it may contain adult content");
+    // Cancel: nothing is asked of the core.
+    fireEvent.click(within(gate).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(installs()).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Install Story mode" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "I'm 18 or older" }));
+    await act(() => settle());
+    expect(installs()).toEqual(["plugin.confirmAdult", "plugin.install"]);
+    expect(within(rows()[4]!).getByRole("status").textContent).toBe("Waiting for your OK");
   });
 
   test("from a placeholder: says what it is looking for, and searches for the key", async () => {

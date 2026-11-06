@@ -258,6 +258,9 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
               void core.call("plugin.logs", { id, lines: 200 }).then((r) => setLogs({ name: values.plugins.find((p) => p.id === id)?.name ?? id, lines: r.lines })),
             onRequestLevel: (computer: string, level: string) => void core.call("computer.setLevel", { name: computer, level: level as never }),
             onRemoveDevice: (id: string) => void core.call("device.revoke", { id }),
+            // Switching on a found plugin is loading it, a sensitive change: the core answers with its OK on a sealed
+            // card (the controller's ruling S2, which lane B pins), and the list follows once the user answers.
+            onReviewOk: (id: string) => void core.call("plugin.setEnabled", { id, enabled: true }).then(() => setRevision((r) => r + 1)),
             onMakeMain: (id: string) => void core.call("main.set", { device: id }),
             onPairBegin: () =>
               void core.call("device.pair.begin", {}).then((p) => setPairing({ id: p.pairingId, ...(p.code ? { code: p.code } : {}), ...(p.words ? { words: p.words } : {}) })),

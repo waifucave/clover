@@ -78,9 +78,11 @@ describe("settings on the runtime", () => {
     expect(weather.textContent).toContain("Sends you notifications");
     expect(weather.textContent).toContain("Reaches api.weather.example");
     expect(screen.getByText("Story mode").closest(".cl-settings__row")!.textContent).toContain("Stopped after three crashes in two minutes");
-    fireEvent.click(within(weather).getByRole("switch"));
+    // A found plugin has no switch: its OK is reviewed on a card (S2).
+    expect(within(weather).queryByRole("switch")).toBeNull();
+    fireEvent.click(within(screen.getByText("Story mode").closest(".cl-settings__row") as HTMLElement).getByRole("switch"));
     await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "plugin.setEnabled").map((c) => c.params)).toEqual([{ id: "weather-routine", enabled: true }]);
+    expect(core.calls.filter((c) => c.method === "plugin.setEnabled").map((c) => c.params)).toEqual([{ id: "story-mode", enabled: false }]);
     fireEvent.click(screen.getByRole("button", { name: "Story mode's logs" }));
     await act(() => settle());
     expect(screen.getByText(/TypeError: scene/)).toBeTruthy();
@@ -148,6 +150,13 @@ describe("settings on the runtime", () => {
       ["device.pair.join", { code: "ZZ9" }],
     ]);
     expect(screen.getByRole("status").textContent).toContain("amber · river · lantern · moss");
+  });
+
+  test("reviewing a found plugin's OK asks the core to switch it on, which answers with the OK card", async () => {
+    const { core } = await mount({ section: "plugins" });
+    fireEvent.click(screen.getByRole("button", { name: "Review Weather routine's OK" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.setEnabled").map((c) => c.params)).toEqual([{ id: "weather-routine", enabled: true }]);
   });
 
   test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {

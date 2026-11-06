@@ -74,11 +74,26 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     };
   }, [core, asked]);
 
-  const install = (r: IndexResult) => {
+  const [gate, setGate] = useState<IndexResult | undefined>(undefined);
+
+  // An install from the app lands as `found`, and its OK is a sealed card the core raises (the controller's ruling S1,
+  // which lane B pins): this part never treats the click as the OK.
+  const fetchIt = (r: IndexResult) => {
     if (!core) return;
     setInstalls((s) => ({ ...s, [r.id]: "asking" }));
     core.call("plugin.install", { source: { from: "index", id: r.id, index: r.index } }).then(
       (done) => setInstalls((s) => ({ ...s, [r.id]: done.state === "found" ? "waiting" : "installed" })),
+      () => setInstalls((s) => ({ ...s, [r.id]: "failed" })),
+    );
+  };
+  // An adult plugin passes the 18+ gate first (§5.7).
+  const install = (r: IndexResult) => (r.adult ? setGate(r) : fetchIt(r));
+  const confirmAge = () => {
+    const r = gate;
+    setGate(undefined);
+    if (!core || !r) return;
+    core.call("plugin.confirmAdult", {}).then(
+      () => fetchIt(r),
       () => setInstalls((s) => ({ ...s, [r.id]: "failed" })),
     );
   };
@@ -94,6 +109,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       {...(looking ? { looking } : {})}
       installs={installs}
       onInstall={install}
+      {...(gate ? { gate: { name: gate.name, onConfirm: confirmAge, onCancel: () => setGate(undefined) } } : {})}
       {...(props.navigate ? { onOpenInstalled: () => props.navigate!({ route: "settings", params: { section: "plugins" } }) } : {})}
       now={props.now ?? Date.now()}
     />
