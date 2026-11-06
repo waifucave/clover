@@ -78,6 +78,19 @@ describe("ci-changes", () => {
     expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
   });
 
+  test("the link job runs for the sidecar, the links, and the devices and identity under them; the sidecar's change builds the packages too", () => {
+    expect(on(["native/link/src/main.rs"])).toEqual(["workspaces", "packages", "link"]);
+    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts"]) expect(on([f]), f).toContain("link");
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("link");
+    expect(on(["native/link-sidecar/src/main.rs"])).not.toContain("link");
+  });
+
+  test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {
+    expect(on(["services/shared/account-token.ts"])).toContain("core");
+    expect(on(["packages/test-harness/src/signin-stub.ts"])).toContain("core");
+    expect(on(["packages/test-harness/src/workers.ts"])).not.toContain("core");
+  });
+
   test("the Swift kits run for apple/, the protocol's generated fixtures and the core, and not for the rest of the protocol or the CLI", () => {
     expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["scripts", "swift"]);
     expect(on(["apple/WinterProtocol/Tests/WinterProtocolTests/Fixtures/x.json"])).toEqual(["scripts", "codegen", "swift"]);

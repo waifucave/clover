@@ -1,5 +1,6 @@
 // The sign-in stub against the real Supabase client, the one waifucave's own apps use.
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { startSignInStub, verifyHs256, type SignInStub } from "../src/signin-stub";
 
@@ -71,6 +72,69 @@ describe("the sign-in stub", () => {
     // A code is good for one exchange.
     const again = await fetch(`${stub.url}/auth/v1/token?grant_type=pkce`, { method: "POST", headers: { apikey: stub.anonKey, "content-type": "application/json" }, body: JSON.stringify({ auth_code: code, code_verifier: "x" }) });
     expect(again.status).toBe(400);
+  });
+
+  test("the email sign-in page: a form for the client's challenge, and a code back to the loopback for the right password", async () => {
+    stub = startSignInStub();
+    const user = stub.addUser({ email: "d@example.invalid", password: "pw <&>" });
+    const verifier = randomBytes(32).toString("base64url");
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const redirectTo = "http://127.0.0.1:9/callback?state=abc";
+    const start = new URL(stub.emailSignInUrl);
+    start.search = new URLSearchParams({ redirect_to: redirectTo, code_challenge: challenge, code_challenge_method: "s256" }).toString();
+
+    // GET: the form carries the challenge and where to go back, and needs no project key (it's the browser's page).
+    const form = await fetch(start);
+    expect(form.status).toBe(200);
+    expect(form.headers.get("content-type")).toContain("text/html");
+    const html = await form.text();
+    expect(html).toContain(`name="code_challenge" value="${challenge}"`);
+    expect(html).toContain('name="redirect_to" value="http://127.0.0.1:9/callback?state=abc"');
+    expect(html).toContain('type="password"');
+
+    const post = (fields: Record<string, string>) => fetch(stub!.emailSignInUrl, {
+      method: "POST", redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ redirect_to: redirectTo, code_challenge: challenge, code_challenge_method: "s256", ...fields }).toString(),
+    });
+    // A wrong password shows the form again, with the email kept and no code issued.
+    const wrong = await post({ email: "d@example.invalid", password: "nope", action: "signin" });
+    expect(wrong.status).toBe(401);
+    expect(await wrong.text()).toContain('value="d@example.invalid"');
+
+    const right = await post({ email: "D@example.invalid", password: "pw <&>", action: "signin" });
+    expect(right.status).toBe(302);
+    const back = new URL(right.headers.get("location")!);
+    expect(back.origin + back.pathname).toBe("http://127.0.0.1:9/callback");
+    expect(back.searchParams.get("state")).toBe("abc");
+    const code = back.searchParams.get("code")!;
+
+    const exchange = (auth_code: string, code_verifier: string) => fetch(`${stub!.url}/auth/v1/token?grant_type=pkce`, {
+      method: "POST", headers: { apikey: stub!.anonKey, "content-type": "application/json" }, body: JSON.stringify({ auth_code, code_verifier }),
+    });
+    const session = await (await exchange(code, verifier)).json() as { access_token: string; user: { id: string } };
+    expect(session.user.id).toBe(user.id);
+    expect(verifyHs256(session.access_token, stub.jwtSecret)).toMatchObject({ sub: user.id, app_metadata: { provider: "email" }, amr: [{ method: "password" }] });
+    // Once only.
+    expect((await exchange(code, verifier)).status).toBe(400);
+
+    // Cancel goes back with an error and no code.
+    const cancelled = new URL((await post({ action: "cancel" })).headers.get("location")!);
+    expect(cancelled.searchParams.get("code")).toBeNull();
+    expect(cancelled.searchParams.get("error")).toBe("access_denied");
+  });
+
+  test("the email sign-in page sends the browser only back to the loopback, and only with a PKCE challenge", async () => {
+    stub = startSignInStub();
+    const at = (q: Record<string, string>) => fetch(`${stub!.emailSignInUrl}?${new URLSearchParams(q)}`, { redirect: "manual" });
+    expect((await at({ redirect_to: "https://example.invalid/callback", code_challenge: "x" })).status).toBe(400);
+    expect((await at({ redirect_to: "http://127.0.0.1:9/callback" })).status).toBe(400);
+    expect((await at({ redirect_to: "http://127.0.0.1:9/callback", code_challenge: "x", code_challenge_method: "md5" })).status).toBe(400);
+    expect((await at({ redirect_to: "http://127.0.0.1:9/callback", code_challenge: "x" })).status).toBe(200);
+    // The markup can't be broken out of through the query.
+    const html = await (await at({ redirect_to: "http://127.0.0.1:9/callback?x=\"><script>", code_challenge: "\"><b>" })).text();
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<b>");
   });
 
   test("tokens expire on the stub's clock, and every call needs the project key", async () => {
