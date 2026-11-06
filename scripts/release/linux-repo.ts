@@ -42,12 +42,10 @@ export function suiteFor(channel: Channel): "stable" | "beta" {
  *  uploads the repository within that window. */
 export const RELEASE_VALID_DAYS = 30;
 
-/** apt-ftparchive's Release settings for a suite; `now` sets Date and Valid-Until. */
+/** apt-ftparchive's Release settings for a suite; `now` sets Date (stampRelease sets Valid-Until after it). */
 export function releaseConfig(suite: string, now: Date = new Date()): string[] {
-  const until = new Date(now.getTime() + RELEASE_VALID_DAYS * 86_400_000);
   return [
     "-o", `APT::FTPArchive::Release::Date=${aptDate(now)}`,
-    "-o", `APT::FTPArchive::Release::Valid-Until=${aptDate(until)}`,
     "-o", "APT::FTPArchive::Release::Origin=Clover",
     "-o", "APT::FTPArchive::Release::Label=Clover",
     "-o", `APT::FTPArchive::Release::Suite=${suite}`,
@@ -60,20 +58,35 @@ export function releaseConfig(suite: string, now: Date = new Date()): string[] {
 /** apt's date form, as apt-ftparchive writes it (RFC 1123, in UTC). */
 const aptDate = (d: Date): string => d.toUTCString().replace("GMT", "UTC");
 
+const fieldCount = (text: string, field: string): number => (text.match(new RegExp(`^${field}: .*$`, "gm")) ?? []).length;
+
 /**
- * Release with a new Date (`now`) and Valid-Until (`now` + RELEASE_VALID_DAYS), every other byte as it was. Fails
- * unless each field is there exactly once: a Release without them isn't one this repository wrote.
+ * Release dated `now`, valid until `now` + RELEASE_VALID_DAYS: Date replaced, and Valid-Until replaced or, when
+ * apt-ftparchive wrote none (it takes no fixed Valid-Until from its settings), put right after Date. Every other
+ * byte as it was.
+ */
+export function stampRelease(text: string, now: Date = new Date()): string {
+  const until = new Date(now.getTime() + RELEASE_VALID_DAYS * 86_400_000);
+  const dates = fieldCount(text, "Date");
+  const valid = fieldCount(text, "Valid-Until");
+  if (dates !== 1) throw new Error(`Release has ${dates} Date fields, not one`);
+  if (valid > 1) throw new Error(`Release has ${valid} Valid-Until fields`);
+  const dated = text.replace(/^Date: .*$/m, `Date: ${aptDate(now)}`);
+  return valid === 1
+    ? dated.replace(/^Valid-Until: .*$/m, `Valid-Until: ${aptDate(until)}`)
+    : dated.replace(/^Date: .*$/m, (line) => `${line}\nValid-Until: ${aptDate(until)}`);
+}
+
+/**
+ * The keep-alive: Release with a new Date and Valid-Until (stampRelease), every other byte as it was. Fails unless
+ * each field is there exactly once: a Release without them isn't one this repository wrote.
  */
 export function refreshRelease(text: string, now: Date = new Date()): string {
-  const until = new Date(now.getTime() + RELEASE_VALID_DAYS * 86_400_000);
-  let out = text;
-  for (const [field, value] of [["Date", aptDate(now)], ["Valid-Until", aptDate(until)]] as const) {
-    const re = new RegExp(`^${field}: .*$`, "gm");
-    const n = (out.match(re) ?? []).length;
+  for (const field of ["Date", "Valid-Until"]) {
+    const n = fieldCount(text, field);
     if (n !== 1) throw new Error(`Release has ${n} ${field} fields, not one`);
-    out = out.replace(re, `${field}: ${value}`);
   }
-  return out;
+  return stampRelease(text, now);
 }
 
 /** The lines a user adds, for the docs and the repository's own index page. */
@@ -134,7 +147,7 @@ export function metadata(from: string[], channel: Channel, out: string, now: Dat
     writeFileSync(join(bin, "Packages"), packages);
     writeFileSync(join(bin, "Packages.gz"), Bun.gzipSync(new TextEncoder().encode(packages)));
   }
-  writeFileSync(join(apt, "dists", suite, "Release"), run(["apt-ftparchive", ...releaseConfig(suite, now), "release", join("dists", suite)], apt));
+  writeFileSync(join(apt, "dists", suite, "Release"), stampRelease(run(["apt-ftparchive", ...releaseConfig(suite, now), "release", join("dists", suite)], apt), now));
   for (const arch of ["x86_64", "aarch64"]) {
     const repo = join(out, "rpm", suite, arch);
     if (existsSync(repo)) run(["createrepo_c", "--quiet", repo], out);

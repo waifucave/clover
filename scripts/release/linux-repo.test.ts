@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   archOf, generateRepoKey, installLines, KEYRING_FILE, ownerOnly, refreshRelease, refreshTree, releaseConfig, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey,
-  signRelease, signTree, suiteFor, uploadArgs, uploadPlan, verifyDetached, verifyInRelease, verifyTree, type RepoKeyStore,
+  signRelease, signTree, stampRelease, suiteFor, uploadArgs, uploadPlan, verifyDetached, verifyInRelease, verifyTree, type RepoKeyStore,
 } from "./linux-repo";
 
 const memory = (): RepoKeyStore & { items: Map<string, string> } => {
@@ -48,8 +48,14 @@ describe("the Linux repositories", () => {
     expect(suiteFor("beta")).toBe("beta");
     expect(releaseConfig("beta")).toContain("APT::FTPArchive::Release::Suite=beta");
     const cfg = releaseConfig("stable", new Date(Date.UTC(2026, 10, 6)));
-    expect(cfg).toContain("APT::FTPArchive::Release::Valid-Until=Sun, 06 Dec 2026 00:00:00 UTC");
     expect(cfg).toContain("APT::FTPArchive::Release::Date=Fri, 06 Nov 2026 00:00:00 UTC");
+    // apt-ftparchive takes no fixed Valid-Until from its settings: stampRelease puts it after Date.
+    expect(cfg.join(" ")).not.toContain("Valid-Until");
+    const written = "Origin: Clover\nCodename: stable\nDate: Fri, 06 Nov 2026 00:00:00 UTC\nArchitectures: amd64 arm64\nSHA256:\n abc 1 main/binary-amd64/Packages\n";
+    const stamped = stampRelease(written, new Date(Date.UTC(2026, 10, 6)));
+    expect(stamped).toBe(written.replace("Date: Fri, 06 Nov 2026 00:00:00 UTC", "Date: Fri, 06 Nov 2026 00:00:00 UTC\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC"));
+    expect(stampRelease(stamped, new Date(Date.UTC(2026, 10, 6)))).toBe(stamped);
+    expect(() => stampRelease("Origin: Clover\n")).toThrow(/0 Date fields/);
     expect(archOf("clover_1.2.3_amd64.deb")).toEqual({ kind: "deb", arch: "amd64" });
     expect(archOf("clover-1.2.3.arm64.rpm")).toEqual({ kind: "rpm", arch: "aarch64" });
     expect(archOf("clover-1.2.3.x86_64.rpm")).toEqual({ kind: "rpm", arch: "x86_64" });
