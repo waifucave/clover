@@ -33,6 +33,7 @@ import { BRIDGE_ENV } from "./bridge/server";
 import { BRIDGE_OWN_TOOLS, NO_PLUGIN_TOOLS, bridgeInstructions, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, type AgentOks } from "./sandbox/oks";
+import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { AgentTranscript, type AgentRecordFile, transcriptPaths } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
 
@@ -56,6 +57,8 @@ export interface AgentManagerOptions {
   glossary?: BridgeHandlers["glossary"];
   /** The user's OKs for agents with no admitted sandbox (sandbox/oks.ts): `FileAgentOks` in the daemon. */
   oks?: AgentOks;
+  /** The plugins' skills, agent definitions and hooks per session (B-M2's registry); none until then. */
+  pluginParts?: PluginPartsSource;
   log?: (line: string) => void;
 }
 
@@ -96,6 +99,7 @@ interface Entry {
   bridgeTools: string[];
   unwatch?: () => void;
   record: AgentRecordFile;
+  parts?: PluginParts;
 }
 
 export const BRIDGE_SERVER_NAME = "clover";
@@ -129,6 +133,7 @@ export class AgentManager {
       // A leaked copy of the token is useless once the agent is gone (S5 edit 4).
       exited: () => this.#o.tokens.revoke(sessionId),
       setupDir: this.setupDir(sessionId),
+      ...(e.parts ? { parts: e.parts } : {}),
     };
   }
 
@@ -224,6 +229,7 @@ export class AgentManager {
     // An agent whose own sandbox Clover can't count on starts only after the user's OK (§9.3).
     const d = await e.backend.detect();
     if (d.installed && d.identityOk && !d.sandboxed) await this.#requireOk(e, d.version ?? "unknown", d.reason);
+    e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
     e.bridgeTools = [...BRIDGE_OWN_TOOLS.map((t) => t.name), ...tools.map((t) => t.name)];
     const session = await e.backend.start({

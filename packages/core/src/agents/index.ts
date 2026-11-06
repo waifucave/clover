@@ -13,6 +13,7 @@
 // | `transcript.ts`     | `bots/<bot>/agents/<session>/`: the wire minus replays, Clover's own record, stderr    |
 // | `watchdog.ts`       | the 10-minute stall watchdog                                                            |
 // | `sandbox/`          | which agents' own sandboxes hold the fence (S8), their writers, the OK for the rest     |
+// | `claude-code/`      | skills, agent definitions and shimmed hooks placed in Claude Code; the hook shim         |
 // | `tools.ts`, `rpc.ts`| the bot's tools and the `agent.*` methods, for lane A's runtime and lane C's server     |
 // | `testing/`          | the scripted ACP agent and the conformance harness                                       |
 //
@@ -33,6 +34,9 @@ import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeToolSource } from "./bridge/tools";
 import { AgentManager } from "./manager";
 import { FileAgentOks } from "./sandbox/oks";
+import { hookShimCommand } from "./claude-code/hook-shim";
+import { placeInClaudeCode } from "./claude-code/placement";
+import type { PluginPartsSource } from "./placement";
 import { QUIRKS } from "./quirks";
 import { StallWatchdog } from "./watchdog";
 
@@ -52,6 +56,9 @@ export { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS } from "./quirks";
 export { agentMethods, BACKEND_NAMES } from "./rpc";
 export { agentToolDefs, describeSession, type CoreToolDef } from "./tools";
 export { AgentTranscript, botSegment, transcriptPaths } from "./transcript";
+export { NO_PARTS, type HookEvent, type PluginParts, type PluginPartsSource } from "./placement";
+export { placeInClaudeCode, matcherOf, shellQuote } from "./claude-code/placement";
+export { dropAllow, hookShimCommand, hookShimMain, runHook } from "./claude-code/hook-shim";
 export { AGENT_COMMAND_MAX_MS, StallWatchdog } from "./watchdog";
 export { ADMISSIONS, admissionFor, type SandboxAdmission, type SandboxSetup, type SandboxWriter } from "./sandbox/admission";
 export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOkKey } from "./sandbox/oks";
@@ -69,6 +76,7 @@ export interface AgentsOptions {
   /** The backends to offer; the quirks table's by default. B-M2's registry feeds `agentBackends` here. */
   backends?: (wire: AgentManager["wire"]) => AgentBackend[];
   pluginTools?: BridgeToolSource;
+  pluginParts?: PluginPartsSource;
   log?: (line: string) => void;
 }
 
@@ -85,10 +93,15 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoin
     watchdog: new StallWatchdog({ clock: o.clock }),
     oks: new FileAgentOks(o.home),
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
+    ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
   const wire = (id: string) => manager.wire(id);
-  backends = o.backends?.(wire) ?? Object.entries(QUIRKS).map(([id, quirks]) => new AcpAgentBackend({ id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire }));
+  // Claude Code reads its own skills, agents and hooks folders: the plugins' parts are placed there (§9.3).
+  const place = { "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() }) } as const;
+  backends = o.backends?.(wire) ?? Object.entries(QUIRKS).map(([id, quirks]) => new AcpAgentBackend({
+    id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
+  }));
   const endpoint = new BridgeEndpoint({ socketPath, tokens, handlers: manager.bridgeHandlers(), device: o.device, serverVersion: o.serverVersion, ...(o.log ? { log: o.log } : {}) });
   endpoint.listen();
   return {

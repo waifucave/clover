@@ -14,7 +14,8 @@ import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/sessio
 import { FakeTree } from "../../contracts/fakes/tree";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import type { SessionRecord } from "../../contracts/session-host";
-import { AcpAgentBackend } from "../backend";
+import { AcpAgentBackend, type AcpBackendOptions } from "../backend";
+import type { PluginPartsSource } from "../placement";
 import { BridgeEndpoint } from "../bridge/endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
@@ -56,6 +57,9 @@ export interface WorldOptions {
   /** The scripted agent's sandbox: admitted by default, or one Clover can't count on (so it needs the OK). */
   sandbox?: "protected" | "none";
   oks?: AgentOks;
+  /** The plugins' parts for every session, and the backend's placement of them (Claude Code's). */
+  pluginParts?: PluginPartsSource;
+  place?: AcpBackendOptions["place"];
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -117,12 +121,14 @@ export class World {
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
       admissions: fakeAdmissions(o.sandbox ?? "protected"),
+      ...(o.place ? { place: o.place } : {}),
     });
     manager = new AgentManager({
       home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
+      ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
     });
     this.manager = manager;
     this.endpoint = new BridgeEndpoint({ socketPath: sock, tokens: this.tokens, handlers: manager.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });

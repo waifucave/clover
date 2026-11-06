@@ -19,6 +19,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AcpAgentSession, type WireTap } from "./acp/session";
 import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admission";
+import type { PluginParts } from "./placement";
 import type { StdioMcpServer } from "./acp/types";
 import { buildAgentEnv, launchContained } from "./process/launch";
 import { versionSatisfies } from "./version";
@@ -54,6 +55,9 @@ export interface AcpBackendOptions {
   admissions?: Parameters<typeof admissionFor>[0];
   /** Where a session's sandbox files go: a folder inside the fenced run folder (`<home>/run/agents/<session>`). */
   setupDir?: (sessionId: string) => string;
+  /** Places plugins' skills, agent definitions and hooks where this backend reads its own (Claude Code), returning the
+   *  `_meta` that points the agent at them. */
+  place?: (parts: PluginParts, ctx: { dir: string }) => { meta: Record<string, unknown> };
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -66,6 +70,8 @@ export interface AgentWire {
   exited?: () => void;
   /** Where its sandbox files go: inside the fenced run folder, so no bot or agent can rewrite them. */
   setupDir?: string;
+  /** The plugins' skills, agent definitions and hooks in this session's scope. */
+  parts?: PluginParts;
 }
 
 export function currentOs(): Os {
@@ -148,6 +154,17 @@ export class AcpAgentBackend implements AgentBackend {
       setup = sandbox.writer(spec.fence, { root: spec.root, dir });
       for (const f of setup.files ?? []) writeFileSync(join(dir, f.name), f.content, { mode: 0o600 });
     }
+    // The plugins' skills, agents and hooks, where this backend reads its own.
+    const parts = wire.parts;
+    let placedMeta: Record<string, unknown> | undefined;
+    if (this.#opts.place && parts && (parts.skills.length + parts.agents.length + parts.hooks.length) > 0) {
+      const dir = wire.setupDir ?? this.#opts.setupDir?.(spec.sessionId);
+      if (dir) {
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        placedMeta = this.#opts.place(parts, { dir }).meta;
+      }
+    }
+    const meta = setup.meta || placedMeta ? mergeObjects(setup.meta ?? {}, placedMeta ?? {}) : undefined;
     const proc = launchContained({
       command: d.path,
       args: [...(cmd.prefixArgs ?? []), ...cmd.acpArgs, ...(setup.args ?? [])],
@@ -164,7 +181,7 @@ export class AcpAgentBackend implements AgentBackend {
       cwd: spec.root,
       mcpServers: [stdioServerOf(spec.bridge)],
       ...(spec.instructions === undefined ? {} : { instructions: spec.instructions }),
-      ...(setup.meta ? { meta: setup.meta } : {}),
+      ...(meta ? { meta } : {}),
       ...(spec.reattach === undefined ? {} : { reattach: spec.reattach }),
       ...(spec.model === undefined ? {} : { model: spec.model }),
       ...(spec.effort === undefined ? {} : { effort: spec.effort }),
@@ -173,6 +190,15 @@ export class AcpAgentBackend implements AgentBackend {
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }
+}
+
+function mergeObjects(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    const cur = out[k];
+    out[k] = v && cur && typeof v === "object" && typeof cur === "object" && !Array.isArray(v) && !Array.isArray(cur) ? mergeObjects(cur as Record<string, unknown>, v as Record<string, unknown>) : v;
+  }
+  return out;
 }
 
 /** The bridge as `session/new` takes it: its token only in `env` (S5 edit 4). */
