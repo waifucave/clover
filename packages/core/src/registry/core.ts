@@ -41,7 +41,7 @@ export interface OkCardRaiser {
   raise(
     req: { id: string; treeHash: string; children: { id: string; label: string; checked: boolean }[] },
     answered: (a: { approved: boolean; children?: readonly string[] }) => void,
-  ): string;
+  ): string | Promise<string>;
 }
 
 /** Card ids and no answers: the registry alone, for tests and a core without a broker. */
@@ -115,7 +115,7 @@ export class RegistryCore implements PluginRegistry {
     if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     if (enabled && state === "found") {
       const top = parentOf(id) ?? id;
-      if (opts.from !== "cli" || opts.okHash === undefined) return { applied: false, card: this.#raiseOk(top) };
+      if (opts.from !== "cli" || opts.okHash === undefined) return { applied: false, card: await this.#raiseOk(top) };
       if ((await this.approve(top, opts.okHash)) === "changed") throw new ContractError("conflict", `${top} changed since its OK text was shown`);
     }
     held.enabled = enabled;
@@ -127,7 +127,7 @@ export class RegistryCore implements PluginRegistry {
     this.#mustGet(id);
     const state = this.#snap.records.get(id)!.state;
     if (from === "cli" || state !== "found") return { state };
-    return { state, card: this.#raiseOk(id) };
+    return { state, card: await this.#raiseOk(id) };
   }
 
   /** The OK cards waiting, by plugin. */
@@ -211,7 +211,7 @@ export class RegistryCore implements PluginRegistry {
     this.#state.order = this.#state.order.filter((k) => k !== id && parentOf(k) !== id);
   }
 
-  #raiseOk(id: string): string {
+  async #raiseOk(id: string): Promise<string> {
     const held = this.#mustGet(id);
     const waiting = this.#okCards.get(id);
     if (waiting?.treeHash === held.hash) return waiting.card;
@@ -219,12 +219,14 @@ export class RegistryCore implements PluginRegistry {
     const children = [...this.#plugins.entries()]
       .filter(([k]) => parentOf(k) === id)
       .map(([k, c]) => ({ id: k, label: String(typeof c.input.manifest.name === "string" ? c.input.manifest.name : k), checked: c.enabled }));
-    const card = this.#cards.raise({ id, treeHash, children }, (a) => {
+    let card = "";
+    const raised = this.#cards.raise({ id, treeHash, children }, (a) => {
       if (this.#okCards.get(id)?.card !== card) return;
       if (!a.approved) return void this.refuse(id);
       const picked = new Set(a.children ?? children.filter((c) => c.checked).map((c) => c.id));
       void this.approve(id, treeHash, Object.fromEntries(children.map((c) => [c.id, picked.has(c.id)])));
     });
+    card = await raised;
     this.#okCards.set(id, { card, treeHash });
     return card;
   }
