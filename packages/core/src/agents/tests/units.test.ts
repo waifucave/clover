@@ -12,6 +12,7 @@ import { AcpAgentBackend, versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
 import { buildAgentEnv, launchContained } from "../process/launch";
 import { bridgeCloverParts } from "../bridge/handlers";
+import { BRIDGE_ENV, runBridge } from "../bridge/server";
 import type { CloverConn } from "../../ipc/clover";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakeFence } from "../../contracts/fakes/fence";
@@ -380,6 +381,38 @@ describe("a hostile agent's sizes (review 12)", () => {
   test("redactDeep replaces the token in every string and key, at any depth", () => {
     const tok: string = "tok_ABCDEFGHIJKLMNOP";
     expect(redactDeep<unknown>({ a: [`x ${tok} y`, { [tok]: tok }], n: 1 }, [tok])).toEqual({ a: [`x ${REDACTED_TOKEN} y`, { [REDACTED_TOKEN]: REDACTED_TOKEN }], n: 1 });
+  });
+});
+
+describe("the bridge's hello", () => {
+  test("an unverified caller (two pipe clients at once, on Windows) is tried once more; a second refusal stands", async () => {
+    const run = (answers: string[]) => {
+      let connects = 0;
+      const r = runBridge({ [BRIDGE_ENV.token]: "t".repeat(32), [BRIDGE_ENV.session]: "s1", [BRIDGE_ENV.socket]: "/x" }, {
+        onInput: () => {}, output: () => {}, log: () => {},
+        connect: async (_p, onData) => {
+          const answer = answers[connects++] ?? "ok";
+          return {
+            write: (line) => {
+              const id = (JSON.parse(line) as { id: unknown }).id;
+              const body = answer === "ok" ? { result: { ok: true } } : { error: { code: -32020, message: `the bridge was refused: ${answer}` } };
+              queueMicrotask(() => onData(new TextEncoder().encode(`${JSON.stringify({ jsonrpc: "2.0", id, ...body })}\n`)));
+            },
+            close: () => {},
+          };
+        },
+      });
+      return { ready: r.ready, connects: () => connects };
+    };
+    const once = run(["unverified-caller", "ok"]);
+    await once.ready;
+    expect(once.connects()).toBe(2);
+    const twice = run(["unverified-caller", "unverified-caller"]);
+    expect(await twice.ready.then(() => "ok", (e: unknown) => String(e))).toContain("unverified-caller");
+    expect(twice.connects()).toBe(2);
+    const other = run(["not-the-agent"]);
+    expect(await other.ready.then(() => "ok", (e: unknown) => String(e))).toContain("not-the-agent");
+    expect(other.connects()).toBe(1);
   });
 });
 
