@@ -14,7 +14,7 @@
 // plugin host doesn't pass on.
 import {
   type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type DeviceView, type FileStat, type HostProcess,
-  type HoldTarget, type HoldView, type MemoryEntry, type PlanReading, type RoutineRunView, type RoutineView,
+  type HoldTarget, type HoldView, type InstallSource, type MemoryEntry, type PlanReading, type PluginState, type RoutineRunView, type RoutineView,
   type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
   topPluginIdOf,
 } from "@waifucave/clover-protocol";
@@ -512,6 +512,12 @@ export interface FilesApi {
  *  `input` takes the `keydown` or `paste` event itself; a trusted key press becomes its bytes, and a trusted paste goes
  *  through the paste door, which takes the clipboard's text, brackets it when the program turned bracketed paste on,
  *  and asks the user before one of more than one line goes. An untrusted or made-up event sends nothing. */
+/** `plugins.install`, bundled-only (the plugin index browser): what it installs lands found, with its sealed OK card, and
+ *  never runs before the user's OK (F-M2's review, S1). Components only. */
+export interface PluginsApi {
+  install(source: InstallSource): Promise<{ id: string; state: PluginState; card?: string }>;
+}
+
 export interface TerminalApi {
   /** In a folder of the tree on that computer (its home folder by default); `session` shows it in that panel. */
   open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
@@ -620,6 +626,8 @@ export interface PluginApi {
   readonly browser?: BrowserApi;
   /** Components only. */
   readonly terminal?: TerminalApi;
+  /** Components only, of the bundled `clover` tree. */
+  readonly plugins?: PluginsApi;
   readonly usage?: UsageApi;
   readonly logs?: LogsApi;
   readonly notify?: NotifyApi;

@@ -478,7 +478,7 @@
       }
     },
     "plugin.setEnabled": {
-      "doc": "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1).",
+      "doc": "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -515,6 +515,10 @@
                 }
               }
             ]
+          },
+          "okHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
           }
         },
         "required": [
@@ -1202,13 +1206,15 @@
       }
     },
     "plugin.install": {
-      "doc": "Downloads or wraps a plugin into the plugins folder. The user's own install is its OK (§5.1).",
+      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.install",
       "userOnly": true,
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1342,6 +1348,14 @@
               "stopped",
               "blocked"
             ]
+          },
+          "treeHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
           }
         },
         "required": [

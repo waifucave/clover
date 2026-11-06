@@ -76,6 +76,13 @@
       "bundledOnly": true
     },
     {
+      "name": "plugins.install",
+      "lets": "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK",
+      "ok": "installs plugins for you to OK",
+      "warns": false,
+      "bundledOnly": true
+    },
+    {
       "name": "usage.read",
       "lets": "Read usage rows and plan readings",
       "ok": "sees your usage and plan readings",
@@ -3414,6 +3421,10 @@
     },
     "terminal.close": {
       "capability": "terminal",
+      "where": "ui"
+    },
+    "plugins.install": {
+      "capability": "plugins.install",
       "where": "ui"
     },
     "usage.rows": {

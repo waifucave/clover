@@ -6,7 +6,7 @@ import {
   AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
   PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
-import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
+import { CloverSessionEvent, SENT_AT_WINDOW_MS, SessionView, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
 import { Caller as CallerSchema } from "../src/common";
 import { PEER_STREAM_GRANTS } from "../src/devices";
 import { NeedsAnswer } from "../src/computers";
@@ -178,14 +178,18 @@ describe("the allow lists", () => {
     expect(CLOVER_METHODS.get("card.list")!.roles).not.toContain("plugin-host");
   });
 
-  test("a plugin's calls never make a sensitive change, mint a token or install a plugin (§5.5)", () => {
+  test("a plugin's calls never make a sensitive change, mint a token, or install a plugin as its own OK (§5.5)", () => {
     for (const role of PLUGIN_ROLES) {
       for (const name of calls(role)) {
         const m = CLOVER_METHODS.get(name)!;
         expect(m.change).not.toBe("sensitive");
-        expect(["layer.token", "plugin.install", "plugin.dev.add", "card.answer", "card.list"]).not.toContain(name);
+        expect(["layer.token", "plugin.dev.add", "card.answer", "card.list"]).not.toContain(name);
       }
     }
+    // A layer installs only with the bundled-only `plugins.install` (the plugin index browser), and what it installs
+    // lands found with its sealed OK card (F-M2's review, S1); the plugin host never installs.
+    expect(calls("plugin-host")).not.toContain("plugin.install");
+    expect(CLOVER_METHODS.get("plugin.install")!.capability).toBe("plugins.install");
   });
 
   test("a plugin's call needs a capability unless it becomes a card, is its own confirm, or is the host channel", () => {
@@ -242,7 +246,8 @@ describe("the allow lists", () => {
   test("a method only the user may call is open to user roles, or to a layer when it becomes a card", () => {
     for (const m of methods.filter((x) => x.userOnly)) {
       for (const r of m.roles) {
-        if (r === "layer") expect(m.change).toBeDefined();
+        // plugin.install raises its own card, the plugin's OK, instead of a change's (F-M2's review, S1).
+        if (r === "layer") expect([m.name, m.change !== undefined || m.name === "plugin.install"]).toEqual([m.name, true]);
         else expect([...USER_ROLES, "peer"]).toContain(r);
       }
     }
@@ -495,6 +500,16 @@ describe("#179's review and H-M1's asks", () => {
 
   test("a plugin acting as itself has a partition of its own (S1)", () => {
     expect(params("browser.open").safeParse({ owner: { kind: "plugin", pluginId: "clover/browser-tool" } }).success).toBe(true);
+  });
+
+  test("F-M2's review: installs and the switch go by the OK, and a session shows its branch and changes", () => {
+    const install = CLOVER_METHODS.get("plugin.install")!;
+    expect(install.roles).toEqual(["app", "cli", "layer"]);
+    expect(install.result.safeParse({ id: "tarot", state: "found", treeHash: "sha256:" + "a".repeat(64), card: "card_ok000001" }).success).toBe(true);
+    expect(params("plugin.setEnabled").safeParse({ id: "tarot", enabled: true, okHash: "sha256:" + "a".repeat(64) }).success).toBe(true);
+    const session = { id: "s_code", kind: "coding", computer: "Studio", status: "idle", startedAt: 1, updatedAt: 2, branch: "feat/x", changes: 3 };
+    expect(SessionView.safeParse(session).success).toBe(true);
+    expect(SessionView.safeParse({ ...session, changes: -1 }).success).toBe(false);
   });
 
   test("H-M1: connSeq on the link's hello, and the app's answer key", () => {

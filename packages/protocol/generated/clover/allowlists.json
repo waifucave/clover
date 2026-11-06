@@ -191,6 +191,7 @@
       "memory.list",
       "memory.read",
       "notify.send",
+      "plugin.install",
       "plugin.logs",
       "plugin.pin",
       "plugin.setComputers",

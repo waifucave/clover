@@ -23,6 +23,12 @@
 //   never every bot's (§5.5).
 // * An OK card left unanswered never refuses a plugin: it stays found until the user answers; only their deny
 //   (`refuse`) refuses it (the broker's rule 6).
+// * Installs and the switch (F-M2's review, S1 and S2): an installed plugin lands found, whoever installed it. From the
+//   app or any layer (the plugin index browser) the registry raises its sealed OK card at once (`installed`); only the
+//   CLI's install becomes the OK, when the user answers y to the OK text the terminal printed (`setEnabled` with
+//   `okHash`). Switching a found plugin on is a sensitive change (§5.5): it raises the OK card and never loads the
+//   plugin directly. The switch is refused (`refused`) for a blocked, refused or invalid plugin, and for the bundled
+//   `clover` plugin.
 // * Only one enabled plugin may use a namespace (§6.7): a later one, by the synced list's order, stays off and says
 //   whose it is.
 // * The OK is bound to the tree the card showed (review S7): `approve` refuses with `changed` when the folder's tree
@@ -45,7 +51,7 @@ import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
 export interface PluginRecord extends PluginSummary {
   /** The folder on this computer. */
   folder: string;
-  /** The tree hash the user last OK'd (an install through the app is its OK); `treeHash` is the folder now. */
+  /** The tree hash the user last OK'd (an OK card's approve, or the CLI's y); `treeHash` is the folder now. */
   okHash?: string;
   /** A change to its card styling waits for its OK: approval cards keep the styling of `okHash`. */
   cardStylingHeld?: boolean;
@@ -57,6 +63,19 @@ export interface PluginRecord extends PluginSummary {
 }
 
 export type ContributionState = "active" | "waiting" | "refused";
+
+/** Where an install or a switch came from, for the OK's rule: the user's own terminal, or the app and its layers. */
+export type InstallFrom = "cli" | "app";
+
+export interface SwitchOptions {
+  /** Default `app`. */
+  from?: InstallFrom;
+  /** The CLI's OK: the tree hash its OK text showed. */
+  okHash?: string;
+}
+
+/** A switch applied, or a found plugin's OK card raised. */
+export type SwitchResult = { applied: true } | { applied: false; card: string };
 
 export interface Contribution<T = unknown> {
   point: string;
@@ -103,8 +122,13 @@ export interface PluginRegistry {
   entries<P extends keyof CoreEntries>(point: P): Contribution<CoreEntries[P]>[];
   entries(point: string): Contribution[];
   points(): RegisteredPoint[];
-  /** The user's switch (§5.1). */
-  setEnabled(id: string, enabled: boolean): Promise<void>;
+  /** The user's switch (§5.1). On a found plugin it raises the OK card (`{ applied: false, card }`) unless `from` is the
+   *  CLI with `okHash`, the tree whose OK text the terminal showed and the user answered y to (a changed tree rejects
+   *  `conflict`). Rejects `refused` for a blocked, refused or invalid plugin and for the bundled `clover` plugin. */
+  setEnabled(id: string, enabled: boolean, opts?: SwitchOptions): Promise<SwitchResult>;
+  /** A plugin the user installed landed in the folder (`plugin.install`): found, and from the app or a layer its OK
+   *  card is raised at once (`card`); from the CLI the terminal asks instead. */
+  installed(id: string, from: InstallFrom): Promise<{ state: PluginState; card?: string }>;
   /** The user's OK for a found plugin, or for a change waiting for one: one card covers a plugin and its children, with
    *  a checkbox each (§5.1). `treeHash` is the tree the card showed; `selection` the children's checkboxes. */
   approve(id: string, treeHash: string, selection?: Readonly<Record<string, boolean>>): Promise<ApproveResult>;

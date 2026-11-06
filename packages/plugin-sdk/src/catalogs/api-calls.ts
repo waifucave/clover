@@ -4,7 +4,7 @@
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
   ApprovalsApi, AudioApi, BotsApi, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
-  LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
+  LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
@@ -20,6 +20,7 @@ export type ApiCallPath =
   | `settings.${FnKeys<SettingsApi>}` | `conversation.${FnKeys<ConversationApi>}` | `memory.${FnKeys<MemoryApi>}`
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
+  | `plugins.${FnKeys<PluginsApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`;
 
 export interface ApiCallInfo {
@@ -72,6 +73,8 @@ export const API_CALLS = {
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },
   "terminal.close": { capability: "terminal", where: "ui" },
+  /** Components only, of the bundled `clover` tree (the plugin index browser). */
+  "plugins.install": { capability: "plugins.install", where: "ui" },
   "usage.rows": both("usage.read"), "usage.plans": both("usage.read"), "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
   "logs.read": both("logs.read"), "logs.follow": both("logs.read"),
   "notify.send": both("notify"),

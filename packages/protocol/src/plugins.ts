@@ -260,14 +260,20 @@ export const PLUGINS_METHODS = {
     doc: "One plugin: its manifest, provenance, capabilities, hosts, findings and last log lines.",
   }),
   pluginSetEnabled: defineMethod({
+    /** Switching a `found` plugin on is a sensitive change (§5.5; F-M2's review, S2): it raises the plugin's sealed OK
+     *  card (`{ applied: false, card }`) and never loads it directly. From the CLI, `okHash` is the OK: the tree hash of
+     *  the OK text the terminal printed, which the user answered y to. Refused for a blocked, refused or invalid plugin,
+     *  and for the bundled `clover` plugin. */
     name: "plugin.setEnabled", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({
       id: AnyPluginId, enabled: z.boolean(),
       /** For a plugin that dresses parts of bots' tabs: which bots, replacing its `when.bot` (§5.5). */
       bots: z.union([z.literal("all"), z.array(BotId)]).optional(),
+      /** From the CLI only: the tree the terminal's OK showed (see above). */
+      okHash: TreeHash.optional(),
     }),
     result: ChangeResult,
-    doc: "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1).",
+    doc: "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
   }),
   pluginSetScope: defineMethod({
     name: "plugin.setScope", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
@@ -334,10 +340,14 @@ export const PLUGINS_METHODS = {
     doc: "Signs out of one `auth` entry and deletes its secret everywhere.",
   }),
   pluginInstall: defineMethod({
-    name: "plugin.install", owner: "B", roles: ["app", "cli"], userOnly: true,
+    /** Whoever installs, the plugin lands `found` (F-M2's review, S1). From the app or a layer (the plugin index
+     *  browser, which holds the bundled-only `plugins.install`), the core raises its sealed OK card at once (`card`,
+     *  §5.1): a layer's install is never the OK. Only the CLI's install becomes the OK: the CLI prints the OK text for
+     *  `treeHash` and asks y/N in the terminal, and a y is `plugin.setEnabled` with `okHash`. */
+    name: "plugin.install", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, capability: "plugins.install",
     params: z.object({ source: InstallSource }),
-    result: z.object({ id: TopPluginId, state: PluginState }),
-    doc: "Downloads or wraps a plugin into the plugins folder. The user's own install is its OK (§5.1).",
+    result: z.object({ id: TopPluginId, state: PluginState, treeHash: TreeHash.optional(), card: CardId.optional() }),
+    doc: "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
   }),
   pluginRemove: defineMethod({
     name: "plugin.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
