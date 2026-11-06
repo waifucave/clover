@@ -78,13 +78,14 @@ if (import.meta.main) {
   const files = select(testFiles(repoRoot, args.root), args.darwin);
   if (args.list) {
     for (const f of files) console.log(f);
-    process.exit(0);
+  } else {
+    console.log(`platform-tests: ${files.length} ${args.darwin ? "macOS-only" : "non-macOS"} test file(s) under ${args.root}`);
+    const r = spawnSync(process.execPath, ["test", ...files.map((f) => `./${f}`)], { cwd: repoRoot, encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
+    const output = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    process.stdout.write(output);
+    const problems = runProblems(r.status, output, files.length);
+    for (const p of problems) console.error(`platform-tests: ${p}`);
+    // exitCode, not exit(): a pipe takes the whole output (and bun's summary) before the process ends.
+    process.exitCode = problems.length === 0 ? 0 : 1;
   }
-  console.log(`platform-tests: ${files.length} ${args.darwin ? "macOS-only" : "non-macOS"} test file(s) under ${args.root}`);
-  const r = spawnSync(process.execPath, ["test", ...files.map((f) => `./${f}`)], { cwd: repoRoot, encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
-  const output = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  process.stdout.write(output);
-  const problems = runProblems(r.status, output, files.length);
-  for (const p of problems) console.error(`platform-tests: ${p}`);
-  process.exit(problems.length === 0 ? 0 : 1);
 }
