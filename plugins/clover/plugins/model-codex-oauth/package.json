@@ -1,0 +1,23 @@
+{
+  "name": "@waifucave/clover-plugin-model-codex-oauth",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/model-codex-oauth: Codex (ChatGPT sign-in)'s models, through its own adapter (spec \u00a73.3).",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@waifucave/clover-provider-catalog": "0.0.64",
+    "@waifucave/clover-provider-runtime": "0.0.64"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}
