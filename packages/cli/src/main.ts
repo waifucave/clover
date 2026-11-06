@@ -3396,7 +3396,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | daemon check-server [--json] [--image <path>] | autostart enable|disable|remove|status [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | daemon check-server [--json] [--image <path>] | autostart enable|disable [--stop]|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)
