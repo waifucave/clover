@@ -232,6 +232,29 @@ describe("the real fence on a real disk", () => {
     expect(win.check({ op: "read", path: "\\\\nas\\share\\notes.txt" })).toEqual({ allowed: true });
   });
 
+  test("#205 check 3: shares back to this computer and admin shares are refused; so are drive-relative paths", () => {
+    const win = new CloverFence({ os: "windows", home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", canonical: (p) => p });
+    const host = require("node:os").hostname() as string;
+    const tail = "Users\\me\\.clover\\settings.json";
+    for (const p of [
+      `\\\\localhost\\C$\\${tail}`, `\\\\127.0.0.1\\C$\\${tail}`, `\\\\127.9.9.9\\share\\x`,
+      `\\\\?\\UNC\\localhost\\C$\\${tail}`, `\\??\\UNC\\127.0.0.1\\c$\\${tail}`, `//localhost/C$/Users/me/.clover/settings.json`,
+      `\\\\${host}\\Users\\me\\.clover\\settings.json`, `\\\\${host.toUpperCase()}\\C$\\${tail}`,
+      `\\\\0--1.ipv6-literal.net\\C$\\${tail}`, "\\\\nas\\backup$\\x.txt",
+    ]) {
+      expect(win.check({ op: "write", path: p })).toMatchObject({ allowed: false });
+      expect(win.check({ op: "read", path: p })).toMatchObject({ allowed: false });
+      expect(win.touches([p])).not.toBeNull();
+    }
+    expect(win.checkAgentRoot("\\\\localhost\\C$\\Users\\me")).toMatchObject({ allowed: false });
+    expect(win.checkAgentRoot(`\\\\${host}\\Users\\me`)).toMatchObject({ allowed: false });
+    // Drive-relative: against that drive's own current folder, which the fence doesn't track.
+    for (const p of ["C:.clover\\settings.json", "c:settings.json", "C:"]) expect(win.check({ op: "read", path: p })).toMatchObject({ allowed: false });
+    // Another computer's ordinary share, and drive paths, stay as they were.
+    expect(win.check({ op: "write", path: "\\\\nas\\share\\x.txt" })).toEqual({ allowed: true });
+    expect(win.check({ op: "write", path: "C:\\Users\\me\\project\\a.txt" })).toEqual({ allowed: true });
+  });
+
   test("#205 B2: a hard link to a read-denied file can't be read either; past 40 links a path is refused", () => {
     const { home, clover, fence } = make();
     mkdirSync(join(clover, "run"), { recursive: true });

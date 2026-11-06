@@ -367,6 +367,11 @@ export async function openCloverSecretStore(o: {
   const service = await probeSecretService(keys);
   // A file that claims a weaker key than this computer keeps (a planted secrets.enc saying `key-file`, with a planted
   // secrets.key) is taken as replaced: locked, never opened or written under the weaker key (#205's check 2).
+  // A keyring that is there but locked (or unreadable) may hold the real key, so a file claiming the unsealed key
+  // file waits until the keyring answers (#205's check 3).
+  if (recorded === "key-file" && service === "locked") {
+    return store("key-file", async () => { throw new ContractError("locked", "the keyring is locked"); }, { locked: "the keyring is locked, and the secrets file claims an unsealed key: saved logins stay locked until the keyring answers" });
+  }
   if (recorded !== null) {
     const rank: Record<SecretKeySource, number> = { "key-file": 0, "systemd-creds": 1, "secret-service": 2, "credential-manager": 2 };
     let vaultHasKey = false;
