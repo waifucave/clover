@@ -11,10 +11,17 @@ export function frame(payload: Uint8Array): Uint8Array {
   return concat(u32(payload.byteLength), payload);
 }
 
-/** Splits incoming chunks into frames. A length past `max` throws `invalid`; the caller resets the stream. */
+/** Splits incoming chunks into frames. A length past `max` throws `invalid`; the caller resets the stream. A frame's
+ *  body is gathered into one buffer sized from its length, so a large frame arriving in many chunks is copied once,
+ *  not once per chunk. */
 export class FrameReader {
-  #buf: Uint8Array = new Uint8Array(0);
   readonly #max: number;
+  /** The length prefix while it is incomplete. */
+  #head = new Uint8Array(4);
+  #headLen = 0;
+  /** The current frame's body and how much of it has come. */
+  #body: Uint8Array | undefined;
+  #bodyLen = 0;
 
   constructor(max = MAX_FRAME) {
     this.#max = max;
@@ -22,23 +29,41 @@ export class FrameReader {
 
   /** The complete frames this chunk finishes, in order. */
   push(chunk: Uint8Array): Uint8Array[] {
-    this.#buf = this.#buf.byteLength === 0 ? chunk : concat(this.#buf, chunk);
     const out: Uint8Array[] = [];
     let at = 0;
-    for (;;) {
-      if (this.#buf.byteLength - at < 4) break;
-      const len = new DataView(this.#buf.buffer, this.#buf.byteOffset + at, 4).getUint32(0, false);
-      if (len > this.#max) throw new ContractError("invalid", "a frame is longer than the link allows");
-      if (this.#buf.byteLength - at - 4 < len) break;
-      out.push(this.#buf.slice(at + 4, at + 4 + len));
-      at += 4 + len;
+    while (at < chunk.byteLength) {
+      if (this.#body === undefined) {
+        const take = Math.min(4 - this.#headLen, chunk.byteLength - at);
+        this.#head.set(chunk.subarray(at, at + take), this.#headLen);
+        this.#headLen += take;
+        at += take;
+        if (this.#headLen < 4) break;
+        const len = new DataView(this.#head.buffer).getUint32(0, false);
+        if (len > this.#max) throw new ContractError("invalid", "a frame is longer than the link allows");
+        this.#headLen = 0;
+        this.#body = new Uint8Array(len);
+        this.#bodyLen = 0;
+        if (len === 0) {
+          out.push(this.#body);
+          this.#body = undefined;
+          continue;
+        }
+      }
+      const body = this.#body;
+      const take = Math.min(body.byteLength - this.#bodyLen, chunk.byteLength - at);
+      body.set(chunk.subarray(at, at + take), this.#bodyLen);
+      this.#bodyLen += take;
+      at += take;
+      if (this.#bodyLen === body.byteLength) {
+        out.push(body);
+        this.#body = undefined;
+      }
     }
-    this.#buf = at === 0 ? this.#buf : this.#buf.slice(at);
     return out;
   }
 
   /** Bytes held for a frame not yet complete. */
   get pending(): number {
-    return this.#buf.byteLength;
+    return this.#headLen + (this.#body === undefined ? 0 : this.#bodyLen + 4);
   }
 }

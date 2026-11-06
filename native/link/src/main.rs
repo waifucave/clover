@@ -10,7 +10,8 @@
 //! What the owner decided for edit 6 (items 79-81): presence on n0's relays is accepted and QUIC address discovery is
 //! on (iroh's default relays carry it); only a device without an account publishes to n0's address lookup, and then the
 //! relay URL only (`PkarrPublisher`'s default filter); UPnP, NAT-PMP and PCP stay off (no firewall prompt, S1).
-//! Connections on the link ALPN from keys the core hasn't allowed are closed at once (`allow`); the core checks again.
+//! Connections on the link ALPN from keys the core hasn't allowed are closed at once (`allow`; the list starts empty),
+//! and a revoked device's with "revoked", so it stops re-dialling; the core checks again.
 //!
 //! Hooks the other lanes fill (the sidecar holds the device key): lane C's fence wraps how the core spawns it (it needs
 //! only UDP, its stdin and stdout); lane M signs the binary and ships it beside the core.
@@ -41,6 +42,7 @@ const T_DATA: u8 = 1;
 const MAX_FRAME: usize = 16 * 1024 * 1024 + 16;
 const LINK_ALPN: &str = "clover/link/1";
 const CLOSE_UNPAIRED: u32 = 2;
+const CLOSE_REVOKED: u32 = 3;
 const RESET_CONN_LOST: u32 = 3;
 
 enum Out {
@@ -61,7 +63,10 @@ struct Sidecar {
     /// Codes this side closed a connection with, for its `closed` event.
     local_close: Mutex<HashMap<u64, (u32, String)>>,
     streams: Mutex<HashMap<u64, mpsc::UnboundedSender<StreamCmd>>>,
-    allow: Mutex<Option<HashSet<[u8; 32]>>>,
+    /// The paired devices' keys; it starts empty, so nothing gets in before the core says who may.
+    allow: Mutex<HashSet<[u8; 32]>>,
+    /// Revoked devices' keys: closed with "revoked", so the other side stops re-dialling.
+    revoked: Mutex<HashSet<[u8; 32]>>,
     next_conn: AtomicU64,
     /// Streams this side accepts get odd ids; the core picks even ones for those it opens.
     next_stream: AtomicU64,
@@ -150,7 +155,8 @@ impl Sidecar {
             conns: Mutex::new(HashMap::new()),
             local_close: Mutex::new(HashMap::new()),
             streams: Mutex::new(HashMap::new()),
-            allow: Mutex::new(None),
+            allow: Mutex::new(HashSet::new()),
+            revoked: Mutex::new(HashSet::new()),
             next_conn: AtomicU64::new(1),
             next_stream: AtomicU64::new(1),
         }))
@@ -226,11 +232,13 @@ impl Sidecar {
                 let alpn = String::from_utf8_lossy(conn.alpn()).into_owned();
                 let peer = *conn.remote_id().as_bytes();
                 if alpn == LINK_ALPN {
-                    if let Some(allow) = me.allow.lock().await.as_ref() {
-                        if !allow.contains(&peer) {
-                            conn.close(VarInt::from_u32(CLOSE_UNPAIRED), b"not a paired device");
-                            return;
-                        }
+                    if me.revoked.lock().await.contains(&peer) {
+                        conn.close(VarInt::from_u32(CLOSE_REVOKED), b"the device was revoked");
+                        return;
+                    }
+                    if !me.allow.lock().await.contains(&peer) {
+                        conn.close(VarInt::from_u32(CLOSE_UNPAIRED), b"not a paired device");
+                        return;
                     }
                 }
                 let path = path_of(&conn);
@@ -325,7 +333,12 @@ impl Sidecar {
                 for k in m["keys"].as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
                     set.insert(unhex32(k)?);
                 }
-                *self.allow.lock().await = Some(set);
+                let mut gone = HashSet::new();
+                for k in m["revoked"].as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
+                    gone.insert(unhex32(k)?);
+                }
+                *self.allow.lock().await = set;
+                *self.revoked.lock().await = gone;
             }
             "networkChanged" => {
                 let me = self.clone();

@@ -454,7 +454,9 @@ describe("makeApply: the runtime options diff (P8b Task 15)", () => {
       withRuntimes({ winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: "/a/clover", advisorModel: "m1", winterIdleTimeoutSec: 900 }),
       withRuntimes({ winterLeg: { chat: true, dispatch: false, code: false }, winterExecutable: "/b/clover", advisorModel: "m2", winterIdleTimeoutSec: 60 }),
     );
-    expect(lines.filter((l) => l.includes("takes effect for new sessions"))).toHaveLength(3);   // Task 17: winterLeg no longer re-wires anything
+    expect(lines.filter((l) => l.includes("takes effect for new sessions"))).toHaveLength(2);   // Task 17: winterLeg no longer re-wires anything
+    // A-M1: no session runs the binary the executable setting names, and the log says so.
+    expect(lines.filter((l) => l.startsWith("runtimes.winterExecutable changed — no session runs this binary"))).toHaveLength(1);
     // Task 17: a `false` is accepted and reported as ignored — the engine leg no longer exists
     expect(lines.some((l) => l.includes("winterLeg") && l.includes("the engine leg no longer exists; ignored"))).toBe(true);
   });

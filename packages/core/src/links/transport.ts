@@ -72,6 +72,9 @@ export interface LinkTransportOptions {
   helloTimeoutMs?: number;
   retireGraceMs?: number;
   redialBackoffMs?: readonly number[];
+  /** How long after this side added a peer its "not paired yet" refusal means "try again" (it may not have added
+   *  this device yet); after that it is a failure and the link stops being wanted. */
+  unpairedGraceMs?: number;
 }
 
 const DEFAULTS = {
@@ -82,11 +85,20 @@ const DEFAULTS = {
   helloTimeoutMs: 5_000,
   retireGraceMs: 5_000,
   redialBackoffMs: [0, 250, 1_000, 2_000, 5_000, 10_000, 30_000] as readonly number[],
+  unpairedGraceMs: 60_000,
 };
 
 type ResolvedLinkOptions = Required<Omit<LinkTransportOptions, "relayLabel" | "epoch" | "onPeerEpoch">> & Pick<LinkTransportOptions, "relayLabel" | "epoch" | "onPeerEpoch">;
 
 const PRIORITY_OF: Record<number, LinkPriority> = { 3: "control", 2: "tokens", 1: "screenshots", 0: "files" };
+
+/** How far a peer's connection sequence may run ahead of the last this side saw: enough for any real run of
+ *  re-dials, never a jump that would wrap the ranking. */
+const MAX_SEQ_JUMP = 1_000_000;
+
+function seqOk(seq: unknown, last: number): seq is number {
+  return typeof seq === "number" && Number.isSafeInteger(seq) && seq >= 0 && seq <= last + MAX_SEQ_JUMP;
+}
 
 /** How long a retired, idle connection stays open before its dialler closes it, so its last bytes get out. */
 const RETIRE_LINGER_MS = 250;
@@ -258,9 +270,16 @@ export class CloverLinkTransport implements LinkTransport {
       return;
     }
     const link = this.#link(peer);
-    link.wanted = true;
+    // A computer that dials in is worth keeping a link to; a phone or a browser dials in again by itself.
+    if (d.runsCore) link.wanted = true;
     const s = new Session(conn, link, this);
     s.start();
+  }
+
+  /** Whether a "not paired yet" refusal from `peer` still means "try again": just after this side added it. */
+  inUnpairedGrace(peer: string): boolean {
+    const d = this.#o.registry.get(peer);
+    return d !== undefined && d.revokedAt === undefined && this.#o.clock.now() - d.addedAt < this.#o.unpairedGraceMs;
   }
 
   #revoked(peer: string): void {
@@ -293,6 +312,8 @@ class PeerLink implements Link {
   #lastView = "";
   wanted = false;
   revoked = false;
+  /** The peer told this device it was revoked there: nothing is dialled again, and calls answer so. */
+  revokedByPeer = false;
   /** The highest connection sequence number seen or proposed with this peer. */
   lastSeq = 0;
 
@@ -322,6 +343,7 @@ class PeerLink implements Link {
   /** A ready session, dialling one if needed; `offline` when none comes. */
   async ready(signal?: AbortSignal): Promise<Session> {
     if (this.revoked) throw new ContractError("refused", `${this.peer} was revoked`, { peer: this.peer });
+    if (this.revokedByPeer) throw new ContractError("refused", `${this.peer} revoked this device`, { peer: this.peer, revoked: true });
     if (this.#best) return this.#best;
     if (!this.#dialing && this.#t.opts.clock.monotonic() - this.#lastDialFailedAt < this.#t.opts.failFastMs) throw offline(this.peer);
     const dial = this.#dialing ?? this.#dial();
@@ -423,7 +445,8 @@ class PeerLink implements Link {
     }
     // A connection that has heard nothing for a while is likely stale after a network change: close it first, since
     // iroh dials a peer slowly while a stale connection to it is still open (S1, network changes, point 5).
-    for (const s of this.sessions) if (s.silentFor() > this.#t.opts.keepaliveMs) s.close(CLOSE_SUPERSEDED, "stale after a network change");
+    // Two keep-alive intervals: the peer's ping is due every interval, and the tick that sends it runs every half.
+    for (const s of this.sessions) if (s.silentFor() > 2 * this.#t.opts.keepaliveMs) s.close(CLOSE_SUPERSEDED, "stale after a network change");
     // A fresh dial, even with one in flight: that one may be headed for an address the peer has left.
     void this.#dial(true).catch(() => undefined);
   }
@@ -442,6 +465,16 @@ class PeerLink implements Link {
     }, ms);
   }
 
+  /** The peer said this device is revoked there (its door, or its close): stop wanting the link. */
+  peerRevoked(): void {
+    this.revokedByPeer = true;
+    this.wanted = false;
+    if (this.#redialTimer) {
+      this.#t.opts.clock.clearTimeout(this.#redialTimer);
+      this.#redialTimer = undefined;
+    }
+  }
+
   /** One dial at a time, unless `fresh`: then another joins the one in flight, and the first to answer wins. */
   #dial(fresh = false): Promise<Session> {
     if (this.#dialing && !fresh) return this.#dialing;
@@ -457,8 +490,11 @@ class PeerLink implements Link {
       },
       (err: unknown) => {
         if (this.#dialing === p) this.#dialing = undefined;
-        const unpaired = isContractError(err) && err.detail?.unpaired === true;
+        const unpaired = isContractError(err) && err.detail?.unpaired === true && this.#t.inUnpairedGrace(this.peer);
         const revoked = isContractError(err) && err.detail?.revoked === true;
+        if (revoked) this.peerRevoked();
+        // Past the grace, a peer that still doesn't know this device has unpaired it: stop dialling it.
+        if (isContractError(err) && err.detail?.unpaired === true && !unpaired) this.wanted = false;
         if (!unpaired) this.#lastDialFailedAt = this.#t.opts.clock.monotonic();
         // A link someone wants keeps trying, unless the peer revoked this device.
         if (this.wanted && !revoked && !this.revoked && !this.#t.closedFlag && !this.#best) this.#scheduleRedial();
@@ -605,12 +641,16 @@ class Session {
     this.#link.starting.add(this);
     this.conn.onStream((ws) => this.#incomingStream(ws));
     this.conn.onPath(() => this.#link.pathChanged(this));
-    void this.conn.closed.then((c) => this.#end(
-      c.code === CLOSE_REVOKED ? new ContractError("refused", `${this.#link.peer} was revoked`, { peer: this.#link.peer, revoked: true })
-        // Just after a pairing the peer may not have added this device yet: a refusal to retry, not a dead path.
-        : c.code === CLOSE_UNPAIRED && !c.local ? new ContractError("refused", `${this.#link.peer} doesn't know this device yet`, { peer: this.#link.peer, unpaired: true })
-          : offline(this.#link.peer),
-    ));
+    void this.conn.closed.then((c) => {
+      // The peer closed it as revoked: it revoked this device, so the link stops being wanted.
+      if (c.code === CLOSE_REVOKED && !c.local) this.#link.peerRevoked();
+      this.#end(
+        c.code === CLOSE_REVOKED ? new ContractError("refused", `${this.#link.peer} was revoked`, { peer: this.#link.peer, revoked: true })
+          // Just after a pairing the peer may not have added this device yet: a refusal to retry, not a dead path.
+          : c.code === CLOSE_UNPAIRED && !c.local ? new ContractError("refused", `${this.#link.peer} doesn't know this device yet`, { peer: this.#link.peer, unpaired: true })
+            : offline(this.#link.peer),
+      );
+    });
     this.#helloTimer = t.opts.clock.setTimeout(() => {
       if (!this.#ready) this.close(CLOSE_PROTOCOL, "no hello in time");
     }, t.opts.helloTimeoutMs);
@@ -635,7 +675,7 @@ class Session {
 
   #helloAnswered(v: unknown): void {
     const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; epoch?: unknown };
-    if (r?.device !== this.#link.peer || typeof r.connSeq !== "number" || !PEER_PROTOCOL_VERSION_RANGE.accepts(r.protocolVersion)) {
+    if (r?.device !== this.#link.peer || !seqOk(r.connSeq, this.#link.lastSeq) || !PEER_PROTOCOL_VERSION_RANGE.accepts(r.protocolVersion)) {
       this.close(CLOSE_PROTOCOL, "a bad hello answer");
       return;
     }
@@ -650,7 +690,7 @@ class Session {
       this.close(CLOSE_PROTOCOL, "an unexpected hello");
       return;
     }
-    if (h?.device !== this.#link.peer || typeof h.connSeq !== "number" || !Number.isSafeInteger(h.connSeq) || h.connSeq < 0) {
+    if (h?.device !== this.#link.peer || !seqOk(h.connSeq, this.#link.lastSeq)) {
       this.close(CLOSE_PROTOCOL, "a bad hello");
       return;
     }
@@ -703,9 +743,26 @@ class Session {
   retire(): void {
     if (this.retiring) return;
     this.retiring = true;
-    const grace = this.#t.opts.retireGraceMs;
-    this.#t.opts.clock.setTimeout(() => this.close(CLOSE_SUPERSEDED, "a newer connection took over"), grace);
+    this.#armRetireGrace();
     this.#closeWhenIdle();
+  }
+
+  /** The grace closes a retired session, unless streams still run on it and it is healthy (S3): a transfer isn't cut
+   *  because a new path opened. A silent one is closed by `tick` anyway. */
+  #armRetireGrace(): void {
+    this.#t.opts.clock.setTimeout(() => {
+      if (this.#ended) return;
+      if (this.#streams.size > 0 && this.silentFor() < this.#t.opts.idleTimeoutMs) {
+        this.#armRetireGrace();
+        return;
+      }
+      this.close(CLOSE_SUPERSEDED, "a newer connection took over");
+    }, this.#t.opts.retireGraceMs);
+  }
+
+  /** The transport's clock, for the streams' timers. */
+  get clock(): Clock {
+    return this.#t.opts.clock;
   }
 
   /** Requests this side is still answering. */
@@ -1010,6 +1067,13 @@ function spliceLast(headArray: Uint8Array, element: Uint8Array): Uint8Array {
 }
 
 /** A LinkStream on a wire stream: a header frame, then one frame per chunk. */
+/** After the peer finished sending, how long this side's own direction stays open with nothing written before it is
+ *  ended for it, so a receiver that never answers doesn't keep the stream (and its connection) forever. */
+const STREAM_LINGER_MS = 30_000;
+
+/** One stream, each direction on its own (S3 of H-M1's review): `end()` finishes this side's sending, the peer's FIN
+ *  finishes its sending (`onEnd`), and the stream is done once both are, or at once on an abort or a lost path. So a
+ *  receiver can read a request to its end and still write the answer back. */
 class SessionStream implements LinkStream {
   readonly id: string;
   readonly label: string;
@@ -1020,10 +1084,17 @@ class SessionStream implements LinkStream {
   readonly #data = new Listeners<Uint8Array>();
   readonly #end = new Listeners<Error | undefined>();
   readonly #buffered: Uint8Array[] = [];
-  #open = true;
+  /** This side may still write. */
+  #writeOpen = true;
+  /** The peer may still send. */
+  #readOpen = true;
+  /** `onEnd` has fired (the peer's direction is done, or the stream failed). */
   #ended = false;
+  /** Both directions are done, or it failed: the session no longer tracks it. */
+  #done = false;
   #endError: Error | undefined;
   #writes: Promise<void> = Promise.resolve();
+  #lingerTimer: TimerHandle | undefined;
 
   /** `outgoing`: this side opened it, so it reads the peer's frames itself; an incoming stream's frames come through
    *  the session's reader, which read its header. */
@@ -1057,7 +1128,8 @@ class SessionStream implements LinkStream {
   }
 
   async write(chunk: Uint8Array): Promise<void> {
-    if (!this.#open) throw this.#endError ?? new ContractError("closed", "the stream has ended");
+    if (!this.#writeOpen) throw this.#endError ?? new ContractError("closed", "the stream has ended");
+    this.#stopLinger();
     const bytes = frame(chunk);
     const prev = this.#writes;
     const next = prev.then(() => this.#ws.write(bytes));
@@ -1067,18 +1139,20 @@ class SessionStream implements LinkStream {
     } catch {
       throw this.#endError ?? offline(this.#peer);
     }
+    if (!this.#readOpen && this.#writeOpen) this.#startLinger();
   }
 
   end(): void {
-    if (!this.#open) return;
-    this.#open = false;
+    if (!this.#writeOpen) return;
+    this.#writeOpen = false;
+    this.#stopLinger();
     void this.#writes.then(() => this.#ws.finish());
-    this.#localEnd(undefined);
+    if (!this.#readOpen) this.#settle(undefined);
   }
 
   abort(reason = "aborted"): void {
-    if (!this.#open && this.#ended) return;
-    this.#open = false;
+    if (this.#done) return;
+    this.#writeOpen = false;
     this.#ws.reset(RESET_ABORTED);
     this.finishWith(new ContractError("closed", `the stream was aborted: ${reason}`));
   }
@@ -1100,24 +1174,23 @@ class SessionStream implements LinkStream {
 
   /** @internal */
   deliver(chunk: Uint8Array): void {
-    if (this.#ended && this.#endError) return;
+    if (this.#done && this.#endError) return;
     if (this.#data.size === 0) this.#buffered.push(chunk);
     else this.#data.emit(chunk);
   }
 
-  /** @internal The peer ended its side: the stream is done once both sides have. */
+  /** @internal The peer finished sending; this side may still write until it ends (or the linger ends it). */
   peerFinished(): void {
-    if (this.#open) {
-      // The peer is done sending; this side may still write until it ends.
-      this.#open = false;
-      this.#ws.finish();
-    }
-    this.#localEnd(undefined);
+    if (!this.#readOpen) return;
+    this.#readOpen = false;
+    this.#fireEnd(undefined);
+    if (!this.#writeOpen) this.#settle(undefined);
+    else this.#startLinger();
   }
 
   /** @internal */
   peerReset(code: number): void {
-    this.#open = false;
+    this.#writeOpen = false;
     this.finishWith(
       code === RESET_NOT_FOUND
         ? new ContractError("not_found", `${this.#peer} takes no \`${this.label}\` streams`)
@@ -1127,18 +1200,40 @@ class SessionStream implements LinkStream {
     );
   }
 
-  /** @internal */
+  /** @internal Ends it both ways at once, with an error or (the connection's own end) without. */
   finishWith(err: Error | undefined): void {
+    if (this.#done) return;
+    this.#writeOpen = false;
+    this.#readOpen = false;
+    if (err) this.#endError = err;
+    this.#fireEnd(err);
+    this.#settle(err);
+  }
+
+  #fireEnd(err: Error | undefined): void {
     if (this.#ended) return;
-    this.#open = false;
     this.#ended = true;
-    this.#endError = err;
-    this.#session.streamEnded(this);
+    if (err) this.#endError = err;
     this.#end.emit(err);
   }
 
-  #localEnd(err: Error | undefined): void {
-    this.finishWith(err);
+  #settle(err: Error | undefined): void {
+    if (this.#done) return;
+    this.#done = true;
+    if (err) this.#endError = err;
+    this.#stopLinger();
+    this.#session.streamEnded(this);
+  }
+
+  #startLinger(): void {
+    this.#stopLinger();
+    const clock = this.#session.clock;
+    this.#lingerTimer = clock.setTimeout(() => this.end(), STREAM_LINGER_MS);
+  }
+
+  #stopLinger(): void {
+    if (this.#lingerTimer) this.#session.clock.clearTimeout(this.#lingerTimer);
+    this.#lingerTimer = undefined;
   }
 }
 

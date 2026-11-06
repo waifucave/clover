@@ -13,6 +13,7 @@ import type { z } from "zod";
 import type { ApprovalBroker, ApprovalRequest } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
+import { renameRemote } from "../links/relay";
 import { answerKeyOf, type DeviceRecord } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { AccountClient } from "../identity/account";
@@ -62,6 +63,9 @@ function requireUser(ctx: MethodContext, what: string): void {
 /** The user in their own terminal (§5.1): a sensitive change there needs no card. */
 const inTerminal = (ctx: MethodContext): boolean => ctx.caller.kind === "user" && ctx.caller.client === "cli";
 
+/** What a device added by a card records when the broker answered before giving the card's id. */
+export const UNNAMED_CARD = "card:unnamed";
+
 /** Opens a sealed card and hands back its id with the decision still to come. */
 export type CardOpener = (req: ApprovalRequest) => Promise<{ card?: string; allowed: Promise<boolean> }>;
 
@@ -89,7 +93,7 @@ export function brokerCardOpener(broker: Pick<ApprovalBroker, "request" | "watch
 export interface DevicesMethodsDeps {
   registry: FileDeviceRegistry;
   pairing: PairingService;
-  transport: Pick<LinkTransport, "links" | "watch">;
+  transport: Pick<LinkTransport, "links" | "watch" | "connect">;
   account?: AccountClient;
   clock: Clock;
   openCard: CardOpener;
@@ -110,6 +114,18 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
 
     [M.deviceRename.name]: handler(M.deviceRename, async (p, ctx): Promise<ChangeResult> => {
       requireUser(ctx, "rename a device");
+      const d = registry.get(p.id);
+      if (!d || d.revokedAt !== undefined) throw new MethodError(ERR.NOT_FOUND, `no device ${p.id}`);
+      // Another computer's name is its own: the rename goes to it, and it tells everyone (S4 of H-M1's review).
+      if (d.runsCore && p.id !== registry.self().id) {
+        try {
+          await renameRemote(deps.transport, p.id, p.name);
+        } catch (err) {
+          if (isContractError(err, "offline")) throw new MethodError(CLOVER_ERR.COMPUTER_OFFLINE, `${d.name} is offline: rename it while it's on`);
+          throw err;
+        }
+        return { applied: true };
+      }
       await registry.rename(p.id, p.name);
       return { applied: true };
     }),
@@ -155,8 +171,9 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
       const name = state.peer ? `${state.peer.name} (${state.peer.kind})` : "a device";
       const opened = await deps.openCard(changeCard("device-add", `Add ${state.peer?.name ?? "this device"}?`, name));
       if (!opened.card) {
+        // Answered before its id was known: still a card's answer, never the user's terminal.
         if (!(await opened.allowed)) throw new MethodError(ERR.INVALID_REQUEST, "refused");
-        await pairing.confirm(p.pairingId, p.words, { terminal: true });
+        await pairing.confirm(p.pairingId, p.words, { card: UNNAMED_CARD, allowed: Promise.resolve(true) });
         return { applied: true };
       }
       void pairing.confirm(p.pairingId, p.words, { card: opened.card, allowed: opened.allowed }).catch(() => undefined);

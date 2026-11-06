@@ -192,6 +192,48 @@ describe("handshake directory", () => {
   });
 });
 
+describe("a revocation the service didn't hear (S5 of H-M1's review)", () => {
+  test("its steps wait, with the pair's keys kept, and go through on the next refresh", async () => {
+    const hs = service();
+    const net = new MemoryNetwork();
+    let down = false;
+    const devs = await Promise.all(["Studio", "Laptop"].map(async (name) => {
+      const store = new MemorySecretStore();
+      const key = await DeviceKey.loadOrCreate(store);
+      const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-hs-")), key, clock, self: { name } });
+      const client = new HandshakeClient({ baseUrl: hs.url, clock, fetch: (req) => (down ? Promise.reject(new Error("no network")) : fetch(req)) });
+      const pairing = new PairingService({ self: key, registry, wire: net.endpoint(key.publicKey), clock, store, selfTarget: () => ({}), account: () => null, handshake: client });
+      stops.push(() => pairing.close());
+      return { store, key, registry, client, pairing };
+    }));
+    const [a, b] = devs as [typeof devs[0], typeof devs[0]];
+    const view = await a.pairing.begin();
+    const joined = await b.pairing.join(view.qr!);
+    await waitFor(() => a.pairing.get(view.pairingId)?.status === "words");
+    await Promise.all([a.pairing.confirm(view.pairingId, joined.words!, { terminal: true }), b.pairing.confirm(view.pairingId, joined.words!, { terminal: true })]);
+    await waitFor(() => a.registry.pairWith(b.key.id)?.registeredAt !== undefined);
+    const pairId = a.registry.pairWith(b.key.id)!.pairId;
+    const group = a.registry.group()!.id;
+    down = true;
+    const { pairKeyRef, pairSecretRef } = await import("../handshake");
+    const { retryRevokes } = await import("../../devices/account-devices");
+    const out = await revokeDevice({ registry: a.registry, store: a.store, handshake: a.client }, b.key.id);
+    expect(out.steps.every((x) => !x.ok)).toBe(true);
+    // The revoke here took at once; the keys that end the pair at the service are kept, and the steps wait.
+    expect(a.registry.get(b.key.id)?.revokedAt).toBeDefined();
+    expect(await a.store.get(pairKeyRef(pairId))).not.toBeNull();
+    expect(a.registry.pendingRevokes().map((r) => r.steps.sort())).toEqual([["handshake-group", "handshake-pair"]]);
+    expect(hs.ended.size).toBe(0);
+    down = false;
+    await retryRevokes({ registry: a.registry, store: a.store, handshake: a.client });
+    expect(hs.ended.has(pairId)).toBe(true);
+    expect(hs.groups.get(group)?.members.size).toBe(1);
+    expect(await a.store.get(pairKeyRef(pairId))).toBeNull();
+    expect(await a.store.get(pairSecretRef(pairId))).toBeNull();
+    expect(a.registry.pendingRevokes()).toEqual([]);
+  });
+});
+
 describe("dial policy (c)", () => {
   const policy = (self: "same" | "varies" | "unknown", peer: "same" | "varies" | "unknown") => new DialPolicy({ selfMapping: () => self, peerMapping: () => peer });
   const key = fromBase64Url(toBase64Url(randomBytes(32)))!;

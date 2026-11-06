@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as sdk from "@yanlinglabs/winter-agent-sdk";
+import * as sdk from "@waifucave/clover-agent-sdk";
 import { addMarketplace, installPlugin, listPlugins, setPluginEnabled, type PluginManagerOptions, type PluginScope } from "../../src/plugins/plugin-manager";
 
 const tmp = (p: string): string => realpathSync(mkdtempSync(join(tmpdir(), p)));

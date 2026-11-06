@@ -13,7 +13,7 @@ import {
   ConnWriter, DAEMON_FEATURE_ATTACHMENT_FILES, DAEMON_FEATURE_IMAGE_ORIGINAL_PATHS, ERR, FILE_REFERENCE_INVALID, FILE_SESSION_NOT_CODE, FILE_UNREADABLE,
   LineDecoder, METHODS, PROTOCOL_VERSION, SessionEvent, SessionSendParams, SessionSteerParams, USER_MESSAGE_ATTACHMENTS_MAX, USER_MESSAGE_FILES_MAX, encodeLine, type WritableSocket,
 } from "@waifucave/clover-protocol";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";

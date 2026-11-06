@@ -1,7 +1,7 @@
-import type { CredentialRef } from "@yanlinglabs/winter-agent-sdk";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { WinterProviderDescriptor } from "@yanlinglabs/winter-provider-catalog";
+import type { CredentialRef } from "@waifucave/clover-agent-sdk";
+import type { CredentialPresence } from "./host";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import type { WinterProviderDescriptor } from "@waifucave/clover-provider-catalog";
 import type { SecretStore } from "../auth/secret-store";
 import { keychainService } from "../profile";
 import { CREDENTIAL_MATERIAL_NAMES, readCredentialMaterial, writeCredentialMaterial } from "../auth/credential-material";
@@ -59,7 +59,7 @@ export interface CredentialSlot {
  *
  * PROVIDER IDS ARE THE PINNED CATALOG'S (Task 9, ruling 9 — this is the alignment Task 4's own
  * caveat said was owed). `CredentialPresence.byProvider` is keyed by the ids the router and the
- * child resolve models against, so they must be `@yanlinglabs/winter-provider-catalog`'s
+ * child resolve models against, so they must be `@waifucave/clover-provider-catalog`'s
  * `WinterProviderDescriptor.id` values verbatim — `"openai"` and `"codex-oauth"`, both present in
  * the pinned 0.0.3 catalog (`keychain.test.ts` pins that as a tripwire, so a catalog bump that
  * renamed either row fails here rather than silently un-routing every session).

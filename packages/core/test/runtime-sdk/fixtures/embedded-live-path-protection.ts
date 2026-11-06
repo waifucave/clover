@@ -1,5 +1,5 @@
 // Explicit local SDK binding, disposable homes and fixture bytes. Uses the independently accepted context contract.
-import { query, type SpawnedRuntimeProcess } from "@yanlinglabs/winter-agent-sdk";
+import { query, type SpawnedRuntimeProcess } from "@waifucave/clover-agent-sdk";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

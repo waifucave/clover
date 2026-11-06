@@ -7,10 +7,16 @@
 // the slot, sealed under the code's secret, so the service that holds the slot can't swap the host's key.
 //
 // The exchange, one framed CBOR message each way per step on one stream:
-//   joiner → host  ["hello", {pairingId, device, pairKey, groupKey, group, account, proof}]
-//   host → joiner  ["welcome", {device, pairKey, groupKey, group, fresh, t, account, proof}] or ["refused", {reason}]
+//   joiner → host  ["hello", {pairingId, device, pairKey, groupKey, group, account, commit, proof}]
+//   host → joiner  ["welcome", {device, pairKey, groupKey, group, fresh, t, account, nonce, proof}] or ["refused", {reason}]
+//   joiner → host  ["reveal", {nonce}], the nonce `commit` committed to; both show the words only after it
 //   both, when their user confirms the words (and their card is approved): ["confirm", {pairSig, admit?}]
-// Each device adds the other once both confirms have crossed.
+// Each device adds the other once both confirms have crossed. The words and the pair secret cover both nonces
+// (identity/sas.ts).
+//
+// The pair door (`clover/pair/1`) is the one that takes an unknown key, so it is kept narrow: a connection is turned
+// away unless this device shows a pairing, its first frame must come within `FIRST_FRAME_MS`, and at most
+// `MAX_DOOR_ATTEMPTS` run at once.
 //
 // Items 81 and 85: when either device has no account, each saves a credential for the pair: a fresh signing key
 // (never the link key), the pair secret S the handshake's boxes are sealed with, and the registration both signed.
@@ -20,15 +26,15 @@ import { hkdfSync } from "node:crypto";
 import type { PairingView as PairingViewSchema } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { Clock } from "../contracts/clock";
-import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
+import { ContractError, isContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import { deviceIdFor, type DeviceRecord, type PairingProof } from "../contracts/device-registry";
 import type { SecretStore } from "../contracts/secret-store";
-import { type Bytes, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
+import { type Bytes, constantTimeEqual, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
 import { type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519 } from "../identity/keys";
 import {
-  canonicalRecord, derivePairId, derivePairSecret, fullTranscript, joinerTranscript, PAIR_PROOF_HOST, PAIR_PROOF_JOINER,
-  pairProof, sasWords, verifyPairProof,
+  canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
+  PAIR_PROOF_HOST, PAIR_PROOF_JOINER, pairProof, sasWords, verifyPairProof,
 } from "../identity/sas";
 import type { FileDeviceRegistry } from "../devices/registry";
 import { decode, encode } from "./codec";
@@ -44,6 +50,10 @@ type PairingView = z.infer<typeof PairingViewSchema>;
 export const PAIRING_TTL_MS = 10 * 60_000;
 const QR_PREFIX = "clover-pair:1:";
 const STEP_TIMEOUT_MS = 30_000;
+/** How long an incoming pairing connection has to send its hello. */
+const FIRST_FRAME_MS = 10_000;
+/** How many incoming pairing connections may be under way at once. */
+const MAX_DOOR_ATTEMPTS = 4;
 
 /** Where a short code's slot lives: the handshake service's rendezvous (a request to lane I), or a stand-in. */
 export interface PairingRendezvous {
@@ -52,9 +62,12 @@ export interface PairingRendezvous {
   remove(slot: string): Promise<void>;
 }
 
+/** A stand-in for the service's rendezvous. Like it, a slot is create-only: a box already there is never replaced, so
+ *  no one can swap the host's key and addresses for their own. */
 export class MemoryRendezvous implements PairingRendezvous {
   readonly slots = new Map<string, string>();
   async publish(slot: string, box: string): Promise<void> {
+    if (this.slots.has(slot)) throw new ContractError("conflict", "the slot is taken");
     this.slots.set(slot, box);
   }
   async lookup(slot: string): Promise<string | undefined> {
@@ -101,6 +114,9 @@ interface Pending {
   pairKey: Ed25519Key;
   groupKey: Ed25519Key;
   groupKeyIsNew: boolean;
+  /** This side's nonce (S2), and the joiner's commitment to its nonce as the host received it. */
+  nonce: Bytes;
+  peerCommit?: Bytes;
   // Known once hello and welcome crossed.
   peer?: Side;
   transcript?: Bytes;
@@ -131,6 +147,8 @@ export interface PairingServiceOptions {
   handshake?: HandshakeClient;
   rendezvous?: PairingRendezvous;
   ttlMs?: number;
+  /** The pair door's limits, for tests: the first frame's deadline and how many attempts run at once. */
+  door?: { firstFrameMs?: number; maxAttempts?: number };
 }
 
 export class PairingService {
@@ -138,6 +156,7 @@ export class PairingService {
   readonly #pending = new Map<string, Pending>();
   readonly #listeners = new Listeners<PairingChange>();
   readonly #off: Unsubscribe;
+  #doorAttempts = 0;
 
   constructor(opts: PairingServiceOptions) {
     this.#o = opts;
@@ -201,12 +220,18 @@ export class PairingService {
     this.#bind(p, stream);
     await this.#loadGroupKey(p);
     const own = this.#ownSide(p);
-    const joinerPart = joinerTranscript(p.id, offer.hostKey, sideForTranscript(own));
+    const commit = nonceCommitment(p.nonce);
+    const joinerPart = joinerTranscript(p.id, offer.hostKey, sideForTranscript(own), commit);
+    // The host's door turns a connection away when it shows no pairing (or is busy): a refusal, not a lost network.
+    const turnedAway = (err: unknown): never => {
+      this.#fail(p, "the other device isn't showing this pairing");
+      throw isContractError(err, "timeout") ? err : new ContractError("refused", p.error!);
+    };
     await this.#send(p, ["hello", {
       v: 1, pairingId: p.id, device: own.record, pairKey: own.pairKey, groupKey: own.groupKey, group: own.group, account: own.account,
-      proof: pairProof(p.secret, PAIR_PROOF_JOINER, joinerPart),
-    }]);
-    const reply = await this.#next(p);
+      commit, proof: pairProof(p.secret, PAIR_PROOF_JOINER, joinerPart),
+    }]).catch(turnedAway);
+    const reply = await this.#next(p).catch(turnedAway);
     if (reply[0] === "refused") {
       this.#fail(p, String((reply[1] as { reason?: string })?.reason ?? "refused"));
       throw new ContractError("refused", p.error ?? "the other device refused");
@@ -216,7 +241,8 @@ export class PairingService {
     const host = this.#readSide(w, conn.peerKey);
     if (!host || toBase64(conn.peerKey) !== toBase64(offer.hostKey) || (await deviceIdFor(conn.peerKey)) !== host.record.id) return this.#protocol(p);
     if (typeof w.t !== "number" || typeof w.group !== "string" || typeof w.fresh !== "boolean") return this.#protocol(p);
-    const transcript = fullTranscript(joinerPart, sideForTranscript(host), { t: w.t, group: w.group });
+    if (!(w.nonce instanceof Uint8Array) || w.nonce.length !== PAIR_NONCE_BYTES) return this.#protocol(p);
+    const transcript = fullTranscript(joinerPart, sideForTranscript(host), { t: w.t, group: w.group, nonce: w.nonce });
     if (!(w.proof instanceof Uint8Array) || !verifyPairProof(p.secret, PAIR_PROOF_HOST, transcript, w.proof)) {
       this.#fail(p, "the other device doesn't hold the pairing's secret");
       conn.close(CLOSE_PROTOCOL, "bad proof");
@@ -226,7 +252,9 @@ export class PairingService {
     p.t = w.t;
     p.group = w.group;
     p.fresh = w.fresh;
-    this.#agreed(p, transcript);
+    // The host's side is fixed now: reveal the nonce it couldn't see, then both show the words.
+    await this.#send(p, ["reveal", { nonce: p.nonce }]);
+    this.#agreed(p, finalTranscript(transcript, p.nonce));
     return { ...p.view };
   }
 
@@ -290,6 +318,22 @@ export class PairingService {
   // ---- the host's side ----
 
   async #accept(conn: WireConn): Promise<void> {
+    // The door is shut while this device shows no pairing, and takes only a few attempts at once.
+    const open = [...this.#pending.values()].some((p) => p.role === "host" && p.status === "waiting" && p.expiresAt > this.#o.clock.now());
+    if (!open || this.#doorAttempts >= (this.#o.door?.maxAttempts ?? MAX_DOOR_ATTEMPTS)) {
+      conn.close(CLOSE_NORMAL, open ? "busy" : "no pairing is open");
+      return;
+    }
+    this.#doorAttempts++;
+    try {
+      await this.#acceptOne(conn);
+    } finally {
+      this.#doorAttempts--;
+    }
+  }
+
+  async #acceptOne(conn: WireConn): Promise<void> {
+    const deadline = setTimeout(() => conn.close(CLOSE_PROTOCOL, "no hello in time"), this.#o.door?.firstFrameMs ?? FIRST_FRAME_MS);
     const stream = await new Promise<WireStream | undefined>((resolve) => {
       const off = conn.onStream((s) => {
         off();
@@ -297,7 +341,10 @@ export class PairingService {
       });
       void conn.closed.then(() => resolve(undefined));
     });
-    if (!stream) return;
+    if (!stream) {
+      clearTimeout(deadline);
+      return;
+    }
     const reader = new FrameReader(64 * 1024);
     // Frames after the hello wait here until `#bind` takes the stream over.
     const early: Uint8Array[] = [];
@@ -320,7 +367,9 @@ export class PairingService {
       });
       stream.onFin(() => resolve(undefined));
       stream.onReset(() => resolve(undefined));
+      void conn.closed.then(() => resolve(undefined));
     });
+    clearTimeout(deadline);
     offData?.();
     const refuse = (reason: string) => {
       void stream.write(frame(encode(["refused", { reason }]))).catch(() => undefined);
@@ -340,7 +389,8 @@ export class PairingService {
     if (!joiner || (await deviceIdFor(conn.peerKey)) !== joiner.record.id) return refuse("the device record doesn't match its key");
     if (this.#o.registry.get(joiner.record.id)?.revokedAt !== undefined) return refuse("this device was revoked: pair it with a new key");
     if (this.#o.registry.get(joiner.record.id)) return refuse("already paired");
-    const joinerPart = joinerTranscript(p.id, this.#o.self.publicKey, sideForTranscript(joiner));
+    if (!(h.commit instanceof Uint8Array) || h.commit.length !== 32) return refuse("not a pairing");
+    const joinerPart = joinerTranscript(p.id, this.#o.self.publicKey, sideForTranscript(joiner), h.commit);
     if (!(h.proof instanceof Uint8Array) || !verifyPairProof(p.secret, PAIR_PROOF_JOINER, joinerPart, h.proof)) {
       // One wrong proof ends the pairing, so a short code can't be guessed at online.
       this.#fail(p, "a device tried the pairing without its secret");
@@ -355,13 +405,29 @@ export class PairingService {
     p.group = hostGroup ?? joiner.group ?? toBase64Url(randomBytes(16));
     p.fresh = hostGroup === null && joiner.group === null;
     p.t = Math.floor(this.#o.clock.now());
-    const transcript = fullTranscript(joinerPart, sideForTranscript(mine), { t: p.t, group: p.group });
+    const transcript = fullTranscript(joinerPart, sideForTranscript(mine), { t: p.t, group: p.group, nonce: p.nonce });
+    p.peerCommit = own(h.commit);
     await this.#send(p, ["welcome", {
       v: 1, device: mine.record, pairKey: mine.pairKey, groupKey: mine.groupKey, group: p.group, fresh: p.fresh, t: p.t, account: mine.account,
-      proof: pairProof(p.secret, PAIR_PROOF_HOST, transcript),
+      nonce: p.nonce, proof: pairProof(p.secret, PAIR_PROOF_HOST, transcript),
     }]);
     if (p.slot) void this.#o.rendezvous?.remove(p.slot).catch(() => undefined);
-    this.#agreed(p, transcript);
+    // The joiner reveals the nonce it committed to; only then are the words fixed.
+    let reveal: unknown[];
+    try {
+      reveal = await this.#next(p);
+    } catch {
+      this.#fail(p, "the other device went away");
+      conn.close(CLOSE_NORMAL, "no reveal");
+      return;
+    }
+    const nonce = (reveal[1] as { nonce?: unknown } | undefined)?.nonce;
+    if (reveal[0] !== "reveal" || !(nonce instanceof Uint8Array) || nonce.length !== PAIR_NONCE_BYTES || !constantTimeEqual(nonceCommitment(nonce), p.peerCommit)) {
+      this.#fail(p, "the other device's nonce doesn't match its commitment");
+      conn.close(CLOSE_PROTOCOL, "bad reveal");
+      return;
+    }
+    this.#agreed(p, finalTranscript(transcript, nonce));
   }
 
   // ---- both sides ----
@@ -590,6 +656,7 @@ export class PairingService {
   #newPending(id: string, role: "host" | "joiner", secret: Bytes, expiresAt: number, view: PairingView, slot?: string): Pending {
     const p: Pending = {
       id, role, secret, expiresAt, status: "waiting", view, pairKey: generateEd25519(), groupKey: generateEd25519(), groupKeyIsNew: true,
+      nonce: randomBytes(PAIR_NONCE_BYTES),
       waiters: [], ...(slot ? { slot } : {}),
     };
     this.#pending.set(id, p);

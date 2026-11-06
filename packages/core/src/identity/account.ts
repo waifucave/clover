@@ -20,6 +20,7 @@
 // Each takes the Supabase access token as `Authorization: Bearer`.
 import { createHash } from "node:crypto";
 import type { AccountView, DeviceKind, Os } from "@waifucave/clover-protocol";
+import { encode } from "../links/codec";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import { ACCOUNT_TOKEN_MAX_MS, type KeyedTokenSource, mintedTokenSource, Secret, type SecretRef, type SecretStore } from "../contracts/secret-store";
 import { randomBytes, toBase64Url, utf8 } from "./bytes";
@@ -29,8 +30,11 @@ export const ACCOUNT_SESSION_REF: SecretRef = { owner: { kind: "device" }, name:
 
 export type AccountProvider = "email" | "discord" | "google";
 
-export const registerStatement = (account: string, device: string, t: number): Uint8Array =>
-  utf8(["clover-account-v1 register", account, device, String(t)].join("\n"));
+/** What a device signs to register with the account: the whole record it lists, box key included, so the service (or
+ *  anyone between) can't list the device with another key or name than it gave. Canonical CBOR, so no field can read
+ *  as another. */
+export const registerStatement = (account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array =>
+  encode(["clover-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
 export const mintStatement = (audience: string, device: string, t: number): Uint8Array =>
   utf8(["clover-account-v1 mint", audience, device, String(t)].join("\n"));
 
@@ -114,6 +118,8 @@ export class AccountClient {
    *  session is stored. A second start ends the first. */
   async startSignIn(provider: AccountProvider, opts: { timeoutMs?: number } = {}): Promise<{ url: string; done: Promise<AccountView> }> {
     this.#endPending();
+    // Checked before the loopback server starts, so a refusal leaves nothing listening.
+    if (provider === "email" && !this.#o.config.emailSignInUrl) throw new ContractError("refused", "email sign-in isn't set up here");
     const verifier = toBase64Url(randomBytes(32));
     const challenge = createHash("sha256").update(verifier).digest("base64url");
     let finish!: (v: AccountView) => void;
@@ -157,8 +163,7 @@ export class AccountClient {
     const redirect = `http://127.0.0.1:${server.port}/callback?state=${state}`;
     let url: URL;
     if (provider === "email") {
-      if (!this.#o.config.emailSignInUrl) throw new ContractError("refused", "email sign-in isn't set up here");
-      url = new URL(this.#o.config.emailSignInUrl);
+      url = new URL(this.#o.config.emailSignInUrl!);
     } else {
       url = new URL(`${this.#o.config.authUrl.replace(/\/+$/, "")}/auth/v1/authorize`);
       url.searchParams.set("provider", provider);
@@ -213,10 +218,8 @@ export class AccountClient {
     const s = await this.#load();
     if (!s) throw new ContractError("refused", "not signed in");
     const t = Math.floor(this.#o.clock.now());
-    const body = {
-      device: { id: this.#o.device.id, publicKey: this.#o.device.publicKeyBase64, boxKey: d.boxKey, name: d.name, kind: d.kind, ...(d.os ? { os: d.os } : {}) },
-      t, sig: toBase64Url(this.#o.device.sign(registerStatement(s.user.id, this.#o.device.id, t))),
-    };
+    const device = { id: this.#o.device.id, publicKey: this.#o.device.publicKeyBase64, boxKey: d.boxKey, name: d.name, kind: d.kind, ...(d.os ? { os: d.os } : {}) };
+    const body = { device, t, sig: toBase64Url(this.#o.device.sign(registerStatement(s.user.id, device, t))) };
     return ((await (await this.#service("POST", "/v1/devices", body)).json()) as { device: AccountDevice }).device;
   }
 

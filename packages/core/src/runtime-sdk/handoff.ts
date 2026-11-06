@@ -26,15 +26,14 @@
 // Winter Phase 10b (D1 fix round 3, item 1a): the SAME address derivation `messaging.ts`'s attach door
 // uses — a materialized directory row must land at the address a real incarnation would later
 // overwrite, never a second one.
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
-import type { RuntimeSelection, SelectionAlternative, SerializedRuntimeAddress } from "@yanlinglabs/winter-runtime-sdk";
-import { runtimeSdkInternals } from "@yanlinglabs/winter-runtime-sdk";
-// Winter Phase 10b (D1-6, W18-20): `SwitchReview` is `@yanlinglabs/winter-provider-runtime`'s own
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { SessionKey } from "@waifucave/clover-agent-sdk";
+import type { RuntimeSelection, SelectionAlternative, SerializedRuntimeAddress } from "./host";
+// Winter Phase 10b (D1-6, W18-20): `SwitchReview` is `@waifucave/clover-provider-runtime`'s own
 // type — the router's `reviewSwitch` declares it by importing it from THAT package too (its own
 // top-level barrel never re-exports it), so this is the one place the daemon can name the type
 // without a structural `any`.
-import type { SwitchReview } from "@yanlinglabs/winter-provider-runtime";
+import type { SwitchReview } from "@waifucave/clover-provider-runtime";
 import type { WinterRuntimeSdk, SessionMode } from "./create";
 import { RuntimeSessionRecords, type RuntimeSessionRecord } from "../runtime-state/records";
 import type { Settings } from "../settings";
@@ -48,10 +47,9 @@ import type { CloverSessionDrivers } from "./session-driver";
 import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf, unrunnableModeMessage } from "../sessions/session-mode";
 
 /**
- * The one router door this module needs: `reviewSwitch(session, requested)`, reading the canonical
- * transcript, its provider-state sidecar and the session's runtime-directory row. Reached through
- * `runtimeSdkInternals(sdk).barrier` — the name survives from when it hung off the handoff barrier,
- * and a router of either vintage answers it there.
+ * The one runtime-SDK-host door this module needs: `reviewSwitch(session, requested)`, reading the canonical
+ * transcript, its provider-state sidecar and the session's runtime-directory row. Reached through the
+ * session host's `reviewer` (A-M1; the router kept it as `runtimeSdkInternals(sdk).barrier`).
  */
 export interface SwitchReviewer {
   reviewSwitch(session: SessionKey, requested: RuntimeSelection): Promise<SwitchReview>;
@@ -77,16 +75,14 @@ export interface HandoffDeps {
   home?: string;
   log?: (line: string) => void;
   /**
-   * Test seam: a fake reviewer in place of `runtimeSdkInternals(runtime.sdk)?.barrier`.
-   * `runtimeSdkInternals` resolves a handle against a WeakMap the router's OWN factory populates — a
-   * handle built any other way (a plain test double for `WinterRuntimeSdk.sdk`) answers `undefined`
-   * there regardless of what it structurally looks like. Production never sets this.
+   * Test seam: a fake reviewer in place of the session host's own (`runtime.sdk.reviewer`). A plain
+   * test double for `WinterRuntimeSdk.sdk` may carry no reviewer at all. Production never sets this.
    */
   barrier?: SwitchReviewer;
 }
 
 function reviewerFor(deps: HandoffDeps): SwitchReviewer | undefined {
-  return deps.barrier ?? (runtimeSdkInternals(deps.runtime.sdk)?.barrier as SwitchReviewer | undefined);
+  return deps.barrier ?? ((deps.runtime.sdk as { reviewer?: SwitchReviewer } | undefined)?.reviewer);
 }
 
 /** A stored `mode` as the runnable `SessionMode`. `cowork` and any other non-runnable string THROW instead of
@@ -379,8 +375,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
   // Skipped ENTIRELY (no review, no prompt) only when there is nothing to review against yet: no
   // backend transcript (`sessionKeyFor` — a session with no backend transcript has no source turns
   // for the review to weigh, a KNOWN "nothing to lose" case) or no reachable reviewer (a hand-built
-  // `WinterRuntimeSdk` test double with no `.sdk` the router's own `runtimeSdkInternals` WeakMap
-  // recognises, and no `deps.barrier` override).
+  // `WinterRuntimeSdk` test double whose `.sdk` carries no `reviewer`, and no `deps.barrier` override).
   const sessionKey = sessionKeyFor(record);
   const reviewer = reviewerFor(deps);
   /**

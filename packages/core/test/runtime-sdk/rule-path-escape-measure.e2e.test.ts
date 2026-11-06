@@ -19,11 +19,11 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
+import { query as cloverQuery } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
-import { escapeRulePath } from "@yanlinglabs/winter-runtime-sdk";
+import { escapeRulePath } from "../../src/runtime-sdk/host";
 import { fsRootAnchored } from "../../src/runtime-sdk/mode-options";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 /** A directory whose NAME needs escaping (`name`), and the file a Write targets inside it. The session's
  *  cwd is a plain sibling: claude refuses a working directory whose name holds a backslash ("Can't access
@@ -49,14 +49,14 @@ function denyRules(dir: string, escaped: boolean | "single" | "double"): string[
  *  and parens (router 3279a1d's table escapes them at both layers). */
 const NAMES = ["r[1]*x", "b\\x", "p (old)"] as const;
 
-describeWithWinterBinary("R.2 carry — escaped rule paths on the Clover leg", (bin) => {
+describeWithEmbeddedRuntime("R.2 carry — escaped rule paths on the Clover leg", (spawn) => {
   async function writeUnder(name: string, escaped: boolean): Promise<boolean> {
     const b = bed("clover-rule-escape-w-", name);
     try {
       const q = cloverQuery({
         prompt: b.target,
         options: {
-          pathToClaudeCodeExecutable: bin,
+          spawnClaudeCodeProcess: spawn,
           // The router injects the session's brand; a child driven directly is handed the daemon's own.
           brand: CORE_BRAND,
           model: "winter-test/laneb",

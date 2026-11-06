@@ -12,6 +12,8 @@ on:
     paths:
       - native/link/**
       - packages/core/src/links/**
+      - packages/core/src/devices/**
+      - packages/core/src/identity/**
       - .github/workflows/link.yml
   workflow_dispatch:
 

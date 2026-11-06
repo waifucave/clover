@@ -1,5 +1,5 @@
 // Winter Phase 10b (D1-6, R6-R8 review, CRITICAL): the daemon's own `ProviderRegistry`, for one
-// purpose only — feeding `@yanlinglabs/winter-provider-runtime`'s `createEndpointResolver` so the
+// purpose only — feeding `@waifucave/clover-provider-runtime`'s `createEndpointResolver` so the
 // router's pre-flight switch review (`HandoffBarrierDeps.resolveEndpoint`) reads REAL catalog
 // reasoning-capability facts instead of falling back to the registry-free default.
 //
@@ -32,16 +32,16 @@
 // every shipped factory takes only `descriptors`/`identityHeaders`/`catalog`, never a `ProviderContext`
 // or a credential — so this registry is safe to build at import time, in every process, including a
 // hermetic test with no keys configured at all.
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { createEndpointResolver, createRegistry, createShippedAdapters } from "@yanlinglabs/winter-provider-runtime";
-import type { ContinuityEndpoint, MessageOrigin, ProviderRegistry } from "@yanlinglabs/winter-provider-runtime";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { createEndpointResolver, createRegistry, createShippedAdapters } from "@waifucave/clover-provider-runtime";
+import type { ContinuityEndpoint, MessageOrigin, ProviderRegistry } from "@waifucave/clover-provider-runtime";
 
 let registry: ProviderRegistry | undefined;
 
 /**
  * The daemon's one `ProviderRegistry`, built once per process against the compiled catalog with
  * every shipped adapter pre-registered. Memoised: the catalog is fixed for the life of the process
- * (loaded once by `@yanlinglabs/winter-provider-catalog` itself), so there is nothing to gain by
+ * (loaded once by `@waifucave/clover-provider-catalog` itself), so there is nothing to gain by
  * rebuilding it, and every call site sharing one instance is what makes `resolveEndpoint`'s own
  * per-`modelKey` cache (`createEndpointResolver`) actually shared too.
  */

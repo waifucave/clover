@@ -10,7 +10,7 @@
 // Every home is a mkdtemp; the default-home gate is driven by `homedirOverride` (P9c-15), never the real ~.
 import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { SessionStore } from "../src/sessions/store";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";

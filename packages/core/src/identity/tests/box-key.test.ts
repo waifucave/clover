@@ -1,7 +1,7 @@
 // The account-scope box (HPKE base mode, X25519 / HKDF-SHA256 / AES-256-GCM) against the forwarder plugin's WebCrypto
 // HPKE, which checks itself against RFC 9180's vectors: each opens what the other sealed.
 import { describe, expect, test } from "bun:test";
-import { AEAD_AES_256_GCM, generateX25519, openBase, sealBase } from "../../../../../plugins/clover/forwarder/src/wire/hpke";
+import { AEAD_AES_256_GCM, generateX25519, openBase, sealBase } from "../../../../../plugins/clover/plugins/forwarder/src/wire/hpke";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { BOX_KEY_REF, BoxKey, HANDSHAKE_BOX_INFO, sealToBoxKey } from "../box-key";
 import { concat, fromBase64Url, toBase64Url, utf8 } from "../bytes";

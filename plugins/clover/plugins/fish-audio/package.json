@@ -1,0 +1,21 @@
+{
+  "name": "@waifucave/clover-plugin-fish-audio",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/fish-audio: Fish Audio's voices for bots (spec §6.6), and spike S4's harness for its free model.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./fish": "./src/fish.ts",
+    "./s4": "./src/s4.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}

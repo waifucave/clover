@@ -17,7 +17,7 @@
 // calls it, so flipping `runtimes.migrations.memoryKeys` is ANSWERED on a RUNNING daemon (since
 // P8b-17 that answer is the migration itself, plus the relocation map the live memory path reads —
 // see the §17 phase 5 block below).
-import type { RuntimeDirectoryStore } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeDirectoryStore } from "../runtime-sdk/host";
 import type { SessionStore } from "../sessions/store";
 import { sdkAutoMemory, type Settings } from "../settings";
 import { ProjectionCheckpoints } from "./checkpoints";

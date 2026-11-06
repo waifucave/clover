@@ -5,8 +5,8 @@
 //   bun run build:winter --out <path>
 //   bun run build:winter --allow-untagged    # LOCAL EXPERIMENTS ONLY — never in CI
 //   bun run build:winter --sign <identity>   # P8d-14: sign the freshly-built dist/winter
-// Refuses unless the checkout's HEAD carries the tag v<REQUIRED_WINTER_AGENT_SDK> (a build from any
-// other commit is a different binary than the peer the daemon is pinned to).
+// Refuses unless the checkout's HEAD carries the tag v<CODING_AGENT_BINARY_VERSION> (a build from any
+// other commit is a different binary than the one the daemon is pinned to; A-M1: the binary has its own pin).
 //
 // `--allow-untagged` is named narrower than it is (review F-6): it skips the gate ENTIRELY, so it
 // admits a checkout sitting on the WRONG tag just as readily as an untagged one. It exists for
@@ -41,7 +41,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { REQUIRED_WINTER_AGENT_SDK } from "../packages/core/src/runtime-sdk/versions";
+import { CODING_AGENT_BINARY_VERSION } from "../packages/core/src/runtime-sdk/versions";
 
 /** P8d-14: `codesign --force --sign <identity> --identifier com.winter.runtime --options runtime
  *  --timestamp <path>` — the same identifier/flags the Release "Embed runtimes" script uses
@@ -105,7 +105,7 @@ export async function buildWinter(opts: { checkout?: string; out?: string; allow
   const checkout = resolve(opts.checkout ?? process.env.CLOVER_SDK_CHECKOUT ?? resolve(import.meta.dir, "../../clover-sdk"));
   const out = resolve(opts.out ?? resolve(import.meta.dir, "../dist/winter"));
   if (!existsSync(resolve(checkout, "scripts/build-runtime.ts"))) throw new Error(`build-winter: no SDK checkout at ${checkout} (set CLOVER_SDK_CHECKOUT)`);
-  const tag = `v${REQUIRED_WINTER_AGENT_SDK}`;
+  const tag = `v${CODING_AGENT_BINARY_VERSION}`;
   const at = checkoutIsAtTag(checkout, tag);
   if (!at.ok && !opts.allowUntagged) throw new Error(`build-winter: ${checkout}'s HEAD carries '${at.found || "no tag"}', not ${tag}; check out the pinned tag (or pass --allow-untagged for a local experiment — it skips this gate entirely, wrong tags included, and never runs in CI)`);
 

@@ -14,7 +14,7 @@ import { Settings, saveSettings, MODEL_ROLES } from "../../src/settings";
 import { RoleHealthRegistry } from "../../src/providers/role-health";
 import { createInternalProviderView } from "../../src/providers/internal-view";
 import { createInternalRouter } from "../../src/providers/internal-router";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { internalEligibleProviderIds } from "../../src/settings";
 import { writeCredentialMaterial } from "../../src/auth/credential-material";
 
