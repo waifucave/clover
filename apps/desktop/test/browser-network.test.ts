@@ -160,6 +160,12 @@ describe("the filter, after DNS, at connect time", () => {
     expect(dialed).toEqual([`${PUBLIC}:80`]);
   });
 
+  test("a name with an IPv6 and an IPv4 address reaches the one that answers, both checked (localhost, a server on IPv4)", async () => {
+    const { echo, filter, dialed } = await setup({ "localhost": ["::1", "127.0.0.1"] });
+    expect(await get(await filter.proxyFor(SESSION_POLICY), "localhost", echo.port, "/v4")).toEqual({ status: 200, body: "echo /v4" });
+    expect(dialed).toEqual([`::1:${echo.port}`, `127.0.0.1:${echo.port}`]);
+  });
+
   test("a coding session's tab reaches loopback (its dev servers), never the metadata address or the LAN", async () => {
     const { echo, filter } = await setup({ "localhost": ["127.0.0.1"] });
     const proxy = await filter.proxyFor(SESSION_POLICY);

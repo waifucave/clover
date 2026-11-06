@@ -2,8 +2,9 @@
 // resolves (or rebinds) to a local address can't get round it. Every browser partition sends all its traffic through a
 // small SOCKS5 proxy in the main process (`session.ts` sets it, with `<-loopback>` so loopback isn't bypassed).
 // Through SOCKS5 Chromium sends the name, not an address, for every scheme (http, https, WebSockets), so the proxy
-// resolves each name itself, keeps only the addresses the tab's owner may reach, and connects to the one it checked:
-// the address is pinned, never looked up twice.
+// resolves each name itself, keeps only the addresses the tab's owner may reach, and connects to those it checked, in
+// turn until one answers (a name like `localhost` has an IPv6 and an IPv4 address, and a server may listen on one): the
+// addresses are pinned, never looked up twice.
 //
 // * A bot's tabs: no loopback, private (RFC 1918, ULA, shared CGNAT space), link-local or cloud metadata address. A
 //   per-bot setting that allows the LAN is L-M2.
@@ -210,11 +211,11 @@ export class NetworkFilter {
     return `socks5://127.0.0.1:${(await listener).port}`;
   }
 
-  /** The address to connect to for `host`: the first the policy allows, or undefined. */
-  async resolve(host: string, policy: AddressPolicy): Promise<string | undefined> {
+  /** The addresses to try for `host`, in the resolver's order: those the policy allows. */
+  async resolve(host: string, policy: AddressPolicy): Promise<string[]> {
     const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
     const addresses = isIP(literal) !== 0 ? [literal] : await this.lookup(literal).catch(() => [] as string[]);
-    return addresses.find((ip) => addressAllowed(ip, policy));
+    return addresses.filter((ip) => addressAllowed(ip, policy));
   }
 
   async close(): Promise<void> {
@@ -230,11 +231,9 @@ export class NetworkFilter {
     }));
   }
 
-  private async target(host: string, port: number, policy: AddressPolicy): Promise<string | undefined> {
-    const ip = await this.resolve(host, policy);
+  private async targets(host: string, port: number, policy: AddressPolicy): Promise<string[]> {
     // A page never reaches one of these proxies through another (a looser policy's port, or its own).
-    if (ip === undefined || (classifyAddress(ip) === "loopback" && this.ports.has(port))) return undefined;
-    return ip;
+    return (await this.resolve(host, policy)).filter((ip) => !(classifyAddress(ip) === "loopback" && this.ports.has(port)));
   }
 
   private listen(policy: AddressPolicy): Promise<{ server: Server; port: number }> {
@@ -291,32 +290,58 @@ export class NetworkFilter {
   }
 
   private async join(client: Socket, host: string, port: number, rest: Buffer, policy: AddressPolicy): Promise<void> {
-    const ip = await this.target(host, port, policy);
-    if (ip === undefined) {
+    const ips = await this.targets(host, port, policy);
+    if (ips.length === 0) {
       reply(client, REPLY.notAllowed);
       client.end();
       return;
     }
-    const upstream = this.dial(port, ip);
-    this.sockets.add(upstream);
-    upstream.on("close", () => {
-      this.sockets.delete(upstream);
-      client.destroy();
-    });
-    client.on("close", () => upstream.destroy());
-    upstream.once("connect", () => {
+    let lastError: NodeJS.ErrnoException | undefined;
+    for (const ip of ips) {
+      if (client.destroyed) return;
+      const upstream = await this.connectTo(port, ip).catch((e: NodeJS.ErrnoException) => {
+        lastError = e;
+        return undefined;
+      });
+      if (upstream === undefined) continue;
+      if (client.destroyed) {
+        upstream.destroy();
+        return;
+      }
+      this.sockets.add(upstream);
+      upstream.on("error", () => undefined);
+      upstream.on("close", () => {
+        this.sockets.delete(upstream);
+        client.destroy();
+      });
+      client.on("close", () => upstream.destroy());
       client.setTimeout(0);
       reply(client, REPLY.ok);
       if (rest.length > 0) upstream.write(rest);
       upstream.pipe(client);
       client.pipe(upstream);
       client.resume();
-    });
-    upstream.once("error", (e: NodeJS.ErrnoException) => {
-      if (!client.destroyed) {
-        reply(client, e.code === "ECONNREFUSED" ? REPLY.refused : REPLY.unreachable);
-        client.end();
-      }
+      return;
+    }
+    if (!client.destroyed) {
+      reply(client, lastError?.code === "ECONNREFUSED" ? REPLY.refused : REPLY.unreachable);
+      client.end();
+    }
+  }
+
+  /** A connected socket to a checked address, or the connection's error. */
+  private connectTo(port: number, ip: string): Promise<Socket> {
+    return new Promise((resolve, reject) => {
+      const socket = this.dial(port, ip);
+      const fail = (e: Error): void => {
+        socket.destroy();
+        reject(e);
+      };
+      socket.once("error", fail);
+      socket.once("connect", () => {
+        socket.removeListener("error", fail);
+        resolve(socket);
+      });
     });
   }
 }

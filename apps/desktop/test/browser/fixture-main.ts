@@ -255,7 +255,7 @@ async function main(): Promise<void> {
     return { ok: v === "hi", detail: { value: v } };
   });
 
-  await step("the browser's webContents are its own from their making on, with its WebRTC policy, a direct proxy and no spellchecker; the app's window's aren't", async () => {
+  await step("the browser's webContents are its own from their making on, with its WebRTC policy, the network filter as their proxy and no spellchecker; the app's window's aren't", async () => {
     const tabWc = webContents.getAllWebContents().find((w) => isBrowserTab(w) && w.getURL().startsWith(`${origin}/page`));
     const ses = tabWc?.session;
     const proxy = ses !== undefined ? await ses.resolveProxy("https://example.com/") : undefined;
@@ -263,7 +263,7 @@ async function main(): Promise<void> {
     const others = created.filter((c) => c.id !== appWindow.webContents.id);
     const vp = viewport;
     const ok = tabWc !== undefined && own !== undefined && !own.contents && others.length >= 2 && others.every((c) => c.contents)
-      && tabWc.getWebRTCIPHandlingPolicy() === BROWSER_WEBRTC_POLICY && proxy === "DIRECT" && ses?.isSpellCheckerEnabled() === false
+      && tabWc.getWebRTCIPHandlingPolicy() === BROWSER_WEBRTC_POLICY && /^SOCKS5 127\.0\.0\.1:\d+$/.test(proxy ?? "") && ses?.isSpellCheckerEnabled() === false
       && vp !== undefined && isBrowserContents(vp.webContents) && !isBrowserTab(vp.webContents) && vp.webContents.session.isSpellCheckerEnabled() === false;
     return { ok, detail: { created, webrtc: tabWc?.getWebRTCIPHandlingPolicy(), proxy, spellchecker: ses?.isSpellCheckerEnabled() } };
   });
