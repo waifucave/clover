@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { BASE_THEME, TOKENS, contrast, cssProperty, tokensFor } from "../../base-theme/src/index";
+import { BASE_THEME, TOKENS, contrast, cssProperty, resolveTokens, tokensFor } from "../../base-theme/src/index";
 import { CHILD_PALETTES } from "../src/model/plume";
 import { CHILD_PLUME_OPACITY } from "../src/ui/Children";
 import { checkThemeCss } from "../../base-theme/src/css-check";
@@ -8,7 +8,9 @@ import { checkManifest } from "../../base-theme/src/manifest-check";
 import { PILL_CSS } from "../src/ui/styles";
 
 const byProperty = new Map(TOKENS.map((spec) => [cssProperty(spec.name), spec.name]));
-const light = tokensFor(BASE_THEME, "light");
+/** The base theme as the core resolves it with no OS reading: an accent that follows the OS is the catalog's, an ink
+ *  on it worked out against it (the CSS fallbacks are those values). */
+const light = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
 /** Custom properties the pill's own CSS sets for itself, not tokens. */
 const LOCAL = new Set(["--glyph-cut"]);
 

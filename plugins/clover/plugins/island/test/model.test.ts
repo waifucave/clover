@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { guestTabs, isReservedPluginName, isReservedTab } from "../src/model/tabs";
+import { nameSkeleton, readsAs, shownName } from "../src/model/names";
 import {
   cardGeometry,
   islandRect,
@@ -487,5 +489,81 @@ describe("sealed buttons (lane B: one per option)", () => {
       { approve: false, look: "cross" },
       { approve: true, look: "check" },
     ]);
+  });
+});
+
+describe("guest tabs (the review's spoofing fix)", () => {
+  test("Needs you's id and title are reserved; another plugin's tab is named for its plugin, keyed by it, and never raises attention", () => {
+    const tabs = guestTabs([
+      { id: "NEEDS-YOU", title: "Mail" },
+      { id: "a", title: "Ｎｅｅｄｓ　you" },
+      { id: "devices", title: "Devices", pluginId: "clover", attention: "badge" as const },
+      { id: "servers", title: "Servers", pluginId: "homelab", pluginName: "Homelab", attention: "expand" as const },
+      { id: "servers", title: "Servers", pluginId: "other" },
+      { id: "devices", title: "Devices", pluginId: "clover" },
+    ]);
+    expect(tabs.map((t) => [t.id, t.title, t.attention])).toEqual([
+      ["devices", "Devices", "badge"],
+      ["homelab#servers", "Servers · Homelab", "never"],
+      ["other#servers", "Servers · other", "never"],
+    ]);
+    expect(isReservedTab({ id: "x", title: "needs you" })).toBe(true);
+    expect(isReservedTab({ id: "x", title: "Needs you now" })).toBe(false);
+  });
+
+  test("a name that reads as Needs you is reserved however it is spelt (B-M1's review probe)", () => {
+    const spoofs = [
+      "Needs\u200B you", // a zero-width space
+      "Needs\u200Byou",
+      "N\u00ADeeds you", // a soft hyphen
+      "Needs yo\u200Du", // a joiner
+      "\u202ENeeds you", // a bidi override
+      "Needs y\u043Eu", // Cyrillic о
+      "N\u0435\u0435ds you", // Cyrillic е
+      "\u039Deeds you", // Greek Ν
+      "ɴᴇᴇᴅꜱ ʏᴏᴜ", // small capitals
+      "𝐍𝐞𝐞𝐝𝐬 𝐲𝐨𝐮", // mathematical bold
+      "Ｎｅｅｄｓ　ｙｏｕ", // full width
+      "Nééds yoü", // accents
+      "Needs\u3164you", // a Hangul filler draws as a space
+      "Needs\u00A0\u00A0you",
+      "NEEDS YOU",
+      "Needs y0u", // a zero
+      "Needs you\uFE0F", // a variation selector
+    ];
+    for (const title of spoofs) expect([title, isReservedTab({ id: "x", title })]).toEqual([title, true]);
+    expect(isReservedTab({ id: "needs\u2011you", title: "Mail" })).toBe(false); // a hyphen is a different character
+    expect(isReservedTab({ id: "NEEDS-Y\u043EU", title: "Mail" })).toBe(true);
+    for (const title of ["Needs", "Needs you now", "Devices", "Usage", "Feeds you"]) expect([title, isReservedTab({ id: "x", title })]).toEqual([title, false]);
+  });
+
+  test("a plugin named as Needs you or as Clover gets no tab, and a shown name loses its bidi controls", () => {
+    const tabs = guestTabs([
+      { id: "servers", title: "Servers", pluginId: "spoof-a", pluginName: "Needs\u200B you" },
+      { id: "servers", title: "Servers", pluginId: "spoof-b", pluginName: "Cl\u043Ever" },
+      { id: "servers", title: "Servers", pluginId: "spoof-c", pluginName: "CLOVER" },
+      { id: "servers", title: "Serv\u202Eers", pluginId: "homelab", pluginName: "Home\u2066lab\u2069" },
+      { id: "own", title: "Own", pluginId: "clover", pluginName: "Clover" },
+    ]);
+    expect(tabs.map((t) => [t.id, t.title])).toEqual([
+      ["homelab#servers", "Servers · Homelab"],
+      ["own", "Own"],
+    ]);
+    expect(isReservedPluginName("Homelab")).toBe(false);
+    expect(shownName("A\u202Eb\u00A0 c")).toBe("Ab c");
+  });
+
+  test("the skeleton folds what reads alike, and keeps apart what doesn't", () => {
+    expect(nameSkeleton("Needs you")).toBe(nameSkeleton("N\u0435\u0435ds y\u043Eu"));
+    expect(readsAs("Luna", "\u13DEuna")).toBe(true); // Cherokee Ꮮ
+    expect(readsAs("Luna", "Iuna")).toBe(true); // a capital I is drawn as an l
+    expect(readsAs("Alpha", "\u0410lpha")).toBe(true); // Cyrillic А
+    expect(readsAs("Alpha", "\u0391\u217Cpha")).toBe(true); // Greek Α and the Roman numeral fifty
+    expect(readsAs("Home", "Hoｍe")).toBe(true);
+    expect(readsAs("modern", "modem")).toBe(true); // rn reads as m
+    expect(readsAs("Luna", "Lena")).toBe(false);
+    expect(readsAs("Alpha", "Alpha 2")).toBe(false);
+    expect(readsAs("Home", "Homes")).toBe(false);
+    expect(nameSkeleton(" a \t b ")).toBe("ab");
   });
 });
