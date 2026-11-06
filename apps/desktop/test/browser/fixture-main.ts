@@ -448,6 +448,18 @@ async function main(): Promise<void> {
     return { ok, detail: { loaded, asked: [...asked], direct: [...direct] } };
   });
 
+  await step("the filter takes connections only from the app's own network process: one from another process (this main process) is closed unanswered, and its ports are listed for lane C", async () => {
+    const ports = proxied.filterPorts;
+    const answered = await Promise.all(ports.slice(0, 3).map((p) => new Promise<string>((resolve) => {
+      const s = netConnect(p, "127.0.0.1", () => s.write(Buffer.from([5, 1, 0])));
+      const t = setTimeout(() => { s.destroy(); resolve("no answer"); }, 4000);
+      s.on("data", (d: Buffer) => { clearTimeout(t); s.destroy(); resolve(`answered ${[...d].join(",")}`); });
+      s.on("close", () => { clearTimeout(t); resolve("closed"); });
+      s.on("error", () => { clearTimeout(t); resolve("closed"); });
+    })));
+    return { ok: ports.length >= 3 && answered.every((a) => a === "closed"), detail: { ports, answered } };
+  });
+
   proxied.shutdown();
   proxyServer.close();
   strict.shutdown();

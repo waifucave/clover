@@ -337,9 +337,12 @@ export class BrowserService {
 
   /** What the app reports about its tabs (`browser.report`). */
   report(events: readonly AppTabEvent[]): void {
+    // A tab closed earlier in the same batch stays closed: a later `changed` for it is stale (the second review).
+    const closedNow = new Set<string>();
     for (const event of events) {
       switch (event.kind) {
         case "changed": {
+          if (closedNow.has(event.tab.id)) break;
           // The core owns who holds a tab and whose it is; the app owns where it is and what it shows.
           const entry = this.entries.get(event.tab.id);
           if (entry === undefined) {
@@ -352,6 +355,7 @@ export class BrowserService {
           break;
         }
         case "closed":
+          closedNow.add(event.id);
           this.forget(event.id);
           break;
         case "cdp": {

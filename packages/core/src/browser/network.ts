@@ -123,9 +123,13 @@ function classifyV6(g: number[]): AddressKind {
   // IPv4-mapped (::ffff:a.b.c.d) and NAT64 (64:ff9b::a.b.c.d) reach the IPv4 address inside.
   if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) return embedded(g[6]!, g[7]!);
   if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return embedded(g[6]!, g[7]!);
+  // Local-use NAT64 (64:ff9b:1::/48, RFC 8215) and IPv4-translated (::ffff:0:a.b.c.d, RFC 2765): the IPv4 inside.
+  if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return embedded(g[6]!, g[7]!);
+  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) return embedded(g[6]!, g[7]!);
   if (g[0] === 0x2002) return embedded(g[1]!, g[2]!); // 6to4
   if (g.slice(0, 6).every((x) => x === 0)) return "reserved"; // IPv4-compatible, deprecated
   if ((g[0]! & 0xfe00) === 0xfc00) return "private"; // ULA, fc00::/7
+  if ((g[0]! & 0xffc0) === 0xfec0) return "private"; // site-local, fec0::/10 (deprecated, still routed on some LANs)
   if ((g[0]! & 0xffc0) === 0xfe80) return "link-local";
   if ((g[0]! & 0xff00) === 0xff00) return "multicast";
   if (g[0] === 0x0100 && g.slice(1, 4).every((x) => x === 0)) return "reserved"; // discard-only
@@ -181,6 +185,13 @@ export interface NetworkFilterOptions {
   upstream?: UpstreamRoutes;
   /** How long a proxy has to answer its handshake (default 15 s). */
   proxyTimeoutMs?: number;
+  /** How long one connection attempt has before the next address is tried (default 2.5 s): a dead first address
+   *  never fails a page whose second answers. */
+  connectTimeoutMs?: number;
+  /** Whether a connection to a listener comes from the browser's own network process (the second review's should-fix
+   *  1: any local process could otherwise use the filter). Asked once per connection, before anything is read; a no,
+   *  or an error, closes it unanswered. `peer-owner.ts` answers it from the OS's socket table. */
+  acceptPeer?: (peer: { address: string; port: number }, listenerPort: number) => Promise<boolean>;
   log?: (line: string) => void;
 }
 
@@ -271,11 +282,21 @@ export class NetworkFilter {
     return this.ports.has(port);
   }
 
+  /** The listeners' ports on 127.0.0.1, for lane C's fence, which denies them to fenced commands as a backstop. */
+  listenerPorts(): number[] {
+    return [...this.ports].sort((a, b) => a - b);
+  }
+
   /** The addresses to try for `host`, in the resolver's order: those the policy allows. */
   async resolve(host: string, policy: AddressPolicy): Promise<string[]> {
+    return (await this.lookupChecked(host, policy)).allowed;
+  }
+
+  /** Every address `host` has, and those the policy allows; `found` is false when the name didn't resolve at all. */
+  private async lookupChecked(host: string, policy: AddressPolicy): Promise<{ found: boolean; allowed: string[] }> {
     const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
     const addresses = isIP(literal) !== 0 ? [literal] : await this.lookup(literal).catch(() => [] as string[]);
-    return addresses.filter((ip) => addressAllowed(ip, policy));
+    return { found: addresses.length > 0, allowed: addresses.filter((ip) => addressAllowed(ip, policy)) };
   }
 
   async close(): Promise<void> {
@@ -291,9 +312,10 @@ export class NetworkFilter {
     }));
   }
 
-  private async targets(host: string, port: number, policy: AddressPolicy): Promise<string[]> {
+  private async targets(host: string, port: number, policy: AddressPolicy): Promise<{ found: boolean; ips: string[] }> {
     // A page never reaches one of these proxies through another (a looser policy's port, or its own).
-    return (await this.resolve(host, policy)).filter((ip) => !(classifyAddress(ip) === "loopback" && this.ports.has(port)));
+    const { found, allowed } = await this.lookupChecked(host, policy);
+    return { found, ips: allowed.filter((ip) => !(classifyAddress(ip) === "loopback" && this.ports.has(port))) };
   }
 
   private listen(policy: AddressPolicy, scheme: UrlKind): Promise<{ server: Server; port: number }> {
@@ -314,6 +336,7 @@ export class NetworkFilter {
     client.on("error", () => undefined);
     client.on("close", () => this.sockets.delete(client));
     client.setTimeout(30_000, () => client.destroy());
+    const listenerPort = client.localPort ?? 0;
     let buf = Buffer.alloc(0);
     let stage: "greeting" | "request" | "joined" = "greeting";
     const onData = (chunk: Buffer): void => {
@@ -346,13 +369,33 @@ export class NetworkFilter {
         void this.join(client, parsed.host, parsed.port, rest, policy, scheme);
       }
     };
-    client.on("data", onData);
+    const accept = this.opts.acceptPeer;
+    if (accept === undefined) {
+      client.on("data", onData);
+      return;
+    }
+    // Nothing is read until the peer is known to be the browser's own network process.
+    client.pause();
+    void accept({ address: client.remoteAddress ?? "", port: client.remotePort ?? 0 }, listenerPort).then(
+      (yes) => {
+        if (client.destroyed) return;
+        if (!yes) {
+          this.opts.log?.(`browser network filter: a connection from another process (port ${client.remotePort}) was closed`);
+          client.destroy();
+          return;
+        }
+        client.on("data", onData);
+        client.resume();
+      },
+      () => client.destroy(),
+    );
   }
 
   private async join(client: Socket, host: string, port: number, rest: Buffer, policy: AddressPolicy, scheme: UrlKind): Promise<void> {
-    const ips = await this.targets(host, port, policy);
+    const { found, ips } = await this.targets(host, port, policy);
     if (ips.length === 0) {
-      reply(client, REPLY.notAllowed);
+      // A name that doesn't resolve is unreachable; one whose every address is refused is not allowed.
+      reply(client, found ? REPLY.notAllowed : REPLY.unreachable);
       client.end();
       return;
     }
@@ -423,18 +466,25 @@ export class NetworkFilter {
   }
 
   /** A connected socket to a checked address, or the connection's error. */
+  /** A connected socket to `ip:port`, or the connection's error; an attempt that hasn't connected in
+   *  `connectTimeoutMs` (2.5 s) gives up, so the next address gets its turn (the second review's should-fix 2). */
   private connectTo(port: number, ip: string): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const socket = this.dial(port, ip);
+      const timer = setTimeout(() => fail(Object.assign(new Error(`${ip}:${port} didn't answer in time`), { code: "ETIMEDOUT" })), this.opts.connectTimeoutMs ?? 2_500);
       const fail = (e: Error): void => {
+        clearTimeout(timer);
+        socket.removeListener("connect", done);
         socket.destroy();
         reject(e);
       };
-      socket.once("error", fail);
-      socket.once("connect", () => {
+      const done = (): void => {
+        clearTimeout(timer);
         socket.removeListener("error", fail);
         resolve(socket);
-      });
+      };
+      socket.once("error", fail);
+      socket.once("connect", done);
     });
   }
 }

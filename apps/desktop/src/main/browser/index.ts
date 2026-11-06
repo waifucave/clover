@@ -18,7 +18,8 @@ import { choosePopup } from "./popups";
 import { ScreenReaderSwitch, type ScreenReaderProbe } from "./screen-reader";
 import { NetworkFilter, policyFor, type AddressPolicy, type NetworkFilterOptions, type UpstreamRoutes } from "./network";
 import { checkProxySetting, DEFAULT_PROXY_SETTING, type BrowserProxySetting } from "./proxy";
-import { appProxyRoutes, resetPacSession } from "./system-proxy";
+import { appProxyRoutes, resetPacSession, runCommand } from "./system-proxy";
+import { PeerOwner } from "./peer-owner";
 import { guardPage, isSessionReady, prepareTabSession, resetViewportSession } from "./session";
 import { BrowserTab, HostTab, OffscreenTab, tabWebPreferences, type TabEnv } from "./tab";
 import { Viewport, type ViewportAssets } from "./viewport";
@@ -67,7 +68,7 @@ export interface BrowserHostOptions {
   network?: {
     policyFor?(owner: TabOwner, lanBots: ReadonlySet<string>): AddressPolicy;
     routes?(setting: BrowserProxySetting): UpstreamRoutes | undefined;
-  } & Pick<NetworkFilterOptions, "lookup" | "dial" | "log">;
+  } & Pick<NetworkFilterOptions, "lookup" | "dial" | "log" | "acceptPeer">;
   /** The network settings to start with (the core sends them again with `configure` as soon as it connects). */
   config?: BrowserNetworkConfig;
 }
@@ -86,7 +87,12 @@ export class BrowserHost {
 
   constructor(private readonly opts: BrowserHostOptions) {
     this.screenReader = new ScreenReaderSwitch({ electron: app, ...opts.screenReader });
-    this.network = new NetworkFilter({ lookup: opts.network?.lookup, dial: opts.network?.dial, log: opts.network?.log });
+    // The filter takes connections only from this app's own network process (the second review's should-fix 1).
+    const owner = new PeerOwner({ platform: process.platform, run: runCommand, allowedPids: networkProcesses, ...(opts.network?.log !== undefined ? { log: opts.network.log } : {}) });
+    this.network = new NetworkFilter({
+      lookup: opts.network?.lookup, dial: opts.network?.dial, log: opts.network?.log,
+      acceptPeer: opts.network?.acceptPeer ?? ((peer, port) => owner.accepts(peer, port)),
+    });
     if (opts.config !== undefined) void this.configure(opts.config);
     const host = this;
     this.env = {
@@ -184,6 +190,11 @@ export class BrowserHost {
       if (before.has(tab.owner.bot) !== this.lanBots.has(tab.owner.bot)) changed.set(tab.partition, tab.owner);
     }
     await Promise.all([...changed].map(async ([partition, owner]) => prepareTabSession(partition, await this.network.proxyFor(this.policyOf(owner)))));
+  }
+
+  /** The network filter's listener ports on 127.0.0.1, for lane C's fence (denied to fenced commands). */
+  get filterPorts(): number[] {
+    return this.network.listenerPorts();
   }
 
   /** The proxy setting in force. */
@@ -418,6 +429,13 @@ export class BrowserHost {
     // The person picked these files themselves; the API can never set a file input (the core refuses it).
     await tab.debugger.internal("DOM.setFileInputFiles", { files, backendNodeId: chooser.backendNodeId }).catch(() => undefined);
   }
+}
+
+/** The processes that make this app's network connections: Chromium's network service, and the main process for an
+ *  Electron whose network runs in it. */
+function networkProcesses(): number[] {
+  const pids = app.getAppMetrics().filter((m) => m.type === "Utility" && /network/i.test(`${m.serviceName ?? ""} ${m.name ?? ""}`)).map((m) => m.pid);
+  return pids.length > 0 ? pids : [process.pid];
 }
 
 export function createBrowserHost(opts: BrowserHostOptions): BrowserHost {

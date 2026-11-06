@@ -3,7 +3,7 @@
 // "public" address is played by a local server through the filter's dialer.
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
-import { connect, isIP, type AddressInfo, type Socket } from "node:net";
+import { connect, isIP, Socket, type AddressInfo } from "node:net";
 import { addressAllowed, BOT_LAN_POLICY, BOT_POLICY, classifyAddress, NetworkFilter, PERSON_POLICY, policyFor, SESSION_POLICY, type AddressPolicy } from "../src/main/browser/network";
 
 describe("addresses", () => {
@@ -12,7 +12,8 @@ describe("addresses", () => {
       "93.184.216.34": "public", "8.8.8.8": "public", "2606:4700::1111": "public",
       "127.0.0.1": "loopback", "127.8.9.10": "loopback", "::1": "loopback", "::ffff:127.0.0.1": "loopback",
       "10.1.2.3": "private", "172.16.0.1": "private", "172.31.255.255": "private", "192.168.1.1": "private", "100.64.0.1": "private",
-      "fd12:3456::1": "private", "fc00::1": "private", "::ffff:192.168.0.10": "private", "64:ff9b::10.0.0.1": "private", "2002:c0a8:0101::1": "private",
+      "fd12:3456::1": "private", "fc00::1": "private", "fec0::1": "private", "feff::1": "private",
+      "64:ff9b:1::10.0.0.1": "private", "64:ff9b:1::8.8.8.8": "public", "::ffff:0:127.0.0.1": "loopback", "::ffff:0:169.254.169.254": "metadata", "::ffff:192.168.0.10": "private", "64:ff9b::10.0.0.1": "private", "2002:c0a8:0101::1": "private",
       "169.254.10.20": "link-local", "fe80::1": "link-local", "fe80::1%en0": "link-local",
       "169.254.169.254": "metadata", "169.254.170.2": "metadata", "100.100.100.200": "metadata", "fd00:ec2::254": "metadata", "::ffff:169.254.169.254": "metadata",
       "0.0.0.0": "unspecified", "0.1.2.3": "unspecified", "::": "unspecified",
@@ -153,9 +154,11 @@ describe("the filter, after DNS, at connect time", () => {
   test("a bot's tab reaches no loopback, private, link-local or metadata address, by number or by name (rebinding)", async () => {
     const { echo, filter, dialed } = await setup({ "rebind.test": ["10.0.0.7"], "localhost": ["127.0.0.1", "::1"], "meta.test": ["169.254.169.254"] });
     const proxy = await filter.listenerFor(BOT_POLICY, "http");
-    for (const [host, port] of [["127.0.0.1", echo.port], ["localhost", echo.port], ["rebind.test", 80], ["::1", 80], ["169.254.169.254", 80], ["meta.test", 80], ["0.0.0.0", 80], ["192.168.1.1", 443], ["fe80::1", 443], ["nowhere.test", 80]] as const) {
+    for (const [host, port] of [["127.0.0.1", echo.port], ["localhost", echo.port], ["rebind.test", 80], ["::1", 80], ["169.254.169.254", 80], ["meta.test", 80], ["0.0.0.0", 80], ["192.168.1.1", 443], ["fe80::1", 443]] as const) {
       expect(`${host} ${JSON.stringify(await get(proxy, host, port))}`).toBe(`${host} ${JSON.stringify(NOT_ALLOWED)}`);
     }
+    // A name that doesn't resolve is unreachable (4), not refused.
+    expect(await get(proxy, "nowhere.test", 80)).toEqual({ refused: 4 });
     // An IPv6 address sent as its bytes, as Chromium sends one: ::1.
     const t = await socks(proxy, "", 80, [0, 0, 0, 0, 0, 0, 0, 1]);
     expect(t.code).toBe(2);
@@ -225,6 +228,49 @@ describe("the filter, after DNS, at connect time", () => {
     // The same bot without the setting: refused by name and by number.
     const strict = await filter.listenerFor(BOT_POLICY, "https");
     expect(await get(strict, "nas.local", 80)).toEqual(NOT_ALLOWED);
+  });
+
+  test("a dead first address never fails the page: each attempt has its time, then the next address", async () => {
+    const echo = await echoServer();
+    open.push({ close: () => new Promise((r) => echo.server.close(r)) });
+    const dialed: string[] = [];
+    const filter = new NetworkFilter({
+      lookup: async () => ["203.0.113.9", PUBLIC],
+      connectTimeoutMs: 300,
+      // The first address never answers (a socket that never connects); the second is the local server.
+      dial: (port, ip) => {
+        dialed.push(ip);
+        return ip === PUBLIC ? connect(echo.port, "127.0.0.1") : new Socket();
+      },
+    });
+    open.push(filter);
+    const t0 = Date.now();
+    expect(await get(await filter.listenerFor(BOT_POLICY, "http"), "two.test", 80, "/second")).toEqual({ status: 200, body: "echo /second" });
+    expect(dialed).toEqual(["203.0.113.9", PUBLIC]);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+  });
+
+  test("only the browser's own network process may use the filter: anyone else is closed unanswered", async () => {
+    const asked: { address: string; port: number; listener: number }[] = [];
+    let yes = false;
+    const filter = new NetworkFilter({ lookup: async () => [PUBLIC], dial: () => new Socket(), acceptPeer: async (peer, listener) => { asked.push({ ...peer, listener }); return yes; } });
+    open.push(filter);
+    const listener = await filter.listenerFor(BOT_POLICY, "http");
+    const port = Number(new URL(listener).port);
+    const s = connect(port, "127.0.0.1");
+    s.on("error", () => undefined);
+    const io = reader(s);
+    await new Promise((r) => s.once("connect", r));
+    s.write(Buffer.from([5, 1, 0]));
+    expect((await io.read(2)).length).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ address: "127.0.0.1", listener: port });
+    expect(asked[0]!.port).toBeGreaterThan(0);
+    yes = true;
+    const t = await socks(listener, "example.test", 80);
+    expect(t.code).not.toBe(-1);
+    t.socket.destroy();
+    expect(filter.listenerPorts()).toContain(port);
   });
 
   test("one listener per policy; only SOCKS5 CONNECT without a password; closed means closed", async () => {

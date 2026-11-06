@@ -16,8 +16,8 @@ import {
 const PUBLIC = "93.184.216.34";
 
 describe("the app's copies are the core's", () => {
-  test("network.ts and proxy.ts are the same file in both places", () => {
-    for (const f of ["network.ts", "proxy.ts"]) {
+  test("network.ts, proxy.ts and peer-owner.ts are the same file in both places", () => {
+    for (const f of ["network.ts", "proxy.ts", "peer-owner.ts"]) {
       const app = readFileSync(join(import.meta.dir, "../src/main/browser", f), "utf8");
       const core = readFileSync(join(import.meta.dir, "../../../packages/core/src/browser", f), "utf8");
       expect(`${f}: ${app === core}`).toBe(`${f}: true`);
@@ -295,7 +295,8 @@ describe("the filter, chained to a proxy", () => {
       expect(await get(listener, "example.test", 443, "/via")).toEqual({ status: 200, body: "echo /via" });
       expect(proxy.asked).toEqual([`${PUBLIC}:443`]);
       expect(dialed).toEqual([`127.0.0.1:${proxy.port}`]);
-      for (const host of ["rebind.test", "meta.test", "10.0.0.7", "nowhere.test"]) expect(await get(listener, host, 80)).toEqual({ refused: 2 });
+      for (const host of ["rebind.test", "meta.test", "10.0.0.7"]) expect(await get(listener, host, 80)).toEqual({ refused: 2 });
+      expect(await get(listener, "nowhere.test", 80)).toEqual({ refused: 4 });
       expect(proxy.asked).toEqual([`${PUBLIC}:443`]);
     });
   }

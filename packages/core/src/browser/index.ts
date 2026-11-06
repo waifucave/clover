@@ -5,3 +5,4 @@ export * from "./service";
 export * from "./network";
 export * from "./proxy";
 export * from "./peers";
+export * from "./peer-owner";

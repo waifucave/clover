@@ -15,7 +15,8 @@ export const PAC_PARTITION = "clover-browser-pac";
 export const runCommand: RunCommand = (cmd, args) =>
   new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout: 5_000, windowsHide: true, maxBuffer: 1 << 20, encoding: "utf8" }, (error, stdout) => {
-      if (error !== null) reject(error);
+      // A tool that exits non-zero may still have said something (lsof exits 1 when a process has no connection).
+      if (error !== null) reject(Object.assign(error, { stdout }));
       else resolve(stdout);
     });
   });

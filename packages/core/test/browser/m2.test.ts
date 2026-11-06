@@ -75,6 +75,16 @@ describe("B-M1's open({ show }) and the live view's name (R8)", () => {
   });
 });
 
+describe("the app's reports (the second review's minor)", () => {
+  test("in one batch, a change after a tab's close doesn't bring it back", async () => {
+    const app = new FakeApp();
+    const service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1" });
+    const tab = await service.open(person, { owner: alpha });
+    service.report([{ kind: "closed", id: tab.id, by: "page" }, { kind: "changed", tab: { ...tab, title: "Late" } }]);
+    expect(service.tabs(person)).toEqual([]);
+  });
+});
+
 describe("lane D's grants behind the person's own browser (R10)", () => {
   function grants(decision: { allowed: boolean; by?: string }) {
     const held = new Set<string>();
