@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { nearestHue, Screen } from "../client/ansi";
+import { MAX_COLUMNS, MAX_PENDING, nearestHue, Screen } from "../client/ansi";
 
 const text = (s: Screen) => s.view().map((line) => line.map((r) => r.text).join(""));
 
@@ -36,5 +36,26 @@ describe("the terminal's screen model (review S6)", () => {
     s.write("\x1b]0;my title\x07a\x1b[?25l\x1b]8;;https://x.example\x1b\\link\x1b]8;;\x1b\\b\x1b[");
     s.write("1mc");
     expect(s.view()[0]!.map((r) => [r.text, r.bold])).toEqual([["alinkb", undefined], ["c", true]]);
+  });
+  test("a cursor move stops at the line's edge, and text past it wraps (N2)", () => {
+    const s = new Screen(80);
+    s.write("\x1b[500000Cx");
+    expect(text(s)).toEqual([" ".repeat(79) + "x"]);
+    s.write("y\x1b[2000000000Gz");
+    expect(text(s)).toEqual([" ".repeat(79) + "x", "y".padEnd(79) + "z"]);
+    const wide = new Screen();
+    wide.write("\x1b[500000Cx");
+    expect(text(wide)[0]!.length).toBe(MAX_COLUMNS);
+  });
+
+  test("a sequence that never ends is dropped past the cap, and what follows shows (N2)", () => {
+    const s = new Screen();
+    s.write("\x1b]0;");
+    for (let k = 0; k < 10; k += 1) s.write("x".repeat(1000));
+    s.write("visible");
+    expect(text(s).join("")).toContain("visible");
+    const one = new Screen();
+    one.write("\x1b]0;" + "y".repeat(MAX_PENDING + 10) + "shown");
+    expect(text(one).join("")).toContain("shown");
   });
 });

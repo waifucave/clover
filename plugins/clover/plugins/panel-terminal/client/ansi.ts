@@ -52,7 +52,20 @@ interface Cell {
 /** At most this many lines are kept; older ones scroll away. */
 export const SCROLLBACK = 5000;
 
+/** The widest a line gets: a cursor move past it stops at its edge, and text past it wraps (review N2: `ESC[500000C`
+ *  must not fill half a million cells). */
+export const MAX_COLUMNS = 1024;
+
+/** The longest an unfinished escape sequence is held for the next chunk. Past it the sequence is dropped and what
+ *  follows shows as text, so a sequence that never ends can't hide a program's output or grow without bound (N2). */
+export const MAX_PENDING = 4096;
+
 export class Screen {
+  /** `columns`: the terminal's width, at most `MAX_COLUMNS`. */
+  constructor(private readonly columns = MAX_COLUMNS) {
+    this.columns = Math.max(1, Math.min(MAX_COLUMNS, Math.floor(columns) || MAX_COLUMNS));
+  }
+
   private lines: Cell[][] = [[]];
   private col = 0;
   private look: Look = {};
@@ -68,8 +81,13 @@ export class Screen {
       if (c === "\x1b") {
         const used = this.escape(s, i);
         if (used === 0) {
-          this.pending = s.slice(i);
-          return;
+          if (s.length - i <= MAX_PENDING) {
+            this.pending = s.slice(i);
+            return;
+          }
+          // Too long to be a real sequence: drop its introducer and show the rest.
+          i += 2;
+          continue;
         }
         i += used;
         continue;
@@ -100,6 +118,7 @@ export class Screen {
   }
 
   private put(ch: string): void {
+    if (this.col >= this.columns) this.newline();
     const line = this.lines[this.lines.length - 1]!;
     while (line.length < this.col) line.push({ ch: " ", look: {} });
     line[this.col] = { ch, look: this.look };
@@ -152,11 +171,11 @@ export class Screen {
     } else if ((final === "H" || final === "f") && this.lines.length === 1 && this.lines[0]!.length === 0) {
       this.col = 0;
     } else if (final === "G") {
-      this.col = Math.max(0, (nums[0] ?? 1) - 1);
+      this.col = Math.min(this.columns - 1, Math.max(0, (nums[0] ?? 1) - 1));
     } else if (final === "D") {
       this.col = Math.max(0, this.col - Math.max(1, nums[0] ?? 1));
     } else if (final === "C") {
-      this.col += Math.max(1, nums[0] ?? 1);
+      this.col = Math.min(this.columns - 1, this.col + Math.max(1, nums[0] ?? 1));
     }
     // Other moves need a grid this model doesn't keep.
   }
