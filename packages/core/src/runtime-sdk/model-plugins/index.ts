@@ -5,12 +5,15 @@
 //   host-adapter.ts  a code plugin's adapter through the plugin host
 //   plugin-api.ts  the interim `net.fetch` and `secrets.get` a model plugin calls (lane B's router replaces it)
 //   service.ts     `ModelPlugins`: the catalog file and served adapters, followed live, and each session's option
+//   keychain-tokens.ts  a bundled plugin's keys from today's provider keychain slots
+//   start.ts       the daemon's one call: the router, the credentials, `ModelPlugins`, installed
 //
 // The daemon installs one `ModelPlugins` once it has a plugin registry and host (`installModelPlugins`); every
 // embedded session then runs on it (`Options.modelProviders`), and the core's own catalog readers read its catalog
 // (`activeCatalog`). Until then both fall back to the SDK's compiled catalog, which the bundled plugins are
 // generated from, so nothing differs.
 import type { WinterCatalog } from "@waifucave/clover-provider-catalog";
+import { setInternalCodeAdapterSource } from "../../providers/internal-adapters";
 import { setActiveCatalogSource } from "./catalog-source";
 import type { ModelPlugins } from "./service";
 
@@ -24,6 +27,8 @@ let installed: ModelPlugins | undefined;
 export function installModelPlugins(plugins: ModelPlugins | undefined): void {
   installed = plugins;
   setActiveCatalogSource(plugins === undefined ? undefined : (): WinterCatalog | undefined => plugins.catalog);
+  // The core's internal jobs run a code plugin's provider on the plugin, as the core (`internal-adapters.ts`).
+  setInternalCodeAdapterSource(plugins === undefined ? undefined : (providerId) => plugins.providerAdapterFor(providerId, { caller: { kind: "core" } }));
 }
 
 /** The installed model plugins, if any. */

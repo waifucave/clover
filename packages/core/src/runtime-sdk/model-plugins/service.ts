@@ -19,7 +19,7 @@ import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import type { HostServedAdapter, ModelProvidersOption } from "@waifucave/clover-agent-sdk";
-import { createHostModelAdapterServer, type HostModelAdapter, type ModelAdapterDescription } from "@waifucave/clover-provider-runtime";
+import { createHostModelAdapterServer, hostServedProviderAdapter, ProviderRequestError, type HostModelAdapter, type ModelAdapterDescription, type ProviderAdapter } from "@waifucave/clover-provider-runtime";
 import type { WinterCatalog } from "@waifucave/clover-provider-catalog";
 import type { Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
@@ -194,5 +194,28 @@ export class ModelPlugins {
       catalog: { path: snap.catalogPath, sha256: snap.catalogSha256 },
       ...(hostAdapters.length > 0 ? { hostAdapters, serve: (subtype: string, payload: unknown) => server.handle(subtype, payload) } : {}),
     };
+  }
+
+  /**
+   * The core's own calls on a provider (its internal jobs: titles, the bash reviewer, the dreamer, the cleaner): the
+   * provider's code adapter as a `ProviderAdapter`, run on its plugin through the plugin host as `caller`, the same
+   * path a session's stub takes. Undefined when the provider has no served code adapter (a declarative provider runs
+   * on its protocol's generic adapter in the core, which the caller builds as before).
+   */
+  providerAdapterFor(providerId: string, opts: { caller: Caller }): ProviderAdapter | undefined {
+    const served = this.#snapshot === undefined ? undefined : [...this.#snapshot.served.values()].find((s) => s.provider === providerId);
+    if (served === undefined) return undefined;
+    const option = this.sessionOption({ caller: opts.caller });
+    const identity = option?.hostAdapters?.find((a) => a.id === served.adapterId);
+    const serve = option?.serve;
+    if (identity === undefined || serve === undefined) return undefined;
+    // The agent SDK spells `family` as a string on the wire; the identity came from this adapter's own `describe`.
+    return hostServedProviderAdapter(identity as Parameters<typeof hostServedProviderAdapter>[0], {
+      async request<T>(subtype: string, payload: unknown): Promise<T> {
+        const answer = await serve(subtype, payload, { signal: new AbortController().signal });
+        if (!answer.ok) throw new ProviderRequestError({ code: "network", message: answer.error.message, retryable: false });
+        return answer.value as T;
+      },
+    });
   }
 }
