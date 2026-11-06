@@ -21,6 +21,7 @@ export type PairState =
   | { kind: "connected"; hello: CloverHelloResult }
   | { kind: "reconnecting"; since: number }
   | { kind: "unavailable"; reason: string }
+  | { kind: "unverified"; reason: string }
   | { kind: "quitting" }
   | { kind: "stopped" };
 
@@ -82,19 +83,22 @@ export function daemonProof(appToken: string, nonce: string, pid: number): strin
   return createHmac("sha256", appToken).update(`clover-daemon-proof\0${nonce}\0${pid}`).digest("base64url");
 }
 
-/** Asks the endpoint to prove it is this user's daemon (`protocol.prove`); undefined when it did, else why not. */
-export async function proveServer(client: Pick<DaemonClient, "request">, appToken: string, pid: number, timeoutMs: number): Promise<string | undefined> {
+/** Asks the endpoint to prove it is this user's daemon (`protocol.prove`); undefined when it did. On failure:
+ *  `why` for the log and the state, and `refused` when the endpoint refused the call itself — lane C's daemon answers
+ *  that way when the pid at its end is ambiguous (on Windows, a pipe's peer pid it couldn't read); a proof that is
+ *  wrong, or that names another process, is conclusive instead. */
+export async function proveServer(client: Pick<DaemonClient, "request">, appToken: string, pid: number, timeoutMs: number): Promise<{ why: string; refused: boolean } | undefined> {
   const nonce = randomBytes(24).toString("base64url");
   let r: { proof?: unknown; pid?: unknown };
   try {
     r = await client.request<{ proof?: unknown; pid?: unknown }>("protocol.prove", { nonce }, timeoutMs);
   } catch (err) {
-    return `it gave no proof: ${err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err)}`;
+    return { why: `it gave no proof: ${err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err)}`, refused: true };
   }
-  if (r.pid !== pid) return "it sees another process at the other end";
+  if (r.pid !== pid) return { why: "it sees another process at the other end", refused: false };
   const want = Buffer.from(daemonProof(appToken, nonce, pid));
   const got = Buffer.from(typeof r.proof === "string" ? r.proof : "");
-  return got.length === want.length && timingSafeEqual(got, want) ? undefined : "its proof is wrong";
+  return got.length === want.length && timingSafeEqual(got, want) ? undefined : { why: "its proof is wrong", refused: false };
 }
 
 export class Pair {
@@ -159,6 +163,11 @@ export class Pair {
 
   /** Why the last dial didn't connect, when a daemon did answer: it refused the app, or the app had no token. */
   private refusal: string | undefined;
+  /** Prove calls in a row whose endpoint refused to prove at all (lane C's ambiguous-pid case among them): after this
+   *  many the app says it can't verify the daemon, and never connects unverified whatever the count reaches. */
+  private proveRefusals = 0;
+  /** How many refusals bear the "can't verify" verdict before it is shown (a blip may resolve at the next dial). */
+  static readonly PROVE_TRIES = 3;
 
   /** Dials once and says hello; true when connected. */
   private async connectOnce(): Promise<boolean> {
@@ -176,11 +185,24 @@ export class Pair {
       const why = await proveServer(client, params.token, this.opts.prove.pid, this.timing.helloTimeoutMs);
       if (why !== undefined) {
         client.close();
-        this.refusal = `the endpoint isn't this user's daemon (${why}); the app sent it nothing`;
+        this.refusal = `the endpoint isn't this user's daemon (${why.why}); the app sent it nothing`;
         this.log(`pair: ${this.refusal}`);
+        // A refused prove can resolve by itself (the pid ambiguity on Windows clears on a fresh connection): after a
+        // few runs the app takes it for settled and says it can't verify the daemon, still never connecting
+        // unverified, and keeps dialling in case the daemon it can prove is found later. The verdict lands after the
+        // unavailable state, so the last state this caller sees is the verdict.
         this.setState({ kind: "unavailable", reason: this.refusal });
+        if (why.refused) {
+          this.proveRefusals++;
+          if (this.proveRefusals >= Pair.PROVE_TRIES && this.stateValue.kind !== "unverified") {
+            this.setState({ kind: "unverified", reason: "can't verify the Clover daemon" });
+          }
+        } else {
+          this.proveRefusals = 0;
+        }
         return false;
       }
+      this.proveRefusals = 0;
     }
     client.onListenerError = (what, err) => this.log(`pair: a listener for ${what} failed: ${err instanceof Error ? err.message : String(err)}`);
     for (const [method, handler] of this.handlers) client.handle(method, handler);

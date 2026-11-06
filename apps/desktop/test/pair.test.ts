@@ -275,6 +275,20 @@ describe("the daemon's proof before the hello (lane C's protocol.prove, on the s
     });
   }
 
+  test("an endpoint that refuses every prove says it can't be verified, after a few tries, and never connects", async () => {
+    const home = tempHome();
+    fakes.push(await startFakeDaemon({ home, prove: "refuse" }));
+    const { pair } = pairFor(home, fakeLauncher(home), { prove: true });
+    await pair.start();
+    // Windows' ambiguous case: a prove that the daemon refused can clear on a fresh connection, so the pair dials
+    // again a few times before it takes the verdict as settled.
+    const end = Date.now() + 5000;
+    while (pair.state.kind !== "unverified" && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+    expect(pair.state, JSON.stringify(pair.state)).toMatchObject({ kind: "unverified", reason: "can't verify the Clover daemon" });
+    expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
+    expect(readCalls(home).filter((c) => c.method === "protocol.prove").length).toBeGreaterThanOrEqual(Pair.PROVE_TRIES);
+  });
+
   test("the proof is lane C's: an HMAC under the app token over the nonce and the pid", () => {
     expect(daemonProof("token", "nonce", 42)).toBe(createHmac("sha256", "token").update("clover-daemon-proof\u0000nonce\u000042").digest("base64url"));
   });
