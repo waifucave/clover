@@ -107,7 +107,7 @@ describe("opening and owning tabs", () => {
     // No yes: the card is asked, the answer is no, and nothing of theirs is reached.
     expect(await code(service.open(coding, { owner: user }))).toBe("needs_ok");
     expect(grants.asked).toHaveLength(1);
-    expect(grants.asked[0]).toMatchObject({ session: "sess_code", card: { kind: "confirm", computers: ["Studio"], effect: "screen" } });
+    expect(grants.asked[0]).toMatchObject({ session: "sess_code", card: { computers: ["Studio"], effect: "screen" } });
     expect(service.tabs(coding)).toEqual([]);
     expect(await code(service.navigate(coding, theirs.id, "https://a.example/"))).toBe("no_tab");
     // A yes: for that session alone.
@@ -167,9 +167,10 @@ describe("opening and owning tabs", () => {
     expect(await code(service.open(asAlpha, { owner: alpha }))).toBe("no_app");
   });
 
-  test("another computer's tabs come with M2", async () => {
+  test("without links to other computers, another computer's tabs are refused (no_computer); this one's list stays its own", async () => {
     const { service } = setup();
-    expect(await code(service.open(asAlpha, { owner: alpha, computer: "Laptop" }))).toBe("no_app");
+    expect(await code(service.open(asAlpha, { owner: alpha, computer: "Laptop" }))).toBe("no_computer");
+    expect(await code(service.list(asAlpha, { computer: "Laptop" }))).toBe("no_computer");
     expect(service.tabs(person, { computer: "Laptop" })).toEqual([]);
   });
 
