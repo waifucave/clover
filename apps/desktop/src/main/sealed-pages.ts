@@ -113,8 +113,21 @@ ${script
   const b = window.cloverSealed;
   if (b === undefined) return;
   let answering = false;
-  const run = () => {
-    if (answering) return;
+  // The frame's own visibility gate (§5.5): the whole button, at its own size from the CSS, uncovered — Chromium's
+  // IOv2 reports whatever wraps it too (a filter, an opacity below 1, or a transform other than a move or an
+  // enlargement count as hidden), so a theme's CSS can's hide the button around it.
+  let seen = false;
+  const io = new IntersectionObserver((entries) => {
+    const e = entries[entries.length - 1];
+    seen = e !== undefined && e.isIntersecting === true && e.intersectionRatio === 1 && (e as unknown as { isVisible?: boolean }).isVisible === true;
+  }, { threshold: [1], trackVisibility: true, delay: 200 } as never);
+  document.addEventListener("DOMContentLoaded", () => {
+    const b2 = document.querySelector(".seal-button");
+    if (b2 !== null) io.observe(b2);
+  });
+  const run = (e: unknown) => {
+    if (answering || !seen) return;
+    if (!(e instanceof PointerEvent) || e.isTrusted !== true) return; // a page-level dispatch is not the user's.
     b.visible().then((ok) => {
       if (ok !== true) return;
       answering = true;
@@ -125,7 +138,7 @@ ${script
       }).catch(() => { answering = false; });
     });
   };
-  document.addEventListener("pointerdown", run, { capture: true });
+  document.addEventListener("pointerdown", (e) => run(e), { capture: true });
 })();
 </script>`
     : ""}
