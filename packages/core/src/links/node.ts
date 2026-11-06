@@ -20,6 +20,8 @@ import { AccountDirectory } from "./account-directory";
 import { DirectoryDriver, type DirectoryDriverOptions } from "./directory-driver";
 import { FileDeviceRegistry, type FileDeviceRegistryOptions } from "../devices/registry";
 import { DialPolicy, type NatMapping } from "./dial-policy";
+import { GroupKeeper } from "./group";
+import type { CardOpener } from "../devices/rpc";
 import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
 import { PairingService, type PairingRendezvous } from "./pairing";
@@ -53,6 +55,13 @@ export interface DeviceLinksOptions {
   publicTime?: TimeSource;
   /** How the directories are driven: false for none (tests that drive them by hand). */
   driver?: false | Pick<DirectoryDriverOptions, "republishMs" | "backoffMs" | "log">;
+  /** Asks this device's user (lane C's broker through `brokerCardOpener`), for what the group asks of it: agreeing to
+   *  remove a member, moving to a new group. Without it this device agrees to nothing (it never does on its own). */
+  openCard?: CardOpener;
+  /** Where the links' own notes go (the daemon's log). */
+  log?(line: string): void;
+  /** The group keeper's card timeout, for tests. */
+  groupCardTimeoutMs?: number;
   /** The transport's timings, for tests. */
   transport?: Partial<Omit<LinkTransportOptions, "self" | "wire" | "registry" | "directory" | "clock" | "planner">>;
 }
@@ -69,6 +78,10 @@ export interface DeviceLinks {
   driver?: DirectoryDriver;
   /** The main computer: the lease, the main choice and the coordinator (absent when `mainComputer: false`). */
   main?: MainComputerHandle;
+  /** The account-less devices' group: merges, voters, recovery (absent without a handshake). */
+  groups?: GroupKeeper;
+  /** What a revocation needs (devices.revoke, `revokeDevice`), with the group's quorum removal. */
+  revokeOptions(): RevokeOptions;
   /** The shared clock (§6.4): the lease's holder is the reference. What every stamp a message carries reads. */
   clock: SharedClock;
   /** Publishes this device's addresses to its pairs and the account, and sends pending registrations and revocations
@@ -242,13 +255,30 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   }
   sharedClock.start();
 
+  // The group: members' keys over the links, merges (R18), quorum removals and recovery, fresh signatures.
+  const groups = o.handshake
+    ? new GroupKeeper({
+      registry, store: o.store, handshake: o.handshake, transport, clock: o.clock,
+      signedIn: async () => (o.account ? (await o.account.accountId()) !== null : false),
+      ...(o.openCard ? { openCard: o.openCard } : {}),
+      ...(o.groupCardTimeoutMs !== undefined ? { cardTimeoutMs: o.groupCardTimeoutMs } : {}),
+      beforeLeave: async (group) => {
+        if (main && scopeNow?.id === `group:${group}` && main.lease.state().holder === key.id) await main.lease.release();
+      },
+      onChanged: () => void resolveScope().catch(() => undefined),
+      ...(o.log ? { log: o.log } : {}),
+    })
+    : undefined;
+
   const revokeOptions = (): RevokeOptions => ({
     registry, store: o.store, ...(o.handshake ? { handshake: o.handshake } : {}), ...(o.account ? { account: o.account } : {}),
     ...(o.services ? { services: o.services } : {}),
+    ...(groups ? { removeGroupMember: (group: string, member: string) => groups.removeMember(group, member) } : {}),
   });
   const refresh = async () => {
     await readNet().catch(() => undefined);
     await pairing.retryRegistrations().catch(() => undefined);
+    await groups?.refresh().catch(() => undefined);
     // A revocation's steps the services haven't confirmed yet (S5).
     await retryRevokes(revokeOptions()).catch(() => undefined);
     await resolveScope().catch(() => undefined);
@@ -278,6 +308,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   return {
     key, boxKey, registry, wire, transport, pairing, ...(directory ? { directory } : {}),
     ...(accountDirectory ? { accountDirectory } : {}), ...(driver ? { driver } : {}), ...(main ? { main } : {}), clock: sharedClock,
+    ...(groups ? { groups } : {}), revokeOptions,
     async refresh() {
       if (driver) await driver.refresh();
       else {
@@ -289,6 +320,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     localAddresses: () => ({ ...local, direct: [...local.direct] }),
     async close() {
       driver?.close();
+      groups?.close();
       main?.close();
       sharedClock.close();
       for (const off of offs.splice(0)) off();

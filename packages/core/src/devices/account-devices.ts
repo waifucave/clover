@@ -79,6 +79,9 @@ export interface RevokeOptions {
   account?: AccountClient;
   services?: { hooks?: DeviceService; push?: DeviceService; handshake?: DeviceService };
   fetch?: (req: Request) => Promise<Response>;
+  /** Removes the member from the group with a quorum of its voters (links/group.ts `GroupKeeper.removeMember`); without
+   *  it the removal is this device's signature alone (v1's rule, enough with two voters). */
+  removeGroupMember?(group: string, member: string): Promise<void>;
 }
 
 export type RevokeStep = "account" | "hooks" | "push" | "handshake-account" | "handshake-pair" | "handshake-group";
@@ -146,6 +149,7 @@ async function runRevokeSteps(o: RevokeOptions, id: string): Promise<RevokeOutco
   const g = pending.group;
   if (g) {
     await run("handshake-group", async () => {
+      if (o.removeGroupMember) return o.removeGroupMember(g.id, g.member);
       if (!o.handshake) throw new ContractError("offline", "no handshake to remove the member at yet");
       const stored = await o.store.get(groupKeyRef(g.id));
       if (!stored) throw new ContractError("not_found", "the group's key is gone");

@@ -52,8 +52,15 @@ export interface GroupRecord {
   joinedAt: number;
   /** This device's signing key for the group, public half, base64; its seed is in the secret store. */
   ownKey: string;
-  /** The members this device knows, by device id, with their group keys. */
-  members: Record<string, { key: string; since: number }>;
+  /** The members this device knows, by device id, with their group keys and when they vote (the service's last read;
+   *  null: not yet known to vote). */
+  members: Record<string, { key: string; since: number; votesFrom?: number | null }>;
+  /** When this device votes in the group, as the service's last read said. */
+  votesFrom?: number | null;
+  /** How many members the service names, as of its last read (a merge's survivor rule compares these). */
+  size?: number;
+  /** The group this one replaced after this device was removed from it (group recovery's two-voter case). */
+  recoveredFrom?: string;
   /** A founding or a join the service hasn't taken yet (it was unreachable), signed, to send again. */
   pendingCreate?: { group: string; key: string; t: number; sig: string };
   pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string };
@@ -84,6 +91,9 @@ interface FileShape {
   answerKeyGone: Record<string, number>;
   /** A revocation's steps at the services that haven't been confirmed yet, to send again (S5). */
   pendingRevokes: PendingRevoke[];
+  /** Groups this device left: moved out of in a merge, or was removed from by another member. It never goes back to one
+   *  on its own. */
+  groupsLeft: Record<string, { at: number; how: "moved" | "removed" }>;
 }
 
 /** What a revocation still has to tell the services, kept until each confirms (devices/account-devices.ts). */
@@ -183,7 +193,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
       if (existing.v !== 1 || existing.self !== opts.key.id) throw new ContractError("conflict", "the device registry belongs to another device key");
       return new FileDeviceRegistry(path, {
         ...existing, pairs: existing.pairs ?? [], rotations: existing.rotations ?? [], updates: existing.updates ?? {}, boxKeys: existing.boxKeys ?? {},
-        answerKeyGone: existing.answerKeyGone ?? {}, pendingRevokes: existing.pendingRevokes ?? [],
+        answerKeyGone: existing.answerKeyGone ?? {}, pendingRevokes: existing.pendingRevokes ?? [], groupsLeft: existing.groupsLeft ?? {},
       }, opts);
     }
     if (!NAME_RE.test(opts.self.name)) throw new ContractError("invalid", "a device name is 1–63 characters");
@@ -194,7 +204,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
       ...(runsCore ? { computer: ((c) => (computerNameProblem(c) === null ? c : computerNameFor(c) || "Computer"))(opts.self.computer ?? opts.self.name) } : {}),
       ...(opts.self.hasDisplay === undefined ? {} : { hasDisplay: opts.self.hasDisplay }),
     };
-    const state: FileShape = { v: 1, self: self.id, devices: [self], pairs: [], rotations: [], updates: {}, boxKeys: {}, answerKeyGone: {}, pendingRevokes: [] };
+    const state: FileShape = { v: 1, self: self.id, devices: [self], pairs: [], rotations: [], updates: {}, boxKeys: {}, answerKeyGone: {}, pendingRevokes: [], groupsLeft: {} };
     writeJsonFile(path, state);
     return new FileDeviceRegistry(path, state, opts);
   }
@@ -407,6 +417,14 @@ export class FileDeviceRegistry implements DeviceRegistry {
     return { ...record };
   }
 
+  /** A pair registration signed again (its statements' `t` had passed the service's window). */
+  setPairRegistration(pairId: string, registration: NonNullable<PairRecord["registration"]>): void {
+    const p = this.#state.pairs.find((x) => x.pairId === pairId);
+    if (!p) throw new ContractError("not_found", `no pair ${pairId}`);
+    p.registration = { t: registration.t, keys: [...registration.keys], sigs: [...registration.sigs] };
+    this.#save();
+  }
+
   markPairRegistered(pairId: string): void {
     const p = this.#state.pairs.find((x) => x.pairId === pairId);
     if (!p) throw new ContractError("not_found", `no pair ${pairId}`);
@@ -426,8 +444,37 @@ export class FileDeviceRegistry implements DeviceRegistry {
   addGroupMember(device: string, key: string): void {
     const g = this.#state.group;
     if (!g) throw new ContractError("not_found", "no group");
+    if (g.members[device]?.key === key) return;
     g.members[device] = { key, since: this.#clock.now() };
     this.#save();
+  }
+
+  /** What the service's read of the group says: who votes from when, and how many members it has. Members it no
+   *  longer names are dropped. */
+  groupRead(group: string, read: { size: number; self?: number | null; members: Record<string, number | null | undefined> }): void {
+    const g = this.#state.group;
+    if (!g || g.id !== group) return;
+    g.size = read.size;
+    if (read.self !== undefined) g.votesFrom = read.self;
+    for (const [device, m] of Object.entries(g.members)) {
+      if (!(device in read.members)) delete g.members[device];
+      else m.votesFrom = read.members[device] ?? null;
+    }
+    this.#save();
+  }
+
+  /** Leaves the group record behind (merged into another, or removed from it); the next `setGroup` names the new one. */
+  leaveGroup(how: "moved" | "removed"): void {
+    const g = this.#state.group;
+    if (!g) return;
+    this.#state.groupsLeft[g.id] = { at: this.#clock.now(), how };
+    delete this.#state.group;
+    this.#save();
+  }
+
+  groupLeft(id: string): { at: number; how: "moved" | "removed" } | undefined {
+    const l = this.#state.groupsLeft[id];
+    return l ? { ...l } : undefined;
   }
 
   // ---- box keys (the handshake's account scope) ----

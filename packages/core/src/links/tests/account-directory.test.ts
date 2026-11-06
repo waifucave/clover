@@ -152,7 +152,8 @@ describe("the account channel", () => {
     // Both are in the group, so the lease lives on the group's record.
     await a.main!.coordinator.chooseSelf();
     const group = a.registry.group()!.id;
-    await waitFor(() => hs.groups.get(group)?.lease.holder !== null);
-    expect(a.main!.lease.canAct()).toBe(true);
+    // The laptop may have taken the lease by the automatic rule first; the user's choice has it handed back.
+    await waitFor(() => hs.groups.get(group)?.lease.holder === a.registry.group()!.ownKey);
+    await waitFor(() => a.main!.lease.canAct());
   }, 30_000);
 });

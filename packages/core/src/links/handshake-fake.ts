@@ -2,11 +2,20 @@
 // I's service (I-M2) runs locally: the pair and group scopes, the statements and signed requests with their replay
 // rule, records, messages, the inbox, the socket with tickets, the group's lease, and the account channel's lease. It checks what the format says
 // a service checks, so a client that passes here speaks the format; it keeps everything in memory.
+//
+// Groups also follow lane I's "Group recovery" proposal as lane H reads it (H-M2; the service builds it once agreed):
+// * a member votes from its join when a quorum of voters admitted it (the founder too), else after `voteAfterMs`;
+// * removing a member other than yourself takes the removes of a quorum of the voters other than it, not counting the
+//   keys it admitted in the last `rollbackMs` (403 `no_quorum` short of one); removing yourself takes only you;
+// * a quorum's removal undoes the changes the removed member signed in the last `rollbackMs`: the keys it admitted go
+//   (and theirs in turn), the members it removed come back;
+// * a member that doesn't vote yet can't take the lease over (403 `not_voter`).
 import { createHash } from "node:crypto";
 import { fromBase64Url, randomBytes, toBase64Url } from "../identity/bytes";
 import { verifyEd25519 } from "../identity/keys";
 import {
-  admitStatement, groupStatement, joinStatement, pairStatement, requestStatement, type HandshakeKind, type LeaseRecord,
+  admitStatement, groupStatement, joinStatement, pairStatement, quorumOf, removeStatement, requestStatement, ROLLBACK_MS, VOTE_AFTER_MS,
+  type HandshakeKind, type LeaseRecord,
 } from "./handshake";
 
 const KINDS: Record<HandshakeKind, { maxTtl: number; defTtl: number; maxBox: number; record: boolean }> = {
@@ -18,7 +27,9 @@ const KINDS: Record<HandshakeKind, { maxTtl: number; defTtl: number; maxBox: num
 interface Rec { from: string; kind: HandshakeKind; gen: number; expiresAt: number; box: string }
 interface Msg { id: string; from: string; to: string; kind: HandshakeKind; at: number; expiresAt: number; box: string }
 interface Pair { keys: [string, string]; records: Rec[]; messages: Msg[]; last: Map<string, number> }
-interface Group { members: Map<string, number>; removed: Map<string, number>; last: Map<string, number>; lease: LeaseRecord }
+interface Member { joinedAt: number; votesFrom: number | null; admittedBy: string[] }
+interface Change { kind: "admit" | "remove"; target: string; signers: string[]; at: number; member?: Member }
+interface Group { members: Map<string, Member>; removed: Map<string, number>; last: Map<string, number>; lease: LeaseRecord; changes: Change[] }
 interface Sock { send(text: string): void; close(code: number, reason: string): void }
 
 export interface FakeHandshake {
@@ -27,7 +38,7 @@ export interface FakeHandshake {
   skewMs: number;
   readonly pairs: ReadonlyMap<string, { keys: [string, string] }>;
   readonly ended: ReadonlySet<string>;
-  readonly groups: ReadonlyMap<string, { members: ReadonlyMap<string, number>; lease: LeaseRecord }>;
+  readonly groups: ReadonlyMap<string, { members: ReadonlyMap<string, { joinedAt: number; votesFrom: number | null; admittedBy: string[] }>; lease: LeaseRecord }>;
   /** The account channel's leases, by account. */
   readonly accountLeases: ReadonlyMap<string, LeaseRecord>;
   /** The account channel's records addressed to a device, as the service holds them (sealed). */
@@ -44,6 +55,9 @@ export interface FakeHandshakeOptions {
   /** The account channel: who an account token is (`sub`, `dev`), as the service checks it against the JWKS; without
    *  it the channel answers 401. */
   accountOf?: (token: string) => { sub: string; dev: string } | undefined;
+  /** Group recovery's timings (the proposal's 72 hours and 7 days by default). */
+  voteAfterMs?: number;
+  rollbackMs?: number;
 }
 
 export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandshake {
@@ -62,6 +76,27 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
   const accountRecords = new Map<string, Rec[]>();
   const accountMessages = new Map<string, Msg[]>();
   const limit = opts.registrationsPerMinute ?? 10;
+  const voteAfterMs = opts.voteAfterMs ?? VOTE_AFTER_MS;
+  const rollbackMs = opts.rollbackMs ?? ROLLBACK_MS;
+  const votes = (m: Member | undefined): boolean => m !== undefined && m.votesFrom !== null && m.votesFrom <= now();
+  const memberList = (g: Group) => [...g.members].map(([key, m]) => ({ key, joinedAt: m.joinedAt, votesFrom: m.votesFrom, admittedBy: [...m.admittedBy] }));
+  /** Undoes what `gone` signed in the last `rollbackMs`: the keys it admitted (and theirs), the members it removed. */
+  const rollBack = (g: Group, gone: string, seen = new Set<string>()): void => {
+    if (seen.has(gone)) return;
+    seen.add(gone);
+    const since = now() - rollbackMs;
+    for (const c of g.changes.filter((x) => x.at >= since && x.signers.includes(gone))) {
+      if (c.kind === "admit" && g.members.has(c.target)) {
+        g.members.delete(c.target);
+        g.removed.set(c.target, now());
+        if (g.lease.holder === c.target) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
+        rollBack(g, c.target, seen);
+      } else if (c.kind === "remove" && c.member && !g.members.has(c.target)) {
+        g.members.set(c.target, c.member);
+        g.removed.delete(c.target);
+      }
+    }
+  };
 
   const err = (status: number, error: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
     Response.json({ error, ...extra }, { status, headers });
@@ -359,7 +394,10 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
         if (Math.abs(b.t - now()) > 600_000 || !sigOk(b.key, groupStatement(b.group, b.key, b.t), b.sig)) return err(401, "unauthorized");
         const g = groups.get(b.group);
         if (g) return g.members.has(b.key) ? Response.json({}, { status: 200 }) : err(409, "conflict");
-        groups.set(b.group, { members: new Map([[b.key, now()]]), removed: new Map(), last: new Map(), lease: { holder: null, epoch: 0, expiresAt: null } });
+        groups.set(b.group, {
+          members: new Map([[b.key, { joinedAt: now(), votesFrom: now(), admittedBy: [] }]]), removed: new Map(), last: new Map(),
+          lease: { holder: null, epoch: 0, expiresAt: null }, changes: [],
+        });
         return Response.json({}, { status: 201 });
       }
       if (parts[1] === "groups" && parts[2]) {
@@ -370,31 +408,67 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
         if (parts[3] === "members" && parts.length === 4 && req.method === "POST") {
           if (registrationLimited()) return err(429, "rate_limited", {}, { "retry-after": "60" });
           const b = body();
-          if (!b || typeof b.key !== "string" || typeof b.t !== "number" || typeof b.sig !== "string" || typeof b.by !== "string" || typeof b.bysig !== "string") return err(400, "bad_request");
+          const admits: { by: string; sig: string }[] = Array.isArray(b?.admits)
+            ? (b.admits as unknown[]).filter((x): x is { by: string; sig: string } => typeof (x as { by?: unknown })?.by === "string" && typeof (x as { sig?: unknown })?.sig === "string")
+            : typeof b?.by === "string" && typeof b?.bysig === "string" ? [{ by: b.by, sig: b.bysig }] : [];
+          if (!b || typeof b.key !== "string" || typeof b.t !== "number" || typeof b.sig !== "string" || admits.length === 0) return err(400, "bad_request");
           if (Math.abs(b.t - now()) > 600_000) return err(401, "unauthorized");
-          if (!sigOk(b.key, joinStatement(id, b.key, b.t), b.sig) || !sigOk(b.by, admitStatement(id, b.key, b.t), b.bysig)) return err(401, "unauthorized");
-          if (!g.members.has(b.by)) return err(403, "not_member");
+          const [newKey, t] = [b.key, b.t];
+          if (!sigOk(newKey, joinStatement(id, newKey, t), b.sig) || admits.some((a) => !sigOk(a.by, admitStatement(id, newKey, t), a.sig))) return err(401, "unauthorized");
+          if (admits.some((a) => !g.members.has(a.by))) return err(403, "not_member");
           if ((g.removed.get(b.key) ?? -1) >= b.t) return err(403, "revoked");
           if (g.members.has(b.key)) return Response.json({}, { status: 200 });
           if (g.members.size >= 32) return err(409, "full");
-          g.members.set(b.key, now());
-          for (const k of g.members.keys()) push(scope, k, { t: "members", members: [...g.members].map(([key, joinedAt]) => ({ key, joinedAt })) });
+          // A quorum of voters admitting it makes it a voter at once; fewer, after `voteAfterMs`.
+          const by = [...new Set(admits.map((a) => a.by))];
+          const voters = [...g.members].filter(([, m]) => votes(m)).length;
+          const voting = by.filter((k) => votes(g.members.get(k))).length;
+          g.members.set(b.key, { joinedAt: now(), votesFrom: voting >= quorumOf(voters) ? now() : now() + voteAfterMs, admittedBy: by });
+          g.changes.push({ kind: "admit", target: b.key, signers: by, at: now() });
+          for (const k of g.members.keys()) push(scope, k, { t: "members", members: memberList(g) });
           return Response.json({}, { status: 201 });
         }
         const who = await authorize(req, url, bytes, (k) => g.members.has(k), g.last);
         if (who instanceof Response) return who;
         if (parts.length === 3 && req.method === "GET") {
-          return Response.json({ group: id, members: [...g.members].map(([key, joinedAt]) => ({ key, joinedAt })), lease: g.lease });
+          return Response.json({ group: id, members: memberList(g), lease: g.lease });
         }
         if (parts[3] === "members" && parts[4] && req.method === "DELETE") {
           const gone = parts[4];
+          const member = g.members.get(gone);
+          if (!member) return new Response(null, { status: 204 });
+          let signers: string[] = [gone];
+          if (gone !== who) {
+            // Another member: a quorum of the voters other than it, leaving out the keys it admitted lately.
+            const b = body() as { t?: unknown; removes?: unknown } | undefined;
+            const since = now() - rollbackMs;
+            const its = new Set(g.changes.filter((c) => c.kind === "admit" && c.at >= since && c.signers.includes(gone)).map((c) => c.target));
+            const eligible = new Set([...g.members].filter(([k, m]) => k !== gone && !its.has(k) && votes(m)).map(([k]) => k));
+            const agreed = new Set<string>();
+            if (eligible.has(who)) agreed.add(who);
+            if (typeof b?.t === "number" && Math.abs(b.t - now()) <= 600_000 && Array.isArray(b.removes)) {
+              for (const r of b.removes as { by?: unknown; sig?: unknown }[]) {
+                if (typeof r?.by === "string" && typeof r.sig === "string" && eligible.has(r.by) && sigOk(r.by, removeStatement(id, gone, b.t), r.sig)) agreed.add(r.by);
+              }
+            }
+            const need = quorumOf(eligible.size);
+            if (eligible.size === 0 || agreed.size < need) return err(403, "no_quorum", { need, have: agreed.size });
+            signers = [...agreed];
+          }
           g.members.delete(gone);
           g.removed.set(gone, now());
           if (g.lease.holder === gone) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
+          if (gone !== who) {
+            g.changes.push({ kind: "remove", target: gone, signers, at: now(), member });
+            rollBack(g, gone);
+          }
+          g.changes = g.changes.filter((c) => c.at >= now() - rollbackMs);
           if (g.members.size === 0) groups.delete(id);
+          else for (const k of g.members.keys()) push(scope, k, { t: "members", members: memberList(g) });
           return new Response(null, { status: 204 });
         }
         if (parts[3] === "lease" && req.method === "POST") {
+          if ((body() as { op?: unknown } | undefined)?.op === "takeover" && !votes(g.members.get(who))) return err(403, "not_voter");
           const r = leaseOp(g.lease, who, body());
           if (r instanceof Response) return r;
           g.lease = r;

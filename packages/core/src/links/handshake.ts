@@ -34,6 +34,39 @@ export const joinStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t)].join("\n"));
 export const admitStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} admit`, group, key, String(t)].join("\n"));
+/** A voter's agreement to remove a member other than itself (PROTOCOL.md "Group recovery", proposed). */
+export const removeStatement = (group: string, key: string, t: number): Bytes =>
+  utf8([`${HANDSHAKE_PREFIX} remove`, group, key, String(t)].join("\n"));
+
+// ---- group recovery (PROTOCOL.md "Group recovery", lane I's proposal adopted for H-M2) ----
+
+/** A member votes once it has been in the group this long, or at once if a quorum of voters admitted it. */
+export const VOTE_AFTER_MS = 72 * 3600_000;
+/** How far back a quorum's removal of a member undoes the changes it signed. */
+export const ROLLBACK_MS = 7 * 86_400_000;
+/** The voters a change to another member needs: a majority of the `v` voters other than its target. */
+export const quorumOf = (v: number): number => Math.floor(v / 2) + 1;
+/** How long a statement's `t` stays within the service's window (10 minutes), less a margin for the round trip. */
+export const STATEMENT_FRESH_MS = 9 * 60_000;
+
+/** A member as the group's read shows it. `votesFrom` is when it starts voting (null: never, as for a key whose
+ *  admission is still unsettled); `admittedBy` the members whose admits let it in. */
+export interface GroupMember {
+  key: string;
+  joinedAt: number;
+  votesFrom?: number | null;
+  admittedBy?: string[];
+}
+
+/** A join: the new key's own statement and the admits of members (one is v1's `by`/`bysig`). */
+export interface GroupJoin {
+  key: string;
+  t: number;
+  sig: string;
+  by?: string;
+  bysig?: string;
+  admits?: { by: string; sig: string }[];
+}
 
 /** What a signed request's `sig` covers (PROTOCOL.md "Signed requests"). */
 export function requestStatement(method: string, pathAndQuery: string, t: number, body: Uint8Array): Bytes {
@@ -220,21 +253,23 @@ export class HandshakeClient {
     return (await this.#send("POST", "/v1/groups", body)).status === 201;
   }
 
-  async joinGroup(group: string, body: { key: string; t: number; sig: string; by: string; bysig: string }): Promise<boolean> {
+  async joinGroup(group: string, body: GroupJoin): Promise<boolean> {
     return (await this.#send("POST", `/v1/groups/${group}/members`, body)).status === 201;
   }
 
-  async removeGroupMember(group: string, signer: Ed25519Key, member: string): Promise<void> {
+  /** Removes a member: itself with its own signature alone, another with the removes of a quorum of voters
+   *  (`quorum`; refused `403 no_quorum` short of one). */
+  async removeGroupMember(group: string, signer: Ed25519Key, member: string, quorum?: { t: number; removes: { by: string; sig: string }[] }): Promise<void> {
     try {
-      await this.#signed(`group:${group}`, signer, "DELETE", `/v1/groups/${group}/members/${member}`);
+      await this.#signed(`group:${group}`, signer, "DELETE", `/v1/groups/${group}/members/${member}`, quorum);
     } catch (err) {
       if (err instanceof HandshakeError && (err.status === 410 || err.status === 404)) return;
       throw err;
     }
   }
 
-  async readGroup(group: string, key: Ed25519Key): Promise<{ group: string; members: { key: string; joinedAt: number }[]; lease: LeaseRecord }> {
-    return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}`)).json() as Promise<{ group: string; members: { key: string; joinedAt: number }[]; lease: LeaseRecord }>;
+  async readGroup(group: string, key: Ed25519Key): Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }> {
+    return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}`)).json() as Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }>;
   }
 
   /** The group's lease (PROTOCOL.md "Groups and the lease"). A refusal answers `conflict` with the current lease. */

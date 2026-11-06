@@ -5,8 +5,8 @@
 //
 // * **The account scope.** The holder is a device id; requests carry the device's account token for the handshake.
 // * **The group scope.** The holder is a member key, this device's own key for the group or a peer's, which the
-//   registry's group record maps back to a device (devices tell each other their group keys over the link,
-//   `shareDeviceUpdates`). A holder no record names is shown as no one (`holder: null` in the views above), so a
+//   registry's group record maps back to a device (linked computers tell each other their group keys,
+//   `link.group.info` in links/group.ts). A holder no record names is shown as no one (`holder: null` in the views above), so a
 //   device never guesses whose lease it is.
 // * **Failures.** A refusal (`409 held`) is `conflict` with the record the service holds. Anything that keeps the
 //   request from an answer (no network, a 5xx, a timeout) is `offline`: the lease never treats an unanswered request
@@ -40,6 +40,10 @@ async function call<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (err) {
     if (err instanceof ContractError) throw err;
+    if (err instanceof HandshakeError && err.code === "not_voter") {
+      // Group recovery (proposal 4): a member takes the lease over only once it votes.
+      throw new ContractError("refused", "this computer can be made the main computer once it votes in your devices' group (72 hours after it joined), or from the main computer now");
+    }
     if (err instanceof HandshakeError && err.status >= 400 && err.status < 500 && err.status !== 429) {
       throw new ContractError(err.status === 410 ? "not_found" : "refused", `the handshake refused the lease request (${err.status} ${err.code})`);
     }
