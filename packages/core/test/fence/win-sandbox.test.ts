@@ -87,7 +87,7 @@ describe("the pinned launcher", () => {
   });
 
   test("the launcher has Authenticode digest pins for x64 and arm64", () => {
-    expect(SRT_WIN_PINS.x64).toBe("59df9c9135f171930975eeb046b451fa6b97fe505471574aa3a03c4dfe7eb026");
+    expect(SRT_WIN_PINS.x64).toBe("8eda23de479534eb24b57caae60e8079bec8929623ccde98218a0d007259676a");
     expect(SRT_WIN_PINS.arm64).toBe("cf562110127e7612084de53782b0307326074d4e1958ca2c5262a974f6bc19c6");
   });
 
