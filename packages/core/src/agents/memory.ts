@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { foldName, isInsideFolded, type SandboxPolicy } from "../contracts/fence";
 import { botPaths } from "../bots/paths";
+import { ContractError } from "../contracts/common";
 
 /** Every bot's memory folder on this computer: each folder under `<home>/bots/`, and the delegating bot's even before it
  *  has one. */
@@ -34,6 +35,16 @@ export function touchesBotMemory(home: string, path: string, os?: Os): boolean {
   if (!isInsideFolded(path, bots, os)) return false;
   const rest = path.split(/[\\/]+/).filter(Boolean).slice(bots.split(/[\\/]+/).filter(Boolean).length);
   return rest.length >= 2 && foldName(rest[1]!, os) === "memory";
+}
+
+/** The policy an agent's sandbox starts from. A bot's own Bash may work in its own memory (the controller's ruling: B's
+ *  policy carries that as `ownMemory`, applied after the denials); an agent never may, so a policy that carries it is
+ *  refused here and the agent doesn't start. */
+export function agentPolicyOf(policy: SandboxPolicy): SandboxPolicy {
+  if ((policy as SandboxPolicy & { ownMemory?: unknown }).ownMemory !== undefined) {
+    throw new ContractError("refused", "an agent's sandbox may never carry a bot's own memory (ownMemory), so the agent wasn't started");
+  }
+  return policy;
 }
 
 /** Every bot's memory, as a pattern: `<home>/bots/<any bot>/memory` with a `*` for the bot. */

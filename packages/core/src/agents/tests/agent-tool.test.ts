@@ -146,6 +146,21 @@ describe("Agent", () => {
     expect(fence!.denyWrite).toContain(join(w.cloverHome, "bots"));
     expect(w.approvals.cards()).toEqual([]);
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
+    // A bot's own Bash may work in its own memory (`ownMemory`); an agent's policy never carries it.
+    expect("ownMemory" in fence!).toBe(false);
+  });
+
+  test("an agent never gets a bot's own memory: a policy that carries ownMemory is refused and the agent doesn't start", async () => {
+    const w = make({ script: [[{ say: "never" }]] });
+    const policy = w.fence.policy.bind(w.fence);
+    w.fence.policy = () => ({ ...policy(), ownMemory: join(w.cloverHome, "bots", "alpha", "memory") }) as ReturnType<typeof policy>;
+    const r = await w.delegate();
+    // The start fails at its first turn: the bot is told, and no agent process ever ran.
+    const n = await waitFor(() => notification(w), "the notification");
+    expect(n.stopReason).not.toBe("end_turn");
+    expect(JSON.stringify(n)).toContain("ownMemory");
+    expect(w.report("started")).toEqual([]);
+    expect(w.tokens.has(r.sessionId)).toBe(false);
   });
 
   test("bots' memory is out of every agent's reach: denied to its sandbox, and a request into it refused without a card", async () => {

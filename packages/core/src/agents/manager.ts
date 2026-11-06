@@ -45,7 +45,7 @@ import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
-import { botMemoryFolders, touchesBotMemory, withMemoryDenied } from "./memory";
+import { agentPolicyOf, botMemoryFolders, touchesBotMemory, withMemoryDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -461,7 +461,7 @@ export class AgentManager {
         tools: e.bridgeTools,
       },
       // Bots' memory is out of every agent's reach (the owner's decision): denied to its sandbox for reads and writes.
-      fence: withMemoryDenied(this.#o.fence.policy(), this.#o.home, botMemoryFolders(this.#o.home, e.bot)),
+      fence: withMemoryDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home, botMemoryFolders(this.#o.home, e.bot)),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       admitted,
