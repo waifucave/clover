@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Factory",
+  "description": "Factory's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "factory",
+        "name": "Factory",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Factory API key. Clover keeps it in your credential store and adds it to Factory's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.factory.ai/v1"
+        }
+      }
+    ]
+  }
+}

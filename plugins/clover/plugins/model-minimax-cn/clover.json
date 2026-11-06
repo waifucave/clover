@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "MiniMax China (OpenAI dialect)",
+  "description": "MiniMax China (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "minimax-cn",
+        "name": "MiniMax China (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your MiniMax China (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to MiniMax China (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.minimax.cn/v1"
+        }
+      }
+    ]
+  }
+}

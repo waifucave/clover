@@ -1,0 +1,803 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.freeaiapikey.com/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/freeaiapikey/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://freeaiapikey.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.freeaiapikey.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "freeaiapikey/anthropic/claude-opus-4.6",
+      "providerId": "freeaiapikey",
+      "upstreamId": "anthropic/claude-opus-4.6",
+      "displayName": "Claude Opus 4.6 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 4.6 | 497 tokens | 589 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 4.6 | 497 tokens | 589 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-6/overview (read 2026-09-27): \"Max output | 128K tokens\" — freeaiapikey's own page has no max-output field; confirmed via Anthropic's own model page for the exact model (maker exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-6/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\" — Adaptive thinking, default effort 'high' except Opus 5.5 (not one of our rows) which defaults 'medium'. No full effort-value enumeration found on Anthropic's docs pages fetched.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.5,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $1.5/1M (beside a struck-through list price whose figure the page's markup does not render), Output $6.0/1M, Cache Read $0.2/1M\" — USD 1.5 input / 6.0 output / 0.2 cached input per 1M tokens — freeaiapikey's models page shows a struck-through 'official' rate and its own lower rate; per the meta description ('Live per-token pricing at 80% off official rates') this is a standing rate, not a limited promo, so it is reported as freeaiapikey's price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "freeaiapikey/anthropic/claude-opus-4.7",
+      "providerId": "freeaiapikey",
+      "upstreamId": "anthropic/claude-opus-4.7",
+      "displayName": "Claude Opus 4.7 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 4.7 | 675 tokens | 804 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 4.7 | 675 tokens | 804 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-7/overview (read 2026-09-27): \"Max output | 128K tokens\" — freeaiapikey's own page has no max-output field; confirmed via Anthropic's own model page for the exact model (maker exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-7/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\" — Adaptive thinking, default effort 'high' except Opus 5.5 (not one of our rows) which defaults 'medium'. No full effort-value enumeration found on Anthropic's docs pages fetched.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.5,
+          "outputPerMTokUsd": 6.3,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $1.5/1M (beside a struck-through list price whose figure the page's markup does not render), Output $6.3/1M, Cache Read $0.3/1M\" — USD 1.5 input / 6.3 output / 0.3 cached input per 1M tokens — freeaiapikey's models page shows a struck-through 'official' rate and its own lower rate; per the meta description ('Live per-token pricing at 80% off official rates') this is a standing rate, not a limited promo, so it is reported as freeaiapikey's price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.7",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "freeaiapikey/anthropic/claude-opus-4.8",
+      "providerId": "freeaiapikey",
+      "upstreamId": "anthropic/claude-opus-4.8",
+      "displayName": "Claude Opus 4.8 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.8",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.8",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-4.8 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 4.8 | 290 tokens | 410 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 4.8 | 290 tokens | 410 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-8/overview (read 2026-09-27): \"Max output | 128K tokens\" — freeaiapikey's own page has no max-output field; confirmed via Anthropic's own model page for the exact model (maker exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-8/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\" — Adaptive thinking, default effort 'high' except Opus 5.5 (not one of our rows) which defaults 'medium'. No full effort-value enumeration found on Anthropic's docs pages fetched.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.5,
+          "outputPerMTokUsd": 6.5,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $1.5/1M (beside a struck-through list price whose figure the page's markup does not render), Output $6.5/1M, Cache Read $0.3/1M\" — USD 1.5 input / 6.5 output / 0.3 cached input per 1M tokens — freeaiapikey's models page shows a struck-through 'official' rate and its own lower rate; per the meta description ('Live per-token pricing at 80% off official rates') this is a standing rate, not a limited promo, so it is reported as freeaiapikey's price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.8",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "freeaiapikey/anthropic/claude-opus-5",
+      "providerId": "freeaiapikey",
+      "upstreamId": "anthropic/claude-opus-5",
+      "displayName": "Claude Opus 5 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-opus-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 5 | 286 tokens | 406 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Opus 5 | 286 tokens | 406 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-5/overview (read 2026-09-27): \"Max output | 128K tokens\" — freeaiapikey's own page has no max-output field; confirmed via Anthropic's own model page for the exact model (maker exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-5/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\" — Adaptive thinking, default effort 'high' except Opus 5.5 (not one of our rows) which defaults 'medium'. No full effort-value enumeration found on Anthropic's docs pages fetched.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.6,
+          "outputPerMTokUsd": 6.75,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $1.6/1M (beside a struck-through list price whose figure the page's markup does not render), Output $6.75/1M, Cache Read $0.3/1M\" — USD 1.6 input / 6.75 output / 0.3 cached input per 1M tokens — freeaiapikey's models page shows a struck-through 'official' rate and its own lower rate; per the meta description ('Live per-token pricing at 80% off official rates') this is a standing rate, not a limited promo, so it is reported as freeaiapikey's price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "freeaiapikey/anthropic/claude-sonnet-4.6",
+      "providerId": "freeaiapikey",
+      "upstreamId": "anthropic/claude-sonnet-4.6",
+      "displayName": "Claude Sonnet 4.6 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-sonnet-4.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-sonnet-4.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-sonnet-4.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Sonnet 4.6 | 497 tokens | 589 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Sonnet 4.6 | 497 tokens | 589 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-4-6/overview (read 2026-09-27): \"Max output | 128K tokens\" — freeaiapikey's own page has no max-output field; confirmed via Anthropic's own model page for the exact model (maker exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-4-6/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\" — Adaptive thinking, default effort 'high' except Opus 5.5 (not one of our rows) which defaults 'medium'. No full effort-value enumeration found on Anthropic's docs pages fetched.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.8,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $0.8/1M (beside a struck-through list price whose figure the page's markup does not render), Output $3.0/1M, Cache Read $0.1/1M\" — USD 0.8 input / 3.0 output / 0.1 cached input per 1M tokens — freeaiapikey's models page shows a struck-through 'official' rate and its own lower rate; per the meta description ('Live per-token pricing at 80% off official rates') this is a standing rate, not a limited promo, so it is reported as freeaiapikey's price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "freeaiapikey/anthropic/claude-sonnet-5",
+      "providerId": "freeaiapikey",
+      "upstreamId": "anthropic/claude-sonnet-5",
+      "displayName": "Claude Sonnet 5 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-sonnet-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-sonnet-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#anthropic/claude-sonnet-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Sonnet 5 | 354 tokens | 474 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview (read 2026-09-27): \"Claude Sonnet 5 | 354 tokens | 474 tokens\" — freeaiapikey's page shows no capability badges; confirmed via Anthropic's tool-use pricing table, which lists a nonzero tool-use system-prompt token count for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-5/overview (read 2026-09-27): \"Max output | 128K tokens\" — freeaiapikey's own page has no max-output field; confirmed via Anthropic's own model page for the exact model (maker exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-5/overview (read 2026-09-27): \"Thinking | Adaptive ... Default effort | `high`\" — Adaptive thinking, default effort 'high' except Opus 5.5 (not one of our rows) which defaults 'medium'. No full effort-value enumeration found on Anthropic's docs pages fetched.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.9,
+          "outputPerMTokUsd": 3.5,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $0.9/1M (beside a struck-through list price whose figure the page's markup does not render), Output $3.5/1M, Cache Read $0.15/1M\" — USD 0.9 input / 3.5 output / 0.15 cached input per 1M tokens — freeaiapikey's models page shows a struck-through 'official' rate and its own lower rate; per the meta description ('Live per-token pricing at 80% off official rates') this is a standing rate, not a limited promo, so it is reported as freeaiapikey's price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "freeaiapikey/openai/gpt-4o",
+      "providerId": "freeaiapikey",
+      "upstreamId": "openai/gpt-4o",
+      "displayName": "GPT-4o (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-4o — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gpt-4o",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "freeaiapikey/openai/gpt-5.4",
+      "providerId": "freeaiapikey",
+      "upstreamId": "openai/gpt-5.4",
+      "displayName": "GPT-5.4 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.4 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gpt-5.4",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "freeaiapikey/openai/gpt-5.5",
+      "providerId": "freeaiapikey",
+      "upstreamId": "openai/gpt-5.5",
+      "displayName": "GPT-5.5 (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.5 (read 2026-09-27): \"supports \"function_calling\" as both a feature and tool\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.5 (read 2026-09-27): \"supports \"function_calling\" as both a feature and tool\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.5 (read 2026-09-27): \"128,000 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.5 (read 2026-09-27): \"Reasoning.effort supports: none, low, medium (default), high and xhigh\" — the maker's effort values ['none', 'low', 'medium', 'high', 'xhigh'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.6,
+          "outputPerMTokUsd": 7,
+          "cacheReadPerMTokUsd": 0.3037
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $1.60/1M, Output $7.00/1M, Cache Read $0.3037/1M\" — USD 1.6 input / 7.0 output / 0.3037 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.5",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "freeaiapikey/openai/gpt-5.6-sol",
+      "providerId": "freeaiapikey",
+      "upstreamId": "openai/gpt-5.6-sol",
+      "displayName": "GPT-5.6 Sol (via FreeAIAPIKey)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.6-sol",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.6-sol",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/freeaiapikey/index.ts#openai/gpt-5.6-sol — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-sol (read 2026-09-27): \"enables \"function_calling\" as a supported feature\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-sol (read 2026-09-27): \"enables \"function_calling\" as a supported feature\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-sol (read 2026-09-27): \"128,000 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-sol (read 2026-09-27): \"Reasoning.effort supports: none, low, medium (default), high, xhigh, and max.\" — the maker's effort values ['none', 'low', 'medium', 'high', 'xhigh', 'max'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.7,
+          "outputPerMTokUsd": 7.5,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://freeaiapikey.com/models (read 2026-09-27): \"Input $1.70/1M, Output $7.50/1M, Cache Read $0.30/1M\" — USD 1.7 input / 7.5 output / 0.3 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.6-sol",
+      "modelFamily": "gpt"
+    }
+  ]
+}

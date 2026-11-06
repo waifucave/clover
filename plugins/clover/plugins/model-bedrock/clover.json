@@ -1,0 +1,32 @@
+{
+  "manifest": 1,
+  "name": "AWS Bedrock",
+  "description": "AWS Bedrock's models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "node"
+  },
+  "capabilities": [
+    "network:*.amazonaws.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "bedrock",
+        "name": "AWS Bedrock",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "aws",
+            "help": "An AWS access key for Bedrock, as JSON ({\"kind\":\"aws\",\"accessKeyId\":…,\"secretAccessKey\":…}). Only this plugin's own process reads it, to sign each request."
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

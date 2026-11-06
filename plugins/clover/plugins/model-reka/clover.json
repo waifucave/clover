@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Reka",
+  "description": "Reka's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "reka",
+        "name": "Reka",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Reka API key. Clover keeps it in your credential store and adds it to Reka's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.reka.ai/v1"
+        }
+      }
+    ]
+  }
+}

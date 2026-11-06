@@ -1,0 +1,36 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it",
+        "the same vendor documents an Anthropic-dialect base (`https://api.ofox.ai/anthropic/v1/messages`) and a Gemini one; only the OpenAI dialect ships, so an `ofoxai-anthropic` sibling is available work (R6b-5) and not a defect in this row"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.ofox.ai — the vendor's own documentation, retrieved 2026-09-06: the docs name the OpenAI-compatible base `https://api.ofox.ai/v1` and `/chat/completions`.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

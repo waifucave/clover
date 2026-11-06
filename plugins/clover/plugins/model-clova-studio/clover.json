@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Naver CLOVA Studio",
+  "description": "Naver CLOVA Studio's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "clova-studio",
+        "name": "Naver CLOVA Studio",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Naver CLOVA Studio API key. Clover keeps it in your credential store and adds it to Naver CLOVA Studio's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://clovastudio.stream.ntruss.com/v1/openai"
+        }
+      }
+    ]
+  }
+}

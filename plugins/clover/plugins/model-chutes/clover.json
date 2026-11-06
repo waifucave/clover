@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Chutes.ai",
+  "description": "Chutes.ai's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "chutes",
+        "name": "Chutes.ai",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Chutes.ai API key. Clover keeps it in your credential store and adds it to Chutes.ai's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://llm.chutes.ai/v1"
+        }
+      }
+    ]
+  }
+}

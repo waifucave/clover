@@ -1,0 +1,1904 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "requiresUserEndpoint": true,
+    "endpointTemplate": "https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1",
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "the account id in the path is the OPERATOR'S OWN — the endpoint is evaluated as a user endpoint"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/ and https://developers.cloudflare.com/workers-ai/platform/pricing/ — Cloudflare documentation, retrieved 2026-09-27: `--url https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions --header \"Authorization: Bearer {api_token}\"`; per-model prices \"$… per M input tokens $… per M output tokens\". The credential is the user's own Cloudflare API token.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "cloudflare-workers-ai/@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+      "displayName": "gemma-sea-lion-v4-27b-it",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-sea-lion-v4-27b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Unit Pricing $0.351 per M input tokens, $0.555 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.351,
+          "outputPerMTokUsd": 0.555
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-sea-lion-v4-27b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Unit Pricing $0.351 per M input tokens, $0.555 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      "displayName": "deepseek-r1-distill-qwen-32b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 80000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-r1-distill-qwen-32b/ (read 2026-09-27): Model Info: \"Context Window ↗ 80,000 tokens Terms and License link ↗ Reasoning Yes Unit Pricing $0.497 per M input tokens, $4.881 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-r1-distill-qwen-32b/ (read 2026-09-27): Model Info: \"Context Window ↗ 80,000 tokens Terms and License link ↗ Reasoning Yes Unit Pricing $0.497 per M input tokens, $4.881 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.497,
+          "outputPerMTokUsd": 4.881
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-r1-distill-qwen-32b/ (read 2026-09-27): Model Info: \"Context Window ↗ 80,000 tokens Terms and License link ↗ Reasoning Yes Unit Pricing $0.497 per M input tokens, $4.881 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-v4-flash-0731",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/deepseek-ai/deepseek-v4-flash-0731",
+      "displayName": "deepseek-v4-flash-0731",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-flash-0731/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Batch Yes Unit Pricing $0.44 per M input tokens, $1.32 per M output tokens, $0.014 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-flash-0731/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Batch Yes Unit Pricing $0.44 per M input tokens, $1.32 per M output tokens, $0.014 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-flash-0731/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Batch Yes Unit Pricing $0.44 per M input tokens, $1.32 per M output tokens, $0.014 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-flash-0731/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Batch Yes Unit Pricing $0.44 per M input tokens, $1.32 per M output tokens, $0.014 per M cached input tokens\"; request schema: \"reasoning_effort string | null enum: max, high, low, none\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.44,
+          "outputPerMTokUsd": 1.32,
+          "cacheReadPerMTokUsd": 0.014
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-flash-0731/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Batch Yes Unit Pricing $0.44 per M input tokens, $1.32 per M output tokens, $0.014 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/deepseek-ai/deepseek-v4-flash-0731",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-v4-pro-0813",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/deepseek-ai/deepseek-v4-pro-0813",
+      "displayName": "deepseek-v4-pro-0813",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-pro-0813/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Unit Pricing $1.32 per M input tokens, $3.96 per M output tokens, $0.044 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-pro-0813/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Unit Pricing $1.32 per M input tokens, $3.96 per M output tokens, $0.044 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-pro-0813/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Unit Pricing $1.32 per M input tokens, $3.96 per M output tokens, $0.044 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-pro-0813/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Unit Pricing $1.32 per M input tokens, $3.96 per M output tokens, $0.044 per M cached input tokens\"; request schema: \"reasoning_effort string | null enum: max, high, low, none\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.32,
+          "outputPerMTokUsd": 3.96,
+          "cacheReadPerMTokUsd": 0.044
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/deepseek-v4-pro-0813/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,048,576 tokens Function calling ↗ Yes Reasoning none low high (default) max Unit Pricing $1.32 per M input tokens, $3.96 per M output tokens, $0.044 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/deepseek-ai/deepseek-v4-pro-0813",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/google/gemma-4-26b-a4b-it",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/google/gemma-4-26b-a4b-it",
+      "displayName": "gemma-4-26b-a4b-it",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Vision Yes Batch Yes Unit Pricing $0.10 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Vision Yes Batch Yes Unit Pricing $0.10 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Vision Yes Batch Yes Unit Pricing $0.10 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Vision Yes Batch Yes Unit Pricing $0.10 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Vision Yes Batch Yes Unit Pricing $0.10 per M input tokens, $0.30 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1,
+          "outputPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Vision Yes Batch Yes Unit Pricing $0.10 per M input tokens, $0.30 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/google/gemma-4-26b-a4b-it",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/ibm-granite/granite-4.0-h-micro",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/ibm-granite/granite-4.0-h-micro",
+      "displayName": "granite-4.0-h-micro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/granite-4.0-h-micro/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Function calling ↗ Yes Unit Pricing $0.017 per M input tokens, $0.112 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/granite-4.0-h-micro/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Function calling ↗ Yes Unit Pricing $0.017 per M input tokens, $0.112 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/granite-4.0-h-micro/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Function calling ↗ Yes Unit Pricing $0.017 per M input tokens, $0.112 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.017,
+          "outputPerMTokUsd": 0.112
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/granite-4.0-h-micro/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Function calling ↗ Yes Unit Pricing $0.017 per M input tokens, $0.112 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/ibm-granite/granite-4.0-h-micro",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/meta/llama-3.1-8b-instruct-fp8",
+      "displayName": "llama-3.1-8b-instruct-fp8",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.1-8b-instruct-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,000 tokens Terms and License link ↗ Unit Pricing $0.152 per M input tokens, $0.287 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.152,
+          "outputPerMTokUsd": 0.287
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.1-8b-instruct-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,000 tokens Terms and License link ↗ Unit Pricing $0.152 per M input tokens, $0.287 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/meta/llama-3.1-8b-instruct-fp8",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/meta/llama-3.2-11b-vision-instruct",
+      "displayName": "llama-3.2-11b-vision-instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Terms and License link ↗ Vision Yes LoRA Yes Unit Pricing $0.0485 per M input tokens, $0.676 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Terms and License link ↗ Vision Yes LoRA Yes Unit Pricing $0.0485 per M input tokens, $0.676 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0485,
+          "outputPerMTokUsd": 0.676
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Terms and License link ↗ Vision Yes LoRA Yes Unit Pricing $0.0485 per M input tokens, $0.676 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/meta/llama-3.2-11b-vision-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/meta/llama-3.2-1b-instruct",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/meta/llama-3.2-1b-instruct",
+      "displayName": "llama-3.2-1b-instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 60000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-1b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 60,000 tokens Terms and License link ↗ Unit Pricing $0.027 per M input tokens, $0.201 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.027,
+          "outputPerMTokUsd": 0.201
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-1b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 60,000 tokens Terms and License link ↗ Unit Pricing $0.027 per M input tokens, $0.201 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/meta/llama-3.2-1b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/meta/llama-3.2-3b-instruct",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/meta/llama-3.2-3b-instruct",
+      "displayName": "llama-3.2-3b-instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 80000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-3b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 80,000 tokens Terms and License link ↗ LoRA Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0509,
+          "outputPerMTokUsd": 0.335
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.2-3b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 80,000 tokens Terms and License link ↗ LoRA Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/meta/llama-3.2-3b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "displayName": "llama-3.3-70b-instruct-fp8-fast",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 24000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Terms and License link ↗ Function calling ↗ Yes Batch Yes Unit Pricing $0.293 per M input tokens, $2.253 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Terms and License link ↗ Function calling ↗ Yes Batch Yes Unit Pricing $0.293 per M input tokens, $2.253 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Terms and License link ↗ Function calling ↗ Yes Batch Yes Unit Pricing $0.293 per M input tokens, $2.253 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.293,
+          "outputPerMTokUsd": 2.253
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Terms and License link ↗ Function calling ↗ Yes Batch Yes Unit Pricing $0.293 per M input tokens, $2.253 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "displayName": "llama-4-scout-17b-16e-instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-4-scout-17b-16e-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Terms and License link ↗ Function calling ↗ Yes Vision Yes Batch Yes Unit Pricing $0.27 per M input tokens, $0.85 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-4-scout-17b-16e-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Terms and License link ↗ Function calling ↗ Yes Vision Yes Batch Yes Unit Pricing $0.27 per M input tokens, $0.85 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-4-scout-17b-16e-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Terms and License link ↗ Function calling ↗ Yes Vision Yes Batch Yes Unit Pricing $0.27 per M input tokens, $0.85 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-4-scout-17b-16e-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Terms and License link ↗ Function calling ↗ Yes Vision Yes Batch Yes Unit Pricing $0.27 per M input tokens, $0.85 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.27,
+          "outputPerMTokUsd": 0.85
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/llama-4-scout-17b-16e-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,000 tokens Terms and License link ↗ Function calling ↗ Yes Vision Yes Batch Yes Unit Pricing $0.27 per M input tokens, $0.85 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "displayName": "mistral-small-3.1-24b-instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/mistral-small-3.1-24b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Unit Pricing $0.351 per M input tokens, $0.555 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/mistral-small-3.1-24b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Unit Pricing $0.351 per M input tokens, $0.555 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/mistral-small-3.1-24b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Unit Pricing $0.351 per M input tokens, $0.555 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.351,
+          "outputPerMTokUsd": 0.555
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/mistral-small-3.1-24b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Unit Pricing $0.351 per M input tokens, $0.555 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/moonshotai/kimi-k2.6",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/moonshotai/kimi-k2.6",
+      "displayName": "kimi-k2.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning none high (default) Vision Yes Batch Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.16 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning none high (default) Vision Yes Batch Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.16 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning none high (default) Vision Yes Batch Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.16 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning none high (default) Vision Yes Batch Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.16 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning none high (default) Vision Yes Batch Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.16 per M cached input tokens\"; request schema: \"reasoning_effort string | null enum: high, none\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "high"
+        ],
+        "defaultEffort": "high",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.95,
+          "outputPerMTokUsd": 4,
+          "cacheReadPerMTokUsd": 0.16
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning none high (default) Vision Yes Batch Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.16 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/moonshotai/kimi-k2.6",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/moonshotai/kimi-k2.7-code",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/moonshotai/kimi-k2.7-code",
+      "displayName": "kimi-k2.7-code",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.7-code/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Always on Vision Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.19 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.7-code/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Always on Vision Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.19 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.7-code/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Always on Vision Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.19 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.7-code/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Always on Vision Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.19 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.7-code/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Always on Vision Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.19 per M cached input tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.95,
+          "outputPerMTokUsd": 4,
+          "cacheReadPerMTokUsd": 0.19
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/kimi-k2.7-code/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Always on Vision Yes Unit Pricing $0.95 per M input tokens, $4.00 per M output tokens, $0.19 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/moonshotai/kimi-k2.7-code",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/nvidia/nemotron-3-120b-a12b",
+      "displayName": "nemotron-3-120b-a12b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/nemotron-3-120b-a12b/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Unit Pricing $0.50 per M input tokens, $1.50 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/nemotron-3-120b-a12b/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Unit Pricing $0.50 per M input tokens, $1.50 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/nemotron-3-120b-a12b/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Unit Pricing $0.50 per M input tokens, $1.50 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/nemotron-3-120b-a12b/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Unit Pricing $0.50 per M input tokens, $1.50 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 1.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/nemotron-3-120b-a12b/ (read 2026-09-27): Model Info: \"Context Window ↗ 256,000 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning Yes Unit Pricing $0.50 per M input tokens, $1.50 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/nvidia/nemotron-3-120b-a12b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/openai/gpt-oss-120b",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/openai/gpt-oss-120b",
+      "displayName": "gpt-oss-120b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.35 per M input tokens, $0.75 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.35 per M input tokens, $0.75 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.35 per M input tokens, $0.75 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.35 per M input tokens, $0.75 per M output tokens\" — the request schema takes reasoning as a NESTED object, `reasoning: { effort, summary }` (schema ids `requests.reasoning.effort` / `requests.reasoning.summary`), not a top-level `reasoning_effort`, so this adapter's vocabulary stays empty",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.35,
+          "outputPerMTokUsd": 0.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.35 per M input tokens, $0.75 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/openai/gpt-oss-120b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/openai/gpt-oss-20b",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/openai/gpt-oss-20b",
+      "displayName": "gpt-oss-20b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.20 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.20 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.20 per M input tokens, $0.30 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.20 per M input tokens, $0.30 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.2,
+          "outputPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/gpt-oss-20b/ (read 2026-09-27): Model Info: \"Context Window ↗ 128,000 tokens Function calling ↗ Yes Reasoning low medium (default) high Batch Yes Unit Pricing $0.20 per M input tokens, $0.30 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/openai/gpt-oss-20b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/qwen/qwen2.5-coder-32b-instruct",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "displayName": "qwen2.5-coder-32b-instruct",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen2.5-coder-32b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens LoRA Yes Unit Pricing $0.66 per M input tokens, $1.00 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.66,
+          "outputPerMTokUsd": 1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen2.5-coder-32b-instruct/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens LoRA Yes Unit Pricing $0.66 per M input tokens, $1.00 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/qwen/qwen3-30b-a3b-fp8",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/qwen/qwen3-30b-a3b-fp8",
+      "displayName": "qwen3-30b-a3b-fp8",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens Function calling ↗ Yes Reasoning Yes Batch Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens Function calling ↗ Yes Reasoning Yes Batch Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens Function calling ↗ Yes Reasoning Yes Batch Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens Function calling ↗ Yes Reasoning Yes Batch Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0509,
+          "outputPerMTokUsd": 0.335
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/ (read 2026-09-27): Model Info: \"Context Window ↗ 32,768 tokens Function calling ↗ Yes Reasoning Yes Batch Yes Unit Pricing $0.0509 per M input tokens, $0.335 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/qwen/qwen3-30b-a3b-fp8",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/qwen/qwen3.8-27b",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/qwen/qwen3.8-27b",
+      "displayName": "qwen3.8-27b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning low medium xhigh (default) Vision Yes Batch Yes Unit Pricing $0.45 per M input tokens, $3.20 per M output tokens, $0.05 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning low medium xhigh (default) Vision Yes Batch Yes Unit Pricing $0.45 per M input tokens, $3.20 per M output tokens, $0.05 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning low medium xhigh (default) Vision Yes Batch Yes Unit Pricing $0.45 per M input tokens, $3.20 per M output tokens, $0.05 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning low medium xhigh (default) Vision Yes Batch Yes Unit Pricing $0.45 per M input tokens, $3.20 per M output tokens, $0.05 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning low medium xhigh (default) Vision Yes Batch Yes Unit Pricing $0.45 per M input tokens, $3.20 per M output tokens, $0.05 per M cached input tokens\"; request schema: \"reasoning_effort string | null enum: low, medium, xhigh\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "defaultEffort": "xhigh",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.45,
+          "outputPerMTokUsd": 3.2,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning low medium xhigh (default) Vision Yes Batch Yes Unit Pricing $0.45 per M input tokens, $3.20 per M output tokens, $0.05 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/qwen/qwen3.8-27b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/qwen/qwq-32b",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/qwen/qwq-32b",
+      "displayName": "qwq-32b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 24000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwq-32b/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Reasoning Yes LoRA Yes Unit Pricing $0.66 per M input tokens, $1.00 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the model's own Workers AI page states no function-calling capability — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwq-32b/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Reasoning Yes LoRA Yes Unit Pricing $0.66 per M input tokens, $1.00 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.66,
+          "outputPerMTokUsd": 1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/qwq-32b/ (read 2026-09-27): Model Info: \"Context Window ↗ 24,000 tokens Reasoning Yes LoRA Yes Unit Pricing $0.66 per M input tokens, $1.00 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/qwen/qwq-32b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/zai-org/glm-4.7-flash",
+      "displayName": "glm-4.7-flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,072 tokens Function calling ↗ Yes Reasoning Yes Unit Pricing $0.0605 per M input tokens, $0.40 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,072 tokens Function calling ↗ Yes Reasoning Yes Unit Pricing $0.0605 per M input tokens, $0.40 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,072 tokens Function calling ↗ Yes Reasoning Yes Unit Pricing $0.0605 per M input tokens, $0.40 per M output tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,072 tokens Function calling ↗ Yes Reasoning Yes Unit Pricing $0.0605 per M input tokens, $0.40 per M output tokens\" — the request schema publishes no top-level `reasoning_effort` enum for this model, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0605,
+          "outputPerMTokUsd": 0.4
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 131,072 tokens Function calling ↗ Yes Reasoning Yes Unit Pricing $0.0605 per M input tokens, $0.40 per M output tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/zai-org/glm-4.7-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/zai-org/glm-5.2",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/zai-org/glm-5.2",
+      "displayName": "glm-5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.2/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning none high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens Reasoning effort GLM-5.2 supports high and max reasoning effort, or you can turn reasoning...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.2/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning none high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens Reasoning effort GLM-5.2 supports high and max reasoning effort, or you can turn reasoning...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.2/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning none high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens Reasoning effort GLM-5.2 supports high and max reasoning effort, or you can turn reasoning...\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.2/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning none high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens Reasoning effort GLM-5.2 supports high and max reasoning effort, or you can turn reasoning...\"; request schema: \"reasoning_effort string | null enum: max, high, none\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "none",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.2/ (read 2026-09-27): Model Info: \"Context Window ↗ 262,144 tokens Function calling ↗ Yes Reasoning none high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens Reasoning effort GLM-5.2 supports high and max reasoning effort, or you can turn reasoning...\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/zai-org/glm-5.2",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/zai-org/glm-5.3",
+      "displayName": "glm-5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1310720,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Function calling ↗ Yes Reasoning low high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Function calling ↗ Yes Reasoning low high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Function calling ↗ Yes Reasoning low high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Function calling ↗ Yes Reasoning low high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens\"; request schema: \"reasoning_effort string | null enum: max, high, low\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Function calling ↗ Yes Reasoning low high max (default) Unit Pricing $1.40 per M input tokens, $4.40 per M output tokens, $0.26 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/zai-org/glm-5.3",
+      "modelFamily": "other"
+    },
+    {
+      "key": "cloudflare-workers-ai/@cf/zai-org/glm-5.3-flash",
+      "providerId": "cloudflare-workers-ai",
+      "upstreamId": "@cf/zai-org/glm-5.3-flash",
+      "displayName": "glm-5.3-flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1310720,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning low high max (default) Vision Yes Unit Pricing $0.15 per M input tokens, $0.50 per M output tokens, $0.03 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning low high max (default) Vision Yes Unit Pricing $0.15 per M input tokens, $0.50 per M output tokens, $0.03 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning low high max (default) Vision Yes Unit Pricing $0.15 per M input tokens, $0.50 per M output tokens, $0.03 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning low high max (default) Vision Yes Unit Pricing $0.15 per M input tokens, $0.50 per M output tokens, $0.03 per M cached input tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning low high max (default) Vision Yes Unit Pricing $0.15 per M input tokens, $0.50 per M output tokens, $0.03 per M cached input tokens\"; request schema: \"reasoning_effort string | null enum: max, high, low\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ (read 2026-09-27): Model Info: \"Context Window ↗ 1,310,720 tokens Terms and License link ↗ Function calling ↗ Yes Reasoning low high max (default) Vision Yes Unit Pricing $0.15 per M input tokens, $0.50 per M output tokens, $0.03 per M cached input tokens\" (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "@cf/zai-org/glm-5.3-flash",
+      "modelFamily": "other"
+    }
+  ]
+}

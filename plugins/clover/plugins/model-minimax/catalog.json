@@ -1,0 +1,1148 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.minimax.io/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/minimax/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is fetched-document (the vendor's own OpenAI-SDK reference, cross-checked against the pinned RegistryEntry), but no live gate case has run against this endpoint"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax's own OpenAI-SDK reference (\"OpenAI SDK\"), retrieved 2026-09-06: `export OPENAI_BASE_URL=https://api.minimax.io/v1` with `export OPENAI_API_KEY=${YOUR_API_KEY}`, i.e. an OpenAI-compatible surface reached with the user's own key. That base is byte-identical to the API root the mapper derives from this id's pinned RegistryEntry, so two independent sources agree — which is why this row moved off the pinned-upstream tier (whole-branch review M-4: it sat there while its own `minimax-anthropic` sibling cited a fetched MiniMax document naming the same key).",
+      "tier": "fetched-document"
+    }
+  },
+  "rows": [
+    {
+      "key": "minimax/MiniMax-M2",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2",
+      "displayName": "MiniMax-M2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2 context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/models-intro — M2 maximum output 128K including CoT",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2 has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.03,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2 standard USD per million: input $0.3, output $1.2, cache read $0.03, cache write $0.375",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M2.1",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2.1",
+      "displayName": "MiniMax-M2.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2.1 context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — non-M3 max_completion_tokens maximum 204800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.1 has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2.1"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.03,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.1 standard USD per million: input $0.3, output $1.2, cache read $0.03, cache write $0.375",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.1",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M2.1-highspeed",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2.1-highspeed",
+      "displayName": "MiniMax-M2.1-highspeed",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2.1-highspeed context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — non-M3 max_completion_tokens maximum 204800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.1-highspeed has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2.1-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 2.4,
+          "cacheReadPerMTokUsd": 0.03,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.1-highspeed standard USD per million: input $0.6, output $2.4, cache read $0.03, cache write $0.375",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.1-highspeed",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M2.5",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2.5",
+      "displayName": "MiniMax-M2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2.5 context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — non-M3 max_completion_tokens maximum 204800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.5 has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2.5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.03,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.5 standard USD per million: input $0.3, output $1.2, cache read $0.03, cache write $0.375",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M2.5-highspeed",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2.5-highspeed",
+      "displayName": "MiniMax-M2.5-highspeed",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2.5-highspeed context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — non-M3 max_completion_tokens maximum 204800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.5-highspeed has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2.5-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 2.4,
+          "cacheReadPerMTokUsd": 0.03,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.5-highspeed standard USD per million: input $0.6, output $2.4, cache read $0.03, cache write $0.375",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.5-highspeed",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M2.7",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2.7",
+      "displayName": "MiniMax-M2.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2.7 context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — non-M3 max_completion_tokens maximum 204800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.7 has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2.7"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.06,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.7 Pay as You Go Standard table: $0.3 input/$1.2 output/$0.06 prompt-cache read/$0.375 prompt-cache write per million tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M2.7-highspeed",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M2.7-highspeed",
+      "displayName": "MiniMax-M2.7-highspeed",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M2.7-highspeed context window 204,800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — non-M3 max_completion_tokens maximum 204800",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x series support text and tool-call blocks only; no image or video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.7-highspeed has prompt-cache read price and write price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M2.x models always think and cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M2.7-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 2.4,
+          "cacheReadPerMTokUsd": 0.06,
+          "cacheWritePerMTokUsd": 0.375
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M2.7-highspeed Pay as You Go Standard table: $0.6 input/$2.4 output/$0.06 prompt-cache read/$0.375 prompt-cache write per million tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.7-highspeed",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M3",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M3",
+      "displayName": "MiniMax-M3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — MiniMax-M3 context window 1,000,000",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "maxOutputTokens": {
+        "value": 524288,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — MiniMax-M3 max_completion_tokens maximum 524288",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M3 supports text, image, video messages",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits textual answer",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — multi-turn function calls and tools documented for all eight models",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — MiniMax-M3 has prompt-cache read price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — M3 thinking on by default; can disable",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:58:15Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — M3 STANDARD <=512K input, permanent 50% off: input $0.30, output $1.20, cache read $0.06 per million; >512K input: $0.60/$2.40/$0.12; priority tier 1.5x",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:58:15Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "minimax/MiniMax-M3.1-Flash",
+      "providerId": "minimax",
+      "upstreamId": "MiniMax-M3.1-Flash",
+      "displayName": "MiniMax-M3.1-Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — Supported Models table: \"MiniMax-M3.1-Flash | 1,000,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 524288,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-chat-openai — `max_completion_tokens`: \"For MiniMax-M3.1-Flash and MiniMax-M3 the recommended value is 131072 (128K) and the maximum is 524288 (512K)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — \"OpenAI-compatible Chat Completions support text, image, and video input for `MiniMax-M3.1-Flash` and `MiniMax-M3`\"; \"audio input is not currently supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — chat example emits a textual answer (thinking separately); no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — `tools` \"Function tool definitions\"; Tool Use & Interleaved Thinking guide (https://platform.minimax.io/docs/guides/text-m3-function-call): \"MiniMax-M3.1-Flash is an Agentic Model with exceptional Tool Use capabilities\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — function/tool calling supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo — `MiniMax-M3.1-Flash` has a \"Prompt caching Read\" price",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api — \"`reasoning_effort` | Thinking depth, effective for `MiniMax-M3.1-Flash` only. Accepts `low`, `medium`, `high`, `xhigh`, and `max`; higher levels think more thoroughly. Defaults to `max` when omitted. `none` is not supported.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-10-29): `reasoning_split` -- \"When `true`, thinking content is separated into the `reasoning_content` field; when `false`, thinking stays inside `content` wrapped in `<think>` tags. `MiniMax-M3.1-Flash` does not support setting this parameter to `false`.\" Either way it is the model's readable reasoning: the adapter captures a `reasoning_content` and replays it, and `<think>` text in `content` rides back inside the content it is part of.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "minimax/MiniMax-M3.1-Flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.minimax.io/docs/guides/text-m3-function-call (read 2026-10-29): \"In multi-turn function call conversations, the complete model response (i.e., the assistant message) must be appended to the conversation history to maintain the continuity of the reasoning chain\"; \"the entire `response_message`, including `reasoning_content`, must be kept in the message history and passed back to the model in the next request. This is essential for achieving the model's best performance.\" No error is documented for omission. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.6,
+          "cacheReadPerMTokUsd": 0.015
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo (read 2026-10-29) — LLM table: \"MiniMax-M3.1-Flash | $0.15 | $0.60 | $0.015\" (Input / Output / Prompt caching Read, $ per M tokens); one flat rate, no cache-write price listed.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [
+        "function_call"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m3.1-flash",
+      "modelFamily": "minimax"
+    }
+  ]
+}

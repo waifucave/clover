@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Kimi Code China (OpenAI dialect)",
+  "description": "Kimi Code China (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "kimi-coding-openai",
+        "name": "Kimi Code China (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Kimi Code China (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Kimi Code China (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.kimi.com/coding/v1"
+        }
+      }
+    ]
+  }
+}

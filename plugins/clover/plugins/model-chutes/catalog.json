@@ -1,0 +1,1289 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/chutes/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://chutes.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://llm.chutes.ai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "chutes/Nemotron-3-Nano-Omni-30B-TEE",
+      "providerId": "chutes",
+      "upstreamId": "Nemotron-3-Nano-Omni-30B-TEE",
+      "displayName": "Nemotron-3-Nano-Omni-30B-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Nemotron-3-Nano-Omni-30B-TEE` (read 2026-09-27): context_length None, max_model_len 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the provider's own model entry states no tool-calling capability for this model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the provider's own model entry states no tool-calling capability for this model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0245,
+          "outputPerMTokUsd": 0.0978,
+          "cacheReadPerMTokUsd": 0.00245
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Nemotron-3-Nano-Omni-30B-TEE` (read 2026-09-27): pricing.prompt 0.0245 / completion 0.0978 / input_cache_read 0.00245 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3-nano-omni-30b-tee",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "chutes/Qwen/Qwen3-235B-A22B-Thinking-2507-TEE",
+      "providerId": "chutes",
+      "upstreamId": "Qwen/Qwen3-235B-A22B-Thinking-2507-TEE",
+      "displayName": "Qwen3-235B-A22B-Thinking-2507-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): context_length 262144, max_model_len 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): max_output_length 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.2989,
+          "outputPerMTokUsd": 1.1957,
+          "cacheReadPerMTokUsd": 0.02989
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-235B-A22B-Thinking-2507-TEE` (read 2026-09-27): pricing.prompt 0.2989 / completion 1.1957 / input_cache_read 0.02989 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3-235b-a22b-thinking-2507-tee",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "chutes/Qwen/Qwen3-32B-TEE",
+      "providerId": "chutes",
+      "upstreamId": "Qwen/Qwen3-32B-TEE",
+      "displayName": "Qwen3-32B-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 40960,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): context_length 40960, max_model_len 40960",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 40960,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): max_output_length 40960",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.104,
+          "outputPerMTokUsd": 0.416,
+          "cacheReadPerMTokUsd": 0.0104
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3-32B-TEE` (read 2026-09-27): pricing.prompt 0.104 / completion 0.416 / input_cache_read 0.0104 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3-32b-tee",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "chutes/Qwen/Qwen3.5-397B-A17B-TEE",
+      "providerId": "chutes",
+      "upstreamId": "Qwen/Qwen3.5-397B-A17B-TEE",
+      "displayName": "Qwen3.5-397B-A17B-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): context_length 262144, max_model_len 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.45,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.045
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.5-397B-A17B-TEE` (read 2026-09-27): pricing.prompt 0.45 / completion 3.0 / input_cache_read 0.045 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.5-397b-a17b-tee",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "chutes/Qwen/Qwen3.6-27B-TEE",
+      "providerId": "chutes",
+      "upstreamId": "Qwen/Qwen3.6-27B-TEE",
+      "displayName": "Qwen3.6-27B-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): context_length 262144, max_model_len 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 2,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.6-27B-TEE` (read 2026-09-27): pricing.prompt 0.3 / completion 2.0 / input_cache_read 0.03 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.6-27b-tee",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "chutes/Qwen/Qwen3.8-27B-TEE",
+      "providerId": "chutes",
+      "upstreamId": "Qwen/Qwen3.8-27B-TEE",
+      "displayName": "Qwen3.8-27B-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): context_length 262144, max_model_len 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.24,
+          "outputPerMTokUsd": 2.2,
+          "cacheReadPerMTokUsd": 0.024
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `Qwen/Qwen3.8-27B-TEE` (read 2026-09-27): pricing.prompt 0.24 / completion 2.2 / input_cache_read 0.024 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-27b-tee",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "chutes/Qwen2.5-72B-Instruct",
+      "providerId": "chutes",
+      "upstreamId": "Qwen2.5-72B-Instruct",
+      "displayName": "Qwen2.5 72B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/chutes/index.ts#Qwen2.5-72B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/chutes/index.ts#Qwen2.5-72B-Instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/chutes/index.ts#Qwen2.5-72B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/chutes/index.ts#Qwen2.5-72B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen2.5-72b-instruct",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "chutes/deepseek-ai/DeepSeek-V3.2-TEE",
+      "providerId": "chutes",
+      "upstreamId": "deepseek-ai/DeepSeek-V3.2-TEE",
+      "displayName": "DeepSeek-V3.2-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): context_length 131072, max_model_len 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 1,
+          "cacheReadPerMTokUsd": 0.1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V3.2-TEE` (read 2026-09-27): pricing.prompt 1.0 / completion 1.0 / input_cache_read 0.1 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v3.2-tee",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "chutes/deepseek-ai/DeepSeek-V4-Flash-0731-TEE",
+      "providerId": "chutes",
+      "upstreamId": "deepseek-ai/DeepSeek-V4-Flash-0731-TEE",
+      "displayName": "DeepSeek-V4-Flash-0731-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): context_length 1048576, max_model_len 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): max_output_length 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.44,
+          "outputPerMTokUsd": 1.32,
+          "cacheReadPerMTokUsd": 0.044
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `deepseek-ai/DeepSeek-V4-Flash-0731-TEE` (read 2026-09-27): pricing.prompt 0.44 / completion 1.32 / input_cache_read 0.044 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash-0731-tee",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "chutes/google/gemma-4-31B-turbo-TEE",
+      "providerId": "chutes",
+      "upstreamId": "google/gemma-4-31B-turbo-TEE",
+      "displayName": "gemma-4-31B-turbo-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): context_length 131072, max_model_len 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): max_output_length 65536",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): input_modalities ['text', 'image']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.12,
+          "outputPerMTokUsd": 0.37,
+          "cacheReadPerMTokUsd": 0.012
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `google/gemma-4-31B-turbo-TEE` (read 2026-09-27): pricing.prompt 0.12 / completion 0.37 / input_cache_read 0.012 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemma-4-31b-turbo-tee",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "chutes/moonshotai/Kimi-K2.6-TEE",
+      "providerId": "chutes",
+      "upstreamId": "moonshotai/Kimi-K2.6-TEE",
+      "displayName": "Kimi-K2.6-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): context_length 262144, max_model_len 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65535,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): max_output_length 65535",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 2.85,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K2.6-TEE` (read 2026-09-27): pricing.prompt 0.5 / completion 2.85 / input_cache_read 0.05 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2.6-tee",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "chutes/moonshotai/Kimi-K3-TEE",
+      "providerId": "chutes",
+      "upstreamId": "moonshotai/Kimi-K3-TEE",
+      "displayName": "Kimi-K3-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): context_length 1048576, max_model_len 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65535,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): max_output_length 65535",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): input_modalities ['text', 'image', 'video']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `moonshotai/Kimi-K3-TEE` (read 2026-09-27): pricing.prompt 3.0 / completion 15.0 / input_cache_read 0.3 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3-tee",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "chutes/unsloth/Mistral-Nemo-Instruct-2407-TEE",
+      "providerId": "chutes",
+      "upstreamId": "unsloth/Mistral-Nemo-Instruct-2407-TEE",
+      "displayName": "Mistral-Nemo-Instruct-2407-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `unsloth/Mistral-Nemo-Instruct-2407-TEE` (read 2026-09-27): context_length None, max_model_len 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the provider's own model entry states no tool-calling capability for this model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the provider's own model entry states no tool-calling capability for this model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0245,
+          "outputPerMTokUsd": 0.0978,
+          "cacheReadPerMTokUsd": 0.00245
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `unsloth/Mistral-Nemo-Instruct-2407-TEE` (read 2026-09-27): pricing.prompt 0.0245 / completion 0.0978 / input_cache_read 0.00245 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "unsloth/mistral-nemo-instruct-2407-tee",
+      "modelFamily": "other"
+    },
+    {
+      "key": "chutes/zai-org/GLM-5.1-TEE",
+      "providerId": "chutes",
+      "upstreamId": "zai-org/GLM-5.1-TEE",
+      "displayName": "GLM-5.1-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 202752,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): context_length 202752, max_model_len 202752",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65535,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): max_output_length 65535",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.98,
+          "outputPerMTokUsd": 3.08,
+          "cacheReadPerMTokUsd": 0.098
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.1-TEE` (read 2026-09-27): pricing.prompt 0.98 / completion 3.08 / input_cache_read 0.098 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.1-tee",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "chutes/zai-org/GLM-5.2-TEE",
+      "providerId": "chutes",
+      "upstreamId": "zai-org/GLM-5.2-TEE",
+      "displayName": "GLM-5.2-TEE",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): context_length 1048576, max_model_len 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65535,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): max_output_length 65535",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): input_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): output_modalities ['text']",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): supported_features include `tools`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): supported_features include `structured_outputs`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): supported_features include `reasoning`; no effort vocabulary is listed",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 3.95,
+          "cacheReadPerMTokUsd": 0.125
+        },
+        "source": "official-doc",
+        "sourceRef": "https://llm.chutes.ai/v1/models — Chutes' own unauthenticated model list, entry `zai-org/GLM-5.2-TEE` (read 2026-09-27): pricing.prompt 1.25 / completion 3.95 / input_cache_read 0.125 USD per 1M tokens (the entry's `price.*.usd`, also quoted in TAO)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.2-tee",
+      "modelFamily": "glm"
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "local-none"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "local",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.local-openai",
+    "family": "local-openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "approved",
+      "reasons": []
+    },
+    "pricingBasis": "free",
+    "admission": {
+      "basis": "local",
+      "citation": "local",
+      "tier": "local"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "ollama-local/llama3.1:8b",
+      "providerId": "ollama-local",
+      "upstreamId": "llama3.1:8b",
+      "displayName": "Llama 3.1 8B (Ollama)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://ollama.com/library/llama3.1:8b (read 2026-09-27): \"The upgraded versions of the 8B and 70B models are multilingual and have a significantly longer context length of 128K\" — stated as \"128K\"; Meta's real Llama 3.1 spec is 131072 tokens exactly (128*1024)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://ollama.com/library/llama3.1:8b (read 2026-09-27): \"badges: tools (no \"thinking\" badge)\" — Llama 3.1 is Meta's plain instruct-tuned line with no thinking/reasoning mode",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama3.1-8b",
+      "modelFamily": "other"
+    }
+  ]
+}

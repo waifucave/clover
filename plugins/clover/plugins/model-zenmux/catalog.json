@@ -1,0 +1,728 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://zenmux.ai/api/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/zenmux/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://zenmux.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://zenmux.ai/api/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "zenmux/anthropic/claude-opus-4.5",
+      "providerId": "zenmux",
+      "upstreamId": "anthropic/claude-opus-4.5",
+      "displayName": "Claude Opus 4.5 (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-opus-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-opus-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-opus-4.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-opus-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-opus-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-opus-4.5",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/opus-4-5/overview (read 2026-09-27): \"Context window: 200K tokens · Max output: 64K tokens\" — ZenMux serves the exact Claude Opus 4.5 model (maker-exception).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":5,...}],\"completion\":[{\"value\":25,...}],\"input_cache_read\":[{\"value\":0.5,...}],\"input_cache_write_5_min\":[{\"value\":6.25,...}]\" — USD 5 input / 25 output / 0.5 cached input per 1M tokens; tiers: 5-minute cache write $6.25/MTok (default TTL); 1-hour cache write $10/MTok; flat rate, no context-length tiers (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "zenmux/anthropic/claude-sonnet-4.5",
+      "providerId": "zenmux",
+      "upstreamId": "anthropic/claude-sonnet-4.5",
+      "displayName": "Claude Sonnet 4.5 (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"id\":\"anthropic/claude-sonnet-4.5\",...,\"context_length\":1000000\" — Row HAS 200000 (matches Anthropic's own standard model-page value). ZenMux's own /v1/models listing states 1,000,000 for this route -- likely ZenMux exposing Anthropic's 1M-context beta (context-1m-2025-08-07) for all callers. Flagging as contradicted per the rule that the SERVING provider's own ... (CORRECTS the upstream-extracted 200000, which carried no vendor statement: open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-sonnet-4.5)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-sonnet-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-sonnet-4.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-sonnet-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-sonnet-4.5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#anthropic/claude-sonnet-4.5",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.claude.com/docs/en/models/sonnet-4-5/overview (read 2026-09-27): \"Context window: 200K tokens · Max output: 64K tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3,
+          "cacheWritePerMTokUsd": 3.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":3,...,\"lt\":200}},{\"value\":6,...,\"gte\":200}}]\" — USD 3 input / 15 output / 0.3 cached input per 1M tokens; tiers: prompt_tokens <200K: input $3, output $15, cache read $0.3, cache write 5m $3.75 / 1h $6; prompt_tokens >=200K: input $6, output $22.5, cache read $0.6, cache write 5m $7.5 / 1h $12 (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "zenmux/deepseek/deepseek-chat",
+      "providerId": "zenmux",
+      "upstreamId": "deepseek/deepseek-chat",
+      "displayName": "DeepSeek V3.2 Chat (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#deepseek/deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#deepseek/deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#deepseek/deepseek-chat — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#deepseek/deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#deepseek/deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-chat",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "zenmux/google/gemini-3-flash-preview",
+      "providerId": "zenmux",
+      "upstreamId": "google/gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash Preview (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3-flash-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3-flash-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3-flash-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3-flash-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3-flash-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3-flash-preview",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview (read 2026-09-27): \"Output token limit: 65,536\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":0.5,...}],\"completion\":[{\"value\":3,...}],\"input_cache_read\":[{\"value\":0.05,...}]\" — USD 0.5 input / 3 output / 0.05 cached input per 1M tokens; tiers: flat rate, no context-length tiers; audio input priced separately at $1/MTok, audio cache read $0.1/MTok (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemini-3-flash-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "zenmux/google/gemini-3.1-pro-preview",
+      "providerId": "zenmux",
+      "upstreamId": "google/gemini-3.1-pro-preview",
+      "displayName": "Gemini 3.1 Pro Preview (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3.1-pro-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3.1-pro-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3.1-pro-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3.1-pro-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3.1-pro-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#google/gemini-3.1-pro-preview",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview (read 2026-09-27): \"Output token limit: 65,536\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 12,
+          "cacheReadPerMTokUsd": 0.2,
+          "cacheWritePerMTokUsd": 4.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":2,...,\"lte\":200}},{\"value\":4,...,\"gt\":200}}],\"input_cache_write_1_h\":[{\"value\":4.5,...}]\" — USD 2 input / 12 output / 0.2 cached input per 1M tokens; tiers: prompt_tokens <=200K: input $2, output $12, cache read $0.2; >200K: input $4, output $18, cache read $0.4; 1h cache write flat $4.5/MTok across tiers (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemini-3.1-pro-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "zenmux/mistralai/mistral-large-2512",
+      "providerId": "zenmux",
+      "upstreamId": "mistralai/mistral-large-2512",
+      "displayName": "Mistral Large 2512 (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"id\":\"mistralai/mistral-large-2512\",...,\"context_length\":256000\" — Row HAS 128000. ZenMux's own listing states 256,000. (CORRECTS the upstream-extracted 128000, which carried no vendor statement: open-sse/config/providers/registry/zenmux/index.ts#mistralai/mistral-large-2512)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#mistralai/mistral-large-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#mistralai/mistral-large-2512 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#mistralai/mistral-large-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#mistralai/mistral-large-2512",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"capabilities\":{\"reasoning\":false}\" — ZenMux marks this model non-reasoning; Mistral's own overview page describes Mistral Large 3 (2512) as a general-purpose model with no thinking mode mentioned.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 1.5,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":0.5,...}],\"completion\":[{\"value\":1.5,...}],\"input_cache_read\":[{\"value\":0.05,...}]\" — USD 0.5 input / 1.5 output / 0.05 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "mistral-large-2512",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "zenmux/openai/gpt-5",
+      "providerId": "zenmux",
+      "upstreamId": "openai/gpt-5",
+      "displayName": "GPT-5 (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 400000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#openai/gpt-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#openai/gpt-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#openai/gpt-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#openai/gpt-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#openai/gpt-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#openai/gpt-5",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5 (read 2026-09-27): \"128,000 max output tokens\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.125
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":1.25,...}],\"completion\":[{\"value\":10,...}],\"input_cache_read\":[{\"value\":0.125,...}]\" — USD 1.25 input / 10 output / 0.125 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "zenmux/x-ai/grok-4.1-fast",
+      "providerId": "zenmux",
+      "upstreamId": "x-ai/grok-4.1-fast",
+      "displayName": "Grok 4.1 Fast (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#x-ai/grok-4.1-fast",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#x-ai/grok-4.1-fast",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#x-ai/grok-4.1-fast — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#x-ai/grok-4.1-fast",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#x-ai/grok-4.1-fast",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#x-ai/grok-4.1-fast",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.1-fast",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "zenmux/z-ai/glm-4.6v-flash",
+      "providerId": "zenmux",
+      "upstreamId": "z-ai/glm-4.6v-flash",
+      "displayName": "GLM 4.6V Flash (ZenMux)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"id\":\"z-ai/glm-4.6v-flash\",...,\"context_length\":200000\" — Row HAS 128000. ZenMux's own listing states 200,000. Z.ai's own GLM-4.6V family page separately states a base 128K context for the family; ZenMux's own served route may extend it. (CORRECTS the upstream-extracted 128000, which carried no vendor statement: open-sse/config/providers/registry/zenmux/index.ts#z-ai/glm-4.6v-flash)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#z-ai/glm-4.6v-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#z-ai/glm-4.6v-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#z-ai/glm-4.6v-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zenmux/index.ts#z-ai/glm-4.6v-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/vlm/glm-4.6v (read 2026-09-27): \"Quick Start examples demonstrate thinking support through code samples using \"thinking\": {\"type\":\"enabled\"}\" — The GLM-4.6V family page shows only the enabled example; it does not state a default or confirm 'disabled' for the Flash sub-variant specifically (unlike the separate GLM-4.7 page, which does document default='enabled' for that different model). — the maker's effort values ['enabled'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0218,
+          "outputPerMTokUsd": 0.2184,
+          "cacheReadPerMTokUsd": 0.0044
+        },
+        "source": "official-doc",
+        "sourceRef": "https://zenmux.ai/api/v1/models (read 2026-09-27): \"\"prompt\":[{\"value\":0.0218,...,\"lt\":32}},{\"value\":0.0437,...,\"gte\":32}}]\" — USD 0.0218 input / 0.2184 output / 0.0044 cached input per 1M tokens; tiers: prompt_tokens <32K: input $0.0218, output $0.2184, cache read $0.0044; >=32K: input $0.0437, output $0.4367, cache read $0.0044 (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-4.6v-flash",
+      "modelFamily": "glm"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Z.AI API (OpenAI dialect)",
+  "description": "Z.AI API (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zai",
+        "name": "Z.AI API (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Z.AI API (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Z.AI API (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.z.ai/api/paas/v4"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "manifest": 1,
+  "name": "Google Vertex AI",
+  "description": "Google Vertex AI's models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "node"
+  },
+  "capabilities": [
+    "network:*.googleapis.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "vertex",
+        "name": "Google Vertex AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "gcp-service-account",
+            "help": "A Google Cloud service account key for Vertex AI, as JSON. Only this plugin's own process reads it, to sign its token requests."
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

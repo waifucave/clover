@@ -1,0 +1,713 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/wafer/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://wafer.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", Anthropic Messages at https://pass.wafer.ai. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "wafer/DeepSeek-V4-Pro",
+      "providerId": "wafer",
+      "upstreamId": "DeepSeek-V4-Pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#DeepSeek-V4-Pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#DeepSeek-V4-Pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's unauthenticated public model list, entry DeepSeek-V4-Pro read 2026-09-27: `capabilities.tools: true`, and for the Anthropic Messages dialect this row speaks `capabilities.messages.supported: true` with `messages.tools: true`.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's unauthenticated public model list, entry DeepSeek-V4-Pro read 2026-09-27: `capabilities.tools: true`, and for the Anthropic Messages dialect this row speaks `capabilities.messages.supported: true` with `messages.tools: true`.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27): \"\"max_model_len\":1048576, wafer.context_length:1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27): \"\"reasoning_effort\":{\"control\":\"system_prompt\",\"efforts\":[\"none\",\"low\",\"high\",\"max\"],\"default\":\"low\",...}\" — Wafer's own doc string: thinking is OFF by default since 2026-09-19 (control is a system-prompt overlay, not a plain request field); 'medium' is not a distinct tier on this route. — the page's effort values ['none', 'low', 'high', 'max'] are not recorded: a third-party Anthropic-dialect row keeps an empty vocabulary and continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.29,
+          "outputPerMTokUsd": 3.5,
+          "cacheReadPerMTokUsd": 0.17
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27): \"\"pricing\":{\"currency\":\"usd\",\"input_cents_per_million\":29,\"output_cents_per_million\":350,\"cache_read_cents_per_million\":17,...}\" — USD 0.29 input / 3.5 output / 0.17 cached input per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "wafer/DeepSeek-V4.1-Flash",
+      "providerId": "wafer",
+      "upstreamId": "DeepSeek-V4.1-Flash",
+      "displayName": "DeepSeek-V4.1-Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `DeepSeek-V4.1-Flash` (read 2026-09-27): wafer.context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `DeepSeek-V4.1-Flash` (read 2026-09-27): capabilities.messages.vision True",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `DeepSeek-V4.1-Flash` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `DeepSeek-V4.1-Flash` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `DeepSeek-V4.1-Flash` (read 2026-09-27): `capabilities.messages.reasoning: true`. The entry's `reasoning_effort` vocabulary (['none', 'low', 'high', 'max']) describes the Chat Completions knob; this Anthropic-dialect row states no effort vocabulary and keeps continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.03,
+          "outputPerMTokUsd": 0.6,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `DeepSeek-V4.1-Flash` (read 2026-09-27): wafer.pricing input_cents_per_million 3 / output_cents_per_million 60 / cache_read_cents_per_million 3 (US cents)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4.1-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "wafer/GLM-5.1",
+      "providerId": "wafer",
+      "upstreamId": "GLM-5.1",
+      "displayName": "GLM 5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#GLM-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#GLM-5.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27) — `GLM-5.1` is ABSENT from Wafer's live public model list, so no capability can be read for it; it stays fail-closed `unknown` (and may no longer be served).",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27) — `GLM-5.1` is ABSENT from Wafer's live public model list, so no capability can be read for it; it stays fail-closed `unknown` (and may no longer be served).",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "wafer/GLM-5.2",
+      "providerId": "wafer",
+      "upstreamId": "GLM-5.2",
+      "displayName": "GLM-5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.2` (read 2026-09-27): wafer.context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.2` (read 2026-09-27): capabilities.messages.vision False",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.2` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.2` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.2` (read 2026-09-27): `capabilities.messages.reasoning: true`. The entry's `reasoning_effort` vocabulary (['none', 'low', 'high', 'max']) describes the Chat Completions knob; this Anthropic-dialect row states no effort vocabulary and keeps continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.98,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.2` (read 2026-09-27): wafer.pricing input_cents_per_million 98 / output_cents_per_million 440 / cache_read_cents_per_million 26 (US cents)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "wafer/GLM-5.3",
+      "providerId": "wafer",
+      "upstreamId": "GLM-5.3",
+      "displayName": "GLM-5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3` (read 2026-09-27): wafer.context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3` (read 2026-09-27): capabilities.messages.vision False",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3` (read 2026-09-27): `capabilities.messages.reasoning: true`. The entry's `reasoning_effort` vocabulary (['none', 'low', 'high', 'max']) describes the Chat Completions knob; this Anthropic-dialect row states no effort vocabulary and keeps continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3` (read 2026-09-27): wafer.pricing input_cents_per_million 140 / output_cents_per_million 440 / cache_read_cents_per_million 26 (US cents)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "wafer/GLM-5.3-Flash",
+      "providerId": "wafer",
+      "upstreamId": "GLM-5.3-Flash",
+      "displayName": "GLM-5.3-Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3-Flash` (read 2026-09-27): wafer.context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3-Flash` (read 2026-09-27): capabilities.messages.vision True",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3-Flash` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3-Flash` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3-Flash` (read 2026-09-27): `capabilities.messages.reasoning: true`. The entry's `reasoning_effort` vocabulary (['none', 'low', 'high', 'max']) describes the Chat Completions knob; this Anthropic-dialect row states no effort vocabulary and keeps continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `GLM-5.3-Flash` (read 2026-09-27): wafer.pricing input_cents_per_million 30 / output_cents_per_million 50 / cache_read_cents_per_million 3 (US cents)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "wafer/Kimi-K3",
+      "providerId": "wafer",
+      "upstreamId": "Kimi-K3",
+      "displayName": "Kimi-K3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): wafer.context_length 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): wafer.max_output_tokens 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): capabilities.messages.vision True",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): `capabilities.messages.reasoning: true`. The entry's `reasoning_effort` vocabulary (['none', 'high', 'max']) describes the Chat Completions knob; this Anthropic-dialect row states no effort vocabulary and keeps continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 9,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Kimi-K3` (read 2026-09-27): wafer.pricing input_cents_per_million 100 / output_cents_per_million 900 / cache_read_cents_per_million 30 (US cents)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "wafer/MiniMax-M2.7",
+      "providerId": "wafer",
+      "upstreamId": "MiniMax-M2.7",
+      "displayName": "MiniMax M2.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#MiniMax-M2.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#MiniMax-M2.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27) — `MiniMax-M2.7` is ABSENT from Wafer's live public model list, so no capability can be read for it; it stays fail-closed `unknown` (and may no longer be served).",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27) — `MiniMax-M2.7` is ABSENT from Wafer's live public model list, so no capability can be read for it; it stays fail-closed `unknown` (and may no longer be served).",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "wafer/Qwen3.5-397B-A17B",
+      "providerId": "wafer",
+      "upstreamId": "Qwen3.5-397B-A17B",
+      "displayName": "Qwen3.5 397B A17B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#Qwen3.5-397B-A17B",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/wafer/index.ts#Qwen3.5-397B-A17B — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27) — `Qwen3.5-397B-A17B` is ABSENT from Wafer's live public model list, so no capability can be read for it; it stays fail-closed `unknown` (and may no longer be served).",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models (read 2026-09-27) — `Qwen3.5-397B-A17B` is ABSENT from Wafer's live public model list, so no capability can be read for it; it stays fail-closed `unknown` (and may no longer be served).",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.5-397b-a17b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "wafer/Qwen3.8-27B",
+      "providerId": "wafer",
+      "upstreamId": "Qwen3.8-27B",
+      "displayName": "Qwen3.8-27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Qwen3.8-27B` (read 2026-09-27): wafer.context_length 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Qwen3.8-27B` (read 2026-09-27): capabilities.messages.vision True",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Qwen3.8-27B` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Qwen3.8-27B` (read 2026-09-27): for the Anthropic Messages dialect this row speaks, `capabilities.messages.supported: true` with `messages.tools: true`",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Qwen3.8-27B` (read 2026-09-27): `capabilities.messages.reasoning: true`. The entry's `reasoning_effort` vocabulary (['none', 'low', 'medium', 'high', 'max']) describes the Chat Completions knob; this Anthropic-dialect row states no effort vocabulary and keeps continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.08,
+          "outputPerMTokUsd": 2.45,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://pass.wafer.ai/v1/models — Wafer's own unauthenticated public model list, entry `Qwen3.8-27B` (read 2026-09-27): wafer.pricing input_cents_per_million 8 / output_cents_per_million 245 / cache_read_cents_per_million 6 (US cents)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-27b",
+      "modelFamily": "qwen"
+    }
+  ]
+}
