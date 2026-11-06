@@ -250,6 +250,24 @@ describe("the filter, after DNS, at connect time", () => {
     expect(Date.now() - t0).toBeLessThan(2_000);
   });
 
+  test("a first address that refuses slowly (Windows' ::1 for a server on IPv4) doesn't hold up the next: the addresses race", async () => {
+    const echo = await echoServer();
+    open.push({ close: () => new Promise((r) => echo.server.close(r)) });
+    const filter = new NetworkFilter({
+      lookup: async () => ["::1", "127.0.0.1"],
+      dial: (port, ip) => {
+        if (ip === "127.0.0.1") return connect(echo.port, "127.0.0.1");
+        const s = new Socket();
+        setTimeout(() => s.destroy(Object.assign(new Error("refused, late"), { code: "ECONNREFUSED" })), 1_500);
+        return s;
+      },
+    });
+    open.push(filter);
+    const t0 = Date.now();
+    expect(await get(await filter.listenerFor(SESSION_POLICY, "http"), "localhost", 80, "/raced")).toEqual({ status: 200, body: "echo /raced" });
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+
   test("only the browser's own network process may use the filter: anyone else is closed unanswered", async () => {
     const asked: { address: string; port: number; listener: number }[] = [];
     let yes = false;

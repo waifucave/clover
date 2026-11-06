@@ -162,6 +162,9 @@ export function addressAllowed(ip: string, policy: AddressPolicy): boolean {
   }
 }
 
+/** How long after one address's connection attempt the next one starts (RFC 8305's default). */
+export const HAPPY_EYEBALLS_MS = 250;
+
 /** The kind of URL a connection is for, by the listener Chromium sent it to. */
 export type UrlKind = "http" | "https" | "other";
 export const URL_KINDS: readonly UrlKind[] = ["http", "https", "other"];
@@ -295,7 +298,11 @@ export class NetworkFilter {
   /** Every address `host` has, and those the policy allows; `found` is false when the name didn't resolve at all. */
   private async lookupChecked(host: string, policy: AddressPolicy): Promise<{ found: boolean; allowed: string[] }> {
     const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
-    const addresses = isIP(literal) !== 0 ? [literal] : await this.lookup(literal).catch(() => [] as string[]);
+    // `localhost` and its subdomains are loopback, both families, whatever the resolver says (RFC 6761, as Chromium
+    // reads them): Windows' resolver sometimes answers ::1 alone, which a server on IPv4 never answers.
+    const addresses = isIP(literal) !== 0 ? [literal]
+      : /^(.+\.)?localhost\.?$/i.test(literal) ? ["::1", "127.0.0.1"]
+      : await this.lookup(literal).catch(() => [] as string[]);
     return { found: addresses.length > 0, allowed: addresses.filter((ip) => addressAllowed(ip, policy)) };
   }
 
@@ -408,9 +415,13 @@ export class NetworkFilter {
       });
     let lastError: NodeJS.ErrnoException | undefined;
     for (const route of routes) {
-      for (const ip of ips) {
+      // Directly, the checked addresses race, each started a little after the one before (happy eyeballs, RFC 8305):
+      // a first address that never answers, or answers slowly with a refusal (Windows retries a SYN to a closed
+      // loopback port for about 2 s, as `localhost`'s ::1 does when a server listens on IPv4 only), never holds up the
+      // next. Through a proxy, one address at a time.
+      for (const ip of route.kind === "direct" ? [ips] : ips.map((one) => [one])) {
         if (client.destroyed) return;
-        const upstream = await (route.kind === "direct" ? this.connectTo(port, ip) : this.viaProxy(route, ip, port)).catch((e: NodeJS.ErrnoException) => {
+        const upstream = await (route.kind === "direct" ? this.race(ip, port) : this.viaProxy(route, ip[0]!, port)).catch((e: NodeJS.ErrnoException) => {
           lastError = e;
           return undefined;
         });
@@ -466,6 +477,50 @@ export class NetworkFilter {
   }
 
   /** A connected socket to a checked address, or the connection's error. */
+  /** The first of `ips` to connect on `port`, the attempts started `HAPPY_EYEBALLS_MS` apart (and the next one at once
+   *  when an attempt fails); the others are closed. Fails with the last error when none connects. */
+  private race(ips: readonly string[], port: number): Promise<Socket> {
+    return new Promise((resolve, reject) => {
+      let next = 0;
+      let running = 0;
+      let won = false;
+      let lastError: unknown;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const attempts: Promise<Socket>[] = [];
+      const start = (): void => {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+        if (won || next >= ips.length) return;
+        const ip = ips[next++]!;
+        running++;
+        const attempt = this.connectTo(port, ip);
+        attempts.push(attempt);
+        attempt.then(
+          (socket) => {
+            running--;
+            if (won) {
+              socket.destroy();
+              return;
+            }
+            won = true;
+            if (timer !== undefined) clearTimeout(timer);
+            resolve(socket);
+          },
+          (e: unknown) => {
+            running--;
+            lastError = e;
+            if (won) return;
+            if (next < ips.length) start();
+            else if (running === 0) reject(lastError);
+          },
+        );
+        if (next < ips.length) timer = setTimeout(start, HAPPY_EYEBALLS_MS);
+      };
+      if (ips.length === 0) reject(Object.assign(new Error("no address"), { code: "EHOSTUNREACH" }));
+      else start();
+    });
+  }
+
   /** A connected socket to `ip:port`, or the connection's error; an attempt that hasn't connected in
    *  `connectTimeoutMs` (2.5 s) gives up, so the next address gets its turn (the second review's should-fix 2). */
   private connectTo(port: number, ip: string): Promise<Socket> {
