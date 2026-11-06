@@ -9,6 +9,7 @@ import {
   networkAllows, pluginTokenName,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, CLIENT_BARE_IMPORTS,
+  reachesPublicNetwork,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -16,10 +17,11 @@ describe("capabilities", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
       "computers.control", "devices.read", "approvals", "files", "browser", "terminal", "plugins.install", "usage.read", "logs.read", "notify", "audio",
-      "call:<plugin-id>", "network:<host>",
+      "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
       "controls the screen and input of your computers", "restyles approval cards", "runs commands on your computers", "can hear your microphone",
+      "connects to any public website, through Clover's web safeguards",
     ]);
   });
 
@@ -34,6 +36,22 @@ describe("capabilities", () => {
     );
     expect(term("shellish").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
     expect(term("panel-terminal", { id: "clover", namespace: "clover" }).issues.map((i) => i.code)).toEqual([]);
+  });
+
+  test("network:public is the clover tree's alone: any public host through the core's fetch, no host for its components", () => {
+    expect(parseCapability("network:public")).toEqual({ kind: "fixed", name: "network:public" });
+    expect(reachesPublicNetwork(["network:public"])).toBe(true);
+    expect(reachesPublicNetwork(["network:api.example.com"])).toBe(false);
+    const web = (id: string, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id }), name: "Web", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities: ["network:public"] },
+      parent ? { parent, folderName: id, bundled: true } : { folderName: id },
+    );
+    expect(web("webby").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
+    const bundled = web("web", { id: "clover", namespace: "clover" });
+    expect(bundled.issues).toEqual([]);
+    expect(bundled.networkHosts).toEqual([]);
+    expect(mayHoldCapability("network:public", { id: "clover/web", source: "bundled" })).toBe(true);
+    expect(mayHoldCapability("network:public", { id: "luna", source: "store" })).toBe(false);
   });
 
   test("network:<host> is a name, an IP, with :port if needed, or *. and a domain (§5.4)", () => {
@@ -80,7 +98,8 @@ describe("the plugin API's gating", () => {
 
   test("every capability but call: and network: gates at least one call", () => {
     const used = new Set(Object.values(API_CALLS).map((i) => (i as { capability?: string }).capability));
-    for (const c of CAPABILITIES) if (!c.name.includes("<")) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
+    // network:public gates the core's fetch, as network:<host> does, not an API call.
+    for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:")) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
   });
 
   test("without the capability the call doesn't exist; secrets only in a host's own process", () => {
@@ -422,7 +441,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(19);
+    expect(c.capabilities.length).toBe(20);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

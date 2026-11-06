@@ -6,11 +6,13 @@
 // A child's id names a file with `--` for its `/` (§5.1). Writes go through a temporary file and a rename.
 //
 // The fence keeps sessions out of `plugins-state/`; past it (#197's review), each file is schema-checked and, with a key
-// from the secret store, carries an HMAC-SHA256 over its body, so an edit made outside the registry fails closed: the
-// records read as empty (every plugin asks for its OK again) and the adult confirmation as not given.
+// from the secret store, carries an HMAC-SHA256 over its name, its write counter and its body. The counters live in the
+// secret store too (#197's check 2), so an edit made outside the registry, a file copied over another, or an older copy
+// put back all fail closed: the records read as empty (every plugin asks for its OK again) and the adult confirmation
+// as not given.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { z } from "zod";
 import { PluginProvenance as PluginProvenanceSchema, PluginSource as PluginSourceSchema, type PluginProvenance, type PluginSource } from "@waifucave/clover-protocol";
 import type { OkSnapshot } from "./changes";
@@ -97,25 +99,47 @@ const OkSchema = z.object({
   plugins: z.record(z.string(), Fingerprint),
   cards: z.string(),
   codePaths: z.array(z.string()),
+  runFields: z.boolean(),
 });
 const AdultSchema = z.object({ confirmedAt: z.number() });
 
-/** The file envelope: its body as written, and the body's HMAC when the store has a key. */
+/** The file envelope: its body as written, and with a key, its write counter and the HMAC over both and its name. */
 interface Envelope {
   body: string;
+  gen?: number;
   mac?: string;
 }
 
 /** The records on disk, under `<cloverHome>/plugins-state/`. With `macKey` (32 bytes from the secret store) every file
  *  is signed, and one whose MAC doesn't verify, or that fails its schema, reads as absent (`onTampered` says which). */
-export function fileRegistryStore(stateDir: string, opts: { macKey?: Uint8Array; onTampered?: (file: string) => void } = {}): RegistryStore {
+export interface RegistryStoreOptions {
+  /** 32 bytes from the secret store; required where the daemon opens the registry (`openPluginRegistry`). */
+  macKey?: Uint8Array;
+  /** Each file's write counter, by its name under `plugins-state/`, as the secret store last kept them. */
+  counters?: Record<string, number>;
+  /** The counters after a write, for the secret store. */
+  onCounters?: (counters: Record<string, number>) => void;
+  onTampered?: (file: string) => void;
+}
+
+export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions = {}): RegistryStore {
   const installed = join(stateDir, "installed.json");
   const ok = (id: string) => join(stateDir, "oks", `${fileId(id)}.json`);
   const adult = join(stateDir, "adult.json");
-  const mac = (body: string) => createHmac("sha256", opts.macKey!).update(body).digest("hex");
+  const counters: Record<string, number> = { ...(opts.counters ?? {}) };
+  const nameOf = (file: string) => relative(stateDir, file).split(sep).join("/");
+  const mac = (name: string, gen: number, body: string) =>
+    createHmac("sha256", opts.macKey!).update(`clover/plugin-registry/1\0${name}\0${gen}\0${body}`).digest("hex");
   const write = (file: string, value: unknown) => {
     const body = JSON.stringify(value);
-    const env: Envelope = opts.macKey ? { body, mac: mac(body) } : { body };
+    let env: Envelope = { body };
+    if (opts.macKey) {
+      const name = nameOf(file);
+      const gen = (counters[name] ?? 0) + 1;
+      counters[name] = gen;
+      opts.onCounters?.({ ...counters });
+      env = { body, gen, mac: mac(name, gen, body) };
+    }
     writeAtomic(file, `${JSON.stringify(env)}\n`);
   };
   const read = <T>(file: string, schema: z.ZodType<T>): T | undefined => {
@@ -124,7 +148,10 @@ export function fileRegistryStore(stateDir: string, opts: { macKey?: Uint8Array;
     const bad = () => (opts.onTampered?.(file), undefined);
     if (typeof env !== "object" || env === null || typeof env.body !== "string") return bad();
     if (opts.macKey) {
-      const want = Buffer.from(mac(env.body), "hex");
+      const name = nameOf(file);
+      // The counter the secret store kept for this name: an older copy put back has an older one.
+      if (typeof env.gen !== "number" || env.gen !== counters[name]) return bad();
+      const want = Buffer.from(mac(name, env.gen, env.body), "hex");
       const got = Buffer.from(typeof env.mac === "string" ? env.mac : "", "hex");
       if (got.length !== want.length || !timingSafeEqual(got, want)) return bad();
     }

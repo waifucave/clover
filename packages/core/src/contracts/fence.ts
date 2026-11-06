@@ -32,6 +32,10 @@ export const FENCED_KINDS = [
   "adult-confirmation",
   /** Development folders themselves (§5.6): they reload on every change without asking. */
   "dev-folders",
+  /** The installed plugins folder, `<home>/plugins/` (#197's check 2): bots, agents and plugin code get a plugin in only
+   *  through `plugin.install`'s OK card, and develop plugins in development folders, so nothing they write there loads
+   *  or changes a plugin the user OK'd. Read-only to them. */
+  "plugins",
   /** `<home>/plugin-data/<id>/` (§5.4), where add-ons live. */
   "plugin-data",
   /** The daemon's run folder: denied for reading too, as it is today. */

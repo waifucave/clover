@@ -20,6 +20,7 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   "plugin-oks": "plugins-state/oks",
   "installed-plugins": "plugins-state/installed.json",
   "adult-confirmation": "plugins-state/adult.json",
+  plugins: "plugins",
   "plugin-data": "plugin-data",
   "run-folder": "run",
   transcripts: "sessions",

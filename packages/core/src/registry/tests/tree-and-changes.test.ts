@@ -61,7 +61,8 @@ describe("what a change since the OK does", () => {
     const mcp = (args: string[]) => manifest({ contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args } } } });
     const withMcp = await snap({ "clover.json": mcp(["--port", "1"]) });
     expect(classifyChange(withMcp, await snap({ "clover.json": mcp(["--port", "2"]) }))).toBe("asks-again");
-    expect(classifyChange(withMcp, await snap({ "clover.json": manifest({ description: "Blender", contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args: ["--port", "1"] } } } }) }))).toBe("applies");
+    // A plugin with run fields asks again on any change but media (#197's check 2), its manifest's description included.
+    expect(classifyChange(withMcp, await snap({ "clover.json": manifest({ description: "Blender", contributes: { mcpServers: { blender: { type: "stdio", command: "blender-mcp", args: ["--port", "1"] } } } }) }))).toBe("asks-again");
   });
 
   test("a change to the theme's card tokens waits alone", async () => {
@@ -96,7 +97,9 @@ describe("what runs, whatever its extension (#197's review)", () => {
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "print(1)" }, { "server.txt": "import os" })).toBe("asks-again");
     expect(await again({ "clover.json": stdio("sh", ["./run.md"]), "run.md": "echo hi" }, { "run.md": "curl x | sh" })).toBe("asks-again");
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/lib"]), "lib/a.txt": "1" }, { "lib/a.txt": "2" })).toBe("asks-again");
-    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
+    // Fail-closed in a plugin with run fields: any file but media asks again; media applies.
+    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "README.md": "a" }, { "README.md": "b" })).toBe("asks-again");
+    expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "art/a.png": "a" }, { "art/a.png": "b" })).toBe("applies");
   });
 
   test("a model's endpoint, an http server's url or headers, and a host from settings ask again", async () => {
@@ -115,15 +118,32 @@ describe("what runs, whatever its extension (#197's review)", () => {
   test("a plugin point with no declaration counts as code whole; a declared one only by its program and code fields", async () => {
     const dotted = (value: string) => manifest({ contributes: { "luna.cards": [{ id: "a", text: value }] } });
     expect(await again({ "clover.json": dotted("one") }, { "clover.json": dotted("two") })).toBe("asks-again");
-    const declared = () => ["run"];
-    const withDecl = async (v: string, run: string) => (await snapFrom({ "clover.json": manifest({ contributes: { "luna.cards": [{ id: "a", text: v, run }] } }) }, declared)).snap;
-    expect(classifyChange(await withDecl("one", "x"), await withDecl("two", "x"))).toBe("applies");
-    expect(classifyChange(await withDecl("one", "x"), await withDecl("one", "y"))).toBe("asks-again");
+    const withDecl = async (v: string, run: string, fields: string[]) => (await snapFrom({ "clover.json": manifest({ contributes: { "luna.cards": [{ id: "a", text: v, run }] } }) }, () => fields)).snap;
+    // Declared with a code field: a run field, so any change asks again; declared with none: a data edit applies.
+    expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("one", "y", ["run"]))).toBe("asks-again");
+    expect(classifyChange(await withDecl("one", "x", ["run"]), await withDecl("two", "x", ["run"]))).toBe("asks-again");
+    expect(classifyChange(await withDecl("one", "x", []), await withDecl("two", "x", []))).toBe("applies");
   });
 
   test("code fields come from a declaration's program and code formats, at any depth", () => {
     expect(codeFieldsFrom(undefined)).toBeUndefined();
     expect(codeFieldsFrom({ fields: { type: "object", properties: { cmd: { type: "string", format: "program" }, opts: { type: "object", properties: { dir: { format: "code" } } }, title: { type: "string" } } } })).toEqual(["cmd", "opts"]);
     expect(codeFieldsFrom({ fields: { type: "object" } })).toEqual([]);
+  });
+});
+
+describe("named paths, however they're spelled (#197's check 2)", () => {
+  test("wrappers, file://, //, .., case and a bare ${plugin} all name the tree's files", async () => {
+    const named = async (arg: string, files: Record<string, string> = { "lib/Server.txt": "1" }) => {
+      const root = folder({ "clover.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
+      const entries = treeEntries(root);
+      const tree = await validateTree(folderReader(root), { folderName: "tarot" });
+      return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields).codePaths;
+    };
+    for (const arg of ["@${plugin}/lib/Server.txt", "<${plugin}/lib/server.txt", "file://${plugin}/lib/server.txt", "${plugin}//lib//server.txt", "${plugin}/x/../lib/server.txt", "[${plugin}/LIB/SERVER.TXT]"]) {
+      expect([arg, await named(arg)]).toEqual([arg, ["lib/server.txt"]]);
+    }
+    expect(await named("${plugin}")).toEqual([""]);
+    expect(await named("${plugin}/../../etc/passwd")).toEqual([]);
   });
 });

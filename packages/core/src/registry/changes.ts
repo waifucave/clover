@@ -7,6 +7,7 @@
 //   `code`, or a setting's `default`;
 // * waits alone (`card-styling`) when it changes only how the tree styles approval cards (§5.5);
 // * applies at once (`applies`) otherwise: themes, layouts, CSS, Markdown, assets.
+import { posix } from "node:path";
 import type { Manifest, ManifestReport, TreeEntry, TreeReport } from "@waifucave/clover-plugin-sdk";
 import { canonicalJson } from "@waifucave/clover-protocol";
 
@@ -44,6 +45,9 @@ export interface OkSnapshot {
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
+  /** Some plugin of the tree has a field of what runs (a `stdio` server, a hook's or agent backend's command, a host,
+   *  client or helper, a point's program or code field): then every file but media counts as code (#197's check 2). */
+  runFields: boolean;
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -73,6 +77,19 @@ const DATA_EXTENSIONS = new Set([
   "vrm", "glb", "gltf", "bin", "moc3", "motion3", "exp3", "physics3", "pose3", "cdi3", "model3",
   "mp3", "wav", "ogg", "m4a", "flac", "opus", "mp4", "webm", "mov",
 ]);
+
+/** Media, which stays data even in a plugin with run fields: images, audio, video, fonts and model weights. */
+const MEDIA_EXTENSIONS = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "heic", "ico",
+  "mp3", "wav", "ogg", "m4a", "flac", "opus", "mp4", "webm", "mov",
+  "woff", "woff2", "ttf", "otf",
+  "vrm", "glb", "moc3", "safetensors", "gguf", "onnx",
+]);
+
+/** Whether a file is media (and not executable). */
+export function isMediaFile(entry: Pick<TreeEntry, "path" | "executable">): boolean {
+  return !entry.executable && MEDIA_EXTENSIONS.has(extensionOf(entry.path));
+}
 
 function extensionOf(path: string): string {
   const name = path.slice(path.lastIndexOf("/") + 1);
@@ -150,19 +167,45 @@ function runStrings(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string
   return out;
 }
 
-/** The tree paths a string names: each word, `${plugin}/` and `./` taken off, kept when it names a file or folder of
- *  the tree. `base` is a child's folder in the tree (`plugins/<folder>/`). */
+/** The tree paths a string names (#197's check 2), lower-cased: each word with its wrappers taken off (`@`, `<`, `>`,
+ *  brackets, quotes, `file://`, `${plugin}` and `./`), `//` collapsed and `..` resolved; a bare `${plugin}` or `.`
+ *  names the whole plugin. `base` is a child's folder in the tree (`plugins/<folder>/`). */
 function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet<string>, folders: ReadonlySet<string>): string[] {
   const out = new Set<string>();
+  const whole = base === "" ? "" : base.slice(0, -1).toLowerCase();
   for (const s of strings) {
-    for (const word of s.split(/[\s=,;:"']+/)) {
-      let p = word.replace(/^\$\{plugin\}[/\\]?/, "").replace(/^\.\//, "").replace(/\\/g, "/").replace(/\/+$/, "");
-      if (p === "" || p.startsWith("/") || p.includes("${")) continue;
-      p = `${base}${p}`;
+    for (const raw of s.split(/[\s=,;:"'`|&]+/)) {
+      // `${plugin}` as one mark first, so taking the brackets off a word leaves it whole.
+      let w = raw.replace(/\\/g, "/").replaceAll("${plugin}", "\u0000");
+      for (let before = ""; before !== w;) {
+        before = w;
+        w = w.replace(/^(?:@|<|>|\(|\[|\{|file:\/\/)+/i, "").replace(/[)\]}>]+$/, "");
+      }
+      const at = w.indexOf("\u0000");
+      if (at >= 0) w = w.slice(at + 1);
+      w = w.replace(/^\/+/, at >= 0 ? "" : "/");
+      if (w === "" || w === ".") {
+        if (at >= 0 || raw === ".") out.add(whole);
+        continue;
+      }
+      if (w.startsWith("/") || w.includes("${")) continue;
+      const p = posix.normalize(`${base}${w}`).replace(/\/+$/, "").toLowerCase();
+      if (p === "." || p.startsWith("../") || p === "..") continue;
       if (files.has(p) || folders.has(p)) out.add(p);
     }
   }
   return [...out];
+}
+
+/** Whether a manifest has a field of what runs. */
+function hasRunFields(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): boolean {
+  if (!m) return false;
+  if (m.host || m.client || m.helper) return true;
+  const c = m.contributes ?? {};
+  if (Object.values(c.mcpServers ?? {}).some((x) => x.type === "stdio")) return true;
+  if ((c.hooks ?? []).some((h) => h.command !== undefined)) return true;
+  if ((c.agentBackends ?? []).some((b) => b.command !== undefined)) return true;
+  return Object.keys(c).some((point) => point.includes(".") && (codeFieldsOf(point)?.length ?? 1) > 0);
 }
 
 export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf): PluginFingerprint {
@@ -201,11 +244,12 @@ function cardsOf(tree: TreeReport, files: readonly TreeEntry[]): string {
 export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf): OkSnapshot {
   const plugins: Record<string, PluginFingerprint> = { "": fingerprintOf(tree.top, codeFieldsOf) };
   for (const c of tree.children) plugins[c.folder] = fingerprintOf(c.report, codeFieldsOf);
-  const fileSet = new Set(files.map((f) => f.path));
-  const folders = new Set(files.flatMap((f) => f.path.split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
+  const fileSet = new Set(files.map((f) => f.path.toLowerCase()));
+  const folders = new Set(files.flatMap((f) => f.path.toLowerCase().split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
   const codePaths = new Set(pathsNamed(runStrings(tree.top.manifest, codeFieldsOf), "", fileSet, folders));
   for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
-  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
+  const runFields = hasRunFields(tree.top.manifest, codeFieldsOf) || tree.children.some((c) => hasRunFields(c.report.manifest, codeFieldsOf));
+  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort(), runFields };
 }
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
@@ -242,10 +286,15 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   }
   for (const [path, f] of was) if (!is.has(path)) touched.push(f);
   // A file that isn't data, changed, added or removed, is a code change wherever it is (§5.6); so is one a field of
-  // what runs names, whatever its extension (#197's review).
+  // what runs names, whatever its extension (#197's review); and in a tree with run fields, every file but media
+  // (#197's check 2, fail-closed: a run field can reach a file by more spellings than can be read off it).
   const code = [...(ok.codePaths ?? []), ...now.codePaths];
-  const named = (path: string) => code.some((c) => path === c || path.startsWith(`${c}/`));
-  if (touched.some((f) => !isDataFile(f) || named(f.path))) return "asks-again";
+  const named = (path: string) => {
+    const p = path.toLowerCase();
+    return code.some((c) => c === "" || p === c || p.startsWith(`${c}/`));
+  };
+  const strict = (ok.runFields ?? true) || now.runFields;
+  if (touched.some((f) => !isDataFile(f) || named(f.path) || (strict && !isMediaFile(f)))) return "asks-again";
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";

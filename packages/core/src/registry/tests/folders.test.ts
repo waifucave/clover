@@ -142,7 +142,10 @@ describe("openPluginRegistry", () => {
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
     writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot", { name: "Tarot" }));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, settleMs: 50 });
+    const { MemorySecretStore } = await import("../../contracts/fakes/secret-store");
+    const secrets = new MemorySecretStore();
+    expect(await openPluginRegistry({ cloverHome: home, os: "linux", broker }).catch((e: Error) => e.message)).toContain("secret store");
+    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
     try {
       const { card } = await opened.registry.installed("tarot", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
@@ -211,6 +214,20 @@ describe("#197's review", () => {
     writeFileSync(join(dir, "adult.json"), JSON.stringify({ body: JSON.stringify({ confirmedAt: 1 }) }));
     expect(store.adultConfirmed()).toBe(false);
     expect(tampered.map((f) => f.slice(dir.length + 1))).toEqual(["installed.json", "adult.json"]);
+    // #197's check 2: an older copy put back, or one file copied over another, reads as absent too.
+    let counters: Record<string, number> = {};
+    const signed = () => fileRegistryStore(dir, { macKey: key, counters, onCounters: (c) => void (counters = c) });
+    signed().save({ v: 1, order: ["a"], plugins: {}, dev: [] });
+    const older = readFileSync(file, "utf8");
+    signed().save({ v: 1, order: ["a", "b"], plugins: {}, dev: [] });
+    expect(signed().load().order).toEqual(["a", "b"]);
+    writeFileSync(file, older);
+    expect(signed().load().order).toEqual([]);
+    signed().saveOk("tarot", { okHash: "x", files: [], plugins: {}, cards: "", codePaths: [], runFields: false });
+    signed().saveOk("luna", { okHash: "y", files: [], plugins: {}, cards: "", codePaths: [], runFields: false });
+    expect(signed().loadOk("luna")?.okHash).toBe("y");
+    writeFileSync(join(dir, "oks", "luna.json"), readFileSync(join(dir, "oks", "tarot.json")));
+    expect(signed().loadOk("luna")).toBeUndefined();
     // Without a key, a file that fails its schema reads as absent too.
     const plain = fileRegistryStore(dir);
     writeFileSync(file, JSON.stringify({ body: JSON.stringify({ v: 1, order: "x", plugins: {}, dev: [] }) }));

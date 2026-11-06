@@ -60,9 +60,9 @@ export function runFenceConformance(make: FenceFactory): void {
       }
     });
 
-    test("the plugins folder and routine files are not fenced: bots write plugins and routines as files", () => {
+    test("routine files are not fenced; the installed plugins folder is (#197's check 2): bots get plugins in by the OK card", () => {
       const f = fence();
-      expect(f.check({ op: "write", path: `${CLOVER}/plugins/luna/clover.json` })).toEqual({ allowed: true });
+      expect(f.check({ op: "write", path: `${CLOVER}/plugins/luna/clover.json` })).toEqual({ allowed: false, reason: "plugins", path: `${CLOVER}/plugins` });
       expect(f.check({ op: "write", path: `${CLOVER}/routines/alpha/morning.md` })).toEqual({ allowed: true });
       expect(f.check({ op: "write", path: `${HOME}/project/README.md` })).toEqual({ allowed: true });
     });
@@ -72,7 +72,8 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(f.check({ op: "delete", path: CLOVER }).allowed).toBe(false);
       expect(f.check({ op: "move", path: CLOVER, to: "/tmp/stolen" }).allowed).toBe(false);
       expect(f.check({ op: "move", path: `${HOME}/a`, to: `${CLOVER}/settings/a` }).allowed).toBe(false);
-      expect(f.check({ op: "delete", path: `${CLOVER}/plugins/old` }).allowed).toBe(true);
+      expect(f.check({ op: "delete", path: `${CLOVER}/plugins/old` }).allowed).toBe(false);
+      expect(f.check({ op: "delete", path: `${CLOVER}/routines/old` }).allowed).toBe(true);
     });
 
     test("development folders are fenced while on, and changes reach watchers", () => {
@@ -111,6 +112,9 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(mac.denyRead).toContain(`${CLOVER}/run`);
       expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
       expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
+      // The installed plugins folder is write-denied, not read-denied (#197's check 2).
+      expect(fence("macos").check({ op: "write", path: `${CLOVER}/plugins/tarot/clover.json` })).toEqual({ allowed: false, reason: "plugins", path: `${CLOVER}/plugins` });
+      expect(fence("macos").check({ op: "read", path: `${CLOVER}/plugins/tarot/clover.json` }).allowed).toBe(true);
       // An OK'd coding agent's install folder is write-denied, not read-denied (lane K).
       expect(mac.denyWrite).toContain(AGENT);
       expect(mac.denyRead).not.toContain(AGENT);
@@ -150,9 +154,9 @@ export function runFenceConformance(make: FenceFactory): void {
         expect(f.check({ op: "write", path: `${CLOVER}/\u00DFettings/x.json` })).toEqual({ allowed: false, reason: "clover-home", path: CLOVER });
         expect(f.check({ op: "write", path: `${CLOVER}/plugins-state/\u00F6ks/x.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
         expect(f.check({ op: "read", path: `${CLOVER}/\u0455ettings/settings.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
-        // Where Clover doesn't name things (a bot's notes, a plugin's files), any name is the user's own.
+        // Where Clover doesn't name things (a bot's notes, a routine's files), any name is the user's own.
         expect(f.check({ op: "write", path: `${CLOVER}/bots/luna/memory/\u65E5\u8A18.md` }).allowed).toBe(true);
-        expect(f.check({ op: "write", path: `${CLOVER}/plugins/tarot/assets/caf\u00E9.png` }).allowed).toBe(true);
+        expect(f.check({ op: "write", path: `${CLOVER}/routines/alpha/caf\u00E9.md` }).allowed).toBe(true);
         expect(f.check({ op: "write", path: `${HOME}/\u017Fettings.json` }).allowed).toBe(true);
       }
       expect(foldName("Stra\u00DFe")).toBe("strasse");
