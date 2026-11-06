@@ -113,6 +113,15 @@ export class FakeSessionHost implements SessionHost {
     if (s.running) await this.#interruptStep(s);
   }
 
+  async setModel(id: string, model: string, effort?: string): Promise<void> {
+    const s = this.#live(id);
+    if (s.view.kind === "bot" || s.view.kind === "side-thread") throw new ContractError("refused", "a bot's model is its user layer, not the session's");
+    if (!s.driver.setModel) throw new ContractError("refused", "this session's driver can't switch models");
+    await s.driver.setModel(model, effort);
+    s.view = { ...s.view, model, ...(effort === undefined ? {} : { effort }), updatedAt: this.#clock.now() };
+    this.#watchers.emit({ ...s.view });
+  }
+
   async stop(id: string, reason = "stopped"): Promise<void> {
     const s = this.#sessions.get(id);
     if (!s || s.view.status === "stopped" || s.view.status === "failed") return;
@@ -268,10 +277,15 @@ export class FakeSessionDriver implements SessionDriver {
   readonly turns: { input: TurnInput; origin: TurnOrigin; folded: TurnInput[] }[] = [];
   interrupts = 0;
   stopped = false;
+  /** Every model it was switched to. */
+  readonly models: { model: string; effort?: string }[] = [];
+  readonly setModel?: (model: string, effort?: string) => Promise<void>;
   #current?: { resolve: (end: TurnEnd) => void; ctl: TurnControl };
 
-  constructor(opts: { canFold?: boolean } = {}) {
+  /** `setsModel: false` for a driver that can't switch models. */
+  constructor(opts: { canFold?: boolean; setsModel?: boolean } = {}) {
     this.canFold = opts.canFold ?? true;
+    if (opts.setsModel !== false) this.setModel = async (model, effort) => void this.models.push(effort === undefined ? { model } : { model, effort });
   }
 
   get running(): boolean {

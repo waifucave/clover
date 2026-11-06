@@ -211,6 +211,54 @@ export function runTreeConformance(make: TreeFactory): void {
       expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
     });
 
+    test("at ask-risky the holder's own reviewer judges a peer's change: safe runs, risky needs a bound answer (ruling R1)", async () => {
+      const clock = new FakeClock();
+      const judged: string[] = [];
+      const tree = make({
+        clock,
+        computers: { Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" } },
+        botComputer: () => undefined,
+        reviewer: async (change) => {
+          judged.push(`${change.method} ${change.computer} ${change.as.kind}`);
+          return change.method === "tree.write" && change.params.path.endsWith(".md") ? "safe" : "risky";
+        },
+      });
+      const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
+      const code = async (p: Promise<unknown>) => ((await rejection(p)) as { code?: string } | undefined)?.code ?? "ok";
+      expect(await code(tree.write("home/Studio/notes.md", utf8("hi"), { as: PEER, level: "automatic" }))).toBe("ok");
+      expect(await code(tree.write("home/Studio/run.sh", utf8("rm -rf ~"), { as: PEER, level: "automatic" }))).toBe("refused");
+      expect(judged).toEqual(["tree.write Studio peer", "tree.write Studio peer"]);
+      // A delete at ask-risky still asks, reviewer or not; and the holder's own sessions never meet the peer rule.
+      expect(await code(tree.remove("home/Studio/notes.md", { as: PEER, level: "automatic" }))).toBe("refused");
+      expect(await code(tree.write("home/Studio/run.sh", utf8("x"), { as: BOT }))).toBe("ok");
+      expect(judged).toHaveLength(2);
+    });
+
+    test("watch follows a folder on the computer that holds it, fenced as a listing (lane J's ask)", async () => {
+      const { tree } = setup();
+      await tree.write("home/Laptop1/p/a.txt", utf8("a"), { as: USER });
+      const seen: unknown[] = [];
+      const stop = await tree.watch("home/Laptop1/p", { as: BOT }, (e) => seen.push(e));
+      await tree.write("home/Laptop1/p/b.txt", utf8("b"), { as: USER });
+      await tree.write("home/Laptop1/elsewhere.txt", utf8("c"), { as: USER });
+      await tree.remove("home/Laptop1/p/a.txt", { as: USER });
+      stop();
+      await tree.write("home/Laptop1/p/c.txt", utf8("c"), { as: USER });
+      expect(seen).toEqual([{ type: "changed", paths: ["home/Laptop1/p/b.txt"] }, { type: "changed", paths: ["home/Laptop1/p/a.txt"] }]);
+      expect(isContractError(await rejection(tree.watch("home/Laptop1/.clover/run", { as: BOT }, () => {})), "fenced")).toBe(true);
+      expect(isContractError(await rejection(tree.watch("home/Laptop1/nowhere", { as: BOT }, () => {})), "not_found")).toBe(true);
+    });
+
+    test("a fenced name in another case, not on disk yet, is refused on case-insensitive file systems (J-M1's review, B1)", async () => {
+      const { tree } = setup();
+      for (const path of ["home/Studio/.clover/RULES/allow.json", "home/Studio/.clover/Settings/settings.json", "home/Studio/.clover/LEVELS/computer.json"]) {
+        expect([path, isContractError(await rejection(tree.write(path, utf8("{}"), { as: BOT })), "fenced")]).toEqual([path, true]);
+      }
+      // Laptop1 runs Linux, whose file systems compare names exactly: another case is another file there.
+      await tree.write("home/Laptop1/.clover/RULES/allow.json", utf8("{}"), { as: BOT });
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/rules/allow.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
+    });
+
     test("computersFor lists the computers an action touches", () => {
       const { tree } = setup();
       expect(tree.computersFor(["home/Studio/a", "home/Laptop1/b", "bots/alpha/memory", "home/OldLaptop/c"])).toEqual(["Studio", "Laptop1"]);

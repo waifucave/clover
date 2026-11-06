@@ -168,12 +168,28 @@ export type PluginAuthView = z.infer<typeof PluginAuthView>;
 /** What the app's plugin runtime (lane E) needs to mount one plugin's UI: its layer's origin, its client module, its
  *  `ui` entries as the manifest has them, and its themes and string tables. Assets are served by hash (§5.1); URLs
  *  are the app runtime's scheme, which the daemon fills from `assetBase`. */
+/** What a layer needs of a plugin (lane E's asks). The registry always sends `source`, `enabledAt`, `capabilities`,
+ *  `css` and `networkHosts`; a view without them (an older daemon, a test's fake) means none of each. */
 export const UiPluginView = z.object({
   pluginId: AnyPluginId,
   treeHash: TreeHash,
+  /** Where it came from (§5.5 rule 5: a bundled entry yields to none). */
+  source: PluginSource.optional(),
+  /** When it was last enabled, for rule 6's "the most recently enabled wins". */
+  enabledAt: Timestamp.optional(),
+  /** Its capabilities as the user OK'd them, which the layer's plugin API gates by (lane E's `needs`). */
+  capabilities: z.array(utf16(300, 1)).max(256).optional(),
+  /** Its stylesheets (`client.css`), cleaned, as asset paths under `assetBase`. */
+  css: z.array(utf16(4096, 1)).max(32).optional(),
+  /** The hosts its `network:` capabilities declare, for the layer's CSP and `Connection-Allowlist`. */
+  networkHosts: z.array(utf16(300, 1)).max(256).optional(),
+  /** For a bot's plugin: the bot's name and the theme file its tab wears. */
+  bot: z.object({ name: Text, theme: utf16(4096).optional() }).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
   layer: utf16(128),
   assetBase: utf16(2048),
+  /** The built ES module the layer loads (`CLIENT_BARE_IMPORTS` only as bare imports), under `assetBase`: the
+   *  manifest's `client.entry`, or the registry's cached build of a TypeScript or TSX one. */
   clientEntry: utf16(4096).optional(),
   ui: z.array(z.record(z.string(), z.unknown())).max(500),
   themes: z.array(z.object({ id: utf16(128), file: utf16(4096) })).max(100),
@@ -513,6 +529,12 @@ export const PLUGINS_METHODS = {
       /** An argument is a stream, whose pieces follow as `pluginHost.chunk` with this `callId`. */
       stream: z.boolean().optional(),
       timeoutMs: z.number().int().min(1).max(600_000).optional(),
+      /** The open call it was made while serving (R7): the `callId` of a `pluginHost.invoke`, or the id the daemon put
+       *  on an MCP request (`_meta["clover/invocation"]`, which the host takes off before the plugin sees it). Stamped
+       *  by the host from the handler's own context, never from the plugin. The daemon binds the caller from its own
+       *  record of that call, so the call acts as that call's session, and refuses an id that isn't an open call to
+       *  this plugin. Absent: the call acts as the plugin. */
+      invocation: utf16(128, 1).optional(),
     }),
     result: z.object({ result: z.unknown() }),
     doc: "A plugin's host half calls the plugin API (§5.4). A watch's result is `{ subscription }`.",

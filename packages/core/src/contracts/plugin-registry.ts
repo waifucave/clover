@@ -30,6 +30,14 @@
 //   or changes what runs (§5.6 "When the app asks again") waits for a new OK; another data edit applies at once,
 //   except a change to card styling (§5.5), which applies to everything but approval cards: they keep the styling of
 //   the tree last OK'd (`okHash`) until the user OKs it.
+// * The app's layers read each plugin's UI as `UiPluginView` (`plugin.ui`, lane E): its source and when it was
+//   enabled (§5.5 rules 5 and 6), its OK'd capabilities, its cleaned stylesheets, its `network:` hosts (the layer's CSP
+//   and `Connection-Allowlist`) and, for a bot's plugin, the bot's name and theme. A client entry in TypeScript or TSX
+//   is built by the registry into a cached ES module whose only bare imports are `CLIENT_BARE_IMPORTS`, rebuilt when
+//   the tree hash changes, and the view's `clientEntry` names that module; a build that fails leaves the plugin
+//   `invalid` with the bundler's message.
+// * Entry ids and titles a spot reserves (`island.tab`'s Needs you) and always-on-top surfaces are the bundled
+//   `clover` tree's alone (lane G's review, R12): another plugin's such entry is refused.
 import type { PluginProvenance, PluginState, PluginSummary, ValidationIssue } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";

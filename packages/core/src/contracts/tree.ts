@@ -18,11 +18,18 @@
 // * Another computer's call (`peer`, review N2) is the main path: the owner decided there are no OS mounts, so the
 //   holder's daemon serves its files to the others over the link (`tree.*` with the `peer` role). The receiver stamps
 //   `as` itself, `{ kind: "peer", device, sessionId }` from the link and the call's `session`, so a peer is never the
-//   user or the core, and its calls are always fenced. A peer's write, remove or move is also judged at the stricter of
-//   the holder's level and the call's `level` (`peerTreeDecision`): allowed runs; a refusal or read-only answers
-//   `refused`; one the level would ask about needs `answer`, the user's signed answer bound to this call
+//   user or the core, and its calls are always fenced. A peer's write, remove, move, new folder or link is also judged
+//   at the stricter of the holder's level and the call's `level` (`peerTreeDecision`): allowed runs; a refusal or
+//   read-only answers `refused`; at "ask for risky actions" the holder runs its own safety reviewer on the change, as
+//   it does for its own sessions (ruling R1), and what it judges safe runs; what it judges risky, can't judge, or the
+//   level asks about anyway (a delete) needs `answer`, the user's signed answer bound to this call
 //   (`treeCallBinding`), checked by `verifySignedAnswer` with the holder's own card for it, or it answers `refused`.
-//   A peer's change without `level` is `invalid`. Reads, lists, glob and grep are fenced but never asked about.
+//   The card goes to the user's devices on the calling computer's side, and the signed answer travels with the call
+//   (J-M2). A peer's change without `level` is `invalid`. Reads, lists, glob, grep and watches are fenced but never
+//   asked about.
+// * `watch` follows a folder (a code session's, never a whole home) on the computer that holds it: the tree paths
+//   that changed, coalesced, or `resync` when the holder's watch dropped, since what changed meanwhile was never
+//   reported (lane J). It is fenced as a listing is.
 // * `move` works across computers (`mv home/Desktop1/project1 home/Studio/`); both must be on, and a peer's move is
 //   judged at the strictest of both computers' levels and its own.
 // * Glob and grep run where the files are and send back only results.
@@ -30,6 +37,7 @@
 //   `clover-tree:` link, an editor tab) may decode them back into segments.
 import type { Caller, FileStat, Level, SignedCardAnswer, TreePath } from "@waifucave/clover-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
+import type { Unsubscribe } from "./common";
 
 export type { TreePath };
 
@@ -56,9 +64,18 @@ export interface TreeCallOptions {
 
 /** A change a peer's card binds: the wire method and its params without `session`, `level` and `answer`. */
 export type TreeChange =
-  | { method: "tree.write"; params: { path: string; data: TreeData; createDirs?: boolean } }
+  | { method: "tree.write"; params: { path: string; data: TreeData; createDirs?: boolean; executable?: boolean } }
   | { method: "tree.remove"; params: { path: string; recursive?: boolean } }
-  | { method: "tree.move"; params: { from: string; to: string } };
+  | { method: "tree.move"; params: { from: string; to: string } }
+  | { method: "tree.mkdir"; params: { path: string } }
+  | { method: "tree.symlink"; params: { path: string; target: string } };
+
+/** A watched folder's news. */
+export type TreeWatchEvent = { type: "changed"; paths: string[] } | { type: "resync" };
+
+/** The holder's safety reviewer, as it judges a peer's change at "ask for risky actions" (ruling R1). `unavailable`
+ *  (no model can run) counts as risky. */
+export type TreeReviewer = (change: TreeChange & { computer: string; as: Caller }) => Promise<"safe" | "risky" | "unavailable">;
 
 /** What a signed answer for a peer's tree change binds (review N2): the method and its params as the caller sent
  *  them, with no `session`, `level` or `answer` (an answer can't bind itself). Keys left out stay out. */
@@ -67,13 +84,14 @@ export function treeCallBinding(method: TreeChange["method"], params: Record<str
   return { method, params: rest } as TreeChange;
 }
 
-/** How the holder judges a peer's tree change (review N2): at the stricter of its own levels (both computers' for a
- *  move) and the call's, the way `tool.run` is. `allow` runs, `refuse` answers `refused`, `answer` needs a bound
- *  signed answer. The safety reviewer never runs for a peer: what it would review needs the user's answer. */
-export function peerTreeDecision(levels: readonly Level[], callLevel: Level, effect: "edit" | "delete" | "move"): "allow" | "refuse" | "answer" {
+/** How the holder judges a peer's tree change (review N2, ruling R1): at the stricter of its own levels (both
+ *  computers' for a move) and the call's, the way `tool.run` is. `allow` runs, `refuse` answers `refused`, `review`
+ *  goes to the holder's own reviewer (safe runs; risky or unavailable needs a bound signed answer), `answer` needs a
+ *  bound signed answer. A holder with no reviewer yet treats `review` as `answer`. */
+export function peerTreeDecision(levels: readonly Level[], callLevel: Level, effect: "edit" | "delete" | "move"): "allow" | "refuse" | "review" | "answer" {
   const level = strictestLevel([...levels, callLevel])!;
   const d = levelDecision(level, effect);
-  return d === "allow" ? "allow" : d === "deny" ? "refuse" : "answer";
+  return d === "allow" ? "allow" : d === "deny" ? "refuse" : d === "review" ? "review" : "answer";
 }
 
 export interface Tree {
@@ -90,6 +108,8 @@ export interface Tree {
   /** Tree paths matching a glob under `cwd` (a tree folder). */
   glob(pattern: string, opts: TreeCallOptions & { cwd: string }): Promise<string[]>;
   grep(pattern: string, opts: TreeCallOptions & { path: string; glob?: string; ignoreCase?: boolean; limit?: number }): Promise<{ path: string; line: number; text: string }[]>;
+  /** Follows a folder's changes; the unsubscribe ends it. Fenced as a listing; rejects as `list` would. */
+  watch(path: string, opts: TreeCallOptions, fn: (event: TreeWatchEvent) => void): Promise<Unsubscribe>;
   /** The computers an action on these tree paths touches, for the strictest-level rule (§9.1). */
   computersFor(paths: readonly string[]): string[];
 }

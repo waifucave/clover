@@ -5,10 +5,13 @@ import { createHash } from "node:crypto";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment, type Caller, type FileStat, type Level } from "@waifucave/clover-protocol";
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../approval-broker";
 import type { Clock } from "../clock";
-import { ContractError, isInside, normalizePosix } from "../common";
+import { ContractError, isInside, normalizePosix, type Unsubscribe } from "../common";
 import type { Fence, FenceOp } from "../fence";
 import { MemoryAnswerLedger } from "./approval-broker";
-import { peerTreeDecision, splitTreePath, treeCallBinding, type Tree, type TreeCallOptions, type TreeChange, type TreeData, type TreeLocation } from "../tree";
+import {
+  peerTreeDecision, splitTreePath, treeCallBinding,
+  type Tree, type TreeCallOptions, type TreeChange, type TreeData, type TreeLocation, type TreeReviewer, type TreeWatchEvent,
+} from "../tree";
 
 interface Node {
   type: "file" | "dir";
@@ -46,8 +49,11 @@ export class FakeTree implements Tree {
   readonly #devices: AnswerDevices;
   readonly #ledger: AnswerLedger;
   readonly #render: CallCardRenderer;
+  readonly #reviewer: TreeReviewer;
+  readonly #watches = new Set<{ computer: string; path: string; treeBase: string; fn: (e: TreeWatchEvent) => void }>();
 
-  /** `devices`, `ledger` and `render` check a peer's signed answers (none counts by default). */
+  /** `devices`, `ledger` and `render` check a peer's signed answers (none counts by default); `reviewer` is the
+   *  holder's safety reviewer for a peer's change at "ask for risky actions" (unavailable by default, so it asks). */
   constructor(opts: {
     clock: Pick<Clock, "now">;
     computers: Record<string, FakeTreeComputer>;
@@ -55,12 +61,14 @@ export class FakeTree implements Tree {
     devices?: AnswerDevices;
     ledger?: AnswerLedger;
     render?: CallCardRenderer;
+    reviewer?: TreeReviewer;
   }) {
     this.#clock = opts.clock;
     this.#botComputer = opts.botComputer;
     this.#devices = opts.devices ?? NO_DEVICES;
     this.#ledger = opts.ledger ?? new MemoryAnswerLedger();
     this.#render = opts.render ?? (() => undefined);
+    this.#reviewer = opts.reviewer ?? (async () => "unavailable");
     for (const [name, c] of Object.entries(opts.computers)) this.addComputer(name, c);
   }
 
@@ -136,6 +144,7 @@ export class FakeTree implements Tree {
     this.#mkdirs(fs, parentPath(loc.path));
     const bytes = data.encoding === "utf8" ? enc.encode(data.text) : unb64(data.data);
     fs.set(loc.path, { type: "file", data: bytes, executable: opts.executable ?? existing?.executable ?? false, modifiedAt: this.#clock.now() });
+    this.#changed(loc.computer, [loc.path]);
   }
 
   async list(path: string, opts: TreeCallOptions): Promise<FileStat[]> {
@@ -160,6 +169,7 @@ export class FakeTree implements Tree {
     const inside = [...fs.keys()].filter((p) => p !== loc.path && isInside(p, loc.path));
     if (node.type === "dir" && inside.length > 0 && !opts.recursive) throw new ContractError("invalid", `${path} isn't empty`);
     for (const p of [...inside, loc.path]) fs.delete(p);
+    this.#changed(loc.computer, [loc.path]);
   }
 
   async move(from: string, to: string, opts: TreeCallOptions): Promise<void> {
@@ -182,6 +192,27 @@ export class FakeTree implements Tree {
     for (const [p, n] of moving) {
       sfs.delete(p);
       dfs.set(normalizePosix(dst.path + p.slice(src.path.length)), { ...n, ...(n.data ? { data: n.data.slice() } : {}) });
+    }
+    this.#changed(src.computer, [src.path]);
+    this.#changed(dst.computer, [dst.path]);
+  }
+
+  async watch(path: string, opts: TreeCallOptions, fn: (event: TreeWatchEvent) => void): Promise<Unsubscribe> {
+    const loc = this.#reach(path, { op: "list", path: "" }, opts);
+    const node = this.#fs.get(loc.computer)!.get(loc.path);
+    if (!node) throw new ContractError("not_found", `${path} doesn't exist`);
+    if (node.type !== "dir") throw new ContractError("invalid", `${path} isn't a folder`);
+    const w = { computer: loc.computer, path: loc.path, treeBase: path.replace(/\/+$/, ""), fn };
+    this.#watches.add(w);
+    return () => void this.#watches.delete(w);
+  }
+
+  /** The watch's news for real paths that changed on a computer, as tree paths under each watched folder. */
+  #changed(computer: string, paths: string[]): void {
+    for (const w of this.#watches) {
+      if (w.computer !== computer) continue;
+      const hits = paths.filter((p) => p !== w.path && isInside(p, w.path)).map((p) => `${w.treeBase}/${p.slice(w.path.length + 1)}`);
+      if (hits.length > 0) w.fn({ type: "changed", paths: hits });
     }
   }
 
@@ -242,6 +273,8 @@ export class FakeTree implements Tree {
     const decision = peerTreeDecision(levels, opts.level, effect);
     if (decision === "allow") return;
     if (decision === "refuse") throw new ContractError("refused", `${computers.join(" and ")} doesn't let another computer change files at its level`);
+    // At "ask for risky actions" the holder's own reviewer judges it first (ruling R1): safe runs.
+    if (decision === "review" && (await this.#reviewer({ ...change, computer: computers[0]!, as: opts.as })) === "safe") return;
     if (!opts.answer) throw new ContractError("refused", "this change needs the user's answer, signed and bound to it");
     const verdict = await verifySignedAnswer(opts.answer, {
       self: computers[0]!, method: change.method, params: change.params, now: this.#clock.now(), sha256,

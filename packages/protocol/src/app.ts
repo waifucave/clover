@@ -72,12 +72,18 @@ export const APP_METHODS = {
         z.object({ kind: z.literal("bot"), bot: BotId }),
         z.object({ kind: z.literal("session"), session: SessionId }),
         z.object({ kind: z.literal("card"), card: CardId }),
-        z.object({ kind: z.literal("settings"), section: utf16(128).optional() }),
+        /** Settings at a section, and an item in it (a device, a plugin; lane E's ask). */
+        z.object({ kind: z.literal("settings"), section: utf16(128).optional(), item: utf16(256).optional() }),
         z.object({ kind: z.literal("url"), url: z.string().url() }),
       ]),
     }),
     result: Ok,
     doc: "The daemon asks the app to open a window or a place in it (a sign-in page, a card from the CLI's `clover open`).",
+  }),
+  appPing: defineMethod({
+    name: "app.ping", owner: "E", roles: ["app"], direction: "from-daemon",
+    params: Empty, result: Ok,
+    doc: "The pair's heartbeat (ruling R9): the app answers at once from its main process; a daemon that hears nothing for a while restarts it in safe mode (lane C).",
   }),
   appQuit: defineMethod({
     name: "app.quit", owner: "E", roles: ["app"], direction: "from-daemon",
@@ -125,9 +131,15 @@ export const APP_METHODS = {
   }),
   appNotify: defineMethod({
     name: "app.notify", owner: "G", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional() }),
-    result: Ok,
-    doc: "A desktop notification, which the app shows for the bundled desktop notifier.",
+    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional() }),
+    /** `shown: false` when the app showed nothing because it is in front showing that session already. */
+    result: z.object({ shown: z.boolean() }),
+    doc: "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
+  }),
+  appNotifyClose: defineMethod({
+    name: "app.notify.close", owner: "G", roles: ["app"], direction: "from-daemon",
+    params: z.object({ id: utf16(128, 1).optional() }), result: Ok,
+    doc: "Closes one desktop notification, or every one the notifier showed.",
   }),
   updateStatus: defineMethod({
     name: "update.status", owner: "M", roles: ["app", "cli"],

@@ -2,12 +2,15 @@
 // MCP channels on an injected clock. A handler's `ctx.api` routes every plugin-API call to the router the core
 // serves (`serveApi`), as the real host's worker does over its pipe, stamped with the worker's plugin id and the
 // process the core put it in (`hostProcessFor`, from the install record `define` takes); callbacks reach the router
-// as functions. `forgeApiCall` is what a compromised process could send on its connection.
+// as functions. `forgeApiCall` is what a compromised process could send on its connection. A handler's `ctx.api` acts as
+// the call's caller (R7); the `api` a module's `start` and its MCP servers get acts as the plugin. The fake's gap: it
+// doesn't bind an MCP server's API calls to the `tools/call` it is serving (the real host does, B-M2); it only takes
+// the core's `_meta["clover/invocation"]` off before the server sees a request.
 import type { Caller, HostProcess, PluginSource } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
+  CRASH_LIMIT, CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
@@ -263,6 +266,8 @@ export class FakePluginHost implements PluginHost {
       send: (message) => {
         if (closed) throw new ContractError("closed", "the MCP channel is closed");
         const copy = structuredClone(message);
+        const params = copy.params as { _meta?: Record<string, unknown> } | undefined;
+        if (params?._meta && MCP_INVOCATION_META in params._meta) delete params._meta[MCP_INVOCATION_META];
         queueMicrotask(() => transport.onmessage?.(copy));
       },
       onMessage: (fn) => toCore.add(fn),
@@ -275,7 +280,7 @@ export class FakePluginHost implements PluginHost {
         return closed;
       },
     };
-    await serve(transport, this.#apiFor(pluginId, { kind: "core" }));
+    await serve(transport, this.#apiFor(pluginId, { kind: "plugin", pluginId }));
     return channel;
   }
 
@@ -321,7 +326,7 @@ export class FakePluginHost implements PluginHost {
     }
     this.#set(pluginId, h, "starting");
     try {
-      await h.module.start?.(this.#apiFor(pluginId, { kind: "core" }));
+      await h.module.start?.(this.#apiFor(pluginId, { kind: "plugin", pluginId }));
     } catch (err) {
       this.crash(pluginId, `start failed: ${err instanceof Error ? err.message : String(err)}`);
       return;

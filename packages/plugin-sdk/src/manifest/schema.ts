@@ -159,8 +159,17 @@ export const AgentBackendSchema = z.strictObject({
   command: Program.optional(),
   args: z.array(z.string().max(4096)).max(256).optional(),
   handler: HandlerName.optional(),
+  /** A JSON file in the folder with the backend's quirks (`AgentQuirks`, lane K), so each backend's row lives in its
+   *  own plugin (K's ask). */
+  quirks: Path.optional(),
   ...declares,
 });
+
+/** The bare specifiers a client entry may import, which each layer's import map provides (lane E): React 19 and the UI
+ *  API. Anything else must be bundled into the entry. */
+export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+/** The React major the layers provide. */
+export const CLIENT_REACT_MAJOR = 19;
 
 export const HOOK_EVENT_NAMES = ["tool.before", "tool.after", "message.in", "message.out", "turn.start", "turn.end", "compact.before", "compact.after"] as const;
 
@@ -370,12 +379,12 @@ export const ManifestSchema = z.strictObject({
     /** Points the host serves (§5.4). */
     declares: DeclaresSchema.optional(),
   }).optional(),
-  /** React module loaded into the app. */
-  /** Components (§5.5). In an installed plugin `entry` is one bundled ES module of JavaScript: its only bare imports
-   *  are `react`, `react/jsx-runtime`, `react-dom` and `@waifucave/clover-plugin-sdk/ui`, which the layer's runtime
-   *  provides (one React per layer, lane E), and it imports no CSS. `css` lists the stylesheets its components wear,
-   *  cleaned like a theme's CSS and loaded in each layer that mounts one of them, before them. A development folder
-   *  may name TypeScript or TSX with CSS imports: the core bundles it the same way (§5.6). */
+  /** Components (§5.5). In an installed plugin `entry` is one built ES module of JavaScript. Its only bare imports are
+   *  `CLIENT_BARE_IMPORTS` (React 19 and the UI API), which each layer provides once through an import map (lane E),
+   *  and it imports no CSS. `css` lists the stylesheets its components wear, cleaned like a theme's CSS and loaded in
+   *  each layer that mounts one of them, before them. An entry in TypeScript or TSX (a development folder, or a
+   *  plugin shipped unbuilt) the registry builds into a cached module, with CSS imports moved into `css`, and the
+   *  plugin's UI view names that module (`UiPluginView.clientEntry`). */
   client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional() }).optional(),
   /** A native program the plugin host starts and supervises; a signed .app on macOS, started through Launch Services. */
   helper: z.strictObject({

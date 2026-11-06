@@ -154,6 +154,8 @@
     ],
     "daemonSends": [
       "app.notify",
+      "app.notify.close",
+      "app.ping",
       "app.quit",
       "app.show",
       "app.tab.command",
@@ -210,10 +212,15 @@
       "tree.glob",
       "tree.grep",
       "tree.list",
+      "tree.mkdir",
       "tree.move",
       "tree.read",
+      "tree.readlink",
       "tree.remove",
       "tree.stat",
+      "tree.symlink",
+      "tree.unwatch",
+      "tree.watch",
       "tree.write",
       "ui.set",
       "usage.plans",
@@ -507,14 +514,21 @@
       "tree.glob",
       "tree.grep",
       "tree.list",
+      "tree.mkdir",
       "tree.move",
       "tree.read",
+      "tree.readlink",
       "tree.remove",
       "tree.stat",
+      "tree.symlink",
+      "tree.unwatch",
+      "tree.watch",
       "tree.write"
     ],
     "receives": [
-      "tool_output"
+      "computer_hello",
+      "tool_output",
+      "tree_changed"
     ],
     "daemonSends": []
   }

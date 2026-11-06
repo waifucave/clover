@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
+  AnyPluginId, BotId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
 } from "./common";
 import { SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -133,7 +133,9 @@ export const COMPUTERS_METHODS = {
   // The folder tree. Between computers (`peer`), and for plugins with `files`, inside the fence (§5.4, §9.1). The owner
   // decided there are no OS mounts: the holder's daemon serves the tree over the link, so this is the main path. A
   // peer's call carries `ViaPeer`: the receiver fences it as that session (`Caller` kind `peer`, never the user) and
-  // judges writes, removes and moves at the stricter of its own level and `level`, as `tool.run` (review N2).
+  // judges writes, removes, moves, new folders and links at the stricter of its own level and `level`, as `tool.run`
+  // (review N2). At "ask for risky actions" the receiver runs its own safety reviewer on the change, as it does for
+  // its own sessions (ruling R1): only what the reviewer judges risky, or can't judge, needs `answer`.
   treeStat: defineMethod({
     name: "tree.stat", owner: "J", ...Files,
     params: z.object({ ...ViaPeer, path: TreePath }), result: z.object({ stat: FileStat.nullable() }),
@@ -147,8 +149,8 @@ export const COMPUTERS_METHODS = {
   }),
   treeWrite: defineMethod({
     name: "tree.write", owner: "J", ...Files,
-    params: z.object({ ...ViaPeer, path: TreePath, data: TreeData, createDirs: z.boolean().optional() }), result: Ok,
-    doc: "Writes a file on the computer that holds it, inside the fence.",
+    params: z.object({ ...ViaPeer, path: TreePath, data: TreeData, createDirs: z.boolean().optional(), executable: z.boolean().optional() }), result: Ok,
+    doc: "Writes a file on the computer that holds it, inside the fence; `executable` sets its mode (a new file keeps it off).",
   }),
   treeList: defineMethod({
     name: "tree.list", owner: "J", ...Files,
@@ -173,9 +175,34 @@ export const COMPUTERS_METHODS = {
   }),
   treeGrep: defineMethod({
     name: "tree.grep", owner: "J", ...Files,
-    params: z.object({ ...ViaPeer, pattern: utf16(4096, 1), cwd: TreePath, glob: utf16(1024).optional(), limit: z.number().int().min(1).max(100_000).optional() }),
+    params: z.object({ ...ViaPeer, pattern: utf16(4096, 1), cwd: TreePath, glob: utf16(1024).optional(), ignoreCase: z.boolean().optional(), limit: z.number().int().min(1).max(100_000).optional() }),
     result: z.object({ matches: z.array(GrepMatch), truncated: z.boolean() }),
     doc: "Searches file contents on the computer that holds `cwd`.",
+  }),
+  treeMkdir: defineMethod({
+    name: "tree.mkdir", owner: "J", ...Files,
+    params: z.object({ ...ViaPeer, path: TreePath }), result: Ok,
+    doc: "Makes a folder, and any missing above it, inside the fence.",
+  }),
+  treeReadlink: defineMethod({
+    name: "tree.readlink", owner: "J", ...Files,
+    params: z.object({ ...ViaPeer, path: TreePath }), result: z.object({ target: utf16(4096) }),
+    doc: "A link's target, as written in the link.",
+  }),
+  treeSymlink: defineMethod({
+    name: "tree.symlink", owner: "J", ...Files,
+    params: z.object({ ...ViaPeer, path: TreePath, target: utf16(4096, 1) }), result: Ok,
+    doc: "Makes a link at `path`; the holder's fence judges the link and, when it is followed, where it leads.",
+  }),
+  treeWatch: defineMethod({
+    name: "tree.watch", owner: "J", ...Files,
+    params: z.object({ ...ViaPeer, path: TreePath }), result: z.object({ watchId: utf16(128, 1) }),
+    doc: "Watches a folder (a code session's, never a whole home): its changes come as `tree_changed` with this id.",
+  }),
+  treeUnwatch: defineMethod({
+    name: "tree.unwatch", owner: "J", ...Files,
+    params: z.object({ watchId: utf16(128, 1) }), result: Ok,
+    doc: "Ends a watch; only the computer that started it can end it.",
   }),
   toolRun: defineMethod({
     name: "tool.run", owner: "J", roles: ["peer"],
@@ -183,8 +210,9 @@ export const COMPUTERS_METHODS = {
       session: SessionId, callId: utf16(128, 1), epoch: z.number().int().nonnegative(),
       tool: utf16(256, 1), input: z.unknown(),
       /** The calling computer's level for the call (the stricter of the computers it touches, §9.1). The receiver runs
-       *  it at the stricter of this and its own level; what that level would ask about needs `answer`, a signed answer
-       *  bound to this call, or the receiver shows its own card. */
+       *  it at the stricter of this and its own level. At "ask for risky actions" the receiver's own reviewer judges
+       *  it first (ruling R1); what the level would still ask about needs `answer`, a signed answer bound to this
+       *  call, or the receiver shows its own card. */
       level: Level,
       answer: SignedCardAnswer.optional(),
     }),
@@ -246,6 +274,29 @@ export const ComputerRemovedEvent = coreEvent("computer_removed", { name: Comput
 export const HoldsChangedEvent = coreEvent("holds_changed", { computer: ComputerName, holds: z.array(HoldView), userWorking: z.boolean() });
 export const ActionRunningEvent = coreEvent("action_running", { computer: ComputerName, running: z.boolean() });
 export const ToolOutputEvent = coreEvent("tool_output", { callId: utf16(128, 1), chunk: utf16(1_000_000), stream: z.enum(["stdout", "stderr"]) });
+export const TreeChangedEvent = coreEvent("tree_changed", {
+  watchId: utf16(128, 1),
+  /** The tree paths that changed, coalesced. */
+  paths: z.array(TreePath).max(10_000).optional(),
+  /** The holder's watch dropped and came back: list the folder again. */
+  resync: z.boolean().optional(),
+});
+/** Where a computer's part of the tree lives (lane J's `TreeRoots`). */
+export const TreeRoots = z.object({
+  home: utf16(4096, 1),
+  botsRoot: utf16(4096, 1).optional(),
+  os: Os,
+  /** The bots this computer runs, whose `bots/<bot>/` lives here. */
+  bots: z.array(BotId).max(1024).optional(),
+});
+export const ComputerHelloEvent = coreEvent("computer_hello", {
+  name: ComputerName,
+  os: Os,
+  hasDisplay: z.boolean(),
+  agents: z.array(utf16(128)).max(64),
+  level: Level,
+  tree: TreeRoots,
+});
 export const TerminalOutputEvent = coreEvent("terminal_output", { terminalId: TerminalId, data: utf16(1_000_000), exited: z.object({ code: z.number().int().nullable() }).optional() });
 
 export const COMPUTERS_EVENTS = {
@@ -273,6 +324,16 @@ export const COMPUTERS_EVENTS = {
     type: "tool_output", owner: "J", roles: ["peer"], schema: ToolOutputEvent, transient: true,
     fixture: { type: "tool_output", ts: 1781270000000, callId: "call_1", chunk: "On branch main\n", stream: "stdout" },
     doc: "A running `tool.run` call's output, back to the computer running the session.",
+  }),
+  treeChanged: defineEvent({
+    type: "tree_changed", owner: "J", roles: ["peer"], schema: TreeChangedEvent, transient: true,
+    fixture: { type: "tree_changed", ts: 1781270000000, watchId: "w_1", paths: ["home/Studio/project/a.ts"] },
+    doc: "A watched folder's changes, from the computer that holds it to the one that watches (`tree.watch`).",
+  }),
+  computerHello: defineEvent({
+    type: "computer_hello", owner: "J", roles: ["peer"], schema: ComputerHelloEvent,
+    fixture: { type: "computer_hello", ts: 1781270000000, name: "Studio", os: "macos", hasDisplay: true, agents: ["claude-code"], level: "ask-risky", tree: { home: "/Users/me", botsRoot: "/Users/me/.clover/bots", os: "macos", bots: ["alpha"] } },
+    doc: "A computer introduces itself to a peer when a link opens and when it changes: its name, level, agents and where its part of the tree lives.",
   }),
   terminalOutput: defineEvent({
     type: "terminal_output", owner: "J", roles: ["app", "layer"], capability: "terminal", schema: TerminalOutputEvent, transient: true,

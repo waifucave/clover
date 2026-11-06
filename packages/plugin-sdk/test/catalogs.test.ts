@@ -8,7 +8,7 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, CLIENT_BARE_IMPORTS,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -199,6 +199,30 @@ describe("points and spots", () => {
     expect(panel({ session: "coding" }).issues).toEqual([]);
     expect(panel({ session: ["coding", "agent"] }).issues).toEqual([]);
     expect(panel({ session: "code" }).issues.map((i) => [i.refuses, i.path])).toEqual([["entry", "/contributes/ui/0/when/session"]]);
+  });
+
+  test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the clover tree's rules", () => {
+    const entry = (ui: Record<string, unknown>, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },
+      parent ? { parent, folderName: "home", bundled: true } : { folderName: "home" },
+    ).issues.map((i) => `${i.code}:${i.path}`);
+    const CLOVER = { id: "clover", namespace: "clover" };
+    // A third-party island tab can't pose as Needs you, by id or by title in any case or width.
+    expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Lights" })).toEqual(["ui_reserved:/contributes/ui/0/id"]);
+    expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "ＮＥＥＤＳ  you" })).toEqual(["ui_reserved:/contributes/ui/0/title"]);
+    expect(entry({ spot: "island.tab", id: "lights", component: "Tab", title: "Lights" })).toEqual([]);
+    expect(entry({ spot: "island.tab", id: "needs-you", component: "Tab", title: "Needs you" }, CLOVER)).toEqual([]);
+    // Always-on-top surfaces are the clover tree's in 1.111.1 (R12).
+    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } })).toEqual(["ui_always_on_top:/contributes/ui/0/window/alwaysOnTop"]);
+    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } }, CLOVER)).toEqual([]);
+    // A pill target names the handler that gets the user's words.
+    expect(entry({ spot: "pill.target", component: "Target", title: "Lights" }).some((i) => i.endsWith("/handler"))).toBe(true);
+    expect(entry({ spot: "pill.target", component: "Target", title: "Lights", handler: "lights" })).toEqual([]);
+    expect(foldTitle(" Needs\u3000YOU ")).toBe("needs you");
+    // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
+    expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
+    expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");
+    expect(API_CALLS["files.watch"]).toEqual({ capability: "files", where: "both" });
   });
 
   test("a keyed spot's entry with no key fills every key; a key ending in * fills what it matches", () => {

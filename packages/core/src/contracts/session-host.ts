@@ -153,7 +153,22 @@ export interface SessionDriver {
   interrupt(): Promise<void>;
   /** Ends the session: for an agent, ACP's cancel, then the end of its process group (§9.3). */
   stop(): Promise<void>;
+  /** Switches the model mid-session (item 90's picker, lane K's ask): an agent's or a coding session's. A driver
+   *  without it refuses `session.setModel`; a bot's model is its user layer, not this. */
+  setModel?(model: string, effort?: string): Promise<void>;
+  /** Compacts the conversation on the host's word (§6.3, lane D's ask; lane A's runtime implements it): summarizes
+   *  it, rebuilds the harness blocks (§6.1), and answers `compacted: false` when `signal` aborts first. The host
+   *  compacts any driver that offers it, while the session is idle: a forced one (`full`, or the user's
+   *  `session.compact`) finishes before what arrives meanwhile, and a cache-timed one (`cache`) gives way to the
+   *  user's message or interrupt, which abort it. A driver without it (an ACP agent, which compacts itself) is never
+   *  asked. While a turn runs a driver may compact on its own when the context fills, and says so with `compaction`
+   *  records (`{ type: "compaction", phase: "started" | "ended", reason: "full" }`). */
+  compact?(req: { reason: CompactReason; signal: AbortSignal }): Promise<{ compacted: boolean }>;
 }
+
+/** Why a session compacts (§6.3): `cache`, just before the cached prompt expires; `full`, the context window is full;
+ *  `user`, the user's `session.compact`. */
+export type CompactReason = "cache" | "full" | "user";
 
 export type SessionRecordBody =
   | { type: "input"; input: TurnInput; disposition: Disposition }
@@ -180,6 +195,9 @@ export interface SessionHost {
   deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition }>;
   /** The user's interrupt of this session's current step. */
   interrupt(id: string): Promise<void>;
+  /** `session.setModel`: through the driver's `setModel`, for an agent or a coding session; `refused` for one whose
+   *  driver has none, and for a bot (its model is its user layer). The view's `model` and `effort` follow. */
+  setModel(id: string, model: string, effort?: string): Promise<void>;
   /** `TaskStop`, or the session ending. */
   stop(id: string, reason?: string): Promise<void>;
   history(id: string, opts?: { afterSeq?: number; limit?: number }): SessionRecord[];

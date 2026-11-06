@@ -412,3 +412,30 @@ describe("relayed messages and peer file calls (review N2, N3, N5)", () => {
     expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, level: "everything" }).success).toBe(false);
   });
 });
+
+describe("B-M1's contract asks (lanes E, G, J, K, L)", () => {
+  const params = (name: string) => CLOVER_METHODS.get(name)!.params;
+  test("tabs: a session without a bot owns its own, and a tab says which view has it live (R8, R10)", () => {
+    const tab = { id: "tab_1", computer: "Studio", owner: { kind: "session", session: "s_code" }, partition: "session-s_code", url: "https://a.example/", title: "A", place: "shown", viewport: { width: 800, height: 600 }, loading: false, heldByUser: false, view: "browser" };
+    expect(CLOVER_EVENTS.get("tab_changed")!.schema.safeParse({ type: "tab_changed", ts: 1, tab }).success).toBe(true);
+    expect(params("browser.open").safeParse({ owner: { kind: "bot", bot: "alpha" }, show: { view: "browser", viewport: { width: 800, height: 600 } } }).success).toBe(true);
+    expect(params("browser.open").safeParse({ owner: { kind: "user" }, show: true }).success).toBe(false);
+  });
+
+  test("the tree serves lane J's methods to peers and layers, and its notices go to peers only", () => {
+    for (const name of ["tree.mkdir", "tree.readlink", "tree.symlink", "tree.watch", "tree.unwatch"]) {
+      expect([name, CLOVER_METHODS.get(name)?.roles]).toEqual([name, ["peer", "layer"]]);
+    }
+    expect(params("tree.write").safeParse({ path: "home/Studio/a.sh", data: { encoding: "utf8", text: "x" }, executable: true }).success).toBe(true);
+    expect(params("tree.grep").safeParse({ pattern: "x", cwd: "home/Studio", ignoreCase: true }).success).toBe(true);
+    for (const type of ["tree_changed", "computer_hello"]) expect([type, CLOVER_EVENTS.get(type)?.roles]).toEqual([type, ["peer"]]);
+  });
+
+  test("the plugin host carries the call an API call was made in (R7), and a layer's plugin view is complete (lane E)", () => {
+    expect(params("pluginHost.api").safeParse({ pluginId: "clover/browser", callId: "c1", call: "browser.tabs", args: [], invocation: "inv_1" }).success).toBe(true);
+    const view = CLOVER_METHODS.get("plugin.ui")?.result;
+    expect(view).toBeDefined();
+    expect(CLOVER_METHODS.get("app.notify")!.result.safeParse({ shown: false }).success).toBe(true);
+    expect(CLOVER_METHODS.get("app.notify.close")?.direction).toBe("from-daemon");
+  });
+});

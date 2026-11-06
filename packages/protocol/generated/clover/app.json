@@ -222,6 +222,10 @@
                   "section": {
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "item": {
+                    "type": "string",
+                    "maxLength": 256
                   }
                 },
                 "required": [
@@ -251,6 +255,33 @@
         "required": [
           "what"
         ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.ping": {
+      "doc": "The pair's heartbeat (ruling R9): the app answers at once from its main process; a daemon that hears nothing for a while restarts it in safe mode (lane C).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -917,7 +948,7 @@
       }
     },
     "app.notify": {
-      "doc": "A desktop notification, which the app shows for the bundled desktop notifier.",
+      "doc": "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
       "owner": "G",
       "direction": "from-daemon",
       "roles": [
@@ -945,12 +976,47 @@
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "urgent": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title"
         ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shown"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.notify.close": {
+      "doc": "Closes one desktop notification, or every one the notifier showed.",
+      "owner": "G",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -1301,6 +1301,9 @@
         "handler": {
           "$ref": "#/$defs/__schema24"
         },
+        "quirks": {
+          "$ref": "#/$defs/__schema1"
+        },
         "declares": {
           "$ref": "#/$defs/__schema27"
         }

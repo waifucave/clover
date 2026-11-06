@@ -115,6 +115,21 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(fence("windows").policy().closedDoors).toContain("schtasks");
     });
 
+    test("a fenced name in another case, not on disk yet, is refused on case-insensitive file systems (J-M1's review, B1)", () => {
+      for (const os of ["macos", "windows"] as const) {
+        const f = fence(os);
+        for (const path of [`${CLOVER}/RULES/allow.json`, `${CLOVER}/Settings/settings.json`, `${CLOVER}/LEVELS/computer.json`, `${HOME}/.Clover/trust/x.json`]) {
+          expect([os, path, f.check({ op: "write", path }).allowed]).toEqual([os, path, false]);
+        }
+        expect(f.check({ op: "move", path: `${HOME}/a.json`, to: `${CLOVER}/CONNECTORS/a.json` }).allowed).toBe(false);
+        expect(f.touches([`${CLOVER}/Rules`])).not.toBeNull();
+        expect(f.checkAgentRoot(`${HOME}/.CLOVER`).allowed).toBe(false);
+      }
+      // Linux compares names exactly, as its file systems do: another case is another file.
+      expect(fence("linux").check({ op: "write", path: `${CLOVER}/RULES/allow.json` }).allowed).toBe(true);
+      expect(fence("linux").check({ op: "write", path: `${CLOVER}/rules/allow.json` }).allowed).toBe(false);
+    });
+
     test("judge is the shared rule, usable over any set", () => {
       const set = [{ kind: "settings" as const, path: "/c/settings", deny: "write" as const }];
       expect(judge(set, { op: "write", path: "/c/settings/a" }).allowed).toBe(false);

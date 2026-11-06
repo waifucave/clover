@@ -64,6 +64,7 @@ export const API_CALLS = {
   "approvals.pending": both("approvals"), "approvals.watch": both("approvals"),
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
   "files.list": both("files"), "files.remove": both("files"), "files.move": both("files"), "files.glob": both("files"), "files.grep": both("files"),
+  "files.watch": both("files"),
   "browser.tabs": both("browser"), "browser.open": both("browser"), "browser.close": both("browser"), "browser.navigate": both("browser"),
   "browser.show": both("browser"), "browser.hide": both("browser"), "browser.screenshot": both("browser"), "browser.cdp": both("browser"),
   "browser.onCdpEvent": both("browser"), "browser.watch": both("browser"),

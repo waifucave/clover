@@ -5,7 +5,11 @@
 // protocol through this API, and the browser view (a UI plugin) shows tabs its own way.
 //
 // What the contract promises:
-// * Tabs live in their owner's partition: one per bot, one for the user, never per site.
+// * Tabs live in their owner's partition: one per bot, one per session without a bot (a coding session, ruling R10),
+//   and the person's own (`user`), never per site. A session drives the person's partition only after an explicit card
+//   for that session, and never by default (R10).
+// * Two views showing one tab: the view the person used last has it live (`TabView.view`), and any other shows its
+//   last still frame, marked paused (R8).
 // * A tab is in one of three places (S7): `headless` in the host window at the agent's 1280×800, `shown` in a browser
 //   view at the view's size, or `resting` in the never-shown window, throttled. It moves without reloading, and a
 //   resting tab goes back to headless before the next command reaches it.
@@ -15,8 +19,10 @@
 //   app's and core's own `clover…` schemes), however the request starts: `open` and `navigate` refuse it at once
 //   (`refused`), and the partition's session blocks it from a link, a redirect, a frame or DevTools' `Page.navigate`,
 //   which fails as a blocked load (review S17). The check lives in the session, not in reading DevTools parameters.
-// * A Point from a screenshot taken at another size is refused (`refused`), as is an agent's command on a tab the user
-//   holds (`held`, the inherited browser tool's control lease). The user's own commands are never refused for a hold.
+// * A Point from a screenshot taken at another size is refused (`refused`), as is a session's command on a tab the user
+//   holds (`held`, the inherited browser tool's control lease). The user's own commands, a layer's (whose caller is its
+//   plugin, never the user) and a plugin's own code are never refused for a hold, so a view's back button works while
+//   held. A plugin's call made while it serves a tool call is that call's session (R7), bound by the core.
 // * A host that stopped drawing gives an error, never a stale picture (S7 "What M1 should start with" item 4).
 import {
   AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed,

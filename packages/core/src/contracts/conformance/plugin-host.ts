@@ -9,7 +9,7 @@ import { isContractError } from "../common";
 import { FakeClock, advanceAndSettle, flush } from "../fakes/clock";
 import { type FakePluginHost } from "../fakes/plugin-host";
 import {
-  CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, cloverProcessOnly, crashBackoffMs,
+  CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, cloverProcessOnly, crashBackoffMs,
   guardApiRouter, hostProcessFor, resolveHandler, type ApiRouter, type HostedStatus, type InstallRecord,
 } from "../plugin-host";
 import type { HandlerContext } from "../sdk-types";
@@ -258,6 +258,43 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("tarot", { deck: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get<string[]>("deck") });
       expect(await host.invoke<string[]>({ pluginId: "tarot", handler: "deck", args: 0, caller: USER })).toEqual(["fool", "tower"]);
       expect(calls).toEqual([{ pluginId: "tarot", process: "shared", path: "storage.synced.get", args: ["deck"], caller: USER }]);
+    });
+
+    test("a call made while serving a tool call acts as its session; one made outside any acts as the plugin (R7)", async () => {
+      const { host } = setup();
+      const callers: unknown[] = [];
+      host.serveApi(async (call) => void callers.push([call.path, call.caller]));
+      const SESSION: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" };
+      let startApi: HandlerContext["api"] | undefined;
+      host.define("browser", {
+        start: async (api: HandlerContext["api"]) => void (startApi = api),
+        // A plugin can't speak for anyone else: what it passes as a caller is only an argument.
+        tabs: async (_a: unknown, ctx: HandlerContext) => ctx.api.browser!.tabs({ owner: { kind: "user" } }),
+      });
+      await host.invoke({ pluginId: "browser", handler: "tabs", args: { _meta: { "clover/caller": USER } }, caller: SESSION, session: "s_alpha" });
+      await startApi!.browser!.tabs();
+      expect(callers).toEqual([["browser.tabs", SESSION], ["browser.tabs", { kind: "plugin", pluginId: "browser" }]]);
+    });
+
+    test("the core's call id on an MCP request never reaches the plugin's server (R7)", async () => {
+      const { host } = setup();
+      const seen: unknown[] = [];
+      host.define("tarot", {
+        mcp: {
+          tarot: async (transport) => {
+            transport.onmessage = (msg) => {
+              seen.push(msg);
+              void transport.send({ jsonrpc: "2.0", id: msg.id, result: { content: [] } });
+            };
+            await transport.start();
+          },
+        },
+      });
+      const channel = await host.openMcp("tarot", "tarot");
+      const got = new Promise<unknown>((resolve) => channel.onMessage(resolve));
+      channel.send({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "Draw", arguments: {}, _meta: { [MCP_INVOCATION_META]: "call_1", progressToken: 1 } } }, { kind: "session", sessionId: "s_alpha", sessionKind: "bot" });
+      await got;
+      expect(seen).toEqual([{ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "Draw", arguments: {}, _meta: { progressToken: 1 } } }]);
     });
 
     test("the plugin id on an API call is the worker's, stamped by the host, whatever the plugin passes (review S3)", async () => {

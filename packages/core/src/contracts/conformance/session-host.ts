@@ -275,6 +275,18 @@ export function runSessionHostConformance(make: SessionHostFactory): void {
       expect(botDriver.turns.map((t) => t.origin)).toEqual(["peer"]);
     });
 
+    test("setModel reaches an agent's driver, never a bot's (item 90, lane K's ask)", async () => {
+      const { host } = setup();
+      const driver = new FakeSessionDriver({ canFold: false });
+      host.open({ id: "s_agent2", kind: "agent", bot: "alpha", parent: "s_alpha", computer: "Studio", backend: "cursor" }, driver);
+      await host.setModel("s_agent2", "gpt-5.5", "high");
+      expect(driver.models).toEqual([{ model: "gpt-5.5", effort: "high" }]);
+      expect(host.get("s_agent2")).toMatchObject({ model: "gpt-5.5", effort: "high" });
+      expect(isContractError(await host.setModel("s_alpha", "x").catch((e: unknown) => e), "refused")).toBe(true);
+      host.open({ id: "s_fixed", kind: "agent", bot: "alpha", parent: "s_alpha", computer: "Studio" }, new FakeSessionDriver({ setsModel: false }));
+      expect(isContractError(await host.setModel("s_fixed", "x").catch((e: unknown) => e), "refused")).toBe(true);
+    });
+
     test("history pages, subscribers hear records live, watchers hear views", async () => {
       const { host } = setup();
       const live: SessionRecord[] = [];

@@ -82,7 +82,8 @@ export interface Fence {
   readonly os: Os;
   fencedSet(): readonly FencedPath[];
   /** One file operation by a bot, an agent or a plugin. A write, delete or move is refused inside a fenced item and
-   *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. */
+   *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. Names
+   *  compare folded where the file system folds them (`FENCE_FOLDS_CASE`), whether or not the item exists yet. */
   check(op: FenceOp): FenceVerdict;
   /** The first fenced item any of `paths` reaches, for any access: an agent's request touching one is always a card,
    *  at every level (§9.3). */
@@ -104,15 +105,32 @@ export const CLOSED_DOORS: Record<Os, readonly string[]> = {
 /** Cloud metadata endpoints (§9.2): the bash fence blocks them, so a bot can't lift a VM's credentials. */
 export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "fd00:ec2::254", "metadata.google.internal"];
 
-/** The verdict for `op` against a fenced set; the fake and any implementation share it. */
-export function judge(set: readonly FencedPath[], op: FenceOp): FenceVerdict {
+/** Whether an OS's file systems compare names folded by default: macOS's APFS and Windows' NTFS do, Linux's don't. The
+ *  fence then compares names folded too (J-M1's review, B1), so `.clover/RULES/allow.json` is the fenced
+ *  `.clover/rules/allow.json`, even before either exists on disk. */
+export const FENCE_FOLDS_CASE: Record<Os, boolean> = { macos: true, windows: true, linux: false };
+
+/** A path as a case-folding file system compares it: Unicode NFC, then lower case. */
+export function foldPath(path: string): string {
+  return path.normalize("NFC").toLowerCase();
+}
+
+/** `isInside`, folded when the file system folds. */
+export function isInsideFolded(path: string, root: string, fold: boolean): boolean {
+  return fold ? isInside(foldPath(path), foldPath(root)) : isInside(path, root);
+}
+
+/** The verdict for `op` against a fenced set; the fake and any implementation share it. `fold`: compare names folded,
+ *  as the computer's file system does (`FENCE_FOLDS_CASE`). */
+export function judge(set: readonly FencedPath[], op: FenceOp, fold = false): FenceVerdict {
   const writes = op.op === "write" || op.op === "delete" || op.op === "move";
   const paths = op.op === "move" ? [op.path, op.to] : [op.path];
+  const inside = (p: string, r: string) => isInsideFolded(p, r, fold);
   for (const path of paths) {
     for (const item of set) {
       if (writes) {
-        if (isInside(path, item.path) || isInside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
-      } else if (item.deny === "read-write" && isInside(path, item.path)) {
+        if (inside(path, item.path) || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
+      } else if (item.deny === "read-write" && inside(path, item.path)) {
         return { allowed: false, reason: item.kind, path: item.path };
       }
     }

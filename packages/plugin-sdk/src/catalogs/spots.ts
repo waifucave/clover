@@ -10,7 +10,7 @@
 // `needs` and `keep` come from the spec; the props are the least each spot obviously hands over, for E and F to settle
 // at E-M1 and F-M2 through the controller.
 import { z } from "zod";
-import { Path, Text } from "../manifest/fields";
+import { HandlerName, Path, Text } from "../manifest/fields";
 
 export interface SpotInfo {
   readonly name: string;
@@ -27,6 +27,9 @@ export interface SpotInfo {
   /** For a keyed spot: a key no plugin fills shows the declaring part's placeholder, which offers to find a plugin
    *  for it (lane F's request): the plugins page, searched for that spot and key. */
   readonly placeholder?: true;
+  /** Entry ids and titles only the bundled `clover` tree may use here (lane G's review: a third-party island tab can't
+   *  pose as Needs you). Titles compare folded (`foldTitle`). */
+  readonly reserved?: { readonly ids: readonly string[]; readonly titles: readonly string[] };
   /** The spot's own entry fields (title, icon, opens…), beyond the `ui` entry's. */
   readonly fields: z.ZodType;
   /** What the spot hands each component (provisional, see above). */
@@ -73,7 +76,7 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ route: z.string(), params: z.record(z.string(), z.string()) }),
     doc: "The main area, keyed by route: bot, agent, settings, plugins, app." },
   { name: "panel", shape: "keyed", declaredBy: "shell", inBotTab: false, context: ["session"], placeholder: true, fields: titledOpt,
-    props: z.object({ app: z.string(), session: z.string().optional() }),
+    props: z.object({ app: z.string(), session: z.string().optional(), bot: z.string().optional() }),
     doc: "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder." },
   { name: "panel.view", shape: "keyed", declaredBy: "shell", inBotTab: false, fields: titled,
     props: z.object({ view: z.string(), session: z.string().optional() }),
@@ -118,14 +121,20 @@ export const SPOTS: readonly SpotInfo[] = [
   // Surfaces.
   { name: "island.tab", shape: "list", declaredBy: "island", inBotTab: false, context: ["surface"],
     fields: z.object({ title: Text, icon: Path.optional(), size: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(), idle: z.boolean().optional(), attention: z.enum(["never", "badge", "expand"]).optional() }),
-    props: z.object({ expanded: z.boolean() }), doc: "A tab of the island, such as Needs you, Devices or Usage." },
-  { name: "pill.target", shape: "list", declaredBy: "pill", inBotTab: false, context: ["surface"], fields: titled, props: none,
-    doc: "Something the Dispatch pill can message besides the bots." },
+    props: z.object({ expanded: z.boolean() }), reserved: { ids: ["needs-you"], titles: ["Needs you"] },
+    doc: "A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `clover` tree's tabs raise the strip's attention." },
+  { name: "pill.target", shape: "list", declaredBy: "pill", inBotTab: false, context: ["surface"], fields: titled.extend({ handler: HandlerName }), props: none,
+    doc: "Something the Dispatch pill can message besides the bots: `handler` (a `PillTargetHandler`) gets the user's words. The pill names it with its plugin's name, and leaves out one titled as a bot." },
 ];
 
 export const SPOT_NAMES: ReadonlySet<string> = new Set(SPOTS.map((s) => s.name));
 export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
+}
+
+/** A title as reserved titles and bot names compare it: NFKC (width folded), case folded, spaces collapsed. */
+export function foldTitle(title: string): string {
+  return title.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 /** Whether a keyed spot's entry key covers a key: exact, or a `*` pattern after the exact ones (§5.5). */
