@@ -322,7 +322,12 @@ export class RegistryCore implements PluginRegistry {
     const plugins: Record<string, StoredState> = {};
     for (const id of ids) {
       const h = this.#plugins.get(id)!;
-      if (h.input.dev) continue; // a development folder never syncs (§5.6)
+      if (h.input.dev) {
+        // A development folder never syncs (§5.6): the installed plugin it stands in for keeps its records.
+        const kept = this.#state.plugins[id];
+        if (kept) plugins[id] = kept;
+        continue;
+      }
       const s: StoredState = { enabled: h.enabled };
       if (h.input.source !== undefined) s.source = h.input.source;
       if (h.input.provenance !== undefined) s.provenance = h.input.provenance;
