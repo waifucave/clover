@@ -20,8 +20,11 @@ export const FRESH_MS = 250;
 /** A tab asked for a frame that gives none in this long has stalled. A slow machine's full repaint can take over a
  *  second (the linux-arm64 runner drew about 2 frames a second). */
 export const STALL_MS = 3000;
-/** A new or resized tab's first frame can take longer still (seconds on that runner). */
-export const FIRST_FRAME_MS = 5000;
+/** A new or resized tab's first frame can take longer still: seconds on that runner, and over 5 s on a loaded Linux
+ *  runner once (#193's merge-queue run). The tab is asked again every `REPAINT_EVERY_MS` until then. */
+export const FIRST_FRAME_MS = 15_000;
+/** How often a tab that hasn't answered is asked to repaint again (and the compositor for its copy). */
+export const REPAINT_EVERY_MS = 1_000;
 
 export interface TabEnv {
   computer: string;
@@ -230,10 +233,18 @@ export class OffscreenTab extends BrowserTab {
     // A still page sends no frames, so an old frame can still be the page as it is; ask for a fresh one to be sure.
     if (painting) {
       if (newest !== undefined && now - newest.at < FRESH_MS) return { image: newest.image, contentAgeMs: now - newest.at };
-      const next = this.frames.next(this.drawn ? STALL_MS : FIRST_FRAME_MS);
-      this.contents.invalidate();
-      const frame = await next;
-      if (frame !== undefined) return { image: frame.image, contentAgeMs: Date.now() - frame.at };
+      // Asked again every second, with the compositor's copy tried between (a repaint request can be lost while a
+      // loaded machine catches up), until the tab has had its time.
+      const deadline = now + (this.drawn ? STALL_MS : FIRST_FRAME_MS);
+      while (Date.now() < deadline && !this.contents.isDestroyed()) {
+        const next = this.frames.next(Math.min(REPAINT_EVERY_MS, Math.max(1, deadline - Date.now())));
+        this.contents.invalidate();
+        const frame = await next;
+        if (frame !== undefined) return { image: frame.image, contentAgeMs: Date.now() - frame.at };
+        const copy = await withTimeout(this.contents.capturePage(), REPAINT_EVERY_MS).catch(() => undefined);
+        if (copy !== undefined && this.fits(copy)) return { image: copy, contentAgeMs: 0 };
+      }
+      return undefined;
     }
     // Painting stopped (a resting tab), or no frame came: the compositor's own copy (about one frame's wait).
     try {
