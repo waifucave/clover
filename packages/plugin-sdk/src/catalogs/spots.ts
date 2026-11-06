@@ -137,23 +137,39 @@ export function spotInfo(name: string): SpotInfo | undefined {
  *  digits and strokes that read as letters. */
 const CONFUSABLES: Readonly<Record<string, string>> = Object.fromEntries([
   // Cyrillic
-  ..."АaВbЕeКkМmНhОoРpСcТtХxУyІiЈjЅsҮyҺhӀlԚqԜwаaеeоoрpсcуyхxіiјjѕsԁdһhӏlԛqԝwүyёeїi".match(/../gu)!.map((p) => [...p] as [string, string]),
+  ..."АaВbЕeКkМmНhОoРpСcТtХxУyІlЈjЅsҮyҺhӀlԚqԜwаaеeоoрpсcуyхxіiјjѕsԁdһhӏlԛqԝwүyёeїiгrпn".match(/../gu)!.map((p) => [...p] as [string, string]),
   // Greek
-  ..."ΑaΒbΕeΖzΗhΙiΚkΜmΝnΟoΡpΤtΥyΧxαaβbεeιiκkνvοoρpτtυuχxγyωw".match(/../gu)!.map((p) => [...p] as [string, string]),
+  ..."ΑaΒbΕeΖzΗhΙlΚkΜmΝnΟoΡpΤtΥyΧxαaβbεeιiκkνvοoρpτtυuχxγyωw".match(/../gu)!.map((p) => [...p] as [string, string]),
   // Latin lookalikes, Armenian, digits and strokes
   ..."ıiɩiɑaɡgʏyℓlǀlօoսuցgհhոn0o1l|l".match(/../gu)!.map((p) => [...p] as [string, string]),
 ]);
 const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
 
-/** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review): NFKC
- *  (width folded), invisible characters dropped (zero-width spaces and joiners, bidi marks, variation selectors), each
- *  letter's confusable skeleton (a Cyrillic "о" is "o"), accents dropped, case folded, and every run of anything but
- *  letters and digits one space. Folding too much only reserves more. */
+/** Small capitals and Cherokee letters that read as Latin ones (lane G's island comparison, kept in agreement). */
+const LOOKALIKES: Readonly<Record<string, string>> = Object.fromEntries([
+  // Small capitals
+  ..."ᴀaʙbᴄcᴅdᴇeꜰfɢgʜhɪiᴊjᴋkʟlᴍmɴnᴏoᴘpǫqʀrꜱsᴛtᴜuᴠvᴡwʏyᴢz".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Cherokee capitals (a small letter is upper-cased to its capital first)
+  ..."ᎪaᏴbᏟcᎠdᎬeᏀgᎻhᏆlᎫjᏦkᏞlᎷmᏢpᏒrᏚsᎢtᏙvᎳwᏔwᎩyᏃz".match(/../gu)!.map((p) => [...p] as [string, string]),
+]);
+const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/u;
+
+/** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review; lane
+ *  G's island comparison): NFKC (width folded), invisible characters dropped (zero-width spaces and joiners, bidi
+ *  marks, variation selectors), each letter's confusable skeleton (a Cyrillic "о" is "o"; small capitals and Cherokee
+ *  letters too), accents dropped, capital I, 1 and l as one, "rn" as "m", case folded, and every run of anything but
+ *  letters and digits dropped, so a missing or invisible space changes nothing ("Needsyou" is "Needs you"). Folding too
+ *  much only reserves more. */
 export function foldTitle(title: string): string {
   const visible = title.normalize("NFKC").replace(INVISIBLE, "");
-  const skeleton = [...visible].map((ch) => CONFUSABLES[ch] ?? ch).join("");
+  const skeleton = [...visible].map((ch) => {
+    const c = CHEROKEE_SMALL.test(ch) ? ch.toUpperCase() : ch;
+    return c === "I" ? "l" : (CONFUSABLES[c] ?? LOOKALIKES[c] ?? c);
+  }).join("");
   return skeleton.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(/[1|]/g, "l")
+    .replace(/rn/g, "m");
 }
 
 /** Names only the bundled `clover` tree's plugins may have (lane G's ask): the app's own, beside the titles spots

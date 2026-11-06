@@ -231,7 +231,12 @@ describe("points and spots", () => {
     // A pill target names the handler that gets the user's words.
     expect(entry({ spot: "pill.target", component: "Target", title: "Lights" }).some((i) => i.endsWith("/handler"))).toBe(true);
     expect(entry({ spot: "pill.target", component: "Target", title: "Lights", handler: "lights" })).toEqual([]);
-    expect(foldTitle(" Needs\u3000YOU ")).toBe("needs you");
+    expect(foldTitle(" Needs\u3000YOU ")).toBe("needsyou");
+    // As lane G's island compares: small capitals, Cherokee letters, I/1/l as one, "rn" as "m", and missing or
+    // invisible spaces fold too, so the manifest check and the island agree.
+    for (const t of ["Needsyou", "Needs\u200Byou", "\u0274\u1D07\u1D07\u1D05\uA731 \u028F\u1D0F\u1D1C"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
+    for (const t of ["CIover", "C1over", "Cl0ver", "\u13DFlover", "Clov\u0435\u0433"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
+    expect(foldTitle("Rnoon")).toBe(foldTitle("moon"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
     expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
     expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");
