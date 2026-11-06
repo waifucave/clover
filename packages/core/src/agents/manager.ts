@@ -45,7 +45,7 @@ import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
-import { agentPolicyOf, botMemoryFolders, touchesBotMemory, withMemoryDenied } from "./memory";
+import { agentPolicyOf, botMemoryFolders, touchesBotMemory, touchesConversations, withMemoryDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -557,8 +557,9 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
-    // A bot's memory: refused without a card, at every level (the owner's decision).
-    if (resolved.paths.some((p) => touchesBotMemory(this.#o.home, p))) {
+    // A bot's memory, or the conversations that carry it: refused without a card, at every level (the owner's decision,
+    // #208's review).
+    if (resolved.paths.some((p) => touchesBotMemory(this.#o.home, p) || touchesConversations(this.#o.home, p))) {
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "bot-memory" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };

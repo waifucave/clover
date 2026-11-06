@@ -3,13 +3,13 @@
 // client talks to it through an in-memory pipe, its writes ask through `session/request_permission` and the approval
 // level, its bridge is in-process, and the pause holds its tool calls, read-only ones too.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { buildCoreBrand } from "../../runtime-sdk/brand";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
-import { CLOVER_CODE_ID, CloverCodeBackend } from "../clover-code/backend";
+import { CLOVER_CODE_ID, CloverCodeBackend, type CloverCodeDeps } from "../clover-code/backend";
 import { agentMethods } from "../rpc";
 import { waitFor, World, type WorldOptions } from "./world";
 
@@ -34,15 +34,16 @@ function baseOptionsFor(home: string, spawn: SpawnClaudeCodeProcess) {
   };
 }
 
-function make(spawn: SpawnClaudeCodeProcess, o: WorldOptions & { pause?: WorldOptions["pause"] } = {}): World {
+function make(spawn: SpawnClaudeCodeProcess, o: WorldOptions & { pause?: WorldOptions["pause"]; base?: Partial<Options>; query?: CloverCodeDeps["query"] } = {}): World {
   let w!: World;
   w = new World({
     ...o,
     bridgeServerName: BRIDGE,
     extraBackends: (wire) => [new CloverCodeBackend({
       clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL,
-      baseOptions: (x) => baseOptionsFor(w.cloverHome, spawn)(x),
+      baseOptions: (x) => ({ ...baseOptionsFor(w.cloverHome, spawn)(x), ...(o.base ?? {}) }),
       ...(o.pause ? { pause: o.pause } : {}),
+      ...(o.query ? { query: o.query } : {}),
     })],
   });
   world = w;
@@ -114,5 +115,71 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: Record<string, unknown>[] };
     expect(view.backends[0]).toMatchObject({ id: CLOVER_CODE_ID, name: "Clover's coding agent", protocol: "acp", placement: "local", computers: [{ installed: true, sandboxed: true, marks: [] }] });
     expect(existsSync(w.cloverHome)).toBe(true);
+  });
+  test("bots' conversations are out of its reach: Read, Grep and Bash cat of a bot's session transcript and of another bot's agent transcript are denied", async () => {
+    const w = make(spawn);
+    const MARK = "MEMORY.md: the-bot-remembers-a-secret";
+    const files = [
+      join(w.cloverHome, "projects", "-home-project", "s_beta.jsonl"),
+      join(w.cloverHome, "sdk", "projects", "-home-project", "s_gamma.jsonl"),
+      join(w.cloverHome, "sessions", "bots", "s_beta.jsonl"),
+      join(w.cloverHome, "bots", "beta", "agents", "agent_other", "acp.ndjson"),
+    ];
+    for (const f of files) {
+      mkdirSync(join(f, ".."), { recursive: true });
+      writeFileSync(f, `{"text":"${MARK}"}\n`);
+    }
+    const calls = files.flatMap((f, i) => [
+      `${i === 0 ? "" : "+"}CALL Read {"file_path":${JSON.stringify(f)}}`,
+      `+CALL Grep {"pattern":"remembers","path":${JSON.stringify(join(f, ".."))}}`,
+      `+CALL Bash {"command":${JSON.stringify(`cat '${f}'`)}}`,
+    ]);
+    const r = await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
+      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Probe",
+      prompt: calls.join("\n"), model: MODEL,
+    });
+    await waitFor(() => notification(w), "the task notification");
+    const wire = readFileSync(join(w.cloverHome, r.transcript), "utf8");
+    // Every probe ran and none read the conversation: the marker never came back in a tool result or the report.
+    expect(wire.split("\n").filter((l) => l.includes('"tool_call_update"')).length).toBeGreaterThanOrEqual(files.length * 3);
+    expect(wire).not.toContain("the-bot-remembers-a-secret");
+    expect(JSON.stringify(notification(w))).not.toContain("the-bot-remembers-a-secret");
+  });
+
+  test("the base options' hooks are kept and the pause goes first; host messaging or a missing root refuses the start", async () => {
+    let seen: Options | undefined;
+    const fakeQuery = ((args: { prompt: AsyncIterable<string>; options: Options }) => {
+      seen = args.options;
+      async function* run() {
+        yield { type: "system", subtype: "init", model: MODEL, permissionMode: "default" };
+        for await (const _ of args.prompt) yield { type: "result", subtype: "success", is_error: false, usage: { input_tokens: 1, output_tokens: 1 } };
+      }
+      return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+    }) as unknown as CloverCodeDeps["query"];
+    const own = async () => ({});
+    const post = async () => ({});
+    const gate = { mayAct: () => true };
+    const w = make(spawn, { pause: gate, query: fakeQuery, base: { hooks: { PreToolUse: [{ hooks: [own] }], PostToolUse: [{ hooks: [post] }] } } });
+    await w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Hooks", prompt: "hi", model: MODEL });
+    await waitFor(() => notification(w), "the task notification");
+    expect(seen!.hooks!.PreToolUse!.length).toBe(2);
+    expect(seen!.hooks!.PreToolUse![0]!.failClosed).toBe(true);
+    expect(seen!.hooks!.PreToolUse![1]!.hooks[0]).toBe(own);
+    expect(seen!.hooks!.PostToolUse![0]!.hooks[0]).toBe(post);
+    // The fence's file-tool denials reach the rules, the bots' folders and the transcript stores among them.
+    expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${join(w.cloverHome, "bots")}/**)`, `Read(/${join(w.cloverHome, "projects")}/**)`, `Grep(/${join(w.cloverHome, "sessions")}/**)`]));
+
+    const w2 = make(spawn, { query: fakeQuery, base: { hostMessaging: {} as never } });
+    await w2.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Host", prompt: "hi", model: MODEL });
+    expect(JSON.stringify(await waitFor(() => notification(w2), "the refusal"))).toContain("host messaging");
+
+    const backend = new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), query: fakeQuery });
+    const gone = join(w.project, "gone");
+    mkdirSync(gone);
+    rmSync(gone, { recursive: true });
+    const err = await backend.start({ sessionId: "s", root: gone, bridge: { name: BRIDGE, command: "x", args: [], env: {}, tools: [] }, fence: w.fence.policy(), inProcessBridge: { type: "sdk", name: BRIDGE, instance: {} } }).catch((e: unknown) => e);
+    expect(String((err as Error).message)).toContain("isn't there");
+    expect(existsSync(gone)).toBe(false);
   });
 });

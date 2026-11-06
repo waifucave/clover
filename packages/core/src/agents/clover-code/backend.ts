@@ -16,7 +16,7 @@
 //   never ask), and an allow given while it came on waits for the resume. Background commands started before a pause
 //   keep running; only tool calls are held.
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { statSync } from "node:fs";
 import { query as sdkQuery, SDK_VERSION, type CanUseTool, type HookCallbackMatcher, type McpSdkServerConfigWithInstance, type Options } from "@waifucave/clover-agent-sdk";
 import { serveAcpAgent, type AcpAgentServer, type AcpQuery, type AcpQueryFn } from "@waifucave/clover-agent-sdk/acp";
 import type { AgentBackend, AgentDetection, AgentQuirks } from "../../contracts/agent-backend";
@@ -106,6 +106,14 @@ function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer)
 }
 
 const PAUSED = "Stopped: the user paused bots and their agents.";
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
 const PAUSE_POLL_MS = 1_000;
 
 /** Waits while the gate says no; false when the call should not go on (the turn was cancelled or the agent stopped). */
@@ -154,33 +162,39 @@ export class CloverCodeBackend implements AgentBackend {
     const deps = this.#deps;
     const bridge = spec.inProcessBridge;
     if (!bridge) throw new ContractError("refused", "Clover's coding agent needs its in-process bridge");
-    mkdirSync(spec.root, { recursive: true });
+    // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
+    if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
     const model = spec.model ?? deps.defaultModel();
     const abort = new AbortController();
     // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
     const fence = agentPolicyOf(spec.fence);
     const gate = deps.pause;
-    const pauseHooks: Partial<Record<"PreToolUse", HookCallbackMatcher[]>> = {
-      PreToolUse: [{
+    const pauseHook: HookCallbackMatcher[] = [{
         failClosed: true,
         timeout: 86_400,
         hooks: [async (_input, _id, { signal }) => (await holdWhilePaused(gate, AbortSignal.any([signal, abort.signal])))
           ? {}
           : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAUSED } }],
-      }],
-    };
+    }];
+    const base = deps.baseOptions({ model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root });
+    // The runtime's TaskStop and SendMessage would reach the host's other sessions through host messaging; an agent
+    // reaches its bot through the bridge alone.
+    if ((base as { hostMessaging?: unknown }).hostMessaging !== undefined) throw new ContractError("refused", "Clover's coding agent wasn't started: its options carry host messaging");
+    // The base's hooks stay; the pause goes first in `PreToolUse`.
+    const hooks: Options["hooks"] = gate ? { ...(base.hooks ?? {}), PreToolUse: [...pauseHook, ...(base.hooks?.PreToolUse ?? [])] } : base.hooks;
+    const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
     const options: Options = {
-      ...deps.baseOptions({ model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root }),
+      ...base,
       tools: [...CLOVER_CODE_TOOLS],
       abortController: abort,
-      ...(gate ? { hooks: pauseHooks } : {}),
+      ...(hooks ? { hooks } : {}),
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       sandbox: {
         enabled: true,
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
       },
       // The sandbox holds Bash; the file tools get the same denials as deny rules (the fenced set and bots' memory).
-      ...(fence.denyRead.length + fence.denyWrite.length === 0 ? {} : { permissions: { deny: fileToolDenials(fence.denyRead, fence.denyWrite) } }),
+      ...(denials.length === 0 && base.permissions === undefined ? {} : { permissions: { ...(base.permissions ?? {}), deny: denials } }),
     };
     await deps.fillProvider?.(model, options);
     const run = deps.query ?? sdkQuery;

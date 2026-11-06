@@ -52,15 +52,31 @@ export function botMemoryPattern(home: string): string {
   return join(home, "bots", "*", "memory");
 }
 
-/** The policy with bots' memory denied: reads by the pattern and each known folder, writes by the pattern and the whole
- *  `<home>/bots`. */
+/** Where bots' conversations are kept, which carry their memory (a bot's prompt holds it), and so are an agent's to
+ *  read no more than the memory itself (#208's review, the controller's ruling): every bot's folder (its memory, its
+ *  agents' transcripts), the runtimes' transcript stores (the embedded runtime's `<home>/projects`, the shared SDK
+ *  home's `<home>/sdk/projects`) and the sessions' event logs (`<home>/sessions`). Whole folders, no list: an agent
+ *  never needs any of them, since the daemon writes its transcripts. */
+export function conversationStores(home: string): string[] {
+  return [join(home, "bots"), join(home, "projects"), join(home, "sdk", "projects"), join(home, "sessions")];
+}
+
+/** The policy with bots' memory and conversations denied to an agent: reads and writes of every bot's folder, the
+ *  runtimes' transcript stores and the sessions' logs, plus the memory pattern and each known memory folder, for a
+ *  sandbox that names memory on its own. */
 export function withMemoryDenied(policy: SandboxPolicy, home: string, folders: readonly string[]): SandboxPolicy {
   const add = (list: readonly string[], more: readonly string[]) => [...list, ...more.filter((f, i) => !list.includes(f) && more.indexOf(f) === i)];
+  const stores = conversationStores(home);
   return {
     ...policy,
-    denyRead: add(policy.denyRead, [botMemoryPattern(home), ...folders]),
-    denyWrite: add(policy.denyWrite, [join(home, "bots"), botMemoryPattern(home), ...folders]),
+    denyRead: add(policy.denyRead, [...stores, botMemoryPattern(home), ...folders]),
+    denyWrite: add(policy.denyWrite, [...stores, botMemoryPattern(home), ...folders]),
   };
+}
+
+/** Whether a path is in one of the conversation stores (`conversationStores`), compared folded. */
+export function touchesConversations(home: string, path: string, os?: Os): boolean {
+  return conversationStores(home).some((store) => isInsideFolded(path, store, os));
 }
 
 /** Deny rules for the file tools: a read-denied folder for every file tool, a write-denied one for the editing ones. */

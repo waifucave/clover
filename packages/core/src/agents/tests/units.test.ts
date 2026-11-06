@@ -26,7 +26,7 @@ import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPath
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
-import { botMemoryFolders, botMemoryPattern, fileToolDenials, touchesBotMemory, withMemoryDenied } from "../memory";
+import { botMemoryFolders, botMemoryPattern, fileToolDenials, touchesBotMemory, touchesConversations, withMemoryDenied } from "../memory";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -529,8 +529,13 @@ describe("bots' memory", () => {
       // By pattern, so a bot that comes later is covered; writes to all of `bots` need no glob.
       const p = withMemoryDenied({ allowWrite: [home], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, home, ["/m1", "/a"]);
       expect(botMemoryPattern(home)).toBe(join(home, "bots", "*", "memory"));
-      expect(p.denyRead).toEqual([join(home, "bots", "*", "memory"), "/m1", "/a"]);
-      expect(p.denyWrite).toEqual(["/a", join(home, "bots"), join(home, "bots", "*", "memory"), "/m1"]);
+      // Bots' conversations too: every bot's folder, the runtimes' transcript stores and the sessions' logs, whole.
+      const stores = [join(home, "bots"), join(home, "projects"), join(home, "sdk", "projects"), join(home, "sessions")];
+      expect(p.denyRead).toEqual([...stores, join(home, "bots", "*", "memory"), "/m1", "/a"]);
+      expect(p.denyWrite).toEqual(["/a", ...stores, join(home, "bots", "*", "memory"), "/m1"]);
+      expect(touchesConversations(home, join(home, "projects", "-x", "s.jsonl"))).toBe(true);
+      expect(touchesConversations(home, join(home, "Bots", "beta", "agents", "a", "acp.ndjson"))).toBe(true);
+      expect(touchesConversations(home, join(home, "settings"))).toBe(false);
       expect(fileToolDenials(["/m1"], ["/w"])).toEqual(["Read(//m1)", "Read(//m1/**)", "Edit(//m1)", "Edit(//m1/**)", "Write(//m1)", "Write(//m1/**)", "Glob(//m1)", "Glob(//m1/**)", "Grep(//m1)", "Grep(//m1/**)", "NotebookEdit(//m1)", "NotebookEdit(//m1/**)", "Edit(//w)", "Edit(//w/**)", "Write(//w)", "Write(//w/**)", "NotebookEdit(//w)", "NotebookEdit(//w/**)"]);
     } finally {
       rmSync(home, { recursive: true, force: true });

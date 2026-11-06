@@ -772,9 +772,11 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     const dir = join(w.cloverHome, "run", "agents", r.sessionId);
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
     // The fenced set, and bots' memory (the owner's decision).
-    expect(policy.denyWrite).toEqual([
-      ...w.fence.policy().denyWrite, join(w.cloverHome, "bots"), join(w.cloverHome, "bots", "*", "memory"), join(w.cloverHome, "bots", "alpha", "memory"),
-    ]);
+    expect(policy.denyWrite).toEqual(expect.arrayContaining([
+      ...w.fence.policy().denyWrite, join(w.cloverHome, "bots"), join(w.cloverHome, "projects"), join(w.cloverHome, "sessions"),
+      join(w.cloverHome, "bots", "*", "memory"), join(w.cloverHome, "bots", "alpha", "memory"),
+    ]));
+    expect(new Set(policy.denyWrite).size).toBe(policy.denyWrite.length);
     expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
     expect(policy.denyRead).toContain(join(w.cloverHome, "bots", "*", "memory"));
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
