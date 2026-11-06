@@ -162,6 +162,48 @@ export function inRegions(point: { x: number; y: number }, regions: readonly Rec
   return regions.some((r) => point.x >= r.x && point.x < r.x + r.width && point.y >= r.y && point.y < r.y + r.height);
 }
 
+/** How click-through follows the cursor where the OS doesn't forward its moves to an ignoring window (Linux). */
+export const CLICK_THROUGH_POLL_MS = 120;
+
+/** A surface's click-through (§5.5, G's ask): it takes clicks inside its regions and lets the rest through to what is
+ *  under it. On macOS and Windows the OS forwards the cursor's moves to a window that ignores the mouse, so the window
+ *  follows them with no timer; on Linux, where it doesn't, the cursor's place is read every `CLICK_THROUGH_POLL_MS`.
+ *  It calls `apply` only when the answer changes. */
+export class ClickThrough {
+  private regions: readonly Rect[] = [];
+  private on = false;
+  private ignoring: boolean | undefined;
+
+  constructor(private readonly apply: (ignore: boolean) => void) {}
+
+  /** The surface's regions, and whether it shows; with none (or hidden) it takes every click, as a normal window. */
+  set(regions: readonly Rect[], visible: boolean, at: { x: number; y: number } | undefined): void {
+    this.regions = regions;
+    this.on = visible && regions.length > 0;
+    if (!this.on) {
+      this.decide(false);
+      return;
+    }
+    this.move(at);
+  }
+
+  /** The cursor, in the window's own space, moved (undefined: it left the window). */
+  move(at: { x: number; y: number } | undefined): void {
+    if (!this.on) return;
+    this.decide(at === undefined || !inRegions(at, this.regions));
+  }
+
+  get active(): boolean {
+    return this.on;
+  }
+
+  private decide(ignore: boolean): void {
+    if (this.ignoring === ignore) return;
+    this.ignoring = ignore;
+    this.apply(ignore);
+  }
+}
+
 /** Surfaces the `clover` tree ships may float above everything, on every Space (the island, the pill); in 1.111.1 any
  *  other plugin's surface is an ordinary window level (the E-M1 review's ruling). */
 export function surfaceMayFloat(pluginId: string): boolean {

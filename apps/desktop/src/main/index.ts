@@ -27,7 +27,7 @@ import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { MenuGate, PointerLog, ViewFrames, checkRegions, inRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
@@ -460,6 +460,7 @@ interface Surface {
   pluginId: string;
   placement?: string;
   regions: Rect[];
+  clicks: ClickThrough;
   poll?: ReturnType<typeof setInterval>;
 }
 const surfaces = new Map<string, Surface>();
@@ -489,7 +490,18 @@ function syncSurfaces(): void {
     if (process.platform === "darwin" && floats) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     if (floats && !wayland && w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
     const placement = w.window.placement?.[os];
-    const s: Surface = { win, ref: w.ref, pluginId: w.pluginId, regions: [], ...(placement !== undefined ? { placement } : {}) };
+    const s: Surface = {
+      win, ref: w.ref, pluginId: w.pluginId, regions: [], ...(placement !== undefined ? { placement } : {}),
+      // macOS and Windows forward the cursor's moves to a window that ignores the mouse (`forward`).
+      clicks: new ClickThrough((ignore) => {
+        if (!win.isDestroyed()) win.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined);
+      }),
+    };
+    // Where the OS forwards them, the cursor's moves decide click-through: no timer.
+    win.webContents.on("before-mouse-event", (_event, mouse) => {
+      if (mouse.type === "mouseMove" || mouse.type === "mouseEnter") s.clicks.move({ x: mouse.x, y: mouse.y });
+      else if (mouse.type === "mouseLeave") s.clicks.move(undefined);
+    });
     surfaces.set(w.id, s);
     const id = win.id;
     runtime.openWindow(id, { material: "none", surface: { id: w.id, ref: w.ref } });
@@ -551,27 +563,24 @@ function tellSurfaces(): void {
   }
 }
 
-/** Clicks pass through the surface outside its regions: while it shows with regions, the cursor's place decides. */
+/** Clicks pass through the surface outside its regions (ClickThrough): the cursor's moves decide on macOS and Windows,
+ *  which forward them to a window that ignores the mouse; Linux, which doesn't, reads the cursor's place now and then. */
 function clickThrough(s: Surface): void {
   clearInterval(s.poll);
   s.poll = undefined;
-  if (s.win.isDestroyed() || !s.win.isVisible() || s.regions.length === 0) {
-    if (!s.win.isDestroyed()) s.win.setIgnoreMouseEvents(false);
-    return;
-  }
-  let ignoring: boolean | undefined;
-  const tick = () => {
-    if (s.win.isDestroyed()) return;
+  if (s.win.isDestroyed()) return;
+  const cursor = () => {
     const c = screen.getCursorScreenPoint();
     const b = s.win.getBounds();
-    const over = inRegions({ x: c.x - b.x, y: c.y - b.y }, s.regions);
-    if (ignoring !== !over) {
-      ignoring = !over;
-      s.win.setIgnoreMouseEvents(ignoring, { forward: true });
-    }
+    const at = { x: c.x - b.x, y: c.y - b.y };
+    return at.x >= 0 && at.y >= 0 && at.x < b.width && at.y < b.height ? at : undefined;
   };
-  tick();
-  s.poll = setInterval(tick, 50);
+  s.clicks.set(s.regions, s.win.isVisible(), cursor());
+  if (process.platform === "linux" && s.clicks.active) {
+    s.poll = setInterval(() => {
+      if (!s.win.isDestroyed()) s.clicks.move(cursor());
+    }, CLICK_THROUGH_POLL_MS);
+  }
 }
 
 /** The menu broker's gate: menus open only right after the user's click or key press in that window, one at a time. */

@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { MENU_INPUT_WINDOW_MS, MenuGate, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, MENU_INPUT_WINDOW_MS, MenuGate, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -174,6 +174,28 @@ describe("a hang restarts the app into safe mode (ruling R9)", () => {
     w.unresponsive(2);
     for (const fn of [...timers.values()]) fn();
     expect(restarted).toEqual([1]);
+  });
+});
+
+describe("a surface's click-through follows the cursor, with no timer where the OS forwards its moves", () => {
+  test("clicks inside its regions, through everywhere else, and every click while it has none or hides", () => {
+    const applied: boolean[] = [];
+    const c = new ClickThrough((ignore) => applied.push(ignore));
+    const regions = [{ x: 0, y: 0, width: 100, height: 40 }];
+    c.set(regions, true, { x: 200, y: 10 });
+    expect(applied).toEqual([true]);
+    // Moving over a region takes clicks; moving within it changes nothing; leaving the window lets them through.
+    c.move({ x: 10, y: 10 });
+    c.move({ x: 20, y: 20 });
+    c.move(undefined);
+    expect(applied).toEqual([true, false, true]);
+    // Hidden, or with no regions: a normal window again, whatever the cursor does.
+    c.set(regions, false, { x: 200, y: 10 });
+    c.move({ x: 200, y: 10 });
+    expect(applied).toEqual([true, false, true, false]);
+    c.set([], true, { x: 200, y: 10 });
+    expect(applied.at(-1)).toBe(false);
+    expect(c.active).toBe(false);
   });
 });
 
