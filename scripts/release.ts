@@ -120,13 +120,14 @@ import {
 } from "./computer-helper-lib";
 import { checkSignedHeadless, HEADLESS, HEADLESS_EMBED_RELATIVE, HEADLESS_NESTED_HELPERS, headlessRequirement, signedFacts as headlessSignedFacts } from "./headless-helper-lib";
 import { winterSourceOf } from "../packages/core/src/runtime-sdk/bundle-layout";
-import { REQUIRED_WINTER_AGENT_SDK } from "../packages/core/src/runtime-sdk/versions";
+import { CODING_AGENT_BINARY_VERSION } from "../packages/core/src/runtime-sdk/versions";
 import { buildWinter } from "./build-winter";
 import { resolveInstalledWinterPackage } from "./stage-runtimes";
 import { buildCoworkNative } from "./build-cowork-native";
 import { COWORK_NATIVE, COWORK_NATIVE_EMBED_RELATIVE, checkCoworkNativeBundle, checkCoworkNativeOmitted, checkSignedNative, coworkNativeReleasePlan, coworkRequirement, readCoworkBundleFacts } from "./cowork-native-lib";
 import { createHash } from "node:crypto";
 import { refuseHeldScript } from "./held-scripts";
+import { bunPinProblem } from "./bun-pin";
 
 // C0 review S6: until C7 (`held-scripts.ts`), before this script reads an argument or touches anything.
 refuseHeldScript("release");
@@ -256,11 +257,12 @@ const pre = preflight({
       return out === "" ? null : `working tree not clean — commit or stash changes before releasing`;
     },
     // The shipped `clover-core` is compiled by THIS bun, and CI tests with `.bun-version` — they must be
-    // the same Bun, or CI proves a different binary (CI on "latest" went red on 1.4.2 while releases
-    // built with 1.3.14: bun:ffi's executable-memory need and a stdin EPIPE both differ between them).
+    // the same Bun, or CI proves a different binary (CI on "latest" once went red on 1.4.2 while releases
+    // were built with 1.3.14: bun:ffi's executable-memory need and a stdin EPIPE differ between those two; the
+    // pin is now 1.4.x, which has the stricter EPIPE behaviour and needs no unsigned executable memory).
     bunVersion: () => {
-      const pinned = readFileSync(join(ROOT, ".bun-version"), "utf8").trim();
-      return Bun.version === pinned ? null : `this bun is ${Bun.version} but .bun-version pins ${pinned} — release with the pinned Bun (CI tests that one)`;
+      const pin = bunPinProblem(ROOT);
+      return pin === null ? null : `${pin} — release with the pinned Bun (CI tests that one): scripts/pinned-bun run scripts/release.ts`;
     },
     // `bun test` strips types and runs, so a type error ships unless something compiles it: 0.121.0
     // and 0.122.0 went out with `clover mcp permissions` calling a name its branch never imported (a
@@ -719,7 +721,7 @@ if (process.env.CLOVER_SDK_CHECKOUT) {
     recordedHash: embeddedVersions.checksums.winterPreSign,
   });
   const row16Path = join(OUT, "row16.json");
-  writeFileSync(row16Path, `${JSON.stringify({ tag: `v${REQUIRED_WINTER_AGENT_SDK}`, checkout, ...row16.record }, null, 2)}\n`);
+  writeFileSync(row16Path, `${JSON.stringify({ tag: `v${CODING_AGENT_BINARY_VERSION}`, checkout, ...row16.record }, null, 2)}\n`);
   if (!row16.ok) fail(row16.failure!);
   console.log(
     `Row 16: PASS — provenance verified (pinned-tag checkout, rebuild succeeded). freshHash=${row16.record.freshHash} ` +

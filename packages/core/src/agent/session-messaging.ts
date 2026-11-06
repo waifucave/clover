@@ -64,8 +64,8 @@
 // never a second delivery. A cancelled sender (the handler's `signal`) and a daemon that began shutting
 // down are checked again right before anything is resumed or sent.
 import { createHash } from "node:crypto";
-import { buildSessionAddress, escapeAttributionText, type GlobalAgentMessage } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { HostMessageListAnswer, HostMessageSendAnswer, HostMessageSendRequest, HostMessagingHandler, HostReachableSession, HostSessionStopAnswer, HostSessionStopRequest } from "@yanlinglabs/winter-agent-sdk";
+import { buildSessionAddress, escapeAttributionText, type GlobalAgentMessage } from "@waifucave/clover-agent-sdk/messaging";
+import type { HostMessageListAnswer, HostMessageSendAnswer, HostMessageSendRequest, HostMessagingHandler, HostReachableSession, HostSessionStopAnswer, HostSessionStopRequest } from "@waifucave/clover-agent-sdk";
 import type { Activity } from "../sessions/activity";
 import { participatesInActivity } from "../sessions/activity";
 import type { SessionRow } from "../sessions/store";

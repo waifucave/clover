@@ -168,7 +168,7 @@
           "contains": "nothing under `runtimes/claude-official/` is staged"
         }
       ],
-      "note": "The router's proof is scoped to its own distribution (the pinned package, its bundle, or a vendored copy — never tracked). Separately, by the user's P9c-1 ruling: the Clover DISTRIBUTION (the `@yanlinglabs/winter-agent-sdk*` packages) carries no all-rights-reserved artifact. WS-23: the app no longer embeds Anthropic's `claude` binary at all — `scripts/embed-runtimes.sh` stages only `winter` and `ant` (MIT, re-signed), and nothing under `runtimes/claude-official/`."
+      "note": "The router's proof is scoped to its own distribution (the pinned package, its bundle, or a vendored copy — never tracked). Separately, by the user's P9c-1 ruling: the Clover DISTRIBUTION (the `@waifucave/clover-agent-sdk*` packages) carries no all-rights-reserved artifact. WS-23: the app no longer embeds Anthropic's `claude` binary at all — `scripts/embed-runtimes.sh` stages only `winter` and `ant` (MIT, re-signed), and nothing under `runtimes/claude-official/`."
     },
     {
       "row": 14,
@@ -243,10 +243,20 @@
         {
           "repo": "clover",
           "file": ".github/workflows/ci.yml",
-          "contains": "verify (workflow, runtime-state, runtimes)"
+          "contains": "run: bun run verify:workflow"
+        },
+        {
+          "repo": "clover",
+          "file": ".github/workflows/ci.yml",
+          "contains": "run: bun run verify:runtime-state"
+        },
+        {
+          "repo": "clover",
+          "file": ".github/workflows/ci.yml",
+          "contains": "run: bun run verify:runtimes"
         }
       ],
-      "note": "Proven 8d, re-confirmed 9a: app-repo CI runs protocol, core, plugin-sdk, cli, typecheck ×2, codegen, Swift (WinterProtocol + WinterKit) and the three compiled proofs (workflow, runtime-state, runtimes) as separate jobs; the SDK repo adds a per-push macOS build-platform job."
+      "note": "Proven 8d, re-confirmed 9a: app-repo CI runs protocol, core, plugin-sdk, cli, typecheck ×2, codegen, Swift (WinterProtocol + WinterKit) and the three compiled proofs (workflow, runtime-state, runtimes) separately; since #175 the macOS suites share one runner, each still a step with its own result. The SDK repo adds a per-push macOS build-platform job."
     }
   ]
 }

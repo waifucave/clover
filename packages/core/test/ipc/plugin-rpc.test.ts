@@ -20,7 +20,7 @@ import { PluginSupervisor } from "../../src/plugins/supervisor";
 import { sdkPluginsRoot, sdkSettingsPath } from "../../src/agent/paths";
 import { pluginConsentFingerprint } from "../../src/plugins/consent-fingerprint";
 import { HookRegistry } from "../../src/plugins/hook-registry";
-import { buildRunHome } from "@yanlinglabs/winter-runtime-sdk";
+import { buildRunHome } from "../../src/runtime-sdk/host";
 import { runHomeInputFor } from "../../src/runtime-sdk/run-home-input";
 import { TrustStore } from "../../src/agent/trust";
 

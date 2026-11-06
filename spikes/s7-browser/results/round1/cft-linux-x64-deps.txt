@@ -1,0 +1,38 @@
+Unable to find image 'ubuntu:24.04' locally
+24.04: Pulling from library/ubuntu
+7a48b8f0e5c7: Pulling fs layer
+7a48b8f0e5c7: Verifying Checksum
+7a48b8f0e5c7: Download complete
+7a48b8f0e5c7: Pull complete
+Digest: sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+Status: Downloaded newer image for ubuntu:24.04
+== missing on a bare ubuntu:24.04
+	libX11.so.6 => not found
+	libXcomposite.so.1 => not found
+	libXdamage.so.1 => not found
+	libXext.so.6 => not found
+	libXfixes.so.3 => not found
+	libXrandr.so.2 => not found
+	libasound.so.2 => not found
+	libatk-1.0.so.0 => not found
+	libatk-bridge-2.0.so.0 => not found
+	libatspi.so.0 => not found
+	libdbus-1.so.3 => not found
+	libexpat.so.1 => not found
+	libgbm.so.1 => not found
+	libgio-2.0.so.0 => not found
+	libglib-2.0.so.0 => not found
+	libgobject-2.0.so.0 => not found
+	libnspr4.so => not found
+	libnss3.so => not found
+	libnssutil3.so => not found
+	libxcb.so.1 => not found
+	libxkbcommon.so.0 => not found
+== missing after installing: libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64 libdbus-1-3 libexpat1 libxcb1 libx11-6 libxext6 libglib2.0-0t64 libudev1 fonts-liberation ca-certificates
+(end)
+== a start (as root in a container: --no-sandbox)
+[1105/004343.979172:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[1105/004343.991149:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[1105/004343.993517:WARNING:media/gpu/vaapi/vaapi_wrapper.cc:1655] drmGetDevices2() has not found any devices
+[1105/004343.995229:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+<html><head></head><body><p>ok</p></body></html>

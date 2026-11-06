@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import { createInMemoryRuntimeDirectoryStore } from "@yanlinglabs/winter-runtime-sdk";
+import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import { createInMemoryRuntimeDirectoryStore } from "../../src/runtime-sdk/host";
 import type {
   DeliveryRecord, GlobalAgentMessage, HeldMessageRecord, IdleSubscriptionRecord, NameLeaseRecord,
   RuntimeDirectoryEntry, RuntimeDirectoryStore, SerializedRuntimeAddress,
-} from "@yanlinglabs/winter-runtime-sdk";
+} from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { createSqliteRuntimeDirectoryStore } from "../../src/runtime-state/directory-store";
 import { withTempHome } from "./support";

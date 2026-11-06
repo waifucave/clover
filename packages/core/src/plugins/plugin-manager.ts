@@ -1,5 +1,5 @@
 // WS-21 (spec §5.2, Contract B): the daemon's door onto the agent SDK's plugin-management API
-// (`@yanlinglabs/winter-agent-sdk`'s `plugins/manage.ts`: `clover plugin` = `claude plugin`).
+// (`@waifucave/clover-agent-sdk`'s `plugins/manage.ts`: `clover plugin` = `claude plugin`).
 //
 // Everything here IS the SDK's: the same functions, types and `PluginManagerError` class, re-exported
 // so every daemon/CLI call site imports one module. Two things are the daemon's own and are layered
@@ -20,14 +20,14 @@
 //     list with a project-scope record anywhere would throw. Here such a scope reads as "not
 //     enabled" — the same degrade a missing settings file gets — and mutations keep the throw.
 import { dirname, join } from "node:path";
-import * as sdk from "@yanlinglabs/winter-agent-sdk";
-import type { InstalledPlugin, PluginListing, PluginManagerOptions, PluginScope } from "@yanlinglabs/winter-agent-sdk";
+import * as sdk from "@waifucave/clover-agent-sdk";
+import type { InstalledPlugin, PluginListing, PluginManagerOptions, PluginScope } from "@waifucave/clover-agent-sdk";
 import { ensureGlobalGitExclude } from "../agent/git-exclude";
 
 export {
   PluginManagerError, addMarketplace, listMarketplaces, removeMarketplace, updateMarketplace, updatePlugin,
-} from "@yanlinglabs/winter-agent-sdk";
-export type { InstalledPlugin, MarketplaceInfo, PluginListing, PluginManagerOptions, PluginScope } from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
+export type { InstalledPlugin, MarketplaceInfo, PluginListing, PluginManagerOptions, PluginScope } from "@waifucave/clover-agent-sdk";
 
 /** F21: after a successful `local`-scope write, keep `<root>/.clover/settings.local.json` out of git.
  *  `dirname(dirname(path))` recovers `<root>` from the two-level `.clover/settings.local.json` suffix

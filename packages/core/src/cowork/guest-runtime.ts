@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { SpawnedRuntimeProcess } from "@yanlinglabs/winter-agent-sdk";
+import type { SpawnedRuntimeProcess } from "@waifucave/clover-agent-sdk";
 import { coworkToolsFor, type CoworkGuestTool } from "../runtime-sdk/mode-options";
 import type { CoworkRepository } from "./repository";
 import { relativeCoworkPath } from "./repository";

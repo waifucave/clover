@@ -28,7 +28,7 @@
 // run homes, the run folder's `.clover.json` carries the same fold and the daemon hands over none.)
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import type { McpServerConfig } from "@yanlinglabs/winter-agent-sdk";
+import type { McpServerConfig } from "@waifucave/clover-agent-sdk";
 import type { McpServerSettingsEntry, Settings } from "../settings";
 import { extractRawMcpServers, parseProjectMcpServers, projectMcpConfigPath } from "../agent/mcp/project-file";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";

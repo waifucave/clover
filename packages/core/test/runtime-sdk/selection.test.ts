@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isSelectionRefusal, selectRuntime, type RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import { isSelectionRefusal, selectRuntime, type RuntimeSelection } from "../../src/runtime-sdk/host";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { writeCredentialMaterial } from "../../src/auth/credential-material";
 import { createWinterRuntimeSdk, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
@@ -157,7 +157,7 @@ describe("createWinterRuntimeSdk(...).selectRuntimeFor", () => {
     secretsDir = join(home, "secrets");
     const secrets = new FileSecretStore(secretsDir);
     await writeCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME, { kind: "api-key", key: "sk-ant-test" });
-    const handle = await createWinterRuntimeSdk({ home, settings: () => null, secrets, capabilities: [] });
+    const handle = await createWinterRuntimeSdk({ home, settings: () => null, secrets });
     handles.push(handle);
     const result = await handle.selectRuntimeFor({ mode: "code", model: "anthropic/claude-sonnet-5" });
     if (isSelectionRefusal(result)) throw new Error(`unexpected refusal: ${result.detail}`);
@@ -169,7 +169,7 @@ describe("createWinterRuntimeSdk(...).selectRuntimeFor", () => {
   test("refuses typed (never substitutes) when no provider has a credential for the model", async () => {
     home = mkdtempSync(join(tmpdir(), "p8c-selection-"));
     secretsDir = join(home, "secrets");
-    const handle = await createWinterRuntimeSdk({ home, settings: () => null, secrets: new FileSecretStore(secretsDir), capabilities: [] });
+    const handle = await createWinterRuntimeSdk({ home, settings: () => null, secrets: new FileSecretStore(secretsDir) });
     handles.push(handle);
     const result = await handle.selectRuntimeFor({ mode: "code", model: "anthropic/claude-sonnet-5" });
     expect(isSelectionRefusal(result)).toBe(true);
@@ -184,7 +184,7 @@ describe("createWinterRuntimeSdk(...).selectRuntimeFor", () => {
     secretsDir = join(home, "secrets");
     const secrets = new FileSecretStore(secretsDir);
     await writeCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME, { kind: "api-key", key: "sk-ant-test" });
-    const handle = await createWinterRuntimeSdk({ home, settings: () => null, secrets, capabilities: [] });
+    const handle = await createWinterRuntimeSdk({ home, settings: () => null, secrets });
     handles.push(handle);
     const result = await handle.selectRuntimeFor({ mode: "code", model: "claude-sonnet-5" });
     expect(isSelectionRefusal(result)).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import {
   CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS,
   buildCapabilitiesFor, capabilityServerName, capabilityToolName,

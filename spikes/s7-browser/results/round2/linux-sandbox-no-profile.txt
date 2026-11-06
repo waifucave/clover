@@ -1,0 +1,3 @@
+[2516:1105/010235.997440:FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:172] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now. You need to make sure that /home/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/chrome-sandbox is owned by root and has mode 4755.
+Trace/breakpoint trap (core dumped)
+exit code 133

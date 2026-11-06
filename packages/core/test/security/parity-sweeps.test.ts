@@ -24,7 +24,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { openaiResponsesFake } from "@waifucave/clover-provider-conformance/fakes";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent,
 } from "@waifucave/clover-protocol";
@@ -36,10 +36,10 @@ import { TokenAuthority } from "../../src/auth/tokens";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { opaqueLeaks } from "../helpers/carriage";
-import { DECORATION_CHAR_BUDGET, MAX_DECORATION_CHARS } from "@yanlinglabs/winter-provider-runtime";
-import type { anthropicFake as AnthropicFakeModule } from "@yanlinglabs/winter-provider-conformance";
+import { DECORATION_CHAR_BUDGET, MAX_DECORATION_CHARS } from "@waifucave/clover-provider-runtime";
+import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
 
@@ -214,7 +214,7 @@ describe("A-8 part A: opaque state + the carry tag never reach session.history o
 // Part B — a REAL e2e (Claude -> GPT, both on the Clover runtime): sweep the REAL captured request
 // bodies, the REAL canonical transcript file, and a REAL session.history call.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Clover runtime)", (winterBin) => {
+describeWithEmbeddedRuntime("A-8 part B: real captures (Claude -> GPT on the Clover runtime)", () => {
   describe("sweep the real request bodies + canonical file + session.history", () => {
     let home: string;
     let daemon: RunningDaemon | undefined;
@@ -237,7 +237,7 @@ describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Clover
         scenarios: {}, unknownModel: async () => openaiResponsesFake.responsesStream({ text: ["hello from gpt, after the handoff"] }),
       });
       openaiFakeRef = openaiFake;
-      const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+      const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
       const anthropicFakeServer = await startFake({
         routes: [{
           path: "*",
@@ -253,7 +253,7 @@ describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Clover
         schemaVersion: 3,
         provider: { model: "openai/gpt-5.6-sol" },
         providers: { openai: { baseUrl: openaiFake.url }, anthropic: { baseUrl: anthropicFakeServer.url } },
-        runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+        runtimes: { winterIdleTimeoutSec: 60 },
       }, null, 2));
       const secrets = new FileSecretStore(join(home, "test-secrets"));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-sweep" });

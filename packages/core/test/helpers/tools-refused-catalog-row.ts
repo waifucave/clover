@@ -12,8 +12,8 @@
 // predicate the boundary is defined by, means a future catalog refresh can only ever break this test
 // by removing the boundary itself (the `winter.anthropic-messages` leg becoming unreachable), never
 // by re-measuring one example.
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import type { WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
 import { toolsRefusedFor } from "../../src/runtime-sdk/provider-selection";
 
 const ANTHROPIC_MESSAGES_ADAPTER_ID = "winter.anthropic-messages";

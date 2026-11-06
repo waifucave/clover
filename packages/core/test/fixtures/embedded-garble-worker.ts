@@ -4,7 +4,7 @@
 // hang turn never completes, so nothing but the host can stop it. That is exactly the hazard the
 // review names (an oversized frame cannot produce it on this topology: the bridge posts each frame
 // whole, and `maxBufferSize` bounds only an unterminated carry). Sessions on any other model are left alone.
-import "@yanlinglabs/winter-agent-runtime/embedded-worker";
+import "@waifucave/clover-agent-runtime/embedded-worker";
 import { isMainThread } from "node:worker_threads";
 
 declare const self: { addEventListener(type: "message", listener: (event: MessageEvent) => void): void };

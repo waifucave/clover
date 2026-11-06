@@ -268,7 +268,9 @@ export function makeApply(deps: SettingsApplyDeps): (prev: Settings | null, next
     if (retired.length > 0 && retired.join(",") !== retiredRuntimeSettingKeys(prev).join(",")) {
       log(`${retired.join(", ")}: the official claude runtime was retired (every model runs on the Clover runtime); ignored`);
     }
-    if (before.winterExecutable !== after.winterExecutable) log("runtimes.winterExecutable changed — it takes effect for new sessions");
+    // A-M1: every session runs embedded, so no session runs this binary; the setting only names Winter's coding agent
+    // for the ACP agent work (lane K).
+    if (before.winterExecutable !== after.winterExecutable) log("runtimes.winterExecutable changed — no session runs this binary (every session runs embedded); it is kept for the coding agent");
     if (before.advisorModel !== after.advisorModel) log("runtimes.advisorModel changed — it takes effect for new sessions");
     if (before.idleTimeoutSec !== after.idleTimeoutSec) log("runtimes.winterIdleTimeoutSec changed — it takes effect for new sessions");
   }
