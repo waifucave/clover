@@ -170,6 +170,15 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/plugins/companion-ios": {
+      "name": "@waifucave/clover-plugin-companion-ios",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/companion-web": {
       "name": "@waifucave/clover-plugin-companion-web",
       "version": "0.0.0",
@@ -982,6 +991,8 @@
     "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/plugins/base-theme"],
 
     "@waifucave/clover-plugin-bot-editor": ["@waifucave/clover-plugin-bot-editor@workspace:plugins/clover/plugins/bot-editor"],
+
+    "@waifucave/clover-plugin-companion-ios": ["@waifucave/clover-plugin-companion-ios@workspace:plugins/clover/plugins/companion-ios"],
 
     "@waifucave/clover-plugin-companion-web": ["@waifucave/clover-plugin-companion-web@workspace:plugins/clover/plugins/companion-web"],
 
