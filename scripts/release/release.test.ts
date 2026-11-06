@@ -7,11 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
 import {
-  channelsServed, checkUpdateInfo, codesignArgs, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
+  channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
-  writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
+  writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
 } from "./lib";
-import { generateFeedKey, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
+import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
 import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, promotedSignature, RELEASE_OSES, signFeeds } from "./publish";
 
@@ -52,7 +52,24 @@ describe("the feed and the channels", () => {
     expect(read("packaging/clover.rb.tmpl")).toContain("/releases/download/v#{version}/Clover-#{version}.dmg");
     expect(installers("1.2.3", "mac")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip"]);
     expect(installers("1.2.3", "linux-arm64")).toEqual(["clover_1.2.3_arm64.deb", "clover-1.2.3.arm64.rpm", "Clover-1.2.3-arm64.AppImage"]);
-    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml"]);
+    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml", "clover-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml"]);
+    expect(coreArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-core-1.2.3-linux-arm64", "beta-core-linux-arm64.yml"]);
+  });
+
+  test("the daemon's release files: its binary and an update file naming it, for each channel served", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-core-assets-"));
+    const bin = join(dir, "built-clover-core");
+    writeFileSync(bin, "a daemon");
+    expect(writeCoreAssets(dir, "1.2.3", "mac", "latest", bin)).toEqual(["clover-core-1.2.3-darwin-arm64", "latest-core-darwin-arm64.yml", "beta-core-darwin-arm64.yml"]);
+    const feed = parseCoreFeed(readFileSync(join(dir, "latest-core-darwin-arm64.yml"), "utf8"));
+    expect(feed).toEqual({ version: "1.2.3", file: "clover-core-1.2.3-darwin-arm64", sha512: sha512Base64(utf8("a daemon")), size: 8 });
+    expect(readFileSync(join(dir, "beta-core-darwin-arm64.yml"), "utf8")).toBe(readFileSync(join(dir, "latest-core-darwin-arm64.yml"), "utf8"));
+    const at = (n: string) => (n === feed.file ? utf8("a daemon") : undefined);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", at)).toEqual([]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.4", at)).toEqual(["it is for 1.2.3, not 1.2.4"]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => utf8("another"))).toEqual(["clover-core-1.2.3-darwin-arm64's sha512 doesn't match", "clover-core-1.2.3-darwin-arm64's size is 7, not 8"]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => undefined)).toEqual(["clover-core-1.2.3-darwin-arm64 is missing"]);
+    expect(checkCoreFeed("version: 1.2.3\n", "1.2.3", at)).toHaveLength(1);
   });
 
   test("macOS: the hardened runtime, the app's entitlements, notarization off unless the release turns it on, and the resources' binaries left to the release", () => {
@@ -183,6 +200,9 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
       blobs.set(`${installers(version, os)[0]}.blockmap`, utf8("map"));
       const named = os === "mac" ? installers(version, os) : installers(version, os).filter((n) => !n.endsWith(".deb") && !n.endsWith(".rpm"));
       for (const c of channelsServed(channel)) blobs.set(feedFile(c, os), yml(named, blobs));
+      const core = coreBinaryFile(version, CORE_TARGET[os]);
+      blobs.set(core, utf8(`${core} bytes`));
+      for (const c of channelsServed(channel)) blobs.set(coreFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version, file: core, sha512: sha512Base64(blobs.get(core)!), size: blobs.get(core)!.length })));
       blobs.set(buildCommitFile(os), utf8(`${COMMIT}\n`));
       dirs.set(`out/${os}`, blobs);
     }
@@ -219,15 +239,18 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const bad = builds("beta");
     bad.get("out/win")!.set("Clover-Setup-1.2.3.exe", utf8("tampered"));
     expect(plan(bad, "beta").problems).toContain("beta.yml: Clover-Setup-1.2.3.exe's sha512 doesn't match");
+    const badCore = builds("beta");
+    badCore.get("out/linux-x64")!.set("clover-core-1.2.3-linux-x64", utf8("tampered"));
+    expect(plan(badCore, "beta").problems).toContain("beta-core-linux-x64.yml: clover-core-1.2.3-linux-x64's sha512 doesn't match");
     const twice = builds("beta");
     twice.get("out/win")!.set("Clover-1.2.3.dmg", utf8("x"));
     expect(plan(twice, "beta").problems.some((x) => x.includes("is in both"))).toBe(true);
   });
 
-  test("each update file is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
+  test("each update file and daemon binary is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
     const dirs = builds("latest");
     const p = plan(dirs, "latest");
-    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => channelsServed("latest").map((c) => feedFile(c, os))).sort());
+    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => [...channelsServed("latest").flatMap((c) => [feedFile(c, os), coreFeedFile(c, CORE_TARGET[os])]), coreBinaryFile(version, CORE_TARGET[os])]).sort());
     const key = generateFeedKey();
     const sigs = signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, key.publicKey);
     expect(sigs.map((s) => s.name).sort()).toEqual(p.feeds.map((f) => `${f}.sig`).sort());
@@ -265,7 +288,9 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(() => parsePublishArgs(["--promote", "latest"])).toThrow(/a version/);
     expect(promotedName("beta-linux-arm64.yml")).toBe("latest-linux-arm64.yml");
     expect(promotedName("beta.yml")).toBe("latest.yml");
+    expect(promotedName("beta-core-windows-x64.yml")).toBe("latest-core-windows-x64.yml");
     expect(() => promotedName("latest.yml")).toThrow();
+    expect(() => promotedName("clover-core-1.2.3-linux-x64")).toThrow();
   });
 });
 

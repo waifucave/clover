@@ -19,7 +19,8 @@ export interface UpdateServiceDeps {
   readonly gate: UpdateGate;
   readonly current: string;
   channel(): string;
-  readonly self?: SelfUpdate;
+  /** The daemon's own update, on a server install (read at each call: it is set once the daemon runs). */
+  self?(): SelfUpdate | undefined;
   log?(line: string): void;
 }
 
@@ -32,12 +33,13 @@ export function updateHandlers(d: UpdateServiceDeps): Record<string, CloverHandl
   return {
     "update.status": () => {
       const v = d.gate.verdict();
-      const available = d.self?.available();
+      const self = d.self?.();
+      const available = self?.available();
       return {
         current: d.current,
         ...(available === undefined ? {} : { available }),
         channel: d.channel(),
-        ready: d.self?.ready() ?? false,
+        ready: self?.ready() ?? false,
         idle: v.idle,
         busy: wireBusy(v.busy),
       };
@@ -46,8 +48,9 @@ export function updateHandlers(d: UpdateServiceDeps): Record<string, CloverHandl
     // a restart (the lease's renew), so the restart runs inside a full lease. A server install's own update waits
     // for idle itself (`self.apply`).
     "update.apply": async () => {
-      if (d.self !== undefined) {
-        d.self.apply();
+      const self = d.self?.();
+      if (self !== undefined) {
+        self.apply();
         return { at: d.gate.verdict().idle ? "now" : "when-idle" };
       }
       if (!d.gate.verdict().idle) return { at: "when-idle" };

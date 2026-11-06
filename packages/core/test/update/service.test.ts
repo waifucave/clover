@@ -46,7 +46,7 @@ describe("update.status and update.apply", () => {
     let busy = 1, applied = 0;
     gate.register({ name: "approvals", count: () => busy });
     const self: SelfUpdate = { available: () => "1.3.0", ready: () => true, apply: () => { applied++; } };
-    const h = updateHandlers({ gate, current: "1.2.3", channel: () => "latest", self });
+    const h = updateHandlers({ gate, current: "1.2.3", channel: () => "latest", self: () => self });
     expect(parse("update.status", await h["update.status"]!(conn, {}))).toMatchObject({ available: "1.3.0", ready: true, idle: false });
     expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "when-idle" });
     busy = 0;

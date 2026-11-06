@@ -12,10 +12,15 @@
 //            release (publish.ts --promote)
 // electron-updater reads `<channel>-mac.yml`, `<channel>.yml` (Windows), `<channel>-linux.yml` and
 // `<channel>-linux-arm64.yml` from the newest release its channel allows.
+//
+// A server's daemon (a `clover-core server install`, no app) updates itself from the same releases: each OS's build
+// also leaves its daemon as `clover-core-<version>-<target>` and the daemon's update file `<channel>-core-<target>.yml`
+// (version, file, sha512, size; packages/update-feed's `formatCoreFeed`), and the owner's release step signs both.
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { coreBinaryFile, coreFeedFile, formatCoreFeed, parseCoreFeed, type CoreTarget } from "../../packages/update-feed/src/index";
 
 export const CHANNELS = ["latest", "beta"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -73,9 +78,56 @@ export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string):
   writeFileSync(join(outDir, buildCommitFile(os)), `${commit}\n`);
 }
 
-/** Every file `os`'s release build must leave: its installers and its update files for each channel served. */
+/** The daemon's target each OS's release build makes (scripts/build-daemon.ts's). */
+export const CORE_TARGET: Readonly<Record<ReleaseOs, CoreTarget>> = { mac: "darwin-arm64", win: "windows-x64", "linux-x64": "linux-x64", "linux-arm64": "linux-arm64" };
+
+/** The daemon's files in `os`'s release: its binary and its update file for each channel served. */
+export function coreArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
+  return [coreBinaryFile(version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => coreFeedFile(c, CORE_TARGET[os]))];
+}
+
+/** Every file `os`'s release build must leave: its installers, its update files for each channel served, and the
+ *  daemon's (`coreArtifacts`). */
 export function expectedArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
-  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os))];
+  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os)), ...coreArtifacts(version, os, channel)];
+}
+
+/**
+ * After the build: the daemon `binary` (the one inside the app, signed with it on a signed macOS build) copied as
+ * `clover-core-<version>-<target>`, and its update file for each channel served. Returns the files written.
+ */
+export function writeCoreAssets(outDir: string, version: string, os: ReleaseOs, channel: Channel, binary: string): string[] {
+  const file = coreBinaryFile(version, CORE_TARGET[os]);
+  copyFileSync(binary, join(outDir, file));
+  const bytes = readFileSync(join(outDir, file));
+  const feed = formatCoreFeed({ version, file, sha512: sha512Base64(bytes), size: bytes.length });
+  const feeds = channelsServed(channel).map((c) => coreFeedFile(c, CORE_TARGET[os]));
+  for (const f of feeds) writeFileSync(join(outDir, f), feed);
+  return [file, ...feeds];
+}
+
+/** What's wrong with a daemon's update file against the binary it names (`read` gives a file's bytes, or undefined). */
+export function checkCoreFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined): string[] {
+  let feed: ReturnType<typeof parseCoreFeed>;
+  try {
+    feed = parseCoreFeed(text);
+  } catch (err) {
+    return [(err as Error).message];
+  }
+  const problems: string[] = [];
+  if (feed.version !== version) problems.push(`it is for ${feed.version}, not ${version}`);
+  const bytes = read(feed.file);
+  if (bytes === undefined) problems.push(`${feed.file} is missing`);
+  else {
+    if (sha512Base64(bytes) !== feed.sha512) problems.push(`${feed.file}'s sha512 doesn't match`);
+    if (bytes.length !== feed.size) problems.push(`${feed.file}'s size is ${bytes.length}, not ${feed.size}`);
+  }
+  return problems;
+}
+
+/** Whether `name` is one of the daemon's update files. */
+export function isCoreFeed(name: string): boolean {
+  return /^(latest|beta)-core-[a-z0-9-]+\.yml$/.test(name);
 }
 
 /** After electron-builder: each update file `oses`' build wrote for `channel`, copied under the other channels it serves

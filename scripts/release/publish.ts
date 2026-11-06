@@ -10,13 +10,16 @@
 // workflow's downloaded Windows and Linux artifacts. It checks that every OS's installers and update files are
 // there for the channel and that each update file matches the files it names, on macOS that the dmg is signed
 // and stapled, and that every OS was built from the same commit of main (each build's `BUILD-COMMIT-<os>.txt`),
-// which the release is then tagged at (`gh release create --target`). Without `--create-draft` it only prints what it would upload. With it, it signs each update file with
+// which the release is then tagged at (`gh release create --target`). The daemon's files for a server's self-update
+// travel too: each OS's `clover-core-<version>-<target>` and `<channel>-core-<target>.yml`, the update file checked
+// against the binary, and both signed. Without `--create-draft` it only prints what it would upload. With it, it signs each update file with
 // the update feed's key from the login Keychain (an Ed25519 `.sig` beside it, packages/update-feed; the key is read
 // into memory, checked against the one the app carries, and never written), and creates the release as a draft (a
 // pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment it
 // reaches anyone.
 //
-// `--promote` turns a published beta into the latest release: it checks the beta update files' signatures, adds
+// `--promote` turns a published beta into the latest release: it checks the beta update files' signatures (the app's
+// and the daemon's), adds
 // them under the latest names, signed again under those names with the Keychain's key (a signature covers the
 // file's name), and makes it a full release. Without `--yes` it only prints. If it stops partway (an upload or the
 // edit fails), the release is still a pre-release, beta users are unaffected and latest users see nothing new
@@ -29,7 +32,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SIGNATURE_SUFFIX, signFeed, verifyFeed } from "../../packages/update-feed/src/index";
 import { keychain, signingKey } from "./feed-key";
-import { buildCommitFile, checkUpdateInfo, expectedArtifacts, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
+import { buildCommitFile, checkCoreFeed, checkUpdateInfo, CORE_TARGET, expectedArtifacts, isCoreFeed, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
+import { coreBinaryFile, parseCoreFeed } from "../../packages/update-feed/src/index";
 
 export const RELEASE_OSES: readonly ReleaseOs[] = ["mac", "win", "linux-x64", "linux-arm64"];
 
@@ -68,7 +72,7 @@ export interface ReleasePlan {
   channel: Channel;
   /** Each asset's name and the folder it comes from. */
   assets: Array<{ name: string; dir: string }>;
-  /** The update files, each signed at --create-draft (`<name>.sig`). */
+  /** What is signed at --create-draft (`<name>.sig`): the update files, and the daemon's binaries. */
   feeds: string[];
   /** The commit every OS was built from, when they agree. */
   commit?: string;
@@ -105,8 +109,11 @@ export function planRelease(
   for (const os of RELEASE_OSES) {
     for (const name of expectedArtifacts(version, os, channel)) {
       add(name);
-      if (name.endsWith(".yml")) feeds.push(name);
-      if (name.endsWith(".yml") && where.has(name)) {
+      if (name.endsWith(".yml") || name === coreBinaryFile(version, CORE_TARGET[os])) feeds.push(name);
+      if (isCoreFeed(name) && where.has(name)) {
+        const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
+        problems.push(...checkCoreFeed(new TextDecoder().decode(read(where.get(name)!, name)), version, readAny).map((p) => `${name}: ${p}`));
+      } else if (name.endsWith(".yml") && where.has(name)) {
         const info = parseUpdateInfo(new TextDecoder().decode(read(where.get(name)!, name)));
         const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
         problems.push(...checkUpdateInfo(info, version, readAny).map((p) => `${name}: ${p}`));
@@ -168,11 +175,16 @@ export function promotedSignature(betaName: string, bytes: Uint8Array, privateKe
 
 /** A beta update file's latest name (`beta-mac.yml` → `latest-mac.yml`, `beta.yml` → `latest.yml`). */
 export function promotedName(name: string): string {
-  if (!/^beta(-mac|-linux|-linux-arm64)?\.yml$/.test(name)) throw new Error(`${name} is not a beta update file`);
+  if (!BETA_FEED.test(name)) throw new Error(`${name} is not a beta update file`);
   return name.replace(/^beta/, "latest");
 }
 
 const REPO = "waifucave/clover";
+
+/** A beta update file: the app's for each OS, and the daemon's for each target. */
+const BETA_FEED = /^beta(-mac|-linux|-linux-arm64|-core-(darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml$/;
+/** A release's beta update files: the app's four and the daemon's four. */
+const BETA_FEEDS = 8;
 
 function gh(args: readonly string[]): { status: number; out: string } {
   const r = spawnSync("gh", args.slice(1) as string[], { encoding: "utf8" });
@@ -202,8 +214,8 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     if (view.status !== 0) { console.error(`release/publish: no release ${tag}: ${view.out.trim()}`); return 1; }
     const info = JSON.parse(view.out) as { isPrerelease: boolean; isDraft: boolean; assets: Array<{ name: string }> };
     if (info.isDraft || !info.isPrerelease) { console.error(`release/publish: ${tag} is ${info.isDraft ? "a draft" : "already a full release"}: only a published beta is promoted`); return 1; }
-    const betas = info.assets.map((x) => x.name).filter((n) => /^beta(-mac|-linux|-linux-arm64)?\.yml$/.test(n));
-    if (betas.length !== 4) { console.error(`release/publish: ${tag} has ${betas.length} beta update files, not 4 (${betas.join(", ")})`); return 1; }
+    const betas = info.assets.map((x) => x.name).filter((n) => BETA_FEED.test(n));
+    if (betas.length !== BETA_FEEDS) { console.error(`release/publish: ${tag} has ${betas.length} beta update files, not ${BETA_FEEDS} (${betas.join(", ")})`); return 1; }
     const unsigned = betas.filter((n) => !info.assets.some((x) => x.name === `${n}${SIGNATURE_SUFFIX}`));
     if (unsigned.length > 0) { console.error(`release/publish: ${tag} has no signature for ${unsigned.join(", ")}`); return 1; }
     console.log(`release/publish: promote ${tag}: upload ${betas.map(promotedName).join(", ")} and their signatures, then make it a full release and the latest`);
@@ -217,7 +229,8 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
         const signature = readFileSync(join(dir, `${n}${SIGNATURE_SUFFIX}`), "utf8");
         const verdict = verifyFeed(n, bytes, signature);
         if (!verdict.ok) throw new Error(`${n}'s signature doesn't verify (${verdict.reason})`);
-        if (parseUpdateInfo(new TextDecoder().decode(bytes)).version !== a.version) throw new Error(`${n} is not for ${a.version}`);
+        const forVersion = isCoreFeed(n) ? parseCoreFeed(new TextDecoder().decode(bytes)).version : parseUpdateInfo(new TextDecoder().decode(bytes)).version;
+        if (forVersion !== a.version) throw new Error(`${n} is not for ${a.version}`);
         const latest = promotedSignature(n, bytes, privateKey);
         writeFileSync(join(dir, latest.name), bytes);
         writeFileSync(join(dir, `${latest.name}${SIGNATURE_SUFFIX}`), latest.signature);

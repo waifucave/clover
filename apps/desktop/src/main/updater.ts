@@ -19,7 +19,7 @@
 // user's own Quit (whose question already says what would stop) installs too once the pair has stopped, without
 // starting the app again. Nothing here ever installs over a running turn.
 import type { RequestOptions } from "node:http";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GitHubProvider } from "electron-updater/out/providers/GitHubProvider";
 import { verifyFeed, SIGNATURE_SUFFIX, type FeedVerdict } from "@waifucave/clover-update-feed";
@@ -98,6 +98,30 @@ export function updatesItself(packaged: boolean, platform: NodeJS.Platform, env:
   if (!packaged) return false;
   if (platform === "linux") return typeof env.APPIMAGE === "string" && env.APPIMAGE !== "";
   return platform === "darwin" || platform === "win32";
+}
+
+/** What installed this app, for `<home>/install.json` (packages/core's install marker): the app's own installers, or
+ *  on Linux outside an AppImage a deb or rpm. Only a server install's daemon updates itself; this marker says it isn't. */
+export function installKindOf(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): "app" | "package" {
+  return platform === "linux" && !(typeof env.APPIMAGE === "string" && env.APPIMAGE !== "") ? "package" : "app";
+}
+
+/** Writes `<home>/install.json` when it doesn't already say `kind`. A packaged app only; never throws. */
+export function writeInstallMarker(home: string, kind: "app" | "package", log: (line: string) => void): void {
+  const path = join(home, "install.json");
+  const text = `${JSON.stringify({ kind })}\n`;
+  try {
+    if (readFileSync(path, "utf8") === text) return;
+  } catch {
+    // none yet
+  }
+  try {
+    mkdirSync(home, { recursive: true });
+    writeFileSync(`${path}.tmp`, text, { mode: 0o600 });
+    renameSync(`${path}.tmp`, path);
+  } catch (err) {
+    log(`updater: install.json not written: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export const UPDATE_CHECK_MS = 4 * 60 * 60 * 1000;

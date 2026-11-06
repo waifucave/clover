@@ -83,6 +83,7 @@ jobs:
             apps/desktop/out/dist/*.zip
             apps/desktop/out/dist/*.exe
             apps/desktop/out/dist/*.yml
+            apps/desktop/out/dist/clover-core-*
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt
             apps/desktop/out/dist/BUILD-COMMIT-*.txt
@@ -129,7 +130,7 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
         run: |
           bun scripts/build-packages.ts --arch ${{ matrix.arch }} --channel "$CHANNEL" --check
-          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml > SHA256SUMS-linux-${{ matrix.arch }}.txt
+          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml clover-core-* > SHA256SUMS-linux-${{ matrix.arch }}.txt
           test "$(cat BUILD-COMMIT-linux-${{ matrix.arch }}.txt)" = "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -140,6 +141,7 @@ jobs:
             apps/desktop/out/dist/*.rpm
             apps/desktop/out/dist/*.AppImage
             apps/desktop/out/dist/*.yml
+            apps/desktop/out/dist/clover-core-*
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt
             apps/desktop/out/dist/BUILD-COMMIT-*.txt

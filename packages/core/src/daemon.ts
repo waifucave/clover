@@ -67,7 +67,8 @@ import { sdkGlobalConfigPath, sdkHomeFor, sdkSettingsPath, trustRecordFile } fro
 import { forgetSdkFile, liveSdkGlobalConfig, liveSdkSettings, readSdkGlobalConfigDetailed, readSdkSettingsDetailed } from "./sdk-files";
 import { ApprovalBroker } from "./agent/approvals";
 import { UpdateGate } from "./update/gate";
-import { updateHandlers } from "./update/service";
+import { updateHandlers, type SelfUpdate } from "./update/service";
+import { readInstallMarker } from "./update/install-marker";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
 import { createPersistedChildren, type AgentRegistry } from "./agent/bg-agent-registry";
@@ -262,6 +263,9 @@ export interface RunningDaemon {
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
+  /** M-M2: a server install's own update (`clover-core daemon run` sets it), which `update.status` and `update.apply`
+   *  then serve. */
+  setSelfUpdate(self: SelfUpdate): void;
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
    *  capability server's `session_spawn` and every driver's turn-settled hook reach. */
   dispatchChildren: DispatchChildren | undefined;
@@ -3135,6 +3139,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
+  let selfUpdate: SelfUpdate | undefined;
   cloverServer = createCloverServer({
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
@@ -3143,7 +3148,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
-    handlers: updateHandlers({ gate: updateGate, current: CORE_VERSION, channel: () => "latest", log: (line) => console.error(line) }),
+    handlers: updateHandlers({
+      gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
+      channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
+    }),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3362,6 +3370,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     buildSessionCapabilities,
     clover: cloverDrivers,
     updateGate,
+    setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze

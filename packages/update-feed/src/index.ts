@@ -34,8 +34,56 @@ export function generateFeedKey(): { privateKey: string; publicKey: string } {
   return { privateKey: pair.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"), publicKey: rawPublicKey(pair.publicKey) };
 }
 
-/** The update file names a signature may cover: a channel and an OS (scripts/release/lib.ts's `feedFile`). */
-const FEED_NAME = /^(latest|beta)(-mac|-linux|-linux-arm64)?\.yml$/;
+/** The daemon's own release targets (scripts/build-daemon.ts's): a server's daemon updates itself from these. */
+export const CORE_TARGETS = ["darwin-arm64", "linux-x64", "linux-arm64", "windows-x64"] as const;
+export type CoreTarget = (typeof CORE_TARGETS)[number];
+export type FeedChannel = "latest" | "beta";
+
+/** The daemon's update file for `target` on `channel` (`latest-core-linux-x64.yml`). */
+export function coreFeedFile(channel: FeedChannel, target: CoreTarget): string {
+  return `${channel}-core-${target}.yml`;
+}
+
+/** The daemon's binary in a release (`clover-core-1.2.3-linux-x64`, `…-windows-x64.exe`). */
+export function coreBinaryFile(version: string, target: CoreTarget): string {
+  return `clover-core-${version}-${target}${target === "windows-x64" ? ".exe" : ""}`;
+}
+
+/**
+ * The names a signature may cover: the app's update files (a channel and an OS, scripts/release/lib.ts's `feedFile`),
+ * the daemon's (`coreFeedFile`) and the daemon's binaries themselves (`coreBinaryFile`), which a server's daemon
+ * checks before it trusts their bytes.
+ */
+export const FEED_NAME = /^(?:(latest|beta)(-mac|-linux|-linux-arm64|-core-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml|clover-core-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe))$/;
+
+/** The daemon's update file (`coreFeedFile`): one binary, its version, SHA-512 (base64) and size. */
+export interface CoreFeed {
+  version: string;
+  file: string;
+  sha512: string;
+  size: number;
+}
+
+export function formatCoreFeed(f: CoreFeed): string {
+  return `version: ${f.version}\nfile: ${f.file}\nsha512: ${f.sha512}\nsize: ${f.size}\n`;
+}
+
+/** A daemon's update file, read strictly: exactly its four fields, each well formed; anything else throws. */
+export function parseCoreFeed(text: string): CoreFeed {
+  const fields = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "") continue;
+    const m = /^(version|file|sha512|size): (\S+)$/.exec(line);
+    if (!m || fields.has(m[1]!)) throw new Error("not a daemon update file");
+    fields.set(m[1]!, m[2]!);
+  }
+  const version = fields.get("version"), file = fields.get("file"), sha512 = fields.get("sha512"), size = Number(fields.get("size"));
+  if (version === undefined || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version)) throw new Error("a daemon update file needs a version");
+  if (file === undefined || !FEED_NAME.test(file) || !file.startsWith("clover-core-")) throw new Error("a daemon update file names a clover-core binary");
+  if (sha512 === undefined || Buffer.from(sha512, "base64").length !== 64) throw new Error("a daemon update file needs a sha512");
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error("a daemon update file needs a size");
+  return { version, file, sha512, size };
+}
 
 /**
  * What is signed for an update file: a fixed label, its file name and the SHA-512 of its bytes, each ended by a

@@ -17,7 +17,9 @@
 //      entitlements, the seal, Gatekeeper's verdict, the staple) and the dmg (its signature, its staple, Gatekeeper
 //      on opening it); on Windows, the Authenticode signatures of the installer, Clover.exe, clover-core.exe and
 //      clover-link.exe, by the publisher
-//   6. records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
+//   6. copies the daemon out of the app (signed with it, on a signed build) as clover-core-<version>-<target>, with its
+//      update file for each channel served (lib.ts's `writeCoreAssets`), for a server's daemon to update itself from
+//   7. records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
 //      the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
 //      writes SHA256SUMS-<os>.txt beside them
 //
@@ -39,11 +41,12 @@ import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
 import {
-  authenticodeCommand, authenticodeProblems, channelArgs, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, entitlementsIn,
+  authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems,
-  writeServedCopies, type Channel,
+  writeCoreAssets, writeServedCopies, type Channel,
 } from "./lib";
+import { coreFeedFile } from "../../packages/update-feed/src/index";
 
 export type BuildOs = "mac" | "win";
 
@@ -102,6 +105,13 @@ export function signingInputs(os: BuildOs, env: Record<string, string | undefine
 }
 
 export const DAEMON_TARGET: Readonly<Record<BuildOs, DaemonTarget>> = { mac: "darwin-arm64", win: "windows-x64" };
+
+/** The daemon inside the built app (the one the release ships, signed with the app on a signed build). */
+export function daemonInApp(outDir: string, os: BuildOs): string {
+  return os === "mac"
+    ? join(outDir, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-core")
+    : join(outDir, "win-unpacked", "resources", "daemon", "clover-core.exe");
+}
 
 /** electron-builder's command for the OS's release, run in apps/desktop. Secrets reach it through its environment only. */
 export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, string | undefined>): string[] {
@@ -217,6 +227,7 @@ export function main(argv: readonly string[], root: string): number {
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
+    console.log(`release/build: the daemon's own update: ${daemonInApp("out/dist", a.os)} as its release file, with its update files`);
     console.log(`release/build: expects ${expectedArtifacts(version, a.os, a.channel).join(", ")}`);
     return 0;
   }
@@ -264,6 +275,7 @@ export function main(argv: readonly string[], root: string): number {
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
     }
+    writeCoreAssets(outDir, version, a.os, a.channel, daemonInApp(outDir, a.os));
     writeBuildCommit(outDir, a.os, commit);
     writeServedCopies(outDir, a.channel, [a.os]);
 
@@ -274,10 +286,12 @@ export function main(argv: readonly string[], root: string): number {
       if (!existsSync(path)) continue;
       const read = (n: string) => (existsSync(join(outDir, n)) ? new Uint8Array(readFileSync(join(outDir, n))) : undefined);
       problems.push(...checkUpdateInfo(parseUpdateInfo(readFileSync(path, "utf8")), version, read).map((p) => `${feedFile(ch, a.os)}: ${p}`));
+      const core = coreFeedFile(ch, CORE_TARGET[a.os]);
+      if (existsSync(join(outDir, core))) problems.push(...checkCoreFeed(readFileSync(join(outDir, core), "utf8"), version, read).map((p) => `${core}: ${p}`));
     }
     for (const p of problems) console.error(`release/build: ${p}`);
     if (problems.length > 0) return 1;
-    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n)).sort();
+    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-")).sort();
     writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
     console.log(`release/build: ${shipped.join(", ")} in ${outDir}${a.sign ? "" : " (unsigned)"}`);
     return 0;

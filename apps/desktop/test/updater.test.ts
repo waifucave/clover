@@ -2,8 +2,11 @@
 // bytes electron-updater parses, with a throwaway key; nothing here reaches the network.
 import { describe, expect, test } from "bun:test";
 import type { RequestOptions } from "node:http";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
-import { FeedRefused, feedFileOf, IDLE_POLL_MS, InstallGate, parseUpdateConfig, updatesItself, verifyingExecutor, VerifiedGitHubProvider, type InstallGateDeps } from "../src/main/updater";
+import { FeedRefused, feedFileOf, IDLE_POLL_MS, InstallGate, installKindOf, parseUpdateConfig, writeInstallMarker, updatesItself, verifyingExecutor, VerifiedGitHubProvider, type InstallGateDeps } from "../src/main/updater";
 
 const FEED = "version: 1.2.3\nfiles:\n  - url: Clover-1.2.3-mac.zip\n    sha512: abc\n    size: 10\npath: Clover-1.2.3-mac.zip\nsha512: abc\nreleaseDate: '2026-11-06T00:00:00.000Z'\n";
 
@@ -100,6 +103,21 @@ describe("the app's updates", () => {
     expect(updatesItself(true, "win32", {})).toBe(true);
     expect(updatesItself(true, "linux", {})).toBe(false);
     expect(updatesItself(true, "linux", { APPIMAGE: "/home/u/Clover.AppImage" })).toBe(true);
+  });
+
+  test("the install marker says the app's (a deb or rpm on Linux): a home the app runs never self-updates", () => {
+    expect(installKindOf("darwin", {})).toBe("app");
+    expect(installKindOf("win32", {})).toBe("app");
+    expect(installKindOf("linux", { APPIMAGE: "/home/u/Clover.AppImage" })).toBe("app");
+    expect(installKindOf("linux", {})).toBe("package");
+    const home = join(mkdtempSync(join(tmpdir(), "clover-app-marker-")), "home");
+    writeInstallMarker(home, "app", () => {});
+    expect(JSON.parse(readFileSync(join(home, "install.json"), "utf8"))).toEqual({ kind: "app" });
+    writeInstallMarker(home, "package", () => {});
+    expect(JSON.parse(readFileSync(join(home, "install.json"), "utf8"))).toEqual({ kind: "package" });
+    const lines: string[] = [];
+    writeInstallMarker(join(home, "install.json", "x"), "app", (l) => lines.push(l));
+    expect(lines).toHaveLength(1);
   });
 
   describe("the idle gate (InstallGate) against a fake daemon", () => {

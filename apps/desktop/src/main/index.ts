@@ -32,7 +32,7 @@ import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
-import { InstallGate, startUpdater, type Updater } from "./updater";
+import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -210,6 +210,8 @@ async function ready(): Promise<void> {
   startBrowser();
   pair = makePair();
   setMenu();
+  // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
+  if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
   if (!headless) {
     // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
     void startUpdater({

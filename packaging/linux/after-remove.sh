@@ -21,6 +21,9 @@ else
     rm -f '/usr/bin/clover'
 fi
 
+# The install marker after-install.sh wrote beside the binary (no package owns it).
+rm -f "$(dirname "$CLI")/install.json"
+
 APPARMOR_PROFILE_DEST='/etc/apparmor.d/${executable}'
 
 # Unload the profile before deleting it, so it isn't left enforced until the next reboot; not inside a chroot.
