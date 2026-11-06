@@ -1,0 +1,45 @@
+# A throwaway measurement (lane M, scoping the core suite's move to Linux): the whole core suite on Linux in 6 shards,
+# each file's result and time kept as JUnit. Its pull request targets lane/m-exp-base, never main, so ci.yml doesn't run.
+name: lane-m core on linux (experiment)
+on:
+  pull_request:
+    branches: [lane/m-exp-base]
+permissions:
+  contents: read
+jobs:
+  core:
+    name: core on linux · shard ${{ matrix.shard }}/6
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: The private Secret Service's tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Core on Linux
+        working-directory: packages/core
+        run: |
+          start=$(date +%s)
+          ../../scripts/with-private-secret-service.sh bun test --shard=${{ matrix.shard }}/6 --reporter=junit --reporter-outfile=junit.xml > run.log 2>&1 || echo "exit $?" >> run.log
+          echo "seconds $(( $(date +%s) - start ))" >> run.log
+          tail -5 run.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: core-linux-${{ matrix.shard }}
+          path: |
+            packages/core/junit.xml
+            packages/core/run.log
+          retention-days: 3
