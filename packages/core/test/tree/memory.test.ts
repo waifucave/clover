@@ -123,6 +123,34 @@ describe("home/memory", () => {
     expect(readFileSync(join(studio.home, "a.md"), "utf8")).toBe("a");
   });
 
+  test("the check goes by the folder's name, not the bot list: a bot not made yet, synced early, or removed", async () => {
+    const { studio } = await two();
+    const t = studio.node.tree;
+    // `ghost` isn't in this computer's list (not made yet, synced before the list caught up, or removed and left
+    // behind): its memory folder is still only ghost's.
+    const dir = join(studio.cloverHome, "bots", "ghost", "memory");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "MEMORY.md"), "ghost's");
+    const GHOST = { kind: "session", sessionId: "s_ghost", sessionKind: "bot", bot: "ghost" } as const;
+    const real = "home/Studio/.clover/bots/ghost/memory";
+    for (const as of [ALPHA, LUNA, CODING, AGENT, PLUGIN]) {
+      expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe("not_found");
+      expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe("not_found");
+      expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
+      expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
+    }
+    // The check folds names on every OS (lane B's fold): a bot whose id folds equal to the folder's name gets through,
+    // and one that doesn't, however close, doesn't.
+    const GHOST_UPPER = { kind: "session", sessionId: "s_GHOST", sessionKind: "bot", bot: "GHOST" } as const;
+    const GHOSTS = { kind: "session", sessionId: "s_ghosts", sessionKind: "bot", bot: "ghosts" } as const;
+    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe("ok");
+    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe("not_found");
+    // ghost itself, through its own `home/memory`, and the user's own surfaces at the real path.
+    expect(await t.read("home/memory/MEMORY.md", { as: GHOST })).toEqual(utf8("ghost's"));
+    expect(await t.read(`${real}/MEMORY.md`, { as: USER })).toEqual(utf8("ghost's"));
+    expect(readFileSync(join(dir, "MEMORY.md"), "utf8")).toBe("ghost's");
+  });
+
   test("no computer can be called memory", () => {
     expect(computerNameProblem("memory")).toContain("home/memory");
     expect(computerNameProblem("Memory")).not.toBeNull();
