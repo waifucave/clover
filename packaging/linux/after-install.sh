@@ -43,7 +43,8 @@ if apparmor_status --enabled > /dev/null 2>&1; then
   if apparmor_parser --skip-kernel-load --debug "$APPARMOR_PROFILE_SOURCE" > /dev/null 2>&1; then
     cp -f "$APPARMOR_PROFILE_SOURCE" "$APPARMOR_PROFILE_TARGET"
     if ! { [ -x '/usr/bin/ischroot' ] && /usr/bin/ischroot; } && hash apparmor_parser 2>/dev/null; then
-      apparmor_parser --replace --write-cache --skip-read-cache "$APPARMOR_PROFILE_TARGET"
+      # A profile that parses can still fail to load (a nested container): the package installs regardless.
+      apparmor_parser --replace --write-cache --skip-read-cache "$APPARMOR_PROFILE_TARGET" || true
     fi
   else
     echo "Skipping the AppArmor profile: this AppArmor can't parse it"

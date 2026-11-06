@@ -1,7 +1,8 @@
 // What Clover's installers do with the daemon's login start (spec §3.1, plan §4 M1). Lane C's command (C-M1)
 // writes and removes the launchd agent, the systemd user unit and the Task Scheduler task, each running
-// `clover-core supervise`; an installer only ever calls that command, never launchctl, systemctl or schtasks itself.
-// This file is the one place that names it, and `packaging.test.ts` checks every installer's hook against it.
+// `clover-core supervise`; an installer calls that command, never systemctl or schtasks itself. The one exception is
+// the Homebrew cask's `launchctl` stanza, a fallback for an app already deleted: it removes only Clover's own label.
+// This file is the one place that names the command, and `packaging.test.ts` checks every installer's hook against it.
 //
 // Who turns login start ON: the app, at its first launch (spec §3.1: "On first launch the app installs the matching
 // clover-core and its login item"), on every OS. An installer can't do it everywhere: a deb or rpm script runs as
@@ -9,9 +10,14 @@
 // an uninstall that is not an upgrade, from the installed binary, as the user. The deb and rpm can't reach a user's
 // unit either; there the unit itself must stay inert once its binary is gone (a question for lane C).
 
-/** The daemon's login-start command, lane C's: `clover-core autostart enable|disable|status`. */
+/** The daemon's login-start command, lane C's: `clover-core autostart enable|disable|remove|start|status`. `disable`
+ *  only turns the login trigger off, keeping the definitions and the running daemon; `remove`, an uninstaller's,
+ *  stops the daemon and deletes them all, and is idempotent. */
 export const AUTOSTART_SUBCOMMAND = "autostart";
-export type AutostartAction = "enable" | "disable" | "status";
+export type AutostartAction = "enable" | "disable" | "remove" | "status";
+
+/** The macOS login item's label (lane C's `loginLabel`), which the cask's launchctl fallback names. */
+export const LAUNCHD_LABEL = "com.waifucave.clover.core";
 
 /** The arguments that run it. */
 export function autostartArgs(action: AutostartAction): string[] {
@@ -42,9 +48,9 @@ export interface InstallerHook {
 }
 
 export const INSTALLER_HOOKS: Readonly<Record<Installer, InstallerHook>> = {
-  homebrew: { onInstall: null, onUninstall: "disable", file: "packaging/clover.rb.tmpl", why: "the cask's uninstall runs as the user, before the app is removed" },
+  homebrew: { onInstall: null, onUninstall: "remove", file: "packaging/clover.rb.tmpl", why: "the cask's uninstall runs as the user, before the app's files are removed, and goes on when the app is already gone" },
   dmg: { onInstall: null, onUninstall: null, file: null, why: "a dmg has no scripts: the app turns login start on at first launch, and Homebrew's uninstall (or the app's own) turns it off" },
-  nsis: { onInstall: null, onUninstall: "disable", file: "packaging/windows/installer.nsh", why: "a per-user installer runs as the user; an upgrade runs the old uninstaller with --updated, which keeps login start" },
+  nsis: { onInstall: null, onUninstall: "remove", file: "packaging/windows/installer.nsh", why: "a per-user installer runs as the user; an upgrade runs the old uninstaller with --updated, which keeps login start (stopping the old daemon there is still open: installer.nsh)" },
   winget: { onInstall: null, onUninstall: null, file: null, why: "winget runs the NSIS installer and its uninstaller, which carry the hooks" },
   deb: { onInstall: null, onUninstall: null, file: "packaging/linux/after-remove.sh", why: "maintainer scripts run as root, outside every user's systemd session, so they can't reach a user unit" },
   rpm: { onInstall: null, onUninstall: null, file: "packaging/linux/after-remove.sh", why: "as for the deb" },
