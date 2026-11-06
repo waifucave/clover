@@ -102,6 +102,10 @@ export const SessionView = z.object({
   effort: utf16(32).optional(),
   /** An agent's root folder in the tree (§9.1). */
   root: TreePath.optional(),
+  /** A coding session's or an agent's git branch in its root, for the sidebar's badge (lane F's ask). */
+  branch: utf16(256, 1).optional(),
+  /** How many files it changed that aren't committed yet: a count only, for the sidebar's badge (lane F's ask). */
+  changes: z.number().int().nonnegative().optional(),
   /** A routine run's routine. */
   routine: utf16(128).optional(),
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you

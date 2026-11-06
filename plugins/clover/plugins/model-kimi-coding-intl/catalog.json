@@ -1,0 +1,624 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`.",
+        "The vendor's OpenAI-dialect reasoning replay contract must not be assumed for Anthropic Messages without a dialect-specific document or probe."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.kimi.com/code/docs/en/ — Kimi Code's own docs, retrieved 2026-09-25: the overseas plan's Anthropic-compatible base is `https://api.kimi.ai/coding/` and its OpenAI-compatible base `https://api.kimi.ai/coding/v1` (the China plan uses api.kimi.com); membership API keys are region-bound; billing is the membership subscription.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "kimi-coding-intl/k3",
+      "providerId": "kimi-coding-intl",
+      "upstreamId": "k3",
+      "displayName": "Kimi K3 (Coding Plan Anthropic)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — K3 up to 1048576 for higher tiers; Plus/Moderato limited to 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3 supports image and video input plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3 supports low/high/max thinking effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html (read 2026-10-29) — \"K3.1 Pro models, the K3 series, and K2.8 Preview support low / high / max thinking effort levels\" and recommends \"the Kimi Coding Plan's native Responses, chat completion, or message APIs\", but does NOT name the Messages wire field; `output_config.effort` is carried over from the Kimi open platform's Messages schema (https://platform.kimi.ai/docs/api/messages: `output_config.effort` low/high/max, no `thinking` request field) — INFERRED for the Kimi Code endpoint, unprobed.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-intl/k3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): the Kimi Messages API returns signed `thinking` blocks and says to \"pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; Kimi Code's own CLI changelog (https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html, 2.4.0, read 2026-10-29): \"Preserve prior turns' thinking by default on the Anthropic provider (Claude and Kimi's Anthropic-compatible mode), matching the Kimi default\". Kimi Code's API docs themselves say nothing about thinking blocks, hence `inferred`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/guide/kimi-k3-quickstart (read 2026-09-27): \"max_completion_tokens 默认 131072，最大可设置为 1048576\" — figure sourced from the CN K3 quickstart; applied as a model-level (not region-level) property since the overseas intl docs corroborate the same 1M context but do not separately restate the output ceiling",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-intl/k3-256k",
+      "providerId": "kimi-coding-intl",
+      "upstreamId": "k3-256k",
+      "displayName": "Kimi K3 256K (Coding Plan Anthropic)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3-256k context window 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3-256k supports image input, not video, plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — k3-256k supports low/high/max thinking effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html (read 2026-10-29) — \"K3.1 Pro models, the K3 series, and K2.8 Preview support low / high / max thinking effort levels\" and recommends \"the Kimi Coding Plan's native Responses, chat completion, or message APIs\", but does NOT name the Messages wire field; `output_config.effort` is carried over from the Kimi open platform's Messages schema (https://platform.kimi.ai/docs/api/messages: `output_config.effort` low/high/max, no `thinking` request field) — INFERRED for the Kimi Code endpoint, unprobed.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-intl/k3-256k"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): the Kimi Messages API returns signed `thinking` blocks and says to \"pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; Kimi Code's own CLI changelog (https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html, 2.4.0, read 2026-10-29): \"Preserve prior turns' thinking by default on the Anthropic provider (Claude and Kimi's Anthropic-compatible mode), matching the Kimi default\". Kimi Code's API docs themselves say nothing about thinking blocks, hence `inferred`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "k3-256k",
+      "modelFamily": "other"
+    },
+    {
+      "key": "kimi-coding-intl/k3.1-pro",
+      "providerId": "kimi-coding-intl",
+      "upstreamId": "k3.1-pro",
+      "displayName": "Kimi K3.1 Pro (Coding Plan Anthropic)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro` Context window \"Up to 1048576 (for higher-tier members)\"; \"Plus and above\" with \"1M context for Pro and above\" (legacy plans: Moderato and above, 1M for Allegretto and above)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart (read 2026-10-29): \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\" — the open platform's figure for the same model, applied as a model-level property (Kimi Code's page states no output ceiling)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro` Multimodal input \"Image, video\" plus text",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — \"switching models or thinking effort invalidates the existing context cache\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro` Reasoning \"reasoning_effort: low / high / max (default high ; thinking cannot be disabled)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html (read 2026-10-29) — \"K3.1 Pro models, the K3 series, and K2.8 Preview support low / high / max thinking effort levels\" and recommends \"the Kimi Coding Plan's native Responses, chat completion, or message APIs\", but does NOT name the Messages wire field; `output_config.effort` is carried over from the Kimi open platform's Messages schema (https://platform.kimi.ai/docs/api/messages: `output_config.effort` low/high/max, no `thinking` request field) — INFERRED for the Kimi Code endpoint, unprobed.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-intl/k3.1-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): the Kimi Messages API returns signed `thinking` blocks and says to \"pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; Kimi Code's own CLI changelog (https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html, 2.4.0, read 2026-10-29): \"Preserve prior turns' thinking by default on the Anthropic provider (Claude and Kimi's Anthropic-compatible mode), matching the Kimi default\". Kimi Code's API docs themselves say nothing about thinking blocks, hence `inferred`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [
+        "thinking.type.disabled"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "k3.1-pro",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-intl/k3.1-pro-highspeed",
+      "providerId": "kimi-coding-intl",
+      "upstreamId": "k3.1-pro-highspeed",
+      "displayName": "Kimi K3.1 Pro Highspeed (Coding Plan Anthropic)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro-highspeed` Context window \"Up to 1048576 (for higher-tier members)\"; \"Pro and above\" (legacy plans \"Allegretto and above\")",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart (read 2026-10-29): \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\" — the open platform's figure for the same model, applied as a model-level property (Kimi Code's page states no output ceiling)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro-highspeed` Multimodal input \"Image, video\" plus text",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — \"switching models or thinking effort invalidates the existing context cache\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — `k3.1-pro-highspeed` Reasoning \"reasoning_effort: low / high / max (default high ; thinking cannot be disabled)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "high",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html (read 2026-10-29) — \"K3.1 Pro models, the K3 series, and K2.8 Preview support low / high / max thinking effort levels\" and recommends \"the Kimi Coding Plan's native Responses, chat completion, or message APIs\", but does NOT name the Messages wire field; `output_config.effort` is carried over from the Kimi open platform's Messages schema (https://platform.kimi.ai/docs/api/messages: `output_config.effort` low/high/max, no `thinking` request field) — INFERRED for the Kimi Code endpoint, unprobed.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-intl/k3.1-pro-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): the Kimi Messages API returns signed `thinking` blocks and says to \"pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; Kimi Code's own CLI changelog (https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html, 2.4.0, read 2026-10-29): \"Preserve prior turns' thinking by default on the Anthropic provider (Claude and Kimi's Anthropic-compatible mode), matching the Kimi default\". Kimi Code's API docs themselves say nothing about thinking blocks, hence `inferred`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [
+        "thinking.type.disabled"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "k3.1-pro-highspeed",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-intl/kimi-for-coding",
+      "providerId": "kimi-coding-intl",
+      "upstreamId": "kimi-for-coding",
+      "displayName": "Kimi K2.8 Preview (Coding Plan Anthropic)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding context window 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding supports image and video input plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding supports low/high/max thinking effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "opaque-provider-state",
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html (read 2026-10-29) — \"K3.1 Pro models, the K3 series, and K2.8 Preview support low / high / max thinking effort levels\" and recommends \"the Kimi Coding Plan's native Responses, chat completion, or message APIs\", but does NOT name the Messages wire field; `output_config.effort` is carried over from the Kimi open platform's Messages schema (https://platform.kimi.ai/docs/api/messages: `output_config.effort` low/high/max, no `thinking` request field) — INFERRED for the Kimi Code endpoint, unprobed.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T18:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-intl/kimi-for-coding"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): the Kimi Messages API returns signed `thinking` blocks and says to \"pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; Kimi Code's own CLI changelog (https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html, 2.4.0, read 2026-10-29): \"Preserve prior turns' thinking by default on the Anthropic provider (Claude and Kimi's Anthropic-compatible mode), matching the Kimi default\". Kimi Code's API docs themselves say nothing about thinking blocks, hence `inferred`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-for-coding",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "kimi-coding-intl/kimi-for-coding-highspeed",
+      "providerId": "kimi-coding-intl",
+      "upstreamId": "kimi-for-coding-highspeed",
+      "displayName": "Kimi K2.7 Code HighSpeed (Coding Plan Anthropic)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding-highspeed context window 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — kimi-for-coding-highspeed supports image and video input plus text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files — official CLI model configuration marks Kimi Code models with tool_use capability",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — switching model or reasoning effort invalidates existing context cache",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.kimi.com/code/docs/en/kimi-code/models.html — HighSpeed has Thinking:ON",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "kimi-coding-intl/kimi-for-coding-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/api/messages (read 2026-10-29): the Kimi Messages API returns signed `thinking` blocks and says to \"pass the thinking block from the response (including `signature`) back unchanged inside the assistant message\"; Kimi Code's own CLI changelog (https://www.kimi.com/code/docs/en/kimi-code-cli/changelog.html, 2.4.0, read 2026-10-29): \"Preserve prior turns' thinking by default on the Anthropic provider (Claude and Kimi's Anthropic-compatible mode), matching the Kimi default\". Kimi Code's API docs themselves say nothing about thinking blocks, hence `inferred`. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-for-coding-highspeed",
+      "modelFamily": "kimi"
+    }
+  ]
+}

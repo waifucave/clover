@@ -1,0 +1,375 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/aimlapi/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://aimlapi.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.aimlapi.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "aimlapi/claude-3-5-sonnet-20241022",
+      "providerId": "aimlapi",
+      "upstreamId": "claude-3-5-sonnet-20241022",
+      "displayName": "Claude 3.5 Sonnet (via AI/ML API)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#claude-3-5-sonnet-20241022",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#claude-3-5-sonnet-20241022 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#claude-3-5-sonnet-20241022",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#claude-3-5-sonnet-20241022",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-3.5-sonnet-20241022",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "aimlapi/deepseek-chat",
+      "providerId": "aimlapi",
+      "upstreamId": "deepseek-chat",
+      "displayName": "DeepSeek Chat (via AI/ML API)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#deepseek-chat",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#deepseek-chat — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/docs-json?model=deepseek%2Fdeepseek-chat&endpoint=openai%2Fchat-completions (read 2026-09-27): \"\"tool_choice\":{\"description\":\"none means the model will not call any tool ... auto ... required ...\"}, \"tools\":{\"type\":\"array\",...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/docs-json?model=deepseek%2Fdeepseek-chat&endpoint=openai%2Fchat-completions (read 2026-09-27): \"\"tool_choice\":{\"description\":\"none means the model will not call any tool ... auto ... required ...\"}, \"tools\":{\"type\":\"array\",...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/v1/models (read 2026-09-27): \"\"id\":\"deepseek/deepseek-chat\", aliases:[\"deepseek-chat\"], info.contextLength=1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 384000,
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/v1/models (read 2026-09-27): \"info.outputMax=384000; description: \"1M context, thinking available, up to 384K output tokens\"\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.aimlapi.com/docs-json?model=deepseek%2Fdeepseek-chat&endpoint=openai%2Fchat-completions (read 2026-09-27): \"\"reasoning\":{\"type\":\"object\",\"properties\":{\"effort\":{\"type\":\"string\",\"enum\":[\"low\",\"medium\",\"high\"],\"description\":\"Reasoning effort setting\"}...}}\" — effort values ['low', 'medium', 'high'] ride `reasoning.effort`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-chat",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "aimlapi/gemini-1.5-pro",
+      "providerId": "aimlapi",
+      "upstreamId": "gemini-1.5-pro",
+      "displayName": "Gemini 1.5 Pro (via AI/ML API)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#gemini-1.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#gemini-1.5-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#gemini-1.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#gemini-1.5-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-1.5-pro",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "aimlapi/gpt-4o",
+      "providerId": "aimlapi",
+      "upstreamId": "gpt-4o",
+      "displayName": "GPT-4o (via AI/ML API)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#gpt-4o",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#gpt-4o — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/docs-json?model=openai%2Fgpt-4o&endpoint=openai%2Fchat-completions (read 2026-09-27): \"\"tool_choice\":{...}, \"tools\":{\"type\":\"array\",...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/docs-json?model=openai%2Fgpt-4o&endpoint=openai%2Fchat-completions (read 2026-09-27): \"\"tool_choice\":{...}, \"tools\":{\"type\":\"array\",...}\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/v1/models (read 2026-09-27): \"info.contextLength=128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://api.aimlapi.com/v1/models (read 2026-09-27): \"info.outputMax=16384\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://api.aimlapi.com/docs-json?model=openai%2Fgpt-4o&endpoint=openai%2Fchat-completions (read 2026-09-27): \"no reasoning/thinking object in the request schema for this model (only a generic \"including reasoning tokens\" note on max_completion_tokens)\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3.25,
+          "outputPerMTokUsd": 13
+        },
+        "source": "official-doc",
+        "sourceRef": "https://aimlapi.com/models/gpt-4o-2024-08-06-api (read 2026-09-27): \"\"price\":\"3.25\",\"priceCurrency\":\"USD\",...,\"unitText\":\"per 1M input tokens\" / \"price\":\"13\",...,\"unitText\":\"per 1M output tokens\"\" — USD 3.25 input / 13 output per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-4o",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "aimlapi/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+      "providerId": "aimlapi",
+      "upstreamId": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+      "displayName": "Llama 3.1 70B (via AI/ML API)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "meta-llama-3.1-70b-instruct-turbo",
+      "modelFamily": "other"
+    },
+    {
+      "key": "aimlapi/mistral-large-latest",
+      "providerId": "aimlapi",
+      "upstreamId": "mistral-large-latest",
+      "displayName": "Mistral Large (via AI/ML API)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#mistral-large-latest",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#mistral-large-latest — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#mistral-large-latest",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aimlapi/index.ts#mistral-large-latest",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-large-latest",
+      "modelFamily": "mistral"
+    }
+  ]
+}

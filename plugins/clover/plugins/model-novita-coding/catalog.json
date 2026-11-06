@@ -1,0 +1,664 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Novita documents the Coding Plan model set and its API-key OpenAI-compatible surface, but Winter has not run a plan-key live gate or established tier-specific rate limits."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://novita.ai/coding-plan and https://docs.novita.ai/guides/introduction — Novita's Coding Plan lists its nine included models; Novita's current docs declare Bearer API-key authentication and the OpenAI-compatible base https://api.novita.ai/openai (retrieved 2026-09-19).",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "novita-coding/deepseek/deepseek-v3.2",
+      "providerId": "novita-coding",
+      "upstreamId": "deepseek/deepseek-v3.2",
+      "displayName": "DeepSeek V3.2 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 163840,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":163840\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":65536\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v3.2",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita-coding/deepseek/deepseek-v4-pro",
+      "providerId": "novita-coding",
+      "upstreamId": "deepseek/deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":1048576\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":393216\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "novita-coding/minimax/minimax-m2.1",
+      "providerId": "novita-coding",
+      "upstreamId": "minimax/minimax-m2.1",
+      "displayName": "MiniMax M2.1 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":204800\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":131072\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m2.1",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "novita-coding/minimax/minimax-m2.5",
+      "providerId": "novita-coding",
+      "upstreamId": "minimax/minimax-m2.5",
+      "displayName": "MiniMax M2.5 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":204800\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131100,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":131100\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "novita-coding/minimax/minimax-m2.7",
+      "providerId": "novita-coding",
+      "upstreamId": "minimax/minimax-m2.7",
+      "displayName": "MiniMax M2.7 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":204800\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":131072\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "novita-coding/moonshotai/kimi-k2.5",
+      "providerId": "novita-coding",
+      "upstreamId": "moonshotai/kimi-k2.5",
+      "displayName": "Kimi K2.5 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":262144\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":262144\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "kimi-k2.5",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "novita-coding/qwen/qwen3.5-397b-a17b",
+      "providerId": "novita-coding",
+      "upstreamId": "qwen/qwen3.5-397b-a17b",
+      "displayName": "Qwen3.5 397B A17B (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":262144\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":65536\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3.5-397b-a17b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "novita-coding/zai-org/glm-4.7",
+      "providerId": "novita-coding",
+      "upstreamId": "zai-org/glm-4.7",
+      "displayName": "GLM-4.7 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":204800\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":131072\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "novita-coding/zai-org/glm-5",
+      "providerId": "novita-coding",
+      "upstreamId": "zai-org/glm-5",
+      "displayName": "GLM-5 (Novita Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://novita.ai/coding-plan — listed Coding Plan model; no modality contract is published on the plan page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the Novita plan page lists no output modality, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"function-calling\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 202800,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"context_size\":202800\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"max_output_tokens\":131072\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.novita.ai/openai/v1/models (read 2026-09-27): \"\"features\":[...,\"reasoning\",...]\" — Sourced from novita.ai's own metered-product model list (same model id); the task brief permits citing this list for context/max-output/features of the coding-plan row of the same id. novita.ai/coding-plan itself is a client-rendered page with no model ids in its static HTML. No request-level eff...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    }
+  ]
+}

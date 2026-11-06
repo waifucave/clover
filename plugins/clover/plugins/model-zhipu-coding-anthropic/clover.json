@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Zhipu GLM Coding Plan China (Anthropic dialect)",
+  "description": "Zhipu GLM Coding Plan China (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zhipu-coding-anthropic",
+        "name": "Zhipu GLM Coding Plan China (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Zhipu GLM Coding Plan China (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Zhipu GLM Coding Plan China (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://open.bigmodel.cn/api/anthropic"
+        }
+      }
+    ]
+  }
+}

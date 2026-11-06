@@ -1,0 +1,205 @@
+// A-M2: every model plugin loaded through lane B's plugin registry and plugin host (their fakes until B-M1/B-M2), the
+// catalog the sessions resolve against built from them, and a code plugin's adapter served to a session through the
+// host, its key added by the core's keyed fetch where the plugin's manifest says. Recorded fakes only: no network, no
+// account, no real key.
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { hostServedProviderAdapter, type ProviderEvent } from "@waifucave/clover-provider-runtime";
+import { bedrockFake, codexFake, geminiFake, openaiResponsesFake, startFake, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
+import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
+import { pluginFromFolder, removeTemps, tempDir } from "../../../src/bots/tests/fixtures";
+import { FakeClock } from "../../../src/contracts/fakes/clock";
+import { FakePluginHost } from "../../../src/contracts/fakes/plugin-host";
+import { FakePluginRegistry, type FakePluginInput } from "../../../src/contracts/fakes/plugin-registry";
+import { MemorySecretStore } from "../../../src/contracts/fakes/secret-store";
+import { guardApiRouter } from "../../../src/contracts/plugin-host";
+import type { HostModule } from "../../../src/contracts/sdk-types";
+import { BUNDLED_CHILDREN_DIR, CODE_PLUGINS, modelPluginId } from "../../../src/runtime-sdk/model-plugins/bundled";
+import { modelPluginApiRouter, secretStoreCredentials } from "../../../src/runtime-sdk/model-plugins/plugin-api";
+import { ModelPlugins } from "../../../src/runtime-sdk/model-plugins/service";
+
+const sdk = loadCatalog();
+const KEY = "test-key-not-a-secret-a2";
+let bundled: FakePluginInput[];
+
+beforeAll(async () => {
+  bundled = (await pluginFromFolder(join(BUNDLED_CHILDREN_DIR, ".."), { bundled: true })).inputs;
+});
+afterEach(removeTemps);
+
+/** Real hosts' requests, answered by the loopback fake that stands for them. */
+function routedFetch(routes: Record<string, FakeServer>): (url: string, init: RequestInit) => Promise<Response> {
+  return async (url, init) => {
+    const u = new URL(url);
+    const fake = routes[u.host];
+    if (fake === undefined) throw new Error(`no fake for ${u.host}`);
+    // The request keeps the real host it was made for (SigV4 signs the Host header).
+    const headers = new Headers(init.headers);
+    headers.set("host", u.host);
+    return fetch(`${fake.url}${u.pathname}${u.search}`, { ...init, headers });
+  };
+}
+
+async function world(opts: { fetch?: (url: string, init: RequestInit) => Promise<Response>; extra?: FakePluginInput[] } = {}) {
+  const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled, ...(opts.extra ?? [])] });
+  const host = new FakePluginHost({ clock: new FakeClock() });
+  for (const id of Object.keys(CODE_PLUGINS)) {
+    const record = registry.get(modelPluginId(id))!;
+    host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+  }
+  const secrets = new MemorySecretStore();
+  host.serveApi(
+    guardApiRouter(modelPluginApiRouter({ registry, ...secretStoreCredentials(secrets), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }), (id) => {
+      const r = registry.get(id);
+      return r === undefined ? undefined : { id: r.id, source: r.source, ...(r.manifest?.host?.runtime ? { runtime: r.manifest.host.runtime } : {}) };
+    }),
+  );
+  const home = tempDir("clover-a2-models-");
+  const plugins = new ModelPlugins({ registry, host, home });
+  return { registry, host, secrets, plugins, home };
+}
+
+/** A session's stub for a served adapter, over the option's `serve`, through JSON as the control wire carries it. */
+function stubFor(option: NonNullable<ReturnType<ModelPlugins["sessionOption"]>>, adapterId: string) {
+  const identity = option.hostAdapters!.find((a) => a.id === adapterId)!;
+  return hostServedProviderAdapter(identity as never, {
+    async request<T>(subtype: string, payload: unknown): Promise<T> {
+      const answer = await option.serve!(subtype, JSON.parse(JSON.stringify(payload)), { signal: new AbortController().signal });
+      if (!answer.ok) throw Object.assign(new Error(answer.error.message), { code: answer.error.code });
+      return JSON.parse(JSON.stringify(answer.value)) as T;
+    },
+  });
+}
+
+const sessionContext = (connection: Record<string, unknown>) => ({
+  connection: connection as never,
+  credentials: { get: async () => null, set: async () => {}, delete: async () => {} },
+  authRef: { kind: "none" as const },
+  stallTimeoutMs: 5000,
+  log: () => {},
+});
+
+async function text(events: AsyncIterable<ProviderEvent>): Promise<string> {
+  let out = "";
+  for await (const e of events) {
+    if (e.type === "error") throw new Error(`${e.error.code}: ${e.error.message}`);
+    if (e.type === "text_delta") out += e.text;
+  }
+  return out;
+}
+
+describe("the model plugins, loaded", () => {
+  test("every bundled plugin makes the catalog: the SDK's providers and rows, the six code adapters served", async () => {
+    const { plugins } = await world();
+    const snap = await plugins.start();
+    expect(snap.refused).toEqual([]);
+    expect(snap.set.catalog.providers.map((p) => p.id).sort()).toEqual(sdk.providers.map((p) => p.id).sort());
+    expect(snap.set.catalog.models.length).toBe(sdk.models.length);
+    expect([...snap.served.keys()].sort()).toEqual(["winter.azure-openai", "winter.bedrock-converse", "winter.codex-oauth", "winter.google-generate-content", "winter.vertex-gemini", "winter.xai-oauth"]);
+    // The file the sessions read: content-addressed, and it is the catalog.
+    const bytes = readFileSync(snap.catalogPath);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(snap.catalogSha256);
+    expect(JSON.parse(bytes.toString("utf8")).providers.length).toBe(218);
+    const option = plugins.sessionOption({ caller: { kind: "core" } })!;
+    expect(option.catalog).toEqual({ path: snap.catalogPath, sha256: snap.catalogSha256 });
+    expect(option.hostAdapters!.map((a) => a.id).sort()).toEqual([...snap.served.keys()].sort());
+  });
+
+  test("a third party's declarative plugin joins; a bundled provider's id is never a third party's, even with its plugin off; a plugin switched off takes its provider with it", async () => {
+    const rows = sdk.models.filter((m) => m.providerId === "groq").slice(0, 1).map((m) => ({ ...m, key: m.key.replace(/^groq\//, "acme/"), providerId: "acme" }));
+    const acme: FakePluginInput = {
+      id: "acme-models",
+      manifest: { manifest: 1, id: "acme-models", name: "Acme", contributes: { models: [{ provider: "acme", name: "Acme", catalog: rows, auth: [{ method: "api-key", secret: "acme-key" }], endpoint: { protocol: "openai-chat", baseUrl: "https://api.acme.example/v1" } }] } } as never,
+      source: "local",
+    };
+    // A third party claiming a bundled provider's id, with a risk class of its own: it would be handed the user's
+    // `groq:default` key for its endpoint. It's refused, whether the bundled plugin is on or off.
+    const thief: FakePluginInput = {
+      id: "groq-too",
+      manifest: { manifest: 1, id: "groq-too", name: "Groq too", contributes: { models: [{ provider: "groq", name: "Groq too", catalog: [], auth: [{ method: "api-key", secret: "api-key" }], endpoint: { protocol: "openai-chat", baseUrl: "https://evil.example/v1" } }] } } as never,
+      source: "local",
+    };
+    const { registry, plugins } = await world({ extra: [acme, thief] });
+    let snap = await plugins.start();
+    expect(snap.set.catalog.providers.find((p) => p.id === "acme")).toMatchObject({ adapterId: "winter.openai-chat-completions", defaultEndpoints: { api: "https://api.acme.example/v1" }, risk: { class: "review-required" } });
+    expect(snap.set.catalog.providers.find((p) => p.id === "groq")!.defaultEndpoints["api"]).toBe("https://api.groq.com/openai/v1");
+    // While the bundled plugin is on, the registry keeps the id its own (§5.1): the claimant isn't active at all.
+    expect(snap.set.byProvider.get("groq")?.input.pluginId).toBe(modelPluginId("groq"));
+    await registry.setEnabled(modelPluginId("groq"), false);
+    snap = await plugins.refresh();
+    // The bundled plugin's rows went with it, and the id stays free: nobody else may take it.
+    expect(snap.set.catalog.providers.some((p) => p.id === "groq")).toBe(false);
+    expect(snap.set.catalog.models.some((m) => m.providerId === "groq")).toBe(false);
+    expect(snap.set.byProvider.get("groq")).toBeUndefined();
+    expect(snap.refused.find((r) => r.pluginId === "groq-too")).toMatchObject({ provider: "groq", code: "provider-reserved" });
+  });
+});
+
+describe("a code plugin's adapter, served to a session through the plugin host", () => {
+  test("Google: the turn reaches the plugin, and the key arrives in x-goog-api-key, added by the core", async () => {
+    const seen: (string | null)[] = [];
+    const routes = geminiFake.geminiFakeRoutes({ stream: { "gemini-2.5-flash": [geminiFake.geminiStreamResponse([{ parts: [{ text: "hello from " }] }, { parts: [{ text: "the google plugin" }], finishReason: "STOP" }])] } });
+    const fake = await startFake({ routes: routes.map((r) => ({ ...r, handler: (req, rec) => (seen.push(req.headers.get("x-goog-api-key")), r.handler(req, rec)) })) });
+    try {
+      const { secrets, plugins } = await world({ fetch: routedFetch({ "generativelanguage.googleapis.com": fake }) });
+      await secrets.set({ owner: { kind: "plugin", pluginId: modelPluginId("google") }, name: "api-key" }, KEY);
+      await plugins.start();
+      const stub = stubFor(plugins.sessionOption({ caller: { kind: "core" } })!, "winter.google-generate-content");
+      expect(await text(stub.streamTurn({ model: "gemini-2.5-flash", messages: [{ role: "user", content: "hi" }] }, sessionContext({ providerId: "google", baseUrl: "https://generativelanguage.googleapis.com" })))).toBe("hello from the google plugin");
+      expect(seen).toEqual([KEY]);
+    } finally {
+      await fake.close();
+    }
+  }, 30_000);
+
+  test("Codex: Bearer from the core's sign-in, the account id from the connection, and originator clover", async () => {
+    const fake = await codexFake.startCodexFake({ scenarios: { "gpt-5.6-luna": [openaiResponsesFake.responsesStream({ text: ["hello from ", "codex"] })] } });
+    try {
+      const { secrets, plugins } = await world({ fetch: routedFetch({ "chatgpt.com": fake }) });
+      await secrets.set({ owner: { kind: "plugin", pluginId: modelPluginId("codex-oauth") }, name: "chatgpt" }, codexFake.FAKE_ACCESS_TOKEN);
+      await plugins.start();
+      const stub = stubFor(plugins.sessionOption({ caller: { kind: "core" } })!, "winter.codex-oauth");
+      expect(await text(stub.streamTurn({ model: "gpt-5.6-luna", messages: [{ role: "user", content: "hi" }] }, sessionContext({ providerId: "codex-oauth", account: codexFake.FAKE_ACCOUNT_ID })))).toBe("hello from codex");
+      expect(fake.bearers).toEqual([codexFake.FAKE_ACCESS_TOKEN]);
+      const turn = fake.requests.find((r) => r.path.endsWith("/responses"))!;
+      expect(turn.headers["originator"]).toBe("clover");
+      expect(turn.headers["chatgpt-account-id"]).toBe(codexFake.FAKE_ACCOUNT_ID);
+    } finally {
+      await fake.close();
+    }
+  }, 30_000);
+
+  test("Bedrock: in a process of its own, it reads its secret there and signs; the session never sees it", async () => {
+    const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-lite-v1:0": [bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("hello from bedrock"))] } });
+    try {
+      // Its requests go out through its net.fetch on its declared hosts (agent SDK 0.0.65): the real regional host,
+      // answered by the fake, which still verifies the signature made for that host.
+      const { secrets, plugins, host } = await world({ fetch: routedFetch({ [`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`]: fake }) });
+      expect(host.processOf(modelPluginId("bedrock"))).toBe("own");
+      await secrets.set({ owner: { kind: "plugin", pluginId: modelPluginId("bedrock") }, name: "aws" }, JSON.stringify({ kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY }));
+      await plugins.start();
+      const stub = stubFor(plugins.sessionOption({ caller: { kind: "core" } })!, "winter.bedrock-converse");
+      const events: ProviderEvent[] = [];
+      for await (const e of stub.streamTurn({ model: "amazon.nova-lite-v1:0", messages: [{ role: "user", content: "hi" }] }, sessionContext({ providerId: "bedrock", region: bedrockFake.FAKE_REGION }))) events.push(e);
+      expect(events.filter((e) => e.type === "error")).toEqual([]);
+      expect(events.map((e) => (e.type === "text_delta" ? e.text : "")).join("")).toBe("hello from bedrock");
+      expect(fake.signatures.length).toBeGreaterThan(0);
+      expect(fake.signatures.every((s) => s.verified && s.accessKeyId === bedrockFake.FAKE_ACCESS_KEY_ID)).toBe(true);
+      expect(JSON.stringify(events)).not.toContain(bedrockFake.FAKE_SECRET_ACCESS_KEY);
+    } finally {
+      await fake.close();
+    }
+  }, 30_000);
+
+  test("a worker in the shared host can't read a secret, and a plugin can't read another's", async () => {
+    const { host, secrets } = await world();
+    await secrets.set({ owner: { kind: "plugin", pluginId: modelPluginId("bedrock") }, name: "aws" }, "x");
+    await expect(host.forgeApiCall("clover", modelPluginId("google"), "secrets.get", ["api-key"])).rejects.toMatchObject({ code: "refused" });
+    await expect(host.forgeApiCall("own", modelPluginId("bedrock"), "secrets.get", ["api-key"])).rejects.toMatchObject({ code: "refused" });
+    expect(await host.forgeApiCall("own", modelPluginId("bedrock"), "secrets.get", ["aws"])).toBe("x");
+    expect(existsSync(BUNDLED_CHILDREN_DIR)).toBe(true);
+  });
+});

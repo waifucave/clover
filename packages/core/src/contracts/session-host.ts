@@ -155,7 +155,23 @@ export interface SessionDriver {
   interrupt(): Promise<void>;
   /** Ends the session: for an agent, ACP's cancel, then the end of its process group (§9.3). */
   stop(): Promise<void>;
+  /** Switches the model mid-session (item 90's picker, lane K's ask): an agent's or a coding session's. Lane D's
+   *  `session.setModel` calls it, refuses a session whose driver has none, and refuses a bot, whose model is its user
+   *  layer; the session's view takes the new `model` and `effort`. */
+  setModel?(model: string, effort?: string): Promise<void>;
+  /** Compacts the conversation on the host's word (§6.3, lane D's ask; lane A's runtime implements it): summarizes
+   *  it, rebuilds the harness blocks (§6.1), and answers `compacted: false` when `signal` aborts first. The host
+   *  compacts any driver that offers it, while the session is idle: a forced one (`full`, or the user's
+   *  `session.compact`) finishes before what arrives meanwhile, and a cache-timed one (`cache`) gives way to the
+   *  user's message or interrupt, which abort it. A driver without it (an ACP agent, which compacts itself) is never
+   *  asked. While a turn runs a driver may compact on its own when the context fills, and says so with `compaction`
+   *  records (`{ type: "compaction", phase: "started" | "ended", reason: "full" }`). */
+  compact?(req: { reason: CompactReason; signal: AbortSignal }): Promise<{ compacted: boolean }>;
 }
+
+/** Why a session compacts (§6.3): `cache`, just before the cached prompt expires; `full`, the context window is full;
+ *  `user`, the user's `session.compact`. */
+export type CompactReason = "cache" | "full" | "user";
 
 export type SessionRecordBody =
   | { type: "input"; input: TurnInput; disposition: Disposition }

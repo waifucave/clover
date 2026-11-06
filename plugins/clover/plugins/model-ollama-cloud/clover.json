@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Ollama Cloud",
+  "description": "Ollama Cloud's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "ollama-cloud",
+        "name": "Ollama Cloud",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Ollama Cloud API key. Clover keeps it in your credential store and adds it to Ollama Cloud's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ollama.com/v1"
+        }
+      }
+    ]
+  }
+}

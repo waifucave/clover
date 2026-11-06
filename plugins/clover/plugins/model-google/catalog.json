@@ -1,0 +1,1738 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "google-generate-content"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "api": "https://generativelanguage.googleapis.com"
+    },
+    "modelDiscovery": "provider-native",
+    "liveCatalogAuthority": "authoritative",
+    "adapterId": "winter.google-generate-content",
+    "family": "google",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/gemini/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "approved",
+      "reasons": []
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://ai.google.dev/gemini-api/docs/pricing",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "google/gemini-2.5-flash",
+      "providerId": "google",
+      "upstreamId": "gemini-2.5-flash",
+      "displayName": "Gemini 2.5 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — supported input data types: text, image, audio, video",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en — Gemini 2.5 Flash listed with Parallel function calling checkmark",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — current Gemini Developer API Standard tier for this model; the one-rate schema records the listed text/image/video or <=200K tier. standard text/image/video rate; audio is $1.00 input and $0.10 cache read (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-2.5-flash-lite",
+      "providerId": "google",
+      "upstreamId": "gemini-2.5-flash-lite",
+      "displayName": "Gemini 2.5 Flash-Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en — Gemini 2.5 Flash-Lite listed with Parallel function calling checkmark",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1,
+          "outputPerMTokUsd": 0.4,
+          "cacheReadPerMTokUsd": 0.01
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — current Gemini Developer API Standard tier for this model; the one-rate schema records the listed text/image/video or <=200K tier. standard text/image/video rate; audio is $0.30 input and $0.03 cache read (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.5-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-2.5-pro",
+      "providerId": "google",
+      "upstreamId": "gemini-2.5-pro",
+      "displayName": "Gemini 2.5 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en — Gemini 2.5 Pro listed with Parallel function calling checkmark",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro — Thinking Supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §6.1 — summary parts are identified by `part.thought === true`; the underlying chain is not exposed",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §6.1 — `config.thinkingConfig.includeThoughts: true` on generateContent. The field is a BOOLEAN, recorded here as its single enabling spelling because the schema's `values` is a string list; the Interactions API's `generation_config.thinking_summaries` is a different surface and is not claimed for this endpoint.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "google/gemini-2.5-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §6.1, BOTH halves. Own-state acceptance: a `thoughtSignature` is returned to the SAME model on its exact original part — \"do not concatenate signed parts; do not move a signature to a different part; preserve every accumulated signature in a sequential function-call turn\". Why the domain is NARROW: \"A Gemini summary can be forwarded to another family. The `thoughtSignature` cannot.\" Signatures are bound to their exact part and model, so the domain is this model alone.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.125
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 2.5 Pro paid tier, prompts <= 200k tokens: input $1.25, output $10.00, context-cache read $0.125 per 1M tokens. TIERED UPSTREAM: prompts > 200k are billed $2.50 / $15.00 / $0.25. `ModelPricing` has one rate per direction, so the STANDARD (<=200k) tier is recorded and cost is UNDER-reported for prompts above it — a disclosed schema gap (PROVENANCE.md), not a claim that the higher tier does not exist.",
+        "confidence": "declared",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemini-2.5-pro",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3-flash-preview",
+      "providerId": "google",
+      "upstreamId": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3-flash-preview supports thinkingLevel minimal/low/medium/high; default high",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.5,
+          "outputPerMTokUsd": 3,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — current Gemini Developer API Standard tier for this model; the one-rate schema records the listed text/image/video or <=200K tier. standard text/image/video rate; audio is $1.00 input and $0.10 cache read (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3-flash-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.1-flash-lite",
+      "providerId": "google",
+      "upstreamId": "gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash-Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en — Gemini 3.1 Flash-Lite listed with Parallel function calling checkmark",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.1-flash-lite supports thinkingLevel minimal/low/medium/high; default minimal",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.25,
+          "outputPerMTokUsd": 1.5,
+          "cacheReadPerMTokUsd": 0.025
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — current Gemini Developer API Standard tier for this model; the one-rate schema records the listed text/image/video or <=200K tier. standard text/image/video rate; audio is $0.50 input and $0.05 cache read (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.1-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.1-pro-preview",
+      "providerId": "google",
+      "upstreamId": "gemini-3.1-pro-preview",
+      "displayName": "Gemini 3.1 Pro Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en — Gemini 3.1 Pro Preview listed with Parallel function calling checkmark",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.1-pro-preview supports thinkingLevel low/medium/high; default high",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 12,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — current Gemini Developer API Standard tier for this model; the one-rate schema records the listed text/image/video or <=200K tier. standard prompts at or below 200K tokens; above 200K is $4.00 input, $18.00 output, and $0.40 cache read (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.1-pro-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.5-flash",
+      "providerId": "google",
+      "upstreamId": "gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash",
+      "aliases": [
+        "gemini-flash-latest"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en — Gemini 3.5 Flash listed with Parallel function calling checkmark",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.5-flash supports thinkingLevel minimal/low/medium/high; default medium",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.5,
+          "outputPerMTokUsd": 9,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.5 Flash: Standard paid tier; changelog says gemini-flash-latest currently points here; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.5-flash-lite",
+      "providerId": "google",
+      "upstreamId": "gemini-3.5-flash-lite",
+      "displayName": "Gemini 3.5 Flash-Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.5-flash-lite supports thinkingLevel minimal/low/medium/high; default minimal",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing (retrieved 2026-09-08) — Gemini 3.5 Flash-Lite, Standard paid tier, per 1M tokens: input \"$0.30 (text / image / video / audio)\", output \"$2.50\", context caching \"$0.03\". Unlike its 3.8 Flash sibling this row carries NO scheduled increase on the page. The Batch (input $0.15, output $1.25) and Flex tiers are separate rate cards and are not folded in. `cacheReadPerMTokUsd` carries the page's \"context caching\" rate, the same reading `google/gemini-2.5-pro` uses; the page publishes no cache-WRITE rate, so that key is absent. P7a: this row shipped unpriced from P6.6, whose allowed page set did not include this one.",
+        "confidence": "declared",
+        "observedAt": "2026-09-08T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.5-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.6-flash",
+      "providerId": "google",
+      "upstreamId": "gemini-3.6-flash",
+      "displayName": "Gemini 3.6 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.6-flash supports thinkingLevel minimal/low/medium/high; default medium",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.075
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3.6 Flash: introductory Standard paid tier through 2026-12-31; 2027-01-01 rates $1.50/$7.50/$0.15; USD per 1M input/output/cache-read tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.6-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.7-flash",
+      "providerId": "google",
+      "upstreamId": "gemini-3.7-flash",
+      "displayName": "Gemini 3.7 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.7-flash supports thinkingLevel low/medium/high; default medium",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.075
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing — current Gemini Developer API Standard tier for this model; the one-rate schema records the listed text/image/video or <=200K tier. standard rates through December 31, 2026; they increase to $1.50 input, $7.50 output, and $0.15 cache read on January 1, 2027 (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.7-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-3.8-flash",
+      "providerId": "google",
+      "upstreamId": "gemini-3.8-flash",
+      "displayName": "Gemini 3.8 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — input token limit 1,048,576; used as context window",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — input token limit 1,048,576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — output token limit 65,536",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — supported input data types: text, image, audio, video, pdf",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — supported output data type Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash — Caching Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thinking — gemini-3.8-flash supports thinkingLevel low/medium/high; default medium",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.75,
+          "outputPerMTokUsd": 3.75,
+          "cacheReadPerMTokUsd": 0.075
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing (retrieved 2026-09-08) — Gemini 3.8 Flash, Standard paid tier, per 1M tokens: input \"$0.75 through December 31, 2026. $1.50 starting January 1, 2027\", output \"$3.75 through December 31, 2026. $7.50 starting January 1, 2027\", context caching \"$0.075 through December 31, 2026. $0.15 starting January 1, 2027\". TIERED IN TIME, which `ModelPricing` cannot express: the CURRENT (through 2026-12-31) rate is recorded, so from 2027-01-01 this row UNDER-reports by exactly 2x on every field until it is re-fetched — a disclosed schema gap (PROVENANCE.md), stated here so it travels with the data rather than living in a changelog. The Batch (50%), Flex and Priority tiers are separate rate cards and are not folded in. `cacheReadPerMTokUsd` carries the page's \"context caching\" rate, the same reading `google/gemini-2.5-pro` uses; the page publishes no cache-WRITE rate, so that key is absent. P7a: this row shipped unpriced from P6.6, whose allowed page set did not include this one.",
+        "confidence": "declared",
+        "observedAt": "2026-09-08T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-3.8-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemini-4-argon",
+      "providerId": "google",
+      "upstreamId": "gemini-4-argon",
+      "displayName": "Gemini 4 Argon",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Context window (unified input and output token limit) 1,048,576\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxInputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/thinking — \"Input, thinking, and output tokens share a single 1M-token context window (`1,048,576` tokens). If your input tokens plus `max_output_tokens` exceed 1,048,576 tokens, the API automatically caps the output limit\" — input is bounded only by the shared window",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Max output 65,536 (default synchronous) / up to 1,048,576 (with long decode)\"; https://ai.google.dev/gemini-api/docs/thinking: \"When `background=False` ... the default and maximum `max_output_tokens` cap is `65,536` tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Inputs Text, Image, Video, Audio, and PDF\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Output Text\"; Audio generation / Image generation Not supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — Structured outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/models/gemini-4-argon — \"Caching Supported (Implicit only) Note: Explicit caching is not supported.\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/thinking — \"| gemini-4-argon | On (medium) | low, medium, high |\"; https://ai.google.dev/gemini-api/docs/models/gemini-4-argon: \"Thinking Supported (low, medium, high)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/api/generate-content (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"Indicates whether to include thoughts in the response. If true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemini-api/docs/pricing (read 2026-10-29) — Gemini 4 Argon, Standard, Paid Tier per 1M tokens in USD: Input price \"$2.00 through November 30, 2026. $4.00 starting December 1, 2026.\"; Output price (including thinking tokens) \"$10.00 through November 30, 2026. $20.00 starting December 1, 2026.\"; Context caching price \"$0.10 through November 30, 2026. $0.20 starting December 1, 2026. Implicit caching only (explicit caching is not supported).\" TIERED IN TIME, which `ModelPricing` cannot express: the CURRENT (through 2026-11-30) introductory rate is recorded, so from 2026-12-01 this row UNDER-reports by exactly 2x on every field until it is re-priced — the same disclosed gap as google/gemini-3.8-flash. No long-context tier is published for this model (flat across the 1M window); \"Gemini 4 Argon is not available on the Free tier.\" Batch/Flex (50%) and Priority are separate rate cards and are not folded in; no cache-write rate is published, so that key is absent.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [
+        "candidate_count"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "gemini-4-argon",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "google/gemma-4-26b-a4b-it",
+      "providerId": "google",
+      "upstreamId": "gemma-4-26b-a4b-it",
+      "displayName": "Gemma 4 26B A4B IT",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 26B A4B IT is a medium Gemma 4 model with 256K context; K interpreted as 1000",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 26B A4B IT supports text and image; audio only on E2B/E4B/12B",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 models generate text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 family has native function calling; hosted API guide shows functionDeclarations",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api — Gemma 4 hosted generateContent functionDeclarations example",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api — Gemma 4 thinking supported; high enables and minimal disables",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemma-4-26b-a4b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "google/gemma-4-31b-it",
+      "providerId": "google",
+      "upstreamId": "gemma-4-31b-it",
+      "displayName": "Gemma 4 31B IT",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 31B IT is a medium Gemma 4 model with 256K context; K interpreted as 1000",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 31B IT supports text and image; audio only on E2B/E4B/12B",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 models generate text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/model_card_4 — Gemma 4 family has native function calling; hosted API guide shows functionDeclarations",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api — Gemma 4 hosted generateContent functionDeclarations example",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api — Gemma 4 thinking supported; high enables and minimal disables",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemma-4-31b-it",
+      "modelFamily": "gemma"
+    }
+  ]
+}

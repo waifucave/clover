@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactElement } from "react";
 import { assignPaletteSlots, type ChildItem } from "../model/children";
 import { questionAdvance, questionAnswers, chooseOption, emptyDraft, typeOther, type PillCard, type QuestionCard, type QuestionDraft } from "../model/cards";
-import { PILL, barLook, canvasSize, cardSize, contentReveal, hoverScale, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "../model/metrics";
+import type { PillPieces } from "../model/placement";
+import { PILL, barLook, canvasSize, cardSize, contentReveal, estimatedMenuHeight, hoverScale, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "../model/metrics";
 import { CHILD_PALETTES, type PlumeThrow } from "../model/plume";
 import { turnPreview, type Exchange } from "../model/preview";
 import { restingSpring, retarget, settled, stepSpring, type SizeSpring } from "../model/spring";
@@ -61,9 +62,13 @@ export interface DispatchPillProps {
   onFullScreen?: () => void;
   /** The window's size for everything drawn (the shape, the row above it, the shadow margin). */
   onCanvas?: (size: Size) => void;
+  /** What it draws, for the regions that take clicks (`PillPieces`). */
+  onPieces?: (pieces: PillPieces) => void;
   /** The screen's visible height, for the card and preview ceilings. */
   visibleHeight?: number;
   initialPresentation?: Presentation;
+  /** A menu open from the start (the gallery's). */
+  initialMenu?: BarMenu;
   reducedMotion?: boolean;
   timers?: FrameTimers;
 }
@@ -117,7 +122,10 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   const [presentation, setPresentation] = useState<Presentation>(props.initialPresentation ?? "compact");
   const [ownDraft, setOwnDraft] = useState("");
   const draft = props.draft ?? ownDraft;
-  const [menu, setMenu] = useState<BarMenu>(null);
+  const [menu, setMenu] = useState<BarMenu>(props.initialMenu ?? null);
+  /** The open menu's height as drawn (`getBoundingClientRect`), once the page has measured it. */
+  const menuBox = useRef<HTMLDivElement | null>(null);
+  const [menuMeasured, setMenuMeasured] = useState({ width: 0, height: 0 });
   const [composerHeight, setComposerHeight] = useState(LINE_HEIGHT + 6);
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, QuestionDraft>>({});
   const [inFlight, setInFlight] = useState<ReadonlySet<string>>(new Set());
@@ -282,8 +290,16 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
 
   // The window's size, for the host.
   const s = spring.current;
-  // What floats above the pill: the agents' row, an open menu (measured roughly: its rows and padding).
-  const menuHeight = menu === "targets" ? 12 + 34 * targets.length : menu === "more" ? 12 + 34 * 2 : 0;
+  // What floats above the pill: the agents' row, and an open menu, as drawn once measured (its rows, hairlines and
+  // padding until then), never taller than `menuMaxHeight`, past which its rows scroll.
+  const dividers = targets.some((x, i) => i > 0 && x.detail !== undefined && targets[i - 1]!.detail === undefined) ? 1 : 0;
+  const estimate = menu === "targets" && targets.length > 1 ? estimatedMenuHeight(targets.length, dividers) : menu === "more" ? estimatedMenuHeight(2, 0) : 0;
+  const menuHeight = estimate > 0 ? (menuMeasured.height > 0 ? Math.min(menuMeasured.height, PILL.menuMaxHeight) : estimate) : 0;
+  useLayoutEffect(() => {
+    const rect = menuBox.current?.querySelector(".clp-menu")?.getBoundingClientRect();
+    const next = { width: rect?.width ?? 0, height: rect?.height ?? 0 };
+    setMenuMeasured((m) => (Math.abs(m.width - next.width) < 0.5 && Math.abs(m.height - next.height) < 0.5 ? m : next));
+  });
   const floating = (agents.length > 0 ? PILL.pillHeight : 0) + (menuHeight > 0 ? menuHeight + (agents.length > 0 ? PILL.stackGap : 0) : 0);
   const accessory = floating > 0 ? { width: s.target.width, height: floating } : null;
   const canvas = canvasSize(s.target, accessory);
@@ -291,6 +307,15 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   useEffect(() => {
     onCanvas?.(canvas);
   }, [canvas.width, canvas.height, onCanvas]);
+  const onPieces = props.onPieces;
+  const openMenu = menuHeight > 0 && swap.current.shown === "bar" ? menu : null;
+  useEffect(() => {
+    onPieces?.({
+      main: { width: s.target.width, height: s.target.height },
+      menu: openMenu ? { width: menuMeasured.width, height: menuHeight, side: openMenu === "more" ? "trailing" : "leading" } : null,
+      agents: agents.length > 0,
+    });
+  }, [onPieces, s.target.width, s.target.height, openMenu, menuMeasured.width, menuHeight, agents.length]);
 
   const setDraft = (text: string) => {
     if (props.draft === undefined) setOwnDraft(text);
@@ -377,6 +402,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
           onOpen={props.onOpenAgent}
           onStop={props.onStopAgent}
         />
+        <div ref={menuBox} className="clp-menu-box">
         <BarMenus
           menu={drawn === "bar" ? menu : null}
           target={target}
@@ -387,6 +413,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
           onOpenInApp={props.onOpenInApp}
           onClearDraft={() => setDraft("")}
         />
+        </div>
         <Shell
           size={s.size}
           target={s.target}

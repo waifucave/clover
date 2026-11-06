@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "b.ai",
+  "description": "b.ai's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "bai",
+        "name": "b.ai",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your b.ai API key. Clover keeps it in your credential store and adds it to b.ai's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.b.ai/v1"
+        }
+      }
+    ]
+  }
+}

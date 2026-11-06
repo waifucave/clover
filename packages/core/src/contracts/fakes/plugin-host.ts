@@ -2,12 +2,15 @@
 // MCP channels on an injected clock. A handler's `ctx.api` routes every plugin-API call to the router the core
 // serves (`serveApi`), as the real host's worker does over its pipe, stamped with the worker's plugin id and the
 // process the core put it in (`hostProcessFor`, from the install record `define` takes); callbacks reach the router
-// as functions. `forgeApiCall` is what a compromised process could send on its connection.
+// as functions. `forgeApiCall` is what a compromised process could send on its connection. A handler's `ctx.api` acts as
+// the call's caller (R7); the `api` a module's `start` and its MCP servers get acts as the plugin. The fake's gap: it
+// doesn't bind an MCP server's API calls to the `tools/call` it is serving (the real host does, B-M2); it only takes
+// the core's `_meta["clover/invocation"]` off before the server sees a request.
 import type { Caller, HostProcess, PluginSource } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
+  CRASH_LIMIT, CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
@@ -127,7 +130,7 @@ export class FakePluginHost implements PluginHost {
           computer: this.computer,
           signal: abort.signal,
           deadline: this.#clock.now() + limit,
-          api: this.#apiFor(req.pluginId, req.caller),
+          api: this.#apiFor(req.pluginId, req.caller, () => !settled),
         };
         try {
           const result = await target.fn.call(target.self, structuredClone(req.args), ctx);
@@ -163,6 +166,7 @@ export class FakePluginHost implements PluginHost {
     req.signal?.addEventListener("abort", onAbort, { once: true });
     h.calls.add(call);
     let iterator: AsyncIterator<unknown, unknown> | undefined;
+    let ended = false;
     try {
       await Promise.race([this.ensureStarted(req.pluginId), failure]);
       const target = resolveHandler(h.module, req.handler, req.method);
@@ -173,7 +177,7 @@ export class FakePluginHost implements PluginHost {
         computer: this.computer,
         signal: abort.signal,
         deadline: this.#clock.now() + limit,
-        api: this.#apiFor(req.pluginId, req.caller),
+        api: this.#apiFor(req.pluginId, req.caller, () => !ended),
         ...(req.input === undefined ? {} : { input: req.input }),
       };
       const out = (await Promise.race([Promise.resolve(target.fn.call(target.self, structuredClone(req.args), ctx)), failure])) as AsyncIterable<unknown> | undefined;
@@ -189,6 +193,7 @@ export class FakePluginHost implements PluginHost {
     } catch (err) {
       throw err instanceof ContractError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err));
     } finally {
+      ended = true;
       this.#clock.clearTimeout(timer);
       req.signal?.removeEventListener("abort", onAbort);
       h.calls.delete(call);
@@ -263,6 +268,8 @@ export class FakePluginHost implements PluginHost {
       send: (message) => {
         if (closed) throw new ContractError("closed", "the MCP channel is closed");
         const copy = structuredClone(message);
+        const params = copy.params as { _meta?: Record<string, unknown> } | undefined;
+        if (params?._meta && MCP_INVOCATION_META in params._meta) delete params._meta[MCP_INVOCATION_META];
         queueMicrotask(() => transport.onmessage?.(copy));
       },
       onMessage: (fn) => toCore.add(fn),
@@ -275,7 +282,7 @@ export class FakePluginHost implements PluginHost {
         return closed;
       },
     };
-    await serve(transport, this.#apiFor(pluginId, { kind: "core" }));
+    await serve(transport, this.#apiFor(pluginId, { kind: "plugin", pluginId }));
     return channel;
   }
 
@@ -321,7 +328,7 @@ export class FakePluginHost implements PluginHost {
     }
     this.#set(pluginId, h, "starting");
     try {
-      await h.module.start?.(this.#apiFor(pluginId, { kind: "core" }));
+      await h.module.start?.(this.#apiFor(pluginId, { kind: "plugin", pluginId }));
     } catch (err) {
       this.crash(pluginId, `start failed: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -368,14 +375,19 @@ export class FakePluginHost implements PluginHost {
     };
   }
 
-  /** A plugin API whose every call, at any depth, goes to the router by its dotted path. */
-  #apiFor(pluginId: string, caller: Caller): PluginApi {
+  /** A plugin API whose every call, at any depth, goes to the router by its dotted path. A call's own `ctx.api` works
+   *  only while `live` says the call runs (#179's review, S1): kept past its end, it is `closed`, so a plugin can't go
+   *  on acting as that session from a timer or another call. */
+  #apiFor(pluginId: string, caller: Caller, live?: () => boolean): PluginApi {
     const router = () => this.#router;
     const process = () => this.#hosted.get(pluginId)?.process ?? "shared";
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
         get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
-        apply: (_t, _this, args: unknown[]) => router()({ pluginId, process: process(), path: path.join("."), args, caller }),
+        apply: (_t, _this, args: unknown[]) => {
+          if (live && !live()) return Promise.reject(new ContractError("closed", `${path.join(".")}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`));
+          return router()({ pluginId, process: process(), path: path.join("."), args, caller });
+        },
       });
     return make([]) as PluginApi;
   }
