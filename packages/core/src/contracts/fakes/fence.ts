@@ -28,6 +28,8 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   "browser-profiles": null,
   /** The OS's login item, outside the Clover home, plus macOS's parked copy in `<home>/login/`. */
   "login-start": null,
+  /** Wherever the OK'd agents are installed (`agentInstalls`). */
+  "agent-installs": null,
   "secrets-file": "secrets.enc",
   "key-file": "secrets.key",
 };
@@ -40,6 +42,8 @@ export interface FakeFenceOptions {
   cloverHome: string;
   temp?: string;
   devFolders?: string[];
+  /** The install folders of the coding agents the user has OK'd. */
+  agentInstalls?: string[];
   /** The app's userData folder (Electron's), which holds the browser's partitions; the OS's usual one by default. */
   userData?: string;
   /** Replaces the fake's layout for some items. */
@@ -67,6 +71,7 @@ export class FakeFence implements Fence {
   readonly #temp: string;
   readonly #userData: string;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
+  readonly #agentInstalls: string[];
   #devFolders: string[];
   readonly #listeners = new Listeners<void>();
 
@@ -77,6 +82,7 @@ export class FakeFence implements Fence {
     this.#temp = normalizePosix(opts.temp ?? "/tmp");
     this.#userData = normalizePosix(opts.userData ?? defaultUserData(this.os, this.#home));
     this.#devFolders = (opts.devFolders ?? []).map(normalizePosix);
+    this.#agentInstalls = (opts.agentInstalls ?? []).map(normalizePosix);
     this.#layout = opts.layout ?? {};
   }
 
@@ -91,6 +97,7 @@ export class FakeFence implements Fence {
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
       else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
+      else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     return out;

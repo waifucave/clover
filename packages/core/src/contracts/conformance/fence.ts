@@ -16,8 +16,9 @@ export type FenceFactory = (...args: ConstructorParameters<typeof FakeFence>) =>
 export function runFenceConformance(make: FenceFactory): void {
   const HOME = "/Users/me";
   const CLOVER = `${HOME}/.clover`;
+  const AGENT = "/opt/homebrew/lib/node_modules/@zed-industries/codex-acp";
   const fence = (os: "macos" | "linux" | "windows" = "macos", devFolders: string[] = []) =>
-    make({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders });
+    make({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders, agentInstalls: [AGENT] });
 
   describe("Fence", () => {
     test("macOS fences every item but the secrets file and key files, which the Keychain holds", () => {
@@ -110,6 +111,11 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(mac.denyRead).toContain(`${CLOVER}/run`);
       expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
       expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
+      // An OK'd coding agent's install folder is write-denied, not read-denied (lane K).
+      expect(mac.denyWrite).toContain(AGENT);
+      expect(mac.denyRead).not.toContain(AGENT);
+      expect(fence("macos").check({ op: "write", path: `${AGENT}/dist/index.js` })).toEqual({ allowed: false, reason: "agent-installs", path: AGENT });
+      expect(fence("macos").check({ op: "read", path: `${AGENT}/dist/index.js` }).allowed).toBe(true);
       expect(mac.closedDoors).toEqual(["open", "launchctl", "osascript"]);
       expect(mac.blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES]);
       expect(mac.network).toBe("none");

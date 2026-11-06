@@ -46,6 +46,10 @@ export const FENCED_KINDS = [
   /** The login item that starts the daemon at login (lane C): macOS's LaunchAgents plist and its parked copy, Linux's
    *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */
   "login-start",
+  /** The install folders of the coding agents the user has OK'd to run (lane K, keyed to each program's real path and
+   *  hash): the resolved program's folder, and npm's global package folder for its package. Write-denied to sessions
+   *  and agents, so none can swap in a new copy of itself or of another agent. They change as the user OKs agents. */
+  "agent-installs",
   /** Windows and Linux: the encrypted secrets file, hidden from reads too (§8.5, §9.1). */
   "secrets-file",
   /** Windows and Linux: any file holding the secrets file's key, hidden from reads too. */
