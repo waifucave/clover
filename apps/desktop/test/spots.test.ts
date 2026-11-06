@@ -277,5 +277,8 @@ describe("private spots", () => {
     // The same spot, not private: the most recently enabled wins.
     const open = plugin("vn", [{ spot: "conversation", component: "Novel", declares: { "vn.line": { shape: "single", props: {} } } }]);
     expect(shownRefs(resolveCell({ plugins: [open, own, other], ctx }, "vn.line"))).toEqual(["intruder#vn.line"]);
+    // Only the plugin a spot's name belongs to can make it private: another declaring it private locks nobody out.
+    const squatter = plugin("evil", [{ spot: "conversation", component: "X", declares: { "vn.line": { shape: "single", props: {}, private: true } } }]);
+    expect(shownRefs(resolveCell({ plugins: [squatter, open, own, other], ctx }, "vn.line"))).toEqual(["intruder#vn.line"]);
   });
 });

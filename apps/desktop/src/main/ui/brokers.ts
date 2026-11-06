@@ -337,3 +337,28 @@ export class ViewFrames {
     this.changed(name, t);
   }
 }
+
+/** How long after the person's mouse-down a part may say they used its native view. */
+export const VIEW_USE_WINDOW_MS = 2_000;
+
+/** The person's mouse-downs in each window, as main saw them (`before-mouse-event`): a part's word that the person
+ *  used its native view counts only when main saw a mouse-down in that window, inside the view's place, just before. */
+export class PointerLog {
+  private readonly last = new Map<number, { x: number; y: number; at: number }>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  down(windowId: number, x: number, y: number): void {
+    this.last.set(windowId, { x, y, at: this.now() });
+  }
+
+  /** Whether the person just pressed inside `rect` (window coordinates) in that window. */
+  pressedIn(windowId: number, rect: Rect): boolean {
+    const p = this.last.get(windowId);
+    return p !== undefined && this.now() - p.at <= VIEW_USE_WINDOW_MS && inRegions(p, [rect]);
+  }
+
+  forget(windowId: number): void {
+    this.last.delete(windowId);
+  }
+}

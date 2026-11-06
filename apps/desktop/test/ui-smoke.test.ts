@@ -76,6 +76,8 @@ function expectQuiet(r: ReturnType<typeof smoke>, allowed: Parameters<typeof off
   const activity = readNetLog(r.netlog);
   expect(activity.events, "the net log recorded nothing").toBeGreaterThan(0);
   expect(offMachine(activity, allowed)).toEqual({ lookups: [], sockets: [], requests: [] });
+  // Loopback is allowed above, so the spellchecker's own word is checked too: no dictionary download began.
+  expect(r.output).not.toContain("began a dictionary download");
   return activity;
 }
 
@@ -126,6 +128,8 @@ beforeAll(() => {
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
+  registries.spin = join(work, "spin.json");
+  writeFileSync(registries.spin, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-spin"), 1004)] }));
   registries.dns = join(work, "dns.json");
   writeFileSync(registries.dns, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-dns"), 1002), folderView(join(FIXTURES, "fixture-dns-control"), 1003)] }));
 });
@@ -181,6 +185,21 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expectQuiet(r);
   }, 120_000);
 
+  test("a third-party layer that hangs has its process stopped; the app doesn't restart into safe mode", () => {
+    // The layer hangs in its own handler; the window's `unresponsive` is raised by the run (index.ts says why), and
+    // the app pings each document (3 s), stops the silent layer's process, and the census finds it gone.
+    const r = smoke(electron(), [root], "spin", { CLOVER_SMOKE_HANG: "spin", CLOVER_SMOKE_WAIT_TEXT: "stopped drawing" });
+    expectShell(r);
+    expect(r.output).toContain("went unresponsive; not answering: fixture-spin");
+    expect(r.output).toContain("stopping a hung layer's process");
+    expect(r.output).not.toContain("restarting in safe mode");
+    const spin = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "spin");
+    expect(spin?.frames.some((f) => f.text.includes("stopped drawing")), r.output).toBe(true);
+    expect(r.facts!.safeMode).toBe(false);
+    expectBothStopped(r);
+    expectQuiet(r);
+  }, 120_000);
+
   test("S9's DNS-prefetch probe: a layer looks up no host name; the same document without its allowlist does", () => {
     const guarded = "fixture-dns-probe.example";
     const control = "fixture-dns-control-probe.example";
@@ -222,7 +241,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("the pair: a crashed daemon is started again, and the launcher's Quit stops both", async () => {
     const h = home();
     const e = env(h, "default");
-    const app: ChildProcess = spawn(electron(), [root, "--clover-headless"], { env: e, stdio: ["ignore", "pipe", "pipe"] });
+    const netlog = join(h, "net.json");
+    const app: ChildProcess = spawn(electron(), [root, "--clover-headless", `--log-net-log=${netlog}`], { env: e, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     app.stdout?.on("data", (d) => (output += d));
     app.stderr?.on("data", (d) => (output += d));
@@ -251,6 +271,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
       expect(code, output.slice(-4000)).toBe(0);
       await until(() => events().includes("daemon-quit"), 10_000, "the daemon stopped");
       expect(events().filter((x) => x === "autostart-start").length).toBe(2);
+      // Nothing left the machine through the crash and the restart either.
+      expectQuiet({ status: code as number | null, facts: undefined, output, home: h, netlog });
     } finally {
       if (app.exitCode === null) app.kill("SIGKILL");
       try {

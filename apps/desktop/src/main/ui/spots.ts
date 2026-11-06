@@ -156,10 +156,15 @@ export function declarationOf(spot: string, plugins: readonly UiPlugin[]): Point
 }
 
 /** The tree a `private` spot is open to (§5.4: "a `private` point is open only to the declaring plugin's own tree"):
- *  the declaring plugin's top-level id, or undefined for a spot anyone may fill. The catalog's spots are never private. */
+ *  the declaring plugin's top-level id, or undefined for a spot anyone may fill. The catalog's spots are never private,
+ *  and a plugin's own spots are named after it (`<top-level id>.<name>`), so only the plugin a spot's name belongs to
+ *  can make it private: a plugin that declares another's spot name private locks nobody out. */
 export function privateTo(spot: string, plugins: readonly UiPlugin[]): string | undefined {
   if (spotInfo(spot) !== undefined) return undefined;
-  for (const p of plugins) for (const e of p.entries) if (e.declares[spot]?.private === true) return p.topId;
+  for (const p of plugins) {
+    if (!spot.startsWith(`${p.topId}.`)) continue;
+    for (const e of p.entries) if (e.declares[spot]?.private === true) return p.topId;
+  }
   return undefined;
 }
 

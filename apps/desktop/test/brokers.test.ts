@@ -1,8 +1,8 @@
 // The host's brokers (S9 §3): menus as data placed by the core, drags as grants between parts, and where a surface
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
-import { HangWatch } from "../src/main/hang";
-import { MENU_INPUT_WINDOW_MS, MenuGate, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { HangWatch, hangVerdict } from "../src/main/hang";
+import { MENU_INPUT_WINDOW_MS, MenuGate, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -174,5 +174,29 @@ describe("a hang restarts the app into safe mode (ruling R9)", () => {
     w.unresponsive(2);
     for (const fn of [...timers.values()]) fn();
     expect(restarted).toEqual([1]);
+  });
+});
+
+describe("which document hung (the E-M1 check's should-fix)", () => {
+  test("a plugin layer that doesn't answer has its process stopped; only a silent core root restarts the app", () => {
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 20, answered: true }, { kind: "layer", osPid: 30, answered: false }, { kind: "layer", osPid: 30, answered: false }], 1)).toEqual({ restart: false, kill: [30] });
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: false }, { kind: "layer", osPid: 20, answered: true }], 1)).toEqual({ restart: true, kill: [] });
+    // Never the app's own process, nor one that holds a core root, nor a frame with no process known.
+    expect(hangVerdict([{ kind: "root", osPid: 10, answered: true }, { kind: "layer", osPid: 10, answered: false }, { kind: "layer", osPid: 1, answered: false }, { kind: "layer", answered: false }], 1)).toEqual({ restart: false, kill: [] });
+  });
+});
+
+describe("a view's use counts only after main saw the mouse-down there", () => {
+  test("a mouse-down inside the view's place, just before; not elsewhere, not long ago, not in another window", () => {
+    let now = 0;
+    const p = new PointerLog(() => now);
+    const rect = { x: 900, y: 125, width: 380, height: 695 };
+    expect(p.pressedIn(1, rect)).toBe(false);
+    p.down(1, 950, 300);
+    expect(p.pressedIn(1, rect)).toBe(true);
+    expect(p.pressedIn(2, rect)).toBe(false);
+    expect(p.pressedIn(1, { ...rect, x: 0, width: 100 })).toBe(false);
+    now += VIEW_USE_WINDOW_MS + 1;
+    expect(p.pressedIn(1, rect)).toBe(false);
   });
 });

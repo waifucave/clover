@@ -12,11 +12,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
-import { HangWatch } from "./hang";
+import { HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
@@ -26,7 +26,7 @@ import { daemonEndpoint, type DaemonClient } from "./protocol/client";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { MenuGate, ViewFrames, checkRegions, inRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { MenuGate, PointerLog, ViewFrames, checkRegions, inRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
@@ -128,7 +128,8 @@ async function ready(): Promise<void> {
     surface: (id, request) => steerSurface(id, request),
     surfaceEnvironment: (id) => surfaceEnvironment(id),
     open: (pluginId, target) => openFor(pluginId, target),
-    viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used),
+    // A part's word that the person used its view counts only after main saw their mouse-down there.
+    viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
   }, log);
   startCensus(runtime);
@@ -366,9 +367,6 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   });
   win.on("focus", () => runtime.focusReturned(id));
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
-  win.webContents.on("before-mouse-event", (_event, mouse) => {
-    if (mouse.type === "mouseDown") menus.input(id);
-  });
   win.once("ready-to-show", () => {
     if (headless) return;
     win.show();
@@ -507,11 +505,44 @@ function clickThrough(s: Surface): void {
 /** The menu broker's gate: menus open only right after the user's click or key press in that window, one at a time. */
 const menus = new MenuGate();
 
-/** Ruling R9: a window that stays unresponsive restarts the app into safe mode. */
+/** The person's mouse-downs, by window (the view-frame gate). */
+const pointers = new PointerLog();
+
+/** Ruling R9: a core root that stays unresponsive restarts the app into safe mode. */
 const hangs = new HangWatch((windowId) => {
   log(`window ${windowId} stayed unresponsive: restarting in safe mode`);
   void restart(true);
 });
+
+/** A window went unresponsive: which of its documents? Each is pinged; a plugin layer that doesn't answer has its
+ *  process killed (its parent then shows "This part stopped" with a reload), and only a core root that doesn't answer
+ *  starts the countdown to a safe-mode restart. */
+async function diagnoseHang(win: BrowserWindow): Promise<void> {
+  if (win.isDestroyed()) return;
+  const docs = runtime.documents().filter((d) => d.windowId === win.id);
+  const results: (PingResult & { mount: string; layer: string })[] = await Promise.all(docs.map(async (d) => {
+    const f = webFrameMain.fromId(d.frame.processId, d.frame.routingId);
+    const base = { kind: d.layer === "core" ? "root" as const : "layer" as const, mount: d.mount, layer: d.layer, ...(d.frame.osPid !== undefined ? { osPid: d.frame.osPid } : {}) };
+    if (f === undefined || f === null || f.detached) return { ...base, answered: true };
+    const answered = await Promise.race([
+      f.executeJavaScript("0").then(() => true, () => true),
+      new Promise<boolean>((r) => setTimeout(() => r(false), HANG_PING_MS)),
+    ]);
+    return { ...base, answered };
+  }));
+  const verdict = hangVerdict(results, process.pid);
+  const silent = results.filter((r) => !r.answered).map((r) => `${r.layer} (${r.mount})`);
+  log(`window ${win.id} went unresponsive; not answering: ${silent.length === 0 ? "none" : silent.join(", ")}`);
+  for (const pid of verdict.kill) {
+    log(`layers: stopping a hung layer's process (${pid})`);
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch (err) {
+      log(`layers: could not stop process ${pid}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  if (verdict.restart) hangs.unresponsive(win.id);
+}
 
 /** Where each native view goes (ruling R8: the place the person used last), as the Clover Browser's `setView`. */
 const views = new ViewFrames((name, target) => {
@@ -548,10 +579,16 @@ function watchWindow(win: BrowserWindow): void {
   win.webContents.on("before-input-event", (_event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") menus.input(id);
   });
-  win.webContents.on("unresponsive", () => hangs.unresponsive(id));
+  win.webContents.on("before-mouse-event", (_event, mouse) => {
+    if (mouse.type !== "mouseDown") return;
+    menus.input(id);
+    pointers.down(id, mouse.x, mouse.y);
+  });
+  win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
   win.on("closed", () => {
     menus.forget(id);
+    pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);
   });
@@ -644,7 +681,7 @@ function report(facts: Record<string, unknown>): void {
 }
 
 async function smoke(): Promise<void> {
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + Number(process.env.CLOVER_SMOKE_DEADLINE_MS ?? "45000");
   const win = await openMainWindow();
   if (win === undefined) return report({ ok: false, reason: "no window" });
   const probe = `(() => ({
@@ -667,7 +704,9 @@ async function smoke(): Promise<void> {
     const out: Probed[] = [];
     for (const f of w.webContents.mainFrame.framesInSubtree) {
       try {
-        out.push({ ...(await f.executeJavaScript(probe, true) as Probe), url: f.url.replace(/mount=[0-9a-f]+/, "mount=…"), osPid: f.osProcessId });
+        // A hung frame never answers: it is left out of this look.
+        const facts = await Promise.race([f.executeJavaScript(probe, true) as Promise<Probe>, new Promise<undefined>((r) => setTimeout(() => r(undefined), 1_000))]);
+        if (facts !== undefined) out.push({ ...facts, url: f.url.replace(/mount=[0-9a-f]+/, "mount=…"), osPid: f.osProcessId });
       } catch {
         // A frame still loading.
       }
@@ -678,6 +717,7 @@ async function smoke(): Promise<void> {
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
   // Texts the run waits for, all of them (`|` between).
   const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
+  let hung = false;
   while (Date.now() < deadline) {
     frames = await probeWindow(win);
     surfaceFacts = [];
@@ -690,6 +730,22 @@ async function smoke(): Promise<void> {
     const drawn = shell?.shell === true && shell.composer && others.size >= wanted && layers.every((f) => f.rendered);
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w)))) break;
+    // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn, the surface's layer is made to hang
+    // (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says so only
+    // after its hang timeout with input waiting for that frame, and input doesn't reach a hidden window's
+    // out-of-process frames, so the test raises the event itself; everything after it is the app's own path.
+    const hangOn = process.env.CLOVER_SMOKE_HANG;
+    const target = hangOn === undefined ? undefined : surfaces.get(hangOn)?.win;
+    if (drawn && !hung && target !== undefined && !target.isDestroyed()) {
+      const layer = target.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://"));
+      if (layer !== undefined) {
+        hung = true;
+        void layer.executeJavaScript("document.querySelector('[data-fixture=spin]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))", true).catch(() => undefined);
+        setTimeout(() => {
+          if (!target.isDestroyed()) target.webContents.emit("unresponsive");
+        }, 500);
+      }
+    }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
     // press in each window, which the menu gate counts as the user's input.
     if (drawn && process.env.CLOVER_SMOKE_INPUT === "1") {
