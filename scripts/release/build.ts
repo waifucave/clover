@@ -37,7 +37,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
-import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
+import { LINK_BUILD, LINK_OUTPUT, linkBuildEnv } from "../build-packages";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
@@ -228,7 +228,7 @@ export function main(argv: readonly string[], root: string): number {
     rmSync(outDir, { recursive: true, force: true });
     must("the app", ["bun", "run", "build"], desktop);
     if (runScriptLine(`bun scripts/build-daemon.ts --target ${target}`, root) !== 0) throw new Error("the daemon's build failed");
-    must("the link sidecar", LINK_BUILD, root);
+    must("the link sidecar", LINK_BUILD, root, linkBuildEnv(process.env, root));
     rmSync(staged, { recursive: true, force: true });
     mkdirSync(staged, { recursive: true });
     copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));

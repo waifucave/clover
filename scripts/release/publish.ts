@@ -29,6 +29,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SIGNATURE_SUFFIX, signFeed, verifyFeed } from "../../packages/update-feed/src/index";
 import { keychain, signingKey } from "./feed-key";
+import { nameScan } from "./name-scan";
 import { buildCommitFile, checkUpdateInfo, expectedArtifacts, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
 
 export const RELEASE_OSES: readonly ReleaseOs[] = ["mac", "win", "linux-x64", "linux-arm64"];
@@ -246,6 +247,13 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   }
   const dmg = plan.assets.find((x) => x.name === `Clover-${version}.dmg`);
   if (dmg !== undefined) plan.problems.push(...macSignedAndStapled(join(dmg.dir, dmg.name)));
+  // The name scan: every asset, inside where it opens, and the signed app as built (scripts/release/name-scan.ts).
+  if (plan.problems.length === 0) {
+    const apps = dmg !== undefined && existsSync(join(dmg.dir, "mac-arm64", "Clover.app")) ? [join(dmg.dir, "mac-arm64", "Clover.app")] : [];
+    const scan = nameScan(plan.assets.map((x) => join(x.dir, x.name)), apps);
+    plan.problems.push(...scan.problems);
+    if (scan.problems.length === 0) console.log(`release/publish: the name scan read ${scan.read} files, nothing found; accepted unread: ${scan.accepted.map((p) => p.split("/").pop()).join(", ") || "none"}`);
+  }
   for (const p of plan.problems) console.error(`release/publish: ${p}`);
   if (plan.problems.length > 0) return 1;
   console.log(`release/publish: v${version} on ${a.channel}, at ${plan.commit}, ${plan.assets.length} files, and a signature for each of ${plan.feeds.join(", ")}:`);

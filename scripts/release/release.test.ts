@@ -361,3 +361,34 @@ describe("the signed builds' checks", () => {
     expect(authenticodeCommand("C:\\a'b\\Clover.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\Clover.exe'");
   });
 });
+
+describe("the name scan (scripts/release/name-scan.ts)", () => {
+  test("fails closed without the owner's local guard", async () => {
+    const { nameScan } = await import("./name-scan");
+    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-home-"));
+    const r = nameScan([], [], home);
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain("can't cut a release");
+  });
+
+  test("reads every file, opens what opens without running anything, and accepts only third-party notices", async () => {
+    const { openerFor, scanFiles, NAME_SCAN_ACCEPTED } = await import("./name-scan");
+    expect(["a.zip", "b.rpm", "c.deb", "d.dmg", "e.exe", "f.AppImage", "latest.yml"].map(openerFor)).toEqual(["zip", "rpm", "deb", "raw", "raw", "raw", "raw"]);
+    const tree: Record<string, string[]> = { "/r": ["daemon", "app.asar"], "/r/daemon": ["clover-core.exe", "srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"] };
+    const { read, accepted } = scanFiles("/r", (d) => tree[d] ?? [], (p) => p in tree);
+    expect(read.sort()).toEqual(["/r/app.asar", "/r/daemon/clover-core.exe", "/r/daemon/srt-win.exe"]);
+    expect(accepted).toEqual(["/r/daemon/srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(NAME_SCAN_ACCEPTED).toHaveLength(1);
+    expect(NAME_SCAN_ACCEPTED[0]!.test("x/NOTICES.txt")).toBe(false);
+  });
+});
+
+describe("the privacy scrub", () => {
+  test("the sidecar's build remaps the cargo home, the checkout and the home folder, after any flags already set", async () => {
+    const { linkBuildEnv } = await import("../build-packages");
+    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/src/clover");
+    // rustc takes the last match: the home folder first, the paths inside it after.
+    expect(env.RUSTFLAGS).toBe("-C opt-level=3 --remap-path-prefix=/Users/someone=/home --remap-path-prefix=/Users/someone/.cargo=/cargo --remap-path-prefix=/Users/someone/src/clover=/clover");
+    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c" }, "/r").RUSTFLAGS).toBe("--remap-path-prefix=/h=/home --remap-path-prefix=/c=/cargo --remap-path-prefix=/r=/clover");
+  });
+});

@@ -89,6 +89,23 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
 export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
 export const LINK_OUTPUT = "native/link/target/release/clover-link";
 
+/**
+ * The privacy scrub for the sidecar's build: a Rust binary keeps the absolute paths of the sources it was built from
+ * (for panic messages), which on the owner's Mac name their home folder. They are remapped to fixed names: the
+ * home folder to /home, the cargo home to /cargo, the checkout to /clover. Any RUSTFLAGS already set come first.
+ */
+export function linkBuildEnv(env: Record<string, string | undefined>, root: string): Record<string, string | undefined> {
+  const home = env.HOME ?? env.USERPROFILE;
+  const cargoHome = env.CARGO_HOME ?? (home === undefined ? undefined : join(home, ".cargo"));
+  // rustc takes the last remapping that matches, so the home folder comes first and the paths inside it after.
+  const remaps = [
+    ...(home === undefined ? [] : [`--remap-path-prefix=${home}=/home`]),
+    ...(cargoHome === undefined ? [] : [`--remap-path-prefix=${cargoHome}=/cargo`]),
+    `--remap-path-prefix=${root}=/clover`,
+  ];
+  return { ...env, RUSTFLAGS: [env.RUSTFLAGS, ...remaps].filter(Boolean).join(" ") };
+}
+
 /** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
 export const REQUIRED_FILES = [
   "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
@@ -205,6 +222,8 @@ export function main(argv: readonly string[], root: string): number {
     return 0;
   }
   rmSync(outDir, { recursive: true, force: true });
+  // The sidecar's build carries no path of this machine's (linkBuildEnv).
+  process.env.RUSTFLAGS = linkBuildEnv(process.env, root).RUSTFLAGS;
   for (const s of steps) {
     console.log(`build-packages: ${s.say}…`);
     if (s.stage !== undefined) {
