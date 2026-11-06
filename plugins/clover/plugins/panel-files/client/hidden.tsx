@@ -7,7 +7,8 @@
 import { Fragment, type ReactNode } from "react";
 import { S } from "./strings";
 
-/** Each hidden character, by its code point, with its Unicode name in plain words. */
+/** Each hidden character, by its code point, with its Unicode name in plain words. The names stay inline, not
+ *  `clover.` keys: they are Unicode's standard identifiers for the characters, not UI text (the controller's ruling). */
 const HIDDEN: Readonly<Record<string, string>> = {
   "\u00AD": "soft hyphen",
   "\u061C": "Arabic letter mark",
