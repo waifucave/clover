@@ -74,7 +74,7 @@ describe("one tree across computers", () => {
     await studio.node.tree.write("bots/alpha/notes/plan.md", { encoding: "utf8", text: "# Plan\n" }, { as: BOT });
     expect(readFileSync(join(laptop.cloverHome, "bots/alpha/notes/plan.md"), "utf8")).toBe("# Plan\n");
     // Its memory is no other computer's to reach, even for the bot itself (`home/memory` is held on each computer).
-    expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "x" }, { as: BOT }))).toBe("not_found");
+    expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "x" }, { as: BOT }))).toBe("fenced");
     expect(await code(studio.node.tree.read("bots/luna/x", { as: BOT }))).toBe("not_found");
   });
 });

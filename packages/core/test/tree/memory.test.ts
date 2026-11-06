@@ -1,7 +1,8 @@
 // A bot's memory in the tree (the owner's ruling for J-M3): `home/memory/` beside the computers, that bot's
 // `<Clover home>/bots/<bot>/memory/` on every computer that runs the core, kept in sync by lane H. Only that bot's own
 // sessions reach it, by any path; it never goes over the link; a write lands here even while another computer is off,
-// and lane H's sync is told of every change.
+// and lane H's sync is told of every change. For anyone else `home/memory` is no folder (not found), and the memory's
+// real path is fenced (`bot-memory`, as lane B's fence says it).
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -72,29 +73,29 @@ describe("home/memory", () => {
     }
     // Nor by alpha's folder, or the home folder's own path to it, for anyone but alpha.
     for (const as of [LUNA, CODING, AGENT]) {
-      expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe("not_found");
-      expect(await code(t.write("bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("not_found");
-      expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("not_found");
+      expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe("fenced");
+      expect(await code(t.write("bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
+      expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("fenced");
       expect((await t.list("bots/alpha", { as })).map((s) => s.path)).not.toContain("bots/alpha/memory");
       expect(await t.glob("**/*", { as, cwd: "bots/alpha" })).not.toContain("bots/alpha/memory/secret.md");
       expect((await t.grep("alpha", { as, path: "bots/alpha" })).map((m) => m.path)).not.toContain("bots/alpha/memory/secret.md");
     }
-    expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe("not_found");
+    expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe("fenced");
     // The real path is no way around it for any model-driven caller (the user's own coding sessions included): only the
     // user's own surfaces and the core reach it there.
     for (const as of [CODING, AGENT, LUNA, PLUGIN]) {
       const real = "home/Studio/.clover/bots/alpha/memory";
-      expect(await code(t.read(`${real}/secret.md`, { as }))).toBe("not_found");
-      expect(await code(t.stat(`${real}/secret.md`, { as }))).toBe("not_found");
-      expect(await code(t.list(real, { as }))).toBe("not_found");
-      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe("not_found");
+      expect(await code(t.read(`${real}/secret.md`, { as }))).toBe("fenced");
+      expect(await code(t.stat(`${real}/secret.md`, { as }))).toBe("fenced");
+      expect(await code(t.list(real, { as }))).toBe("fenced");
+      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe("fenced");
       const ctx = { session: "s_x", sessionKind: "coding" as const, callId: `c-${as.kind}`, cwd: "home/Studio" };
       expect((await studio.node.tools.run("Read", { file_path: ".clover/bots/alpha/memory/secret.md" }, ctx)).isError).toBe(true);
       expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/secret.md`);
     }
     expect(existsSync(join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"))).toBe(false);
     // The bot itself, from another computer: memory never goes over the link.
-    expect(await code(laptop.node.tree.read("bots/alpha/memory/secret.md", { as: ALPHA }))).toBe("not_found");
+    expect(await code(laptop.node.tree.read("bots/alpha/memory/secret.md", { as: ALPHA }))).toBe("fenced");
     // The user on this computer still has their own files.
     expect(await t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as: USER })).toEqual(utf8("alpha's"));
     expect(readFileSync(join(studio.cloverHome, "bots", "alpha", "memory", "secret.md"), "utf8")).toBe("alpha's");
@@ -134,8 +135,8 @@ describe("home/memory", () => {
     const GHOST = { kind: "session", sessionId: "s_ghost", sessionKind: "bot", bot: "ghost" } as const;
     const real = "home/Studio/.clover/bots/ghost/memory";
     for (const as of [ALPHA, LUNA, CODING, AGENT, PLUGIN]) {
-      expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe("not_found");
-      expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe("not_found");
+      expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe("fenced");
+      expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe("fenced");
       expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
       expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
     }
@@ -144,7 +145,7 @@ describe("home/memory", () => {
     const GHOST_UPPER = { kind: "session", sessionId: "s_GHOST", sessionKind: "bot", bot: "GHOST" } as const;
     const GHOSTS = { kind: "session", sessionId: "s_ghosts", sessionKind: "bot", bot: "ghosts" } as const;
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe("ok");
-    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe("not_found");
+    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe("fenced");
     // ghost itself, through its own `home/memory`, and the user's own surfaces at the real path.
     expect(await t.read("home/memory/MEMORY.md", { as: GHOST })).toEqual(utf8("ghost's"));
     expect(await t.read(`${real}/MEMORY.md`, { as: USER })).toEqual(utf8("ghost's"));

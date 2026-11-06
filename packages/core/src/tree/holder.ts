@@ -775,8 +775,9 @@ export class LocalHolder implements Holder {
     const as = call.as;
     if (as.kind === "user" || as.kind === "core") return;
     for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
+      // The same refusal as the fence's own `bot-memory` rule (lane B's #197), which says it at the OS's level too.
       if (!this.#memoryOk(p, as, op.op !== "read" && op.op !== "stat" && op.op !== "list")) {
-        throw new ContractError("not_found", "no such file in the folder tree");
+        throw new ContractError("fenced", "a bot's memory is that bot's own sessions' alone", { computer: this.#o.name(), reason: "bot-memory" });
       }
     }
     if (op.op === "write" || op.op === "delete" || op.op === "move") {
