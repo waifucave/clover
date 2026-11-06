@@ -3,10 +3,10 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
@@ -73,6 +73,32 @@ function deps(home: string, spawn: SpawnClaudeCodeProcess, over: Partial<BotDriv
     log: (l) => { if (process.env.A3_DEBUG) console.error(l); },
     ...over,
   };
+}
+
+/** The SDK's `query`, with every frame the runtime sends recorded and timed. */
+function tappedQuery(): { frames: { at: number; msg: Record<string, unknown> }[]; query: typeof sdkQuery } {
+  const frames: { at: number; msg: Record<string, unknown> }[] = [];
+  const query: typeof sdkQuery = (args) => {
+    const q = sdkQuery(args);
+    const it = q[Symbol.asyncIterator]();
+    const tapped: AsyncIterator<unknown> & AsyncIterable<unknown> = {
+      async next() {
+        const n = await it.next();
+        if (n.done !== true) frames.push({ at: Date.now(), msg: n.value as Record<string, unknown> });
+        return n;
+      },
+      return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+      [Symbol.asyncIterator]() { return this; },
+    };
+    return new Proxy(q, {
+      get(target, prop) {
+        if (prop === Symbol.asyncIterator) return () => tapped;
+        const v = Reflect.get(target, prop, target) as unknown;
+        return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    });
+  };
+  return { frames, query };
 }
 
 const results = (end: { text?: string }) => JSON.parse(end.text ?? "[]") as { name: string | null; isError: boolean; content: string }[];
@@ -151,13 +177,13 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       resume();
       const end = await p;
       expect(results(end)).toEqual([{ name: "ListAgents", isError: false, content: "none" }]);
-      // Fenced: mayAct false and whenMayAct refusing (the lease went elsewhere).
+      // Fenced: mayAct false and whenMayAct refusing (the lease went elsewhere): the model turn doesn't even start
+      // (the tool call's own refusal is review B1's test, below).
       may = false;
       const fenced = new BotSessionDriver(context(home, "winter-test/calls", { sessionId: "b_luna2", mayAct: () => false, whenMayAct: async () => { throw new Error("lease lost"); } }), deps(home, spawn, { coreTools: () => core }));
       try {
         const end2 = await fenced.turn(user("CALL ListAgents {}"), control());
-        const r = results(end2);
-        expect(r[0]!.content).toContain("may not act");
+        expect(end2).toEqual({ reason: "stopped", text: "Stopped: this computer no longer runs the bot." });
         expect(ran).toEqual(["ListAgents"]);
       } finally {
         await fenced.stop();
@@ -193,6 +219,147 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       const end = await driver.turn(user("CALL ListAgents {}"), control());
       expect(results(end)[0]!.content).toContain("may not act");
       expect(ran).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("the pause holds a turn the runtime starts on its own (a background task's notification) until the user resumes", async () => {
+    const home = tempHome();
+    let may = true;
+    let resume: () => void = () => {};
+    const ctx = context(home, "winter-test/calls", {
+      mayAct: () => may,
+      whenMayAct: (signal) => new Promise<void>((r, j) => {
+        resume = () => { may = true; r(); };
+        signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true });
+      }),
+    });
+    // The runtime's own frames, timed: the driver records none of a turn no host turn covers.
+    const { frames, query } = tappedQuery();
+    // The pause stops background tasks (the next test); here the task is left to finish while the pause holds, as a
+    // task the stop missed by a moment would (or one `Query.stopTask` stopped, which also sends a notification).
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, pausePollMs: 3_600_000 }));
+    const resultsAfter = (t: number) => frames.filter((f) => f.msg.type === "result" && f.at > t);
+    try {
+      const end = await driver.turn(user('CALL Bash {"command":"sleep 2; echo finished","run_in_background":true,"description":"wait"}'), control());
+      expect(end.reason).toBe("end_turn");
+      // The pause comes on; the task finishes while it holds, and its notification would start a model turn.
+      may = false;
+      const pausedAt = Date.now();
+      await Bun.sleep(5_000);
+      expect(resultsAfter(pausedAt)).toEqual([]);
+      expect(frames.some((f) => f.at > pausedAt && f.msg.type === "assistant")).toBe(false);
+      const resumedAt = Date.now();
+      resume();
+      for (let i = 0; i < 150 && resultsAfter(resumedAt).length === 0; i++) await Bun.sleep(100);
+      expect(resultsAfter(resumedAt)).toHaveLength(1);
+      expect(frames.some((f) => f.at > pausedAt && f.at < resumedAt && f.msg.type === "assistant")).toBe(false);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("the pause stops the bot's background shells; the resume doesn't restart them, and the next turn is told", async () => {
+    const home = tempHome();
+    let may = true;
+    let resume: () => void = () => {};
+    const ctx = context(home, "winter-test/calls", {
+      mayAct: () => may,
+      whenMayAct: (signal) => new Promise<void>((r, j) => {
+        resume = () => { may = true; r(); };
+        signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true });
+      }),
+    });
+    const marker = join(tempHome(), "ran.txt");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn));
+    try {
+      const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command: `sleep 4; touch ${JSON.stringify(marker)}`, run_in_background: true, description: "wait" })}`), control());
+      expect(results(end)[0]!.content).toContain("background task");
+      may = false;
+      await Bun.sleep(7_000);
+      expect(existsSync(marker)).toBe(false);
+      may = true;
+      resume();
+      ctx.bot.model = "winter-test/echo";
+      const next = await driver.turn(user("back again"), control());
+      expect(next.reason).toBe("end_turn");
+      expect(next.text).toContain("stopped your background tasks");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("a model turn the pause holds at its start: the interrupt ends it with no request and its text leads the next turn; the runtime's end lets a held one go", async () => {
+    const home = tempHome();
+    let may = false;
+    let resume: () => void = () => {};
+    const ctx = context(home, "winter-test/echo", {
+      mayAct: () => may,
+      whenMayAct: (signal) => new Promise<void>((r, j) => {
+        resume = () => { may = true; r(); };
+        signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true });
+      }),
+    });
+    const { frames, query } = tappedQuery();
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      const ctl = control();
+      const p = driver.turn(user("held hello"), ctl);
+      await Bun.sleep(2_000);
+      ctl.abort();
+      const end = await p;
+      expect(end.reason).toBe("interrupted");
+      expect(frames.some((f) => f.msg.type === "assistant")).toBe(false);
+      resume();
+      const next = await driver.turn(user("after the resume"), control());
+      expect(next.reason).toBe("end_turn");
+      expect(next.text).toContain("held hello");
+      expect(next.text).toContain("after the resume");
+    } finally {
+      await driver.stop();
+    }
+    // The session ends while the pause holds a turn's start: the hold lets go at once, nothing is asked.
+    may = false;
+    const tap2 = tappedQuery();
+    const ending = new BotSessionDriver(context(home, "winter-test/echo", { sessionId: "b_luna3", mayAct: () => false, whenMayAct: (signal) => new Promise<void>((_r, j) => signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true })) }), deps(home, spawn, { query: tap2.query, stopGraceMs: 30_000 }));
+    const p2 = ending.turn(user("never asked"), control());
+    await Bun.sleep(1_500);
+    const t0 = Date.now();
+    await ending.release();
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(await p2).toEqual({ reason: "stopped", text: "The session ended while the bots were paused." });
+    await ending.stop();
+    expect(tap2.frames.some((f) => f.msg.type === "assistant")).toBe(false);
+  }, 60_000);
+
+  test("the pause that comes on during the plugins' tool.before holds a read-only call (no approval to check it again)", async () => {
+    const home = tempHome();
+    let may = true;
+    let resume: () => void = () => {};
+    const ctx = context(home, "winter-test/calls", {
+      mayAct: () => may,
+      whenMayAct: () => new Promise<void>((r) => { resume = () => { may = true; r(); }; }),
+    });
+    const ran: number[] = [];
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, _tool, input) => { may = false; return { input }; },
+      toolAfter: async (_s, _tool, _input, output) => { ran.push(Date.now()); return output; },
+    };
+    // In the session's working folder, where a read asks no one.
+    const file = join(ctx.paths.scratch, "note.txt");
+    await Bun.write(file, "hello");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { hooks }));
+    try {
+      const p = driver.turn(user(`CALL Read ${JSON.stringify({ file_path: file })}`), control());
+      await Bun.sleep(1_500);
+      expect(ran).toEqual([]);
+      const resumedAt = Date.now();
+      resume();
+      expect(results(await p)[0]!.content).toContain("hello");
+      expect(ran[0]!).toBeGreaterThanOrEqual(resumedAt);
     } finally {
       await driver.stop();
     }

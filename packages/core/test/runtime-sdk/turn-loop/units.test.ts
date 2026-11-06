@@ -285,5 +285,11 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     const wrapped = mergedServers([{ server: "blender", plugin: "zz", tools: [] }, { server: "blender", plugin: "mcp-blender", tools: [] }], (s) => refused.push(s.plugin));
     expect(wrapped.map((s) => s.plugin)).toEqual(["mcp-blender"]);
     expect(refused).toEqual(["acme", "zz"]);
+    // An installed tree's top-level id is its own name even when it gives no server, and `clover` always is.
+    refused.length = 0;
+    expect(mergedServers([{ server: "clover", plugin: "acme", tools: [] }], (s) => refused.push(s.plugin))).toEqual([]);
+    expect(mergedServers([{ server: "blender", plugin: "acme", tools: [] }, { server: "ok", plugin: "acme", tools: [] }], (s) => refused.push(s.plugin), ["clover", "blender"]).map((s) => s.server)).toEqual(["ok"]);
+    expect(refused).toEqual(["acme", "acme"]);
+    expect(keptServers([{ server: "blender", plugin: "acme", tools: [] }], ["blender"])).toEqual([]);
   });
 });

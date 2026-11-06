@@ -17,6 +17,14 @@
 // * **Before each tool call** the driver asks `mayAct()` (§6.4 fencing, §9.2 pause): while the pause switch holds the
 //   session the call waits (`whenMayAct`), and once this computer stops running the bots it is refused. Then the
 //   plugins' `tool.before` hooks run, then the approval check (`canUseTool`), then the call; `tool.after` after it.
+// * **Before each model turn** too (the runtime's `UserPromptSubmit`): a turn the runtime starts on its own, when a
+//   background task finishes or is stopped and its notification comes in, waits while the pause holds the session, as
+//   does an input about to fold in; the turn starts once the user resumes, and never on a computer that stopped
+//   running the bot.
+// * **The pause stops background work** (the owner's rule: the pause stops everything): once the switch says no, the
+//   session's background shells and monitors are stopped through the runtime (`Query.stopTask`, agent SDK 0.0.69;
+//   until then the runtime ends, which ends them, and the transcript resumes at the next turn). Resuming doesn't
+//   restart them; the next turn says they were stopped.
 // * **At each turn's end** the session lets go of its holds on every computer's screen (J's `releaseSession`); at the
 //   session's end its terminals close (J's `TerminalRouter.closeSession`).
 // * **Compaction:** `compact()` on the host's word (lane D's cache-timed or forced compaction), and the runtime's own
@@ -102,6 +110,8 @@ export interface BotDriverDeps {
   env?: Record<string, string>;
   /** How long `stop` waits for the runtime to end. */
   stopGraceMs?: number;
+  /** How often a session with background tasks looks at the pause (`PAUSE_POLL_MS`); a test's seam. */
+  pausePollMs?: number;
   log?(line: string): void;
 }
 
@@ -118,6 +128,10 @@ interface RunningTurn {
   usage: { inputTokens: number; outputTokens: number; contextTokens?: number };
   text?: string;
   interrupted: boolean;
+  /** The text that started the turn: carried into the next one when an interrupt lands while the pause holds it. */
+  first: string;
+  /** Why the pause hold blocked the turn's start (the session ended, or the lease went): it ends `stopped`. */
+  heldOff?: string;
   offFold: Unsubscribe;
   offAbort: () => void;
   /** The last record a `message.out` hook holds back; the turn ends after it. */
@@ -133,10 +147,30 @@ interface Incarnation {
   projector: Projector;
   pump: Promise<void>;
   closed: boolean;
+  /** The runtime's background tasks (shells, monitors) still running, by task id. */
+  tasks: Set<string>;
+  /** Looks at the pause while `tasks` isn't empty. */
+  taskWatch?: ReturnType<typeof setInterval>;
 }
+
+/** The agent SDK's `Query.stopTask` (0.0.69), where the runtime has it. */
+type StopTaskQuery = Query & { stopTask?: (taskId: string, opts?: { by?: "host" | "assistant" }) => Promise<unknown> };
+
+/** How often a session with background tasks looks at the pause switch (it has no event for it). */
+const PAUSE_POLL_MS = 1_000;
 
 /** The events the host projects itself; the runtime's echoes of them are dropped. */
 const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
+
+/** How long the runtime lets the model-turn hold run (seconds): the longest a timer can wait, about 24.8 days. A pause
+ *  that outlasts it ends the held turn blocked, never started. */
+const PROMPT_HOLD_TIMEOUT_S = Math.floor(2_147_483_647 / 1000);
+
+/** A plugin id's top-level tree (`clover` for `clover/web`). */
+const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
+
+/** Names no tree but their own may take, installed or not: the bundled tree's. */
+export const RESERVED_SERVER_NAMES: readonly string[] = ["clover"];
 
 /** Servers that share a name prefix (the bundled tree's children all read `mcp__clover__…`: the browser's, the web
  *  plugin's) are one server to the runtime, with every tool; a tool name two of them give keeps the first, by plugin
@@ -144,11 +178,12 @@ const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
  *  enabled plugin per namespace): the name belongs to the plugin tree whose top-level id it is (`clover` for
  *  `mcp__clover__…`), else to the first tree by plugin id; a server of any other tree under it is left out, never merged
  *  in (`onRefused`), so no plugin can slip its tools under another's name. */
-export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: BotMcpServer, holder: string) => void): BotMcpServer[] {
-  const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
+export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: BotMcpServer, holder: string) => void, reserved: Iterable<string> = RESERVED_SERVER_NAMES): BotMcpServer[] {
   const sorted = [...servers].sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0));
-  // Who holds each name: the tree whose top-level id is the name (`clover` holds `mcp__clover__…`), else the first.
+  // Who holds each name: the tree whose top-level id is the name (`clover` holds `mcp__clover__…`), else the first. An
+  // installed tree's top-level id is its name even when it gives no server (`reserved`).
   const holder = new Map<string, string>();
+  for (const id of reserved) holder.set(id, id);
   for (const s of sorted) {
     const h = holder.get(s.server);
     if (h === undefined || (top(s.plugin) === s.server && h !== s.server)) holder.set(s.server, top(s.plugin));
@@ -172,9 +207,9 @@ export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: 
 }
 
 /** The servers `mergedServers` keeps, each as its plugin gave it (for the prompt, which lists every server's text). */
-export function keptServers(servers: readonly BotMcpServer[]): BotMcpServer[] {
+export function keptServers(servers: readonly BotMcpServer[], reserved: Iterable<string> = RESERVED_SERVER_NAMES): BotMcpServer[] {
   const refused = new Set<BotMcpServer>();
-  mergedServers(servers, (r) => refused.add(r));
+  mergedServers(servers, (r) => refused.add(r), reserved);
   return servers.filter((s) => !refused.has(s));
 }
 
@@ -199,6 +234,8 @@ export class BotSessionDriver implements SessionDriver {
   /** Pushes an interrupt cleared, carried into the next turn ahead of its message. */
   #carry: string[] = [];
   #stopped = false;
+  /** Model turns the pause holds at their start (`#promptHold`), and what let each go other than the resume. */
+  readonly #promptHolds = new Set<{ release: AbortController; why?: "interrupt" | "closing" }>();
   /** The records a `message.out` hook holds back, in order. */
   #recordChain: Promise<void> = Promise.resolve();
   /** The ids of the tool calls starting, by `mcp__<server>__<tool>`, oldest first (`CallIds`). */
@@ -251,6 +288,17 @@ export class BotSessionDriver implements SessionDriver {
     }
   }
 
+  /** Every installed tree's top-level id, and the bundled tree's: names only that tree's servers may take. */
+  #reservedNames(): string[] {
+    const names = new Set(RESERVED_SERVER_NAMES);
+    try {
+      for (const p of this.#d.registry?.list() ?? []) names.add(top(p.id));
+    } catch {
+      // a registry that can't list: the bundled tree's name still holds
+    }
+    return [...names];
+  }
+
   #promptServers(servers: readonly BotMcpServer[]): PromptMcpServer[] {
     return servers.map((s) => ({
       plugin: s.plugin, server: s.server,
@@ -297,8 +345,49 @@ export class BotSessionDriver implements SessionDriver {
     };
   }
 
+  #releasePromptHolds(why: "interrupt" | "closing"): void {
+    for (const h of this.#promptHolds) {
+      h.why ??= why;
+      h.release.abort();
+    }
+  }
+
+  /** The pause at a model turn's start (§9.2: a paused bot starts no model turn). The runtime runs `UserPromptSubmit`
+   *  before every turn's first request, its own included (a background task's notification starts one when the task
+   *  finishes or is stopped, with no host turn asking), and before an input folds in. While the pause holds the
+   *  session it waits; resumed, the turn goes on. The user's interrupt, the session's end and a lease that went
+   *  elsewhere let it go blocked instead, so no request goes out; an interrupted turn's text leads the next turn. */
+  #promptHold(): HookCallbackMatcher {
+    return {
+      timeout: PROMPT_HOLD_TIMEOUT_S,
+      hooks: [async (raw, _id, { signal }) => {
+        if (this.#ctx.mayAct()) return {};
+        const hold: { release: AbortController; why?: "interrupt" | "closing" } = { release: new AbortController() };
+        this.#promptHolds.add(hold);
+        try {
+          await this.#ctx.whenMayAct(AbortSignal.any([signal, hold.release.signal]));
+        } catch {
+          // let go, timed out, or the lease went elsewhere: decided below
+        } finally {
+          this.#promptHolds.delete(hold);
+        }
+        if (hold.why === undefined && !signal.aborted && !this.#stopped && this.#ctx.mayAct()) return {};
+        const t = this.#turn;
+        const prompt = (raw as { prompt?: unknown }).prompt;
+        const reason = hold.why === "interrupt" ? "Interrupted while the bots were paused."
+          : hold.why === "closing" || this.#stopped ? "The session ended while the bots were paused."
+            : signal.aborted ? "The bots stayed paused too long." : "Stopped: this computer no longer runs the bot.";
+        if (t !== undefined && typeof prompt === "string" && prompt === t.first) {
+          if (hold.why === "interrupt") this.#carry.push(prompt);
+          else t.heldOff = reason;
+        }
+        return { decision: "block" as const, reason };
+      }],
+    };
+  }
+
   /** The tool hooks: the pause and the lease first, then the plugins' `tool.before`; `tool.after` after the call. */
-  #toolHooks(): Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure", HookCallbackMatcher[]>> {
+  #toolHooks(): Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "UserPromptSubmit", HookCallbackMatcher[]>> {
     const pre: HookCallbackMatcher = {
       // A hook that breaks must never wave the call through.
       failClosed: true,
@@ -311,6 +400,10 @@ export class BotSessionDriver implements SessionDriver {
         if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
         const r = await this.#hooks.toolBefore(this.#hookSession, { name, callId }, input.tool_input, signal);
         if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
+        // The plugins' hooks take time: the pause may have come on, or the lease gone, meanwhile. A call that asks no
+        // one (a read-only tool) has no later check (`#gatedCanUseTool`), so the gate is asked again here.
+        const after = await this.#gate(signal);
+        if (after !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: after } };
         // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
         // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
         if (name.startsWith("mcp__") && callId !== "") {
@@ -349,7 +442,7 @@ export class BotSessionDriver implements SessionDriver {
         return {};
       }],
     };
-    return { PreToolUse: [pre], PostToolUse: [post], PostToolUseFailure: [failed] };
+    return { PreToolUse: [pre], PostToolUse: [post], PostToolUseFailure: [failed], UserPromptSubmit: [this.#promptHold()] };
   }
 
   readonly #callIdSource: CallIds = {
@@ -369,7 +462,7 @@ export class BotSessionDriver implements SessionDriver {
     const merged = mergedServers(all, (r, holder) => {
       refused.add(`${r.plugin}\u0000${r.server}`);
       this.#log(`bot driver ${ctx.sessionId}: ${r.plugin}'s MCP server ${r.server} is left out: ${holder} holds that name`);
-    });
+    }, this.#reservedNames());
     const servers = all.filter((s) => !refused.has(`${s.plugin}\u0000${s.server}`));
     const promptServers = this.#promptServers(servers);
     const systemPrompt = harnessPrompt({
@@ -384,7 +477,7 @@ export class BotSessionDriver implements SessionDriver {
     // The core tools, and `Glossary` over everything the session has (spec §6.8): it loads the on-demand tools.
     const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME);
     const glossary = glossaryTool({
-      tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
+      tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
@@ -434,7 +527,7 @@ export class BotSessionDriver implements SessionDriver {
       now: () => new Date().toISOString(),
       log: { warn: (message, fields) => this.#log(`bot driver ${ctx.sessionId}: ${message} ${fields === undefined ? "" : JSON.stringify(fields)}`.trim()) },
     });
-    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false };
+    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set() };
     inc.pump = this.#pump(inc);
     this.#rebuild = false;
     return inc;
@@ -483,6 +576,12 @@ export class BotSessionDriver implements SessionDriver {
     const batch = inc.projector.accept(msg as never);
     const t = this.#turn;
     const main = !(typeof msg.parent_tool_use_id === "string" && msg.parent_tool_use_id.length > 0);
+    if (msg.type === "system" && typeof msg.task_id === "string") {
+      if (msg.subtype === "task_started") {
+        inc.tasks.add(msg.task_id);
+        this.#watchTasks(inc);
+      } else if (msg.subtype === "task_notification") inc.tasks.delete(msg.task_id);
+    }
     // In-turn compaction: the runtime's own, when the context fills (§6.3).
     if (main && msg.type === "system" && msg.subtype === "status" && msg.status === "compacting") {
       this.#emit({ type: "compaction", phase: "started", reason: "full" });
@@ -522,6 +621,10 @@ export class BotSessionDriver implements SessionDriver {
         return;
       }
       const terminal = msg.terminal_reason;
+      if (terminal === "hook_stopped" && t.heldOff !== undefined) {
+        t.finish({ reason: "stopped", text: t.heldOff });
+        return;
+      }
       const isError = msg.is_error === true || (typeof msg.subtype === "string" && msg.subtype.startsWith("error_"));
       if (terminal === "refusal") t.finish({ reason: "refusal", usage: { ...t.usage }, ...(t.text === undefined ? {} : { text: t.text }) });
       else if (isError) t.finish({ reason: "failed", failure: "error", usage: { ...t.usage }, text: typeof msg.result === "string" && msg.result !== "" ? msg.result : `the turn failed (${String(msg.subtype)})` });
@@ -544,9 +647,11 @@ export class BotSessionDriver implements SessionDriver {
     return this.#inc;
   }
 
-  async #closeIncarnation(inc: Incarnation): Promise<void> {
+  async #closeIncarnation(inc: Incarnation, grace = this.#d.stopGraceMs ?? 10_000): Promise<void> {
+    this.#releasePromptHolds("closing");
+    if (inc.taskWatch !== undefined) clearInterval(inc.taskWatch);
+    inc.taskWatch = undefined;
     if (!inc.queue.closed) inc.queue.close();
-    const grace = this.#d.stopGraceMs ?? 10_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([inc.pump, new Promise<void>((r) => { timer = setTimeout(r, grace); })]);
     if (timer !== undefined) clearTimeout(timer);
@@ -555,6 +660,51 @@ export class BotSessionDriver implements SessionDriver {
       await Promise.race([inc.pump, new Promise<void>((r) => setTimeout(r, 1_000))]);
     }
     if (this.#inc === inc) this.#inc = undefined;
+  }
+
+  /** While background tasks run, looks at the pause; once it says no, they are stopped (`#stopTasks`). */
+  #watchTasks(inc: Incarnation): void {
+    if (inc.taskWatch !== undefined) return;
+    const look = () => {
+      if (inc.closed || inc.tasks.size === 0 || this.#inc !== inc) {
+        if (inc.taskWatch !== undefined) clearInterval(inc.taskWatch);
+        inc.taskWatch = undefined;
+        return;
+      }
+      if (this.#ctx.mayAct()) return;
+      if (inc.taskWatch !== undefined) clearInterval(inc.taskWatch);
+      inc.taskWatch = undefined;
+      void this.#stopTasks(inc);
+    };
+    inc.taskWatch = setInterval(look, this.#d.pausePollMs ?? PAUSE_POLL_MS);
+    (inc.taskWatch as { unref?: () => void }).unref?.();
+    look();
+  }
+
+  /** The pause stops the session's background shells and monitors (the owner's rule). Resuming doesn't restart them. */
+  async #stopTasks(inc: Incarnation): Promise<void> {
+    const ids = [...inc.tasks];
+    if (ids.length === 0) return;
+    const q = inc.query as StopTaskQuery;
+    if (typeof q.stopTask === "function") {
+      for (const id of ids) {
+        try {
+          await q.stopTask(id);
+          inc.tasks.delete(id);
+        } catch (err) {
+          this.#log(`bot driver ${this.#ctx.sessionId}: stopping background task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return;
+    }
+    // A runtime without `stopTask` (before agent SDK 0.0.69): it ends, and its end ends every shell and monitor it
+    // started. The turn the pause holds ends interrupted, what it was folding leads the next turn, and the transcript
+    // resumes there, told what was stopped.
+    this.#log(`bot driver ${this.#ctx.sessionId}: the bots are paused: ending the runtime to stop ${ids.length} background task(s)`);
+    if (this.#turn !== undefined) await this.interrupt();
+    if (this.#inc !== inc || inc.closed) return;
+    await this.#closeIncarnation(inc, 0);
+    this.#carry.push(formatTurnInput({ from: "note", label: "pause", text: `The user paused the bots, which stopped your background tasks (${ids.join(", ")}). They don't restart; start them again if they're still needed.`, by: { kind: "core" } }, this.#ctx.kind));
   }
 
   #push(inc: Incarnation, text: string): void {
@@ -574,7 +724,7 @@ export class BotSessionDriver implements SessionDriver {
     }
     const notes = await this.#hooks.turnStart(hs, ctl.signal).catch(() => []);
     const first = await this.#hooks.messageIn(hs, formatTurnInput(input, this.#ctx.kind), ctl.signal).catch(() => formatTurnInput(input, this.#ctx.kind));
-    const nowServers = this.#promptServers(keptServers(this.#mcpServers()));
+    const nowServers = this.#promptServers(keptServers(this.#mcpServers(), this.#reservedNames()));
     const mcpNote = mcpChangesSince(this.#builtMcp, nowServers);
     if (mcpNote !== undefined) this.#builtMcp = mcpFingerprint(nowServers);
     const carried = this.#carry.splice(0);
@@ -587,7 +737,7 @@ export class BotSessionDriver implements SessionDriver {
     if (ctl.signal.aborted) return { reason: "interrupted" };
     const end = await new Promise<TurnEnd>((resolve) => {
       const t: RunningTurn = {
-        ctl, owed: 1, unfolded: [], usage: { inputTokens: 0, outputTokens: 0 }, interrupted: false, ended: false,
+        ctl, owed: 1, unfolded: [], usage: { inputTokens: 0, outputTokens: 0 }, interrupted: false, ended: false, first: text,
         offFold: () => {}, offAbort: () => {},
         finish: (e) => {
           if (t.ended) return;
@@ -661,6 +811,8 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       this.#log(`bot driver ${this.#ctx.sessionId}: interrupt failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // A turn the pause holds at its start ends without a request (`#promptHold`).
+    this.#releasePromptHolds("interrupt");
   }
 
   async compact(req: { reason: "cache" | "full" | "user"; signal: AbortSignal }): Promise<{ compacted: boolean }> {
