@@ -22,7 +22,8 @@ export const CI_GLOBAL: readonly Pattern[] = [
   "pnpm-workspace.yaml", "tsconfig.base.json", "bunfig.toml",
 ];
 
-const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packages/plugin-sdk/"];
+// The update feed's check is in the daemon's binary (packages/cli's `__verify-feed`) and, after E-M1, the app's updater.
+const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packages/plugin-sdk/", "packages/update-feed/"];
 
 /** What each area's jobs read. */
 export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {

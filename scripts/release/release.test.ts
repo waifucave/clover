@@ -11,7 +11,19 @@ import {
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
   writeServedCopies,
 } from "./lib";
-import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES } from "./publish";
+import { generateFeedKey, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
+import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
+import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, signFeeds } from "./publish";
+
+/** A Keychain of the test's own: the real one is never touched. */
+function memoryStore(): KeyStore & { items: Map<string, string> } {
+  const items = new Map<string, string>();
+  return {
+    items,
+    get: async (i) => items.get(`${i.service}/${i.name}`) ?? null,
+    set: async (i) => { items.set(`${i.service}/${i.name}`, i.value); },
+  };
+}
 
 const ROOT = join(import.meta.dir, "..", "..");
 const read = (rel: string): string => readFileSync(join(ROOT, rel), "utf8");
@@ -198,6 +210,18 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(plan(twice, "beta").problems.some((x) => x.includes("is in both"))).toBe(true);
   });
 
+  test("each update file is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
+    const dirs = builds("latest");
+    const p = plan(dirs, "latest");
+    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => channelsServed("latest").map((c) => feedFile(c, os))).sort());
+    const key = generateFeedKey();
+    const sigs = signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, key.publicKey);
+    expect(sigs.map((s) => s.name).sort()).toEqual(p.feeds.map((f) => `${f}.sig`).sort());
+    for (const s of sigs) expect(verifyFeed(dirs.get("out/mac")!.get("latest-mac.yml")!, sigs.find((x) => x.name === "latest-mac.yml.sig")!.signature, key.publicKey)).toEqual({ ok: true });
+    // A key the app doesn't carry signs nothing.
+    expect(() => signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, generateFeedKey().publicKey)).toThrow(/doesn't verify against the app's key/);
+  });
+
   test("the draft: tagged v<version>, a draft always, a pre-release on beta", () => {
     const p = plan(builds("beta"), "beta");
     const args = draftReleaseArgs(p, "waifucave/clover");
@@ -244,5 +268,43 @@ describe("the release workflow (.github/workflows/release.yml)", () => {
     const desktop = wf.jobs.desktop.strategy.matrix.include.map((m: { os: string }) => m.os);
     const linux = wf.jobs.linux.strategy.matrix.include.map((m: { arch: string }) => `linux-${m.arch}`);
     expect([...desktop, ...linux].sort()).toEqual([...RELEASE_OSES].sort());
+  });
+});
+
+describe("the update feed's key (scripts/release/feed-key.ts)", () => {
+  const keyTs = 'export const UPDATE_FEED_PUBLIC_KEY: string | null = null;\n';
+
+  test("--generate keeps the private half in the Keychain and writes only the public half into key.ts", async () => {
+    const store = memoryStore();
+    const file = join(mkdtempSync(join(tmpdir(), "clover-feed-key-")), "key.ts");
+    writeFileSync(file, `// the key\n${keyTs}`);
+    const pub = await generate(store, file, null);
+    const priv = store.items.get(`${FEED_KEY_ITEM.service}/${FEED_KEY_ITEM.name}`)!;
+    expect(publicKeyOf(priv)).toBe(pub);
+    const written = readFileSync(file, "utf8");
+    expect(written).toBe(`// the key\nexport const UPDATE_FEED_PUBLIC_KEY: string | null = ${JSON.stringify(pub)};\n`);
+    expect(written).not.toContain(priv);
+    // Never twice: a second key would be a rotation.
+    await expect(generate(store, file, pub)).rejects.toThrow(/key rotation/);
+    await expect(generate(store, file, null)).rejects.toThrow(/already holds/);
+  });
+
+  test("the release signs only with the Keychain's key, and only when it is the one the app carries", async () => {
+    const store = memoryStore();
+    await expect(signingKey(store, null)).rejects.toThrow(/no update feed key yet/);
+    const key = generateFeedKey();
+    await expect(signingKey(store, key.publicKey)).rejects.toThrow(/has no/);
+    await store.set({ ...FEED_KEY_ITEM, value: key.privateKey });
+    expect(await signingKey(store, key.publicKey)).toBe(key.privateKey);
+    await expect(signingKey(store, generateFeedKey().publicKey)).rejects.toThrow(/not the one the app carries/);
+    expect(() => withPublicKey("no key line here", "x")).toThrow(/UPDATE_FEED_PUBLIC_KEY/);
+  });
+
+  test("the release scripts never write the private key anywhere: it goes only to the Keychain and to signFeed", () => {
+    for (const f of ["scripts/release/feed-key.ts", "scripts/release/publish.ts"]) {
+      const src = read(f);
+      expect(src, f).not.toMatch(/writeFileSync\([^)]*privateKey/);
+      expect(src, f).not.toMatch(/console\.\w+\([^)]*privateKey/);
+    }
   });
 });

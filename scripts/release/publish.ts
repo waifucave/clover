@@ -9,17 +9,22 @@
 // `--from` names the folders holding the builds: this Mac's signed `apps/desktop/out/dist` and the release
 // workflow's downloaded Windows and Linux artifacts. It checks that every OS's installers and update files are
 // there for the channel and that each update file matches the files it names, and on macOS that the dmg is signed
-// and stapled. Without `--create-draft` it only prints what it would upload. With it, it creates the release as a
-// draft (a pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment
-// it reaches anyone.
+// and stapled. Without `--create-draft` it only prints what it would upload. With it, it signs each update file with
+// the update feed's key from the login Keychain (an Ed25519 `.sig` beside it, packages/update-feed; the key is read
+// into memory, checked against the one the app carries, and never written), and creates the release as a draft (a
+// pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment it
+// reaches anyone.
 //
-// `--promote` turns a published beta into the latest release: it adds the latest update files (the beta ones under
-// their latest names; the files they name are the same) and makes it a full release. Without `--yes` it only prints.
+// `--promote` turns a published beta into the latest release: it checks the beta update files' signatures, adds
+// them and their signatures under the latest names (the bytes are the same, so the signatures are too) and makes it
+// a full release. Without `--yes` it only prints.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SIGNATURE_SUFFIX, signFeed, verifyFeed } from "../../packages/update-feed/src/index";
+import { keychain, signingKey } from "./feed-key";
 import { checkUpdateInfo, expectedArtifacts, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
 
 export const RELEASE_OSES: readonly ReleaseOs[] = ["mac", "win", "linux-x64", "linux-arm64"];
@@ -59,6 +64,8 @@ export interface ReleasePlan {
   channel: Channel;
   /** Each asset's name and the folder it comes from. */
   assets: Array<{ name: string; dir: string }>;
+  /** The update files, each signed at --create-draft (`<name>.sig`). */
+  feeds: string[];
   problems: string[];
 }
 
@@ -83,6 +90,7 @@ export function planRelease(
     }
   }
   const assets: Array<{ name: string; dir: string }> = [];
+  const feeds: string[] = [];
   const add = (name: string) => {
     const dir = where.get(name);
     if (dir === undefined) problems.push(`${name} is missing`);
@@ -91,6 +99,7 @@ export function planRelease(
   for (const os of RELEASE_OSES) {
     for (const name of expectedArtifacts(version, os, channel)) {
       add(name);
+      if (name.endsWith(".yml")) feeds.push(name);
       if (name.endsWith(".yml") && where.has(name)) {
         const info = parseUpdateInfo(new TextDecoder().decode(read(where.get(name)!, name)));
         const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
@@ -102,7 +111,23 @@ export function planRelease(
       }
     }
   }
-  return { version, channel, assets, problems };
+  return { version, channel, assets, feeds, problems };
+}
+
+/**
+ * The signatures for the plan's update files, each checked against the key the app carries (`publicKey`) before it
+ * is kept: `privateKey` comes from the Keychain and is used only here.
+ */
+export function signFeeds(plan: ReleasePlan, read: (dir: string, name: string) => Uint8Array, privateKey: string, publicKey?: string | null): Array<{ name: string; signature: string }> {
+  return plan.feeds.map((name) => {
+    const asset = plan.assets.find((a) => a.name === name);
+    if (asset === undefined) throw new Error(`${name} is not in the release`);
+    const bytes = read(asset.dir, name);
+    const signature = signFeed(bytes, privateKey);
+    const verdict = publicKey === undefined ? verifyFeed(bytes, signature) : verifyFeed(bytes, signature, publicKey);
+    if (!verdict.ok) throw new Error(`${name}'s new signature doesn't verify against the app's key (${verdict.reason})`);
+    return { name: `${name}${SIGNATURE_SUFFIX}`, signature };
+  });
 }
 
 /** `gh release create` for the plan: a draft, a pre-release on beta, never marked latest until the owner publishes. */
@@ -134,7 +159,7 @@ function macSignedAndStapled(dmg: string): string[] {
   return problems;
 }
 
-export function main(argv: readonly string[], root: string): number {
+export async function main(argv: readonly string[], root: string): Promise<number> {
   let a: PublishArgs;
   try {
     a = parsePublishArgs(argv);
@@ -150,16 +175,22 @@ export function main(argv: readonly string[], root: string): number {
     if (info.isDraft || !info.isPrerelease) { console.error(`release/publish: ${tag} is ${info.isDraft ? "a draft" : "already a full release"}: only a published beta is promoted`); return 1; }
     const betas = info.assets.map((x) => x.name).filter((n) => /^beta(-mac|-linux|-linux-arm64)?\.yml$/.test(n));
     if (betas.length !== 4) { console.error(`release/publish: ${tag} has ${betas.length} beta update files, not 4 (${betas.join(", ")})`); return 1; }
-    console.log(`release/publish: promote ${tag}: upload ${betas.map(promotedName).join(", ")}, then make it a full release and the latest`);
+    const unsigned = betas.filter((n) => !info.assets.some((x) => x.name === `${n}${SIGNATURE_SUFFIX}`));
+    if (unsigned.length > 0) { console.error(`release/publish: ${tag} has no signature for ${unsigned.join(", ")}`); return 1; }
+    console.log(`release/publish: promote ${tag}: upload ${betas.map(promotedName).join(", ")} and their signatures, then make it a full release and the latest`);
     if (!a.yes) { console.log("release/publish: nothing done (add --yes)"); return 0; }
     const dir = mkdtempSync(join(tmpdir(), "clover-promote-"));
     try {
-      if (gh(["gh", "release", "download", tag, "--repo", REPO, "--dir", dir, ...betas.flatMap((n) => ["--pattern", n])]).status !== 0) throw new Error("couldn't download the beta update files");
-      const files = betas.map((n) => {
-        const text = readFileSync(join(dir, n), "utf8");
-        if (parseUpdateInfo(text).version !== a.version) throw new Error(`${n} is not for ${a.version}`);
-        writeFileSync(join(dir, promotedName(n)), text);
-        return join(dir, promotedName(n));
+      if (gh(["gh", "release", "download", tag, "--repo", REPO, "--dir", dir, ...betas.flatMap((n) => ["--pattern", n, "--pattern", `${n}${SIGNATURE_SUFFIX}`])]).status !== 0) throw new Error("couldn't download the beta update files");
+      const files = betas.flatMap((n) => {
+        const bytes = new Uint8Array(readFileSync(join(dir, n)));
+        const signature = readFileSync(join(dir, `${n}${SIGNATURE_SUFFIX}`), "utf8");
+        const verdict = verifyFeed(bytes, signature);
+        if (!verdict.ok) throw new Error(`${n}'s signature doesn't verify (${verdict.reason})`);
+        if (parseUpdateInfo(new TextDecoder().decode(bytes)).version !== a.version) throw new Error(`${n} is not for ${a.version}`);
+        writeFileSync(join(dir, promotedName(n)), bytes);
+        writeFileSync(join(dir, `${promotedName(n)}${SIGNATURE_SUFFIX}`), signature);
+        return [join(dir, promotedName(n)), join(dir, `${promotedName(n)}${SIGNATURE_SUFFIX}`)];
       });
       const up = gh(["gh", "release", "upload", tag, "--repo", REPO, ...files]);
       if (up.status !== 0) throw new Error(`the upload failed: ${up.out.trim()}`);
@@ -181,14 +212,27 @@ export function main(argv: readonly string[], root: string): number {
   if (dmg !== undefined) plan.problems.push(...macSignedAndStapled(join(dmg.dir, dmg.name)));
   for (const p of plan.problems) console.error(`release/publish: ${p}`);
   if (plan.problems.length > 0) return 1;
-  console.log(`release/publish: v${version} on ${a.channel}, ${plan.assets.length} files:`);
+  console.log(`release/publish: v${version} on ${a.channel}, ${plan.assets.length} files, and a signature for each of ${plan.feeds.join(", ")}:`);
   for (const x of plan.assets) console.log(`  ${x.name}  (${x.dir})`);
-  if (!a.create) { console.log("release/publish: nothing uploaded (add --create-draft)"); return 0; }
+  if (!a.create) { console.log("release/publish: nothing signed or uploaded (add --create-draft)"); return 0; }
   if (gh(["gh", "release", "view", `v${version}`, "--repo", REPO]).status === 0) { console.error(`release/publish: v${version} already exists`); return 1; }
-  const created = gh(draftReleaseArgs(plan, REPO));
-  if (created.status !== 0) { console.error(`release/publish: gh release create failed: ${created.out.trim()}`); return 1; }
-  console.log(`release/publish: the draft is up: ${created.out.trim()}. Publishing it on GitHub releases it.`);
-  return 0;
+  const sigDir = mkdtempSync(join(tmpdir(), "clover-feed-sigs-"));
+  try {
+    const privateKey = await signingKey(keychain);
+    for (const s of signFeeds(plan, (d, n) => new Uint8Array(readFileSync(join(d, n))), privateKey)) {
+      writeFileSync(join(sigDir, s.name), s.signature);
+      plan.assets.push({ name: s.name, dir: sigDir });
+    }
+    const created = gh(draftReleaseArgs(plan, REPO));
+    if (created.status !== 0) { console.error(`release/publish: gh release create failed: ${created.out.trim()}`); return 1; }
+    console.log(`release/publish: the draft is up: ${created.out.trim()}. Publishing it on GitHub releases it.`);
+    return 0;
+  } catch (err) {
+    console.error(`release/publish: ${(err as Error).message}`);
+    return 1;
+  } finally {
+    rmSync(sigDir, { recursive: true, force: true });
+  }
 }
 
-if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..", "..")));
+if (import.meta.main) process.exit(await main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..", "..")));
