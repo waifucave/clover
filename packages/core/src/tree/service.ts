@@ -4,7 +4,7 @@
 // is, judged at the stricter of this computer's level and the call's.
 //
 // Methods served (`peer` role). Those marked * are lane J's additions, requested of lane B for the protocol:
-//   tree.stat (+ `noFollow`*), tree.read (+ `noFollow`*), tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
+//   tree.stat (+ `noFollow`*, echoed), tree.read (+ `noFollow`*, echoed), tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
 //   tree.grep (+ `ignoreCase`*), tree.mkdir*, tree.readlink*, tree.symlink*, tree.watch*, tree.unwatch*,
 //   tool.run, tool.cancel (+ `session`*)
 // Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output, + `session`*).
@@ -165,10 +165,16 @@ export class TreeService {
       }));
     };
     const h = opts.holder;
-    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, { ...call, ...(p.noFollow ? { noFollow: true } : {}) }) }));
-    serve("tree.read", (p, call) => h.read(p.path, {
-      ...call, ...(p.noFollow ? { noFollow: true } : {}), ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
-      ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
+    // A `noFollow` answer says so (`noFollow: true`): the calling computer refuses one that doesn't, from a computer
+    // whose build dropped the flag and followed links (#225's review).
+    const echo = (p: { noFollow?: boolean | undefined }) => (p.noFollow ? { noFollow: true as const } : {});
+    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, { ...call, ...(p.noFollow ? { noFollow: true } : {}) }), ...echo(p) }));
+    serve("tree.read", async (p, call) => ({
+      ...(await h.read(p.path, {
+        ...call, ...(p.noFollow ? { noFollow: true } : {}), ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
+        ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
+      })),
+      ...echo(p),
     }));
     serve("tree.write", async (p, call) => {
       if (p.data.encoding === "base64" ? p.data.data.length > WRITE_BASE64_MAX : p.data.text.length > TREE_IO_MAX) {

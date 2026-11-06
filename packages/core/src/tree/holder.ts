@@ -38,6 +38,7 @@ import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { isInside } from "../contracts/common";
 import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
 import { atOps, type AtOps } from "./at";
 import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
@@ -113,6 +114,8 @@ export interface LocalHolderOptions {
   reviewer?: TreeReviewer;
   /** The real path of an open file from its handle (`nofollow.ts`); tests fake it. */
   fdRealPath?: (fd: number, path: string) => string | null;
+  /** Tests only: called after each part a `noFollow` walk looks at, to swap something mid-walk. */
+  afterLstat?: (real: string) => void | Promise<void>;
 }
 
 /** The name in `home/<this computer>/` that is this computer's Clover home, wherever it is on disk. */
@@ -219,7 +222,7 @@ export class LocalHolder implements Holder {
 
   /** Whether `call` may change a real path here (a move's source, entry by entry). */
   changeable(real: string, call: HolderCall): boolean {
-    if (call.as.kind === "user" || call.as.kind === "core") return true;
+    if (call.as.kind === "user" || call.as.kind === "core") return this.#readDenied(real) === undefined;
     return this.#check({ op: "delete", path: real }, call.as).allowed;
   }
 
@@ -643,6 +646,17 @@ export class LocalHolder implements Holder {
     this.#fenced({ op, path: real }, call);
     let at = root;
     let st: Stats | undefined;
+    // Each part's identity as the walk saw it, looked at again once the walk is done: a folder swapped for a link
+    // mid-walk (whose lstat of the next part went through it) no longer is what the walk saw.
+    const seen: { path: string; dev: number; ino: number }[] = [];
+    const again = async () => {
+      for (const s of seen) {
+        const now = await fsp.lstat(s.path).catch(() => undefined);
+        if (!now || now.isSymbolicLink() || now.dev !== s.dev || now.ino !== s.ino) {
+          throw new ContractError("refused", `${path} changed while it was being looked at (a link on the way); a link isn't followed here`);
+        }
+      }
+    };
     for (let i = 0; i < loc.segments.length; i++) {
       const name = loc.segments[i]!;
       const next = join(at, name);
@@ -650,10 +664,13 @@ export class LocalHolder implements Holder {
         if (e.code === "ENOENT" || e.code === "ENOTDIR") return undefined;
         throw diskError(e, path);
       });
+      await this.#o.afterLstat?.(next);
       if (!st) {
+        await again();
         if (i < loc.segments.length - 1) throw new ContractError("not_found", `${path} doesn't exist`);
         return { real };
       }
+      seen.push({ path: next, dev: st.dev, ino: st.ino });
       const shown = loc.segments.slice(0, i + 1).join("/");
       if (st.isSymbolicLink() || isReparsePoint(next)) {
         throw new ContractError("refused", `${path} goes through a link at ${shown}; a link isn't followed here`);
@@ -665,6 +682,7 @@ export class LocalHolder implements Holder {
       at = next;
     }
     if (loc.segments.length === 0) st = await fsp.lstat(root).catch(() => undefined);
+    await again();
     return { real, ...(st ? { st } : {}) };
   }
 
@@ -691,7 +709,9 @@ export class LocalHolder implements Holder {
         throw new ContractError("refused", `${path} has other names (hard links); open it by its own name outside the tree`);
       }
       const real = (this.#o.fdRealPath ?? fdRealPath)(fh.fd, w.real);
-      if (real === null || foldPath(real, this.os) !== foldPath(w.real, this.os)) {
+      // Exact on Linux, where names differ by case; folded where the disk folds them (macOS, Windows).
+      const same = real !== null && (this.os === "linux" ? real === w.real : foldPath(real, this.os) === foldPath(w.real, this.os));
+      if (!same) {
         throw new ContractError("refused", `${path} isn't the file that was opened (a link on the way changed); a link isn't followed here`);
       }
       return fh;
@@ -829,7 +849,15 @@ export class LocalHolder implements Holder {
   /** Every caller but the user on this computer and the core meets the fence; a peer always (review N2). */
   #fenced(op: FenceOp, call: HolderCall): void {
     const as = call.as;
-    if (as.kind === "user" || as.kind === "core") return;
+    if (as.kind === "user" || as.kind === "core") {
+      // The read-denied items (the run folder, the secrets file, key files…) are no one's through the tree, the user's
+      // surfaces included: a paired phone or the web companion never reads them; the core reads them directly.
+      for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
+        const item = this.#readDenied(p);
+        if (item) throw new ContractError("fenced", `${item} is never read through the folder tree`, { computer: this.#o.name(), reason: "read-denied" });
+      }
+      return;
+    }
     if (op.op === "write" || op.op === "delete" || op.op === "move") {
       for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderCloverHome(p);
     }
@@ -839,8 +867,16 @@ export class LocalHolder implements Holder {
     }
   }
 
+  /** The read-denied fenced item `real` is in, if any (`deny: "read-write"`), folded as the disk may. */
+  #readDenied(real: string): string | undefined {
+    const fence = this.#o.fence;
+    if (!fence) return undefined;
+    const p = foldPath(real, this.os);
+    return fence.fencedSet().find((i) => i.deny === "read-write" && isInside(p, foldPath(i.path, this.os)))?.path;
+  }
+
   #mayRead(real: string, call: HolderCall): boolean {
-    if (call.as.kind === "user" || call.as.kind === "core") return true;
+    if (call.as.kind === "user" || call.as.kind === "core") return this.#readDenied(real) === undefined;
     return this.#check({ op: "read", path: real }, call.as).allowed;
   }
 

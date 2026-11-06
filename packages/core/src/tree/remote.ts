@@ -135,16 +135,30 @@ export class RemoteHolder implements Holder {
   }
 
   async stat(path: string, call: HolderCall & { noFollow?: boolean }): Promise<FileStat | null> {
-    return (await this.#call<{ stat: FileStat | null }>("tree.stat", { ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}) })).stat;
+    const r = await this.#call<{ stat: FileStat | null; noFollow?: boolean }>("tree.stat", { ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}) });
+    if (call.noFollow) this.#confirmsNoFollow(r, path);
+    return r.stat;
+  }
+
+  /** A `noFollow` answer must say it walked without following links: a computer on a build that drops the flag
+   *  answers as if it weren't there, having followed them (#225's review). */
+  #confirmsNoFollow(r: { noFollow?: unknown }, path: string): void {
+    if (r.noFollow !== true) {
+      throw new ContractError("refused", `${this.#computer()} can't read ${path} without following links (an older build); update Clover there`, { reason: "unsupported" });
+    }
   }
 
   async read(path: string, call: HolderCall & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
-    return this.#call<TreeData>("tree.read", {
+    const r = await this.#call<TreeData & { noFollow?: boolean }>("tree.read", {
       ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}),
       ...(call.encoding === undefined ? {} : { encoding: call.encoding }),
       ...(call.offset === undefined ? {} : { offset: call.offset }),
       ...(call.length === undefined ? {} : { length: call.length }),
     }, "files");
+    if (!call.noFollow) return r;
+    this.#confirmsNoFollow(r, path);
+    const { noFollow: _n, ...data } = r;
+    return data as TreeData;
   }
 
   async write(path: string, data: TreeData, call: HolderCall & { executable?: boolean }): Promise<void> {

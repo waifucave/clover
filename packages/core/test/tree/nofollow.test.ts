@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { COMPUTERS_METHODS } from "@waifucave/clover-protocol";
 import { LocalHolder } from "../../src/tree/holder";
 import { hostOs } from "../../src/tree/names";
 import { CoreTree, type TreeComputer } from "../../src/tree/tree";
@@ -22,7 +23,7 @@ afterEach(() => {
   for (const t of temps.splice(0)) rmSync(t, { recursive: true, force: true });
 });
 
-function holder(o: { cloverHome?: (root: string) => string; fdRealPath?: (fd: number, path: string) => string | null } = {}) {
+function holder(o: { cloverHome?: (root: string) => string; fdRealPath?: (fd: number, path: string) => string | null; afterLstat?: (real: string) => void } = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "lane-j-nofollow-")));
   temps.push(root);
   const home = join(root, "home");
@@ -32,6 +33,7 @@ function holder(o: { cloverHome?: (root: string) => string; fdRealPath?: (fd: nu
   const h = new LocalHolder({
     clock: { now: () => Date.now() }, name: () => "Studio", home, cloverHome, botsRoot: join(cloverHome, "bots"), os: hostOs(),
     ...(o.fdRealPath ? { fdRealPath: o.fdRealPath } : {}),
+    ...(o.afterLstat ? { afterLstat: o.afterLstat } : {}),
   });
   return { h, root, home, cloverHome };
 }
@@ -81,6 +83,22 @@ describe("noFollow", () => {
     expect(await code(h.read("home/Studio/dir/b.md", { as: USER, noFollow: true }))).toBe("refused");
   });
 
+  test("a folder swapped for a link mid-walk: the stat it gave isn't believed", async () => {
+    let swap: (() => void) | undefined;
+    const { h, root, home } = holder({ afterLstat: (real) => { if (real.endsWith(`${win ? "\\" : "/"}dir`) && swap) { const f = swap; swap = undefined; f(); } } });
+    mkdirSync(join(home, "dir"));
+    writeFileSync(join(home, "dir", "b.md"), "b");
+    mkdirSync(join(root, "elsewhere"));
+    writeFileSync(join(root, "elsewhere", "b.md"), "elsewhere, longer");
+    // Right after the walk looked at `dir`, it becomes a link to another folder.
+    swap = () => {
+      rmSync(join(home, "dir"), { recursive: true });
+      linkDir(join(root, "elsewhere"), join(home, "dir"));
+    };
+    expect(await code(h.stat("home/Studio/dir/b.md", { as: USER, noFollow: true }))).toBe("refused");
+    expect(swap).toBeUndefined();
+  });
+
   test("the opened file's real path, from its handle, must be the path walked; an OS that won't say refuses", async () => {
     // A swap inside the call itself (between the walk and the open) shows as a handle whose real path is elsewhere.
     const elsewhere = holder({ fdRealPath: () => "/somewhere/else.md" });
@@ -113,6 +131,65 @@ describe("noFollow", () => {
       expect(await code(t.read("home/Laptop1/out/notes.md", { as: USER, noFollow: true }))).toBe("refused");
       expect(await code(t.stat("home/Laptop1/out/notes.md", { as: USER, noFollow: true }))).toBe("refused");
       expect(await code(t.readPart("home/Laptop1/out/notes.md", { as: USER, noFollow: true, encoding: "base64" }))).toBe("refused");
+    } finally {
+      cluster.close();
+    }
+  });
+});
+
+describe("a computer whose build drops noFollow", () => {
+  test("its answer doesn't confirm it, so the calling computer refuses it instead of believing it", async () => {
+    const cluster = new Cluster();
+    try {
+      const studio = await cluster.add("Studio");
+      const laptop = await cluster.add("Laptop1");
+      await cluster.join();
+      mkdirSync(join(laptop.home, "out"), { recursive: true });
+      writeFileSync(join(laptop.home, "elsewhere.md"), "elsewhere");
+      symlinkSync(join(laptop.home, "elsewhere.md"), join(laptop.home, "out", "notes.md"), "file");
+      // Laptop1 as an older build: lane B's schemas, which drop the key, and a read that follows links.
+      const old = cluster.net.endpoint(laptop.device);
+      const as = { kind: "peer" as const, device: studio.device };
+      old.handle("tree.read", async (raw) => {
+        const p = COMPUTERS_METHODS.treeRead.params.parse(raw);
+        return laptop.node.holder.read(p.path, { as, level: "automatic", ...(p.encoding ? { encoding: p.encoding } : {}) });
+      });
+      old.handle("tree.stat", async (raw) => {
+        const p = COMPUTERS_METHODS.treeStat.params.parse(raw);
+        return { stat: await laptop.node.holder.stat(p.path, { as, level: "automatic" }) };
+      });
+      const t = studio.node.tree;
+      const read = await t.read("home/Laptop1/out/notes.md", { as: USER, noFollow: true }).then(() => undefined, (e: unknown) => e);
+      expect(read).toMatchObject({ code: "refused", detail: { reason: "unsupported" } });
+      expect(await code(t.stat("home/Laptop1/out/notes.md", { as: USER, noFollow: true }))).toBe("refused");
+      // A read that didn't ask for it is answered as before.
+      expect(await t.read("home/Laptop1/out/notes.md", { as: USER })).toEqual(utf8("elsewhere"));
+    } finally {
+      cluster.close();
+    }
+  });
+});
+
+describe("the read-denied items", () => {
+  test("are no one's through the tree, the user's surfaces included, here and from another computer", async () => {
+    const cluster = new Cluster();
+    try {
+      const studio = await cluster.add("Studio");
+      const laptop = await cluster.add("Laptop1");
+      await cluster.join();
+      mkdirSync(join(laptop.cloverHome, "run"), { recursive: true });
+      writeFileSync(join(laptop.cloverHome, "run", "core.json"), "{\"token\":\"not-a-secret\"}");
+      writeFileSync(join(laptop.cloverHome, "notes.md"), "fine");
+      const CORE = { kind: "core" } as const;
+      for (const [tree, as] of [[laptop.node.tree, USER], [laptop.node.tree, CORE], [studio.node.tree, USER]] as const) {
+        expect(await code(tree.read("home/Laptop1/.clover/run/core.json", { as }))).toBe("fenced");
+        expect(await code(tree.read("home/Laptop1/.clover/run/core.json", { as, noFollow: true }))).toBe("fenced");
+        expect(await code(tree.stat("home/Laptop1/.clover/run/core.json", { as }))).toBe("fenced");
+        expect(await code(tree.list("home/Laptop1/.clover/run", { as }))).toBe("fenced");
+        expect((await tree.list("home/Laptop1/.clover", { as })).map((e) => e.path)).not.toContain("home/Laptop1/.clover/run");
+        expect(await tree.glob("**/*", { as, cwd: "home/Laptop1/.clover" })).not.toContain("home/Laptop1/.clover/run/core.json");
+        expect(await tree.read("home/Laptop1/.clover/notes.md", { as })).toEqual(utf8("fine"));
+      }
     } finally {
       cluster.close();
     }
