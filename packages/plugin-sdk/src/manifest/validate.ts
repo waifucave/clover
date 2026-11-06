@@ -234,6 +234,13 @@ function checkSetting(f: Findings, key: string, s: Record<string, unknown>): voi
   if (!ok) f.error("plugin", "setting_default", [...at, "default"], `the default doesn't fit a \`${type}\` setting`);
 }
 
+/** A declaration as JSON with sorted keys, to tell one spot's repeats apart. */
+function canonicalDecl(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalDecl).join(",")}]`;
+  if (v !== null && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonicalDecl((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v) ?? "null";
+}
+
 /** Checks a point declaration (§5.4): names, the prefix rule, well-known declarations and who may declare a spot. */
 function checkDeclares(f: Findings, topId: string | undefined, declares: unknown, by: Seg[], declarer: { ui?: Record<string, unknown> }, refuses: Exclude<Refuses, "none">, seen: Map<string, string>, out: DeclaredPoint[]): void {
   if (!isObject(declares)) return;
@@ -270,11 +277,15 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
       continue;
     }
     const where = jsonPointer(at);
-    if (seen.has(name)) {
-      f.error(refuses, "point_duplicate", at, `"${name}" is declared twice (also at ${seen.get(name)})`);
+    // A UI spot may be declared on several of a plugin's entries (lane F: its panel and its Files view both declare
+    // `file.preview`), each a place the spot shows, all with the same declaration; any other point is declared once.
+    const key = spot ? `${name}\u0000${canonicalDecl(d)}` : undefined;
+    if (seen.has(name) && !(spot && seen.get(`${name}\u0000spot`) === key)) {
+      f.error(refuses, "point_duplicate", at, `"${name}" is declared twice (also at ${seen.get(name)})${spot ? " with another declaration" : ""}`);
       continue;
     }
-    seen.set(name, where);
+    if (!seen.has(name)) seen.set(name, where);
+    if (key !== undefined) seen.set(`${name}\u0000spot`, key);
     out.push({ name, by: by.length === 1 ? String(by[0]) : by.slice(1).join("/"), shape: d.shape as PointDecl["shape"], spot, wellKnown });
   }
 }
@@ -437,7 +448,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     for (const [key, value] of Object.entries(rawContributes)) {
       const at: Seg[] = ["contributes", key];
       if ((CORE_CONTRIBUTION_KEYS as string[]).includes(key)) {
-        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, seenDecl, declared, refusedPathUnder });
+        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, namespace, seenDecl, declared, refusedPathUnder });
         if (result !== undefined) kept[key] = result;
       } else if (DOTTED_POINT_NAME_RE.test(key)) {
         const result = checkPluginPointValue(f, key, value, at, { hasHost });
@@ -549,6 +560,8 @@ interface CoreCtx {
   isBot: boolean;
   topId: string | undefined;
   id: string | undefined;
+  /** The plugin's namespace (its top-level plugin's, for a child). */
+  namespace: string | undefined;
   seenDecl: Map<string, string>;
   declared: DeclaredPoint[];
   refusedPathUnder(at: Seg[]): boolean;
@@ -792,7 +805,17 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
 
 function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCtx): boolean {
   const kinds = ["component", "web", "style", "hide"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
-  if (kinds.length !== 1) {
+  // A message's menu item runs a command, and only one of the plugin's own: another plugin's would run it without
+  // `call:<that plugin>` (the controller's ruling on lane F's F-M3). The app draws the item, so it needs no component.
+  if (e.spot === "menu.message" && e.command !== undefined) {
+    const ns = typeof e.command === "string" ? e.command.slice(0, Math.max(0, e.command.indexOf("."))) : undefined;
+    if (ns === undefined || ns === "" || ns !== ctx.namespace) {
+      f.error("entry", "menu_command_namespace", [...at, "command"], `a message menu item runs one of the plugin's own commands (\`${ctx.namespace ?? "<namespace>"}.<name>\`)`);
+      return false;
+    }
+  }
+  const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
+  if (kinds.length !== 1 && !commandOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style` or `hide: true`");
     return false;
   }

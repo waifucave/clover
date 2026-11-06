@@ -301,6 +301,36 @@ describe("declared points (§5.4)", () => {
     expect(ok.declares[0]).toEqual({ name: "luna.deck", by: "ui/0", shape: "list", spot: true, wellKnown: false });
   });
 
+  test("a plugin declares one spot on several of its entries, each the same; any other point once (lane F's file.preview)", () => {
+    const preview = { "file.preview": { shape: "keyed", props: {} } };
+    const two = validateManifest({ ...base, contributes: { ui: [
+      { id: "files", spot: "panel.view", key: "files", title: "Files", component: "Files", declares: preview },
+      { id: "editor", spot: "panel.view", key: "editor", title: "Editor", component: "Editor", declares: preview },
+    ] } });
+    expect(codes(two)).toEqual([]);
+    expect(two.declares.map((d) => [d.name, d.by])).toEqual([["file.preview", "ui/0"], ["file.preview", "ui/1"]]);
+    const own = (props: Record<string, unknown>) => ({ "luna.deck": { shape: "list", props } });
+    const differ = validateManifest({ ...base, contributes: { ui: [
+      { id: "a", spot: "panel", key: "a", component: "A", declares: own({}) },
+      { id: "b", spot: "panel", key: "b", component: "B", declares: own({ type: "object" }) },
+    ] } });
+    expect(codes(differ)).toContain("error:entry:point_duplicate:/contributes/ui/1/declares/luna.deck");
+    const data = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list" } } },
+      contributes: { triggers: [{ type: "t", title: "T", handler: "t", declares: { "luna.cards": { shape: "list" } } }] } });
+    expect(has(data, "point_duplicate")).toBe(true);
+  });
+
+  test("a message menu item runs one of the plugin's own commands, never another plugin's (F-M3)", () => {
+    const item = (command: unknown, extra: Record<string, unknown> = {}) => validateManifest({ ...min(), contributes: { ui: [{ spot: "menu.message", id: "quote", title: "Quote it", command, ...extra }] } });
+    expect(codes(item("luna.quote"))).toEqual([]);
+    for (const command of ["tarot.quote", "quote", ".quote", 3]) {
+      expect([command, codes(item(command)).some((c) => c.includes("menu_command_namespace") || c.includes(":schema:"))]).toEqual([command, true]);
+      expect(item(command).manifest?.contributes?.ui ?? []).toEqual([]);
+    }
+    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "moon.quote" }] } }))).toEqual([]);
+    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "luna.quote" }] } }))).toContain("error:entry:menu_command_namespace:/contributes/ui/0/command");
+  });
+
   test("core points can't be declared; well-known names take the catalog's declaration", () => {
     expect(has(validateManifest({ ...base, host: { ...base.host, declares: { models: { shape: "list" } } } }), "point_declares_core")).toBe(true);
     const wrongShape = validateManifest({ ...base, contributes: { ui: [{ spot: "app.surface", component: "Island", declares: { "island.tab": { shape: "single", props: {} } } }] } });

@@ -146,6 +146,11 @@ export const PluginSettingView = z.object({
   description: Text.optional(),
   scope: z.enum(["account", "device", "bot"]),
   required: z.boolean(),
+  /** An `enum` field's choices, as the manifest lists them: a value, or a value with its title (lane F's ask). */
+  options: z.array(z.union([utf16(256, 1), z.object({ value: utf16(256, 1), title: Text })])).max(256).optional(),
+  /** A `number` field's bounds, as the manifest sets them. */
+  min: z.number().optional(),
+  max: z.number().optional(),
   /** The value in effect: the user's, else the manifest's default. Never there for a `secret` field. */
   value: z.unknown().optional(),
   /** The user set it; for a `secret` field, a value is stored. */

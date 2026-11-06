@@ -22,6 +22,8 @@ export const PointDeclSchema = z.strictObject({
   props: JsonSchema.optional(),
   /** Capabilities an entry's plugin must have for the data its props carry (§5.5). */
   needs: z.array(utf16(300, 1)).max(32).optional(),
+  /** A spot's props that reach only a plugin holding a capability, by dotted path (the catalog's `menu.message`). */
+  gates: z.record(utf16(256, 1), utf16(300, 1)).optional(),
   /** Keys that can't be hidden (§5.5). */
   keep: z.array(utf16(256, 1)).max(64).optional(),
   /** The keys the spot offers to `when`, such as "bot". */

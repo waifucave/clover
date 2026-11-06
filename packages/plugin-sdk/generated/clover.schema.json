@@ -801,6 +801,19 @@
               "$ref": "#/$defs/__schema12"
             }
           },
+          "gates": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
           "keep": {
             "maxItems": 64,
             "type": "array",
