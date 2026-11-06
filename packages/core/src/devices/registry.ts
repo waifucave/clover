@@ -293,7 +293,9 @@ export class FileDeviceRegistry implements DeviceRegistry {
 
   async verifyAnswer(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
     const d = this.#find(id);
-    const keyText = d === undefined ? undefined : answerKeyOf(d);
+    // Never a phone's link key (the controller's ruling, item 91): only the answer key its record names. B's
+    // `answerKeyOf` still falls back to the link key until lane B drops it.
+    const keyText = d === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : answerKeyOf(d);
     if (keyText === undefined) return false;
     const key = fromBase64(keyText);
     return key !== null && verifyEd25519(key, data, signature);
@@ -319,7 +321,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
   async setOwnAnswerKey(publicKey: string, held: AnswerKeyHolder, signature: Uint8Array, rotation?: { from: string; at: number; signature: Uint8Array }): Promise<DeviceRecord> {
     this.#checkAnswerKey({ publicKey, held });
     const self = this.#find(this.#state.self)!;
-    if (self.kind !== "desktop") throw new ContractError("refused", "only a desktop's app holds an answer key apart from the core's");
+    if (self.kind !== "desktop" && self.kind !== "phone") throw new ContractError("refused", "only a desktop's or a phone's app holds an answer key apart from the link key");
     const key = publicKeyFromBase64(publicKey)!;
     if (!verifyEd25519(key, answerKeyStatement(self.id, publicKey, held), signature)) throw new ContractError("refused", "the app didn't sign the answer key's statement");
     const current = self.answerKey?.publicKey;

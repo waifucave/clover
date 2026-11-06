@@ -99,7 +99,7 @@ export class GroupKeeper {
     this.#o = o;
     const t = o.transport;
     this.#offs.push(t.handle(GROUP_LINK.info, async (raw, from) => {
-      this.#mustBeComputer(from);
+      this.#mustBeMember(from);
       const theirs = parseInfo(raw);
       if (!theirs) throw new ContractError("invalid", "link.group.info: bad params");
       // After the answer: the loser of a merge acts, the other only learns the key.
@@ -114,7 +114,7 @@ export class GroupKeeper {
     this.#offs.push(t.watch((v) => {
       if (v.up && !up.has(v.peer)) {
         up.add(v.peer);
-        if (this.#isComputer(v.peer)) void this.exchange(v.peer).catch((e: unknown) => this.#log(`exchanging with ${v.peer}: ${errText(e)}`));
+        if (this.#isMember(v.peer)) void this.exchange(v.peer).catch((e: unknown) => this.#log(`exchanging with ${v.peer}: ${errText(e)}`));
       } else if (!v.up) up.delete(v.peer);
     }));
   }
@@ -168,7 +168,7 @@ export class GroupKeeper {
     if (eligible.some((m) => m.key === g.ownKey)) removes.push({ by: g.ownKey, sig: toBase64Url(key.sign(removeStatement(group, member, t, keeps))) });
     if (removes.length < need) {
       const others = eligible.filter((m) => m.key !== g.ownKey).map((m) => ({ key: m.key, device: deviceOfKey(g, m.key) }));
-      const asked = others.filter((o) => o.device !== undefined && !this.#declined.has(`${o.device}|${member}`) && this.#isComputer(o.device));
+      const asked = others.filter((o) => o.device !== undefined && !this.#declined.has(`${o.device}|${member}`) && this.#isMember(o.device));
       const results = await firstN(asked.map((o) => this.#askCosign(o.device!, group, member, t, keeps, name)), need - removes.length);
       removes.push(...results);
     }
@@ -245,7 +245,7 @@ export class GroupKeeper {
   merged(old: GroupRecord, via: string): void {
     const group = this.#o.registry.group()?.id;
     if (!group) return;
-    const devices = Object.keys(old.members).filter((d) => d !== via && this.#isComputer(d));
+    const devices = Object.keys(old.members).filter((d) => d !== via && this.#isMember(d));
     this.#inviteAll(old, group, "merge", devices);
   }
 
@@ -281,7 +281,7 @@ export class GroupKeeper {
   #inviteAll(old: GroupRecord, group: string, reason: "merge" | "recovery", devices: string[]): void {
     for (const device of devices) {
       const k = old.members[device]?.key;
-      if (!k || !this.#isComputer(device)) continue;
+      if (!k || !this.#isMember(device)) continue;
       this.#expected.set(device, { group, key: k });
       void (async () => {
         const link = await this.#o.transport.connect(device);
@@ -309,7 +309,7 @@ export class GroupKeeper {
   /** The other linked computers hear of the change: the old group's follow, the new group's learn the key. */
   #tellLinked(except?: string): void {
     for (const l of this.#o.transport.links()) {
-      if (!l.up || l.peer === except || !this.#isComputer(l.peer)) continue;
+      if (!l.up || l.peer === except || !this.#isMember(l.peer)) continue;
       void this.exchange(l.peer).catch((e: unknown) => this.#log(`telling ${l.peer}: ${errText(e)}`));
     }
   }
@@ -371,7 +371,7 @@ export class GroupKeeper {
     this.#o.onChanged?.();
     // A card first, naming each computer it would invite, so the user can leave one out (the controller's ruling). A
     // computer the user revoked, as lost or otherwise, is never on it.
-    const computers = Object.keys(old.members).filter((d) => this.#isComputer(d));
+    const computers = Object.keys(old.members).filter((d) => this.#isMember(d));
     if (computers.length > 0) void this.#inviteByCard(old, id, computers).catch((e: unknown) => this.#log(`inviting: ${errText(e)}`));
   }
 
@@ -398,7 +398,7 @@ export class GroupKeeper {
   // ---- what the others ask ----
 
   async #admitFor(raw: unknown, from: string): Promise<{ by: string; sig: string }> {
-    this.#mustBeComputer(from);
+    this.#mustBeMember(from);
     const p = raw as { group?: unknown; key?: unknown; t?: unknown } | undefined;
     if (typeof p?.group !== "string" || typeof p.key !== "string" || typeof p.t !== "number" || fromBase64Url(p.key)?.length !== 32) {
       throw new ContractError("invalid", "link.group.admit takes a group, a key and t");
@@ -424,7 +424,7 @@ export class GroupKeeper {
   }
 
   async #cosignFor(raw: unknown, from: string): Promise<{ by: string; sig: string }> {
-    this.#mustBeComputer(from);
+    this.#mustBeMember(from);
     const p = raw as { group?: unknown; key?: unknown; t?: unknown; keeps?: unknown; name?: unknown } | undefined;
     if (typeof p?.group !== "string" || typeof p.key !== "string" || typeof p.t !== "number") throw new ContractError("invalid", "link.group.cosign takes a group, a member key and t");
     const keeps = Array.isArray(p.keeps) ? p.keeps.filter((k): k is string => typeof k === "string").slice(0, 32) : [];
@@ -454,7 +454,7 @@ export class GroupKeeper {
   }
 
   async #invited(raw: unknown, from: string): Promise<{ joined: boolean }> {
-    this.#mustBeComputer(from);
+    this.#mustBeMember(from);
     const p = raw as { group?: unknown; reason?: unknown; from?: unknown } | undefined;
     if (typeof p?.group !== "string" || typeof p.from !== "string" || (p.reason !== "merge" && p.reason !== "recovery")) {
       throw new ContractError("invalid", "link.group.invite takes a group, a reason and the group left");
@@ -466,7 +466,7 @@ export class GroupKeeper {
     // Only from a computer of this computer's own group, about leaving that group.
     if (!mine || mine.id !== p.from || mine.members[from] === undefined) throw new ContractError("refused", "not from this computer's group");
     const asker = this.#o.registry.get(from)?.name ?? "Another computer";
-    const others = Object.keys(mine.members).filter((d) => d !== from && this.#isComputer(d));
+    const others = Object.keys(mine.members).filter((d) => d !== from && this.#isMember(d));
     const picked = await this.#pick(p.reason === "merge"
       ? {
         title: `Move this computer into ${asker}'s new group?`,
@@ -596,13 +596,15 @@ export class GroupKeeper {
     return next;
   }
 
-  #isComputer(id: string): boolean {
+  /** A member device this keeper deals with: any paired, unrevoked device but this one. Phones are voting members of
+   *  the group too (the controller's ruling); they never hold or take the lease, which only computers run. */
+  #isMember(id: string): boolean {
     const d = this.#o.registry.get(id);
-    return d !== undefined && d.runsCore && d.revokedAt === undefined && id !== this.#o.registry.self().id;
+    return d !== undefined && d.revokedAt === undefined && id !== this.#o.registry.self().id;
   }
 
-  #mustBeComputer(id: string): void {
-    if (!this.#isComputer(id)) throw new ContractError("refused", "only a paired computer speaks for the group");
+  #mustBeMember(id: string): void {
+    if (!this.#isMember(id)) throw new ContractError("refused", "only a paired device speaks for the group");
   }
 
   #log(line: string): void {

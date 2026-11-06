@@ -100,6 +100,9 @@ export function derivePairId(pairSecret: Uint8Array): Bytes {
 }
 
 /** A device record in the one form both sides hash. */
-export function canonicalRecord(r: { id: string; name: string; kind: string; os?: string; runsCore: boolean; computer?: string; hasDisplay?: boolean; publicKey: string }): Bytes {
-  return own(encode([r.id, r.name, r.kind, r.os ?? null, r.runsCore, r.computer ?? null, r.hasDisplay ?? null, r.publicKey]));
+export function canonicalRecord(r: {
+  id: string; name: string; kind: string; os?: string; runsCore: boolean; computer?: string; hasDisplay?: boolean; publicKey: string;
+  answerKey?: { publicKey: string; held: string };
+}): Bytes {
+  return own(encode([r.id, r.name, r.kind, r.os ?? null, r.runsCore, r.computer ?? null, r.hasDisplay ?? null, r.publicKey, r.answerKey ? [r.answerKey.publicKey, r.answerKey.held] : null]));
 }

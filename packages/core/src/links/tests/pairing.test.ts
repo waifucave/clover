@@ -25,10 +25,10 @@ afterEach(async () => {
   cleanup = [];
 });
 
-async function device(net: MemoryNetwork, name: string, opts: { hs?: FakeHandshake; rendezvous?: MemoryRendezvous; account?: string } = {}) {
+async function device(net: MemoryNetwork, name: string, opts: { hs?: FakeHandshake; rendezvous?: MemoryRendezvous; account?: string; kind?: "phone" } = {}) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
-  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-pair-")), key, clock, self: { name, os: "macos" } });
+  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-pair-")), key, clock, self: { name, os: "macos", ...(opts.kind ? { kind: opts.kind } : {}) } });
   const wire = net.endpoint(key.publicKey);
   const handshake = opts.hs ? new HandshakeClient({ baseUrl: opts.hs.url, clock }) : undefined;
   const pairing = new PairingService({
@@ -170,6 +170,22 @@ describe("pairing", () => {
     expect(isContractError(await denied, "refused")).toBe(true);
     await waitFor(() => b.pairing.get(w.id)?.status === "failed");
     expect(b.registry.list()).toHaveLength(1);
+  });
+
+  test("a phone's answer key travels in its record, with its own signature; its link key never answers a card", async () => {
+    const net = new MemoryNetwork();
+    const host = await device(net, "Studio");
+    const phone = await device(net, "Phone", { kind: "phone" });
+    const { answerKeyStatement } = await import("../../devices/registry");
+    const { utf8 } = await import("../../identity/bytes");
+    const ak = generateEd25519();
+    const pub = Buffer.from(ak.publicKey).toString("base64");
+    await phone.registry.setOwnAnswerKey(pub, "secure-enclave", ak.sign(answerKeyStatement(phone.key.id, pub, "secure-enclave")));
+    await pairBoth(host, phone);
+    expect(host.registry.get(phone.key.id)?.answerKey).toEqual({ publicKey: pub, held: "secure-enclave" });
+    const data = utf8("an answer");
+    expect(await host.registry.verifyAnswer(phone.key.id, data, ak.sign(data))).toBe(true);
+    expect(await host.registry.verifyAnswer(phone.key.id, data, phone.key.sign(data))).toBe(false);
   });
 
   test("two devices on the same account keep no pair credential and form no group", async () => {

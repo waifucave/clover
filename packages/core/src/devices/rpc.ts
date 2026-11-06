@@ -306,7 +306,8 @@ function linkOf(t: Pick<LinkTransport, "links">, id: string): LinkView | undefin
 
 export function deviceView(d: DeviceRecord, self: string, link: LinkView | undefined, isMain = false): DeviceView {
   // A phone that names no answer key answers with its own device key; how its OS holds that isn't recorded yet.
-  const answers = answerKeyOf(d) === undefined ? undefined : { held: d.answerKey?.held ?? ("none" as const) };
+  // A phone answers with its own answer key only, never its link key (item 91).
+  const answers = answerKeyOf(d) === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : { held: d.answerKey?.held ?? ("none" as const) };
   return {
     id: d.id, name: d.name, kind: d.kind, runsCore: d.runsCore, online: d.id === self || link?.up === true, isThis: d.id === self, isMain, addedAt: d.addedAt,
     ...(d.os ? { os: d.os } : {}), ...(d.computer ? { computer: d.computer } : {}), ...(d.hasDisplay !== undefined ? { hasDisplay: d.hasDisplay } : {}),

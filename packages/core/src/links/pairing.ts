@@ -7,8 +7,10 @@
 // the slot, sealed under the code's secret, so the service that holds the slot can't swap the host's key.
 //
 // The exchange, one framed CBOR message each way per step on one stream:
-//   joiner → host  ["hello", {pairingId, device, pairKey, groupKey, group, account, commit, proof}]
-//   host → joiner  ["welcome", {device, pairKey, groupKey, group, fresh, t, account, nonce, proof}] or ["refused", {reason}]
+//   joiner → host  ["hello", {pairingId, device, pairKey, groupKey, group, account, answerKeyProof?, commit, proof}]
+//   host → joiner  ["welcome", {device, pairKey, groupKey, group, fresh, t, account, answerKeyProof?, nonce, proof}] or ["refused", {reason}]
+//   `device.answerKey` ({publicKey, held}) is the device's answer key (a phone's own, item 91), and `answerKeyProof` that
+//   key's signature over `answerKeyStatement` (base64); both are in the transcript, the record canonically.
 //   joiner → host  ["reveal", {nonce}], the nonce `commit` committed to; both show the words only after it
 //   both, when their user confirms the words (and their card is approved): ["confirm", {pairSig, admit?}]
 // Each device adds the other once both confirms have crossed. The words and the pair secret cover both nonces
@@ -23,20 +25,20 @@
 // Devices without an account also form one group per user for the lease: the host's group if it has one, else the
 // joiner's, else a new one the host founds; the device not yet in it joins, admitted by the other.
 import { hkdfSync } from "node:crypto";
-import type { PairingView as PairingViewSchema } from "@waifucave/clover-protocol";
+import { AnswerKeyHolder, type PairingView as PairingViewSchema } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import { deviceIdFor, type DeviceRecord, type PairingProof } from "../contracts/device-registry";
 import type { SecretStore } from "../contracts/secret-store";
-import { type Bytes, constantTimeEqual, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
+import { type Bytes, constantTimeEqual, fromBase64, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
-import { type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519 } from "../identity/keys";
+import { type Ed25519Key, ed25519FromSecret, generateEd25519, publicKeyFromBase64, verifyEd25519 } from "../identity/keys";
 import {
   canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
   PAIR_PROOF_HOST, PAIR_PROOF_JOINER, type PairSide, pairProof, sasWords, verifyPairProof,
 } from "../identity/sas";
-import type { FileDeviceRegistry, GroupRecord } from "../devices/registry";
+import { answerKeyStatement, type FileDeviceRegistry, type GroupRecord } from "../devices/registry";
 import { decode, encode } from "./codec";
 import { FrameReader, frame } from "./frames";
 import {
@@ -232,7 +234,7 @@ export class PairingService {
     };
     await this.#send(p, ["hello", {
       v: 1, pairingId: p.id, device: own.record, pairKey: own.pairKey, groupKey: own.groupKey, group: own.group, account: own.account,
-      commit, proof: pairProof(p.secret, PAIR_PROOF_JOINER, joinerPart),
+      ...this.#answerKeyProof(), commit, proof: pairProof(p.secret, PAIR_PROOF_JOINER, joinerPart),
     }]).catch(turnedAway);
     const reply = await this.#next(p).catch(turnedAway);
     if (reply[0] === "refused") {
@@ -411,7 +413,7 @@ export class PairingService {
     const transcript = fullTranscript(joinerPart, sideForTranscript(mine, false), { t: p.t, group: p.group, nonce: p.nonce });
     p.peerCommit = own(h.commit);
     await this.#send(p, ["welcome", {
-      v: 1, device: mine.record, pairKey: mine.pairKey, groupKey: mine.groupKey, group: p.group, fresh: p.fresh, t: p.t, account: mine.account,
+      v: 1, device: mine.record, ...this.#answerKeyProof(), pairKey: mine.pairKey, groupKey: mine.groupKey, group: p.group, fresh: p.fresh, t: p.t, account: mine.account,
       nonce: p.nonce, proof: pairProof(p.secret, PAIR_PROOF_HOST, transcript),
     }]);
     if (p.slot) void this.#o.rendezvous?.remove(p.slot).catch(() => undefined);
@@ -645,6 +647,12 @@ export class PairingService {
     return { pairId, secret, ordered: p.role === "host" ? [mine, theirs] : [theirs, mine] };
   }
 
+  /** This device's answer key's registration, beside its record, when it has one. */
+  #answerKeyProof(): { answerKeyProof?: string } {
+    const reg = this.#o.registry.ownAnswerKeyProof()?.registration;
+    return reg ? { answerKeyProof: reg } : {};
+  }
+
   #ownSide(p: Pending): Side {
     const self = this.#o.registry.self();
     const { addedAt: _a, addedBy: _b, revokedAt: _r, lastSeenAt: _l, ...record } = self;
@@ -662,11 +670,22 @@ export class PairingService {
     if (!(m.pairKey instanceof Uint8Array) || m.pairKey.length !== 32 || !(m.groupKey instanceof Uint8Array) || m.groupKey.length !== 32) return undefined;
     if (m.group !== null && typeof m.group !== "string") return undefined;
     if (m.account !== null && typeof m.account !== "string") return undefined;
+    // A device's answer key travels in its record (a phone's own, item 91; the link key never answers a card), with the
+    // registration statement signed by that key: the record is in the transcript the user checks.
+    let answerKey: DeviceRecord["answerKey"];
+    if (d.answerKey !== undefined) {
+      const ak = d.answerKey as { publicKey?: unknown; held?: unknown };
+      const proof = typeof m.answerKeyProof === "string" ? fromBase64(m.answerKeyProof) : null;
+      const raw = typeof ak?.publicKey === "string" ? publicKeyFromBase64(ak.publicKey) : undefined;
+      if (!raw || typeof ak.held !== "string" || !AnswerKeyHolder.safeParse(ak.held).success || !proof || !verifyEd25519(raw, answerKeyStatement(d.id, ak.publicKey as string, ak.held), proof)) return undefined;
+      answerKey = { publicKey: ak.publicKey as string, held: ak.held as NonNullable<DeviceRecord["answerKey"]>["held"] };
+    }
     const record: Side["record"] = {
       id: d.id, name: d.name, kind: d.kind as DeviceRecord["kind"], runsCore: d.runsCore, publicKey: d.publicKey,
       ...(typeof d.os === "string" ? { os: d.os as DeviceRecord["os"] } : {}),
       ...(typeof d.computer === "string" ? { computer: d.computer } : {}),
       ...(typeof d.hasDisplay === "boolean" ? { hasDisplay: d.hasDisplay } : {}),
+      ...(answerKey ? { answerKey } : {}),
     };
     return { key, record, pairKey: own(m.pairKey), groupKey: own(m.groupKey), group: m.group as string | null, account: m.account as string | null };
   }
