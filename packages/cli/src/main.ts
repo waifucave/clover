@@ -1697,8 +1697,9 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
         return;
       }
-      // When running from the protected copy, only remove this user's protected copy folder.
-      // The per-user principal (with SID suffix) ensures one user's remove doesn't touch another's.
+      // Remove uninstalls the current user's principal and WFP filters (both are per-user,
+      // so one user's remove never touches another's). Deleting the protected-copy folder itself
+      // belongs to the installer, which removes it after `remove` exits 0 (Addendum 8).
       const problem = launcherProblem(launcher, arch);
       if (problem !== null) {
         const probe = await run(["net", "user", principal]);
@@ -1710,20 +1711,8 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
-      if (fromProtected) {
-        // Remove only this user's protected copy folder.
-        const { execFileSync } = await import("node:child_process");
-        const pf = String(execFileSync("powershell", ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", [
-          '$ProgressPreference = ' + "'SilentlyContinue'",
-          '$pf = [Environment]::GetFolderPath("ProgramFiles")',
-          '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
-          'Write-Output "$pf\\Clover Sandbox\\$sid"',
-        ].join('; ')], { encoding: "utf8", windowsHide: true })).trim();
-        await run(["cmd", "/d", "/s", "/c", `rmdir /s /q "${pf}" 2>nul & exit 0`]);
-        console.log("Bash's fence is removed");
-        return;
-      } else {
-        // Running from per-user install: full remove (principal + filters).
+      {
+        // Full remove (principal + filters), from the protected copy or the per-user install alike.
         const { code, out } = await run([...removeArgs(launcher, CLOVER_WFP_SUBLAYER, principal)]);
         if (code !== 0) {
           console.error(`sandbox remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`);
