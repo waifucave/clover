@@ -13,11 +13,15 @@
 //   AppImage   its squashfs, at the offset where the ELF runtime ends (unsquashfs -o); a bare squashfs likewise
 //   asar       extracted (@electron/asar, in-process), so what is packed inside is opened in turn
 //   cab, msi, rar, crx   extracted (7z)
+//   PE         offered to `7z l`: when 7z reads it as an archive (an NSIS or 7-Zip installer, a self-extractor), it
+//              is extracted (7z) and read; a plain executable or DLL is read raw
+//   a zip appended to anything (an end-of-central-directory record that ends the file, in its last 64 KB)   7z
 //   gz, br, zst, xz, bz2, lzma, lz4, lzip, and the block maps (gzip)   decompressed
 // and nested archives the same way, down to MAX_DEPTH. A file is known by its bytes (formatOf: the magic numbers of
 // each format above) as well as its name, so a renamed archive (`hidden.tgz`, `blob.bin`) is opened all the same; a
 // file in a format the scan knows but can't open here (a tool missing, or the bytes don't open) fails the scan
-// rather than being read raw. Beside the contents it reads every path inside each asset and every link's target (a
+// rather than being read raw. Brotli has no magic number, so a brotli stream is opened only when it is named .br;
+// by any other name it is read raw (none of the release's builders writes one). Beside the contents it reads every path inside each asset and every link's target (a
 // list it hands the guard as a file), and fails on a link to an absolute path. It fails when an asset yields no file
 // to read. The unpacked apps (the signed Clover.app, CI's win-unpacked) are read whole.
 // Every file is also read raw, as it is, opened or not: .pak files, and anything with no format above.
@@ -43,7 +47,7 @@ export function guardPath(home: string | undefined): string {
 
 export type Opener =
   | "dmg" | "zip" | "7z" | "nsis" | "deb" | "ar" | "rpm" | "tar" | "appimage" | "squashfs" | "asar" | "cab" | "msi" | "rar" | "crx"
-  | "gz" | "br" | "zst" | "xz" | "bz2" | "lzma" | "lz4" | "lzip" | "raw";
+  | "gz" | "br" | "zst" | "xz" | "bz2" | "lzma" | "lz4" | "lzip" | "pe" | "appendedzip" | "raw";
 
 /** How a file is opened for reading, by its name. */
 export function openerFor(name: string): Opener {
@@ -76,9 +80,13 @@ export function openerFor(name: string): Opener {
 const at = (b: Uint8Array, off: number, sig: readonly number[]): boolean => b.length >= off + sig.length && sig.every((x, i) => b[off + i] === x);
 const ascii = (t: string): number[] => [...t].map((c) => c.charCodeAt(0));
 
+/** How much of a file's end magicOf reads: a zip's end record (22 bytes) and the longest comment it can carry. */
+export const TAIL_BYTES = 22 + 0xffff;
+
 /**
- * How a file is opened for reading, by its bytes: `head` is its first 512 bytes (or all of it), `tail` its last 512.
- * Undefined when no format's magic number matches (brotli has none; it is known by name only).
+ * How a file is opened for reading, by its bytes: `head` is its first 512 bytes (or all of it), `tail` its last
+ * TAIL_BYTES (or all of it). Undefined when no format's magic number matches (brotli has none; it is known by name
+ * only).
  */
 export function magicOf(head: Uint8Array, tail: Uint8Array = new Uint8Array(0)): Opener | undefined {
   if (at(head, 0, [0x50, 0x4b]) && (at(head, 2, [3, 4]) || at(head, 2, [5, 6]) || at(head, 2, [7, 8]))) return "zip";
@@ -110,8 +118,29 @@ export function magicOf(head: Uint8Array, tail: Uint8Array = new Uint8Array(0)):
     if (dict >= 4096 && pow && (size === 0xffffffffffffffffn || size < 1n << 48n)) return "lzma";
   }
   // A UDIF disk image ends with its "koly" trailer.
-  if (tail.length === 512 && at(tail, 0, ascii("koly"))) return "dmg";
+  if (tail.length >= 512 && at(tail, tail.length - 512, ascii("koly"))) return "dmg";
+  // A PE file (MZ, and "PE\0\0" where e_lfanew points): 7z is asked whether it holds an archive.
+  if (at(head, 0, ascii("MZ")) && head.length >= 64) {
+    const lfanew = new DataView(head.buffer, head.byteOffset, head.byteLength).getUint32(0x3c, true);
+    if (at(head, lfanew, [0x50, 0x45, 0, 0])) return "pe";
+  }
+  if (appendedZip(tail)) return "appendedzip";
   return undefined;
+}
+
+/** Whether `tail` (a file's last bytes) ends with a zip's end-of-central-directory record: its comment ends the file. */
+export function appendedZip(tail: Uint8Array): boolean {
+  const v = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (at(tail, i, [0x50, 0x4b, 5, 6]) && i + 22 + v.getUint16(i + 20, true) === tail.length) return true;
+  }
+  return false;
+}
+
+/** What 7z reads a PE file as (`Type = …` in `7z l -slt`): "PE" for a plain executable, or the archive it holds. */
+export function peArchiveType(listing: string): string | undefined {
+  const types = [...listing.matchAll(/^Type = (.+)$/gm)].map((m) => m[1]!.trim());
+  return types.find((t) => t !== "PE" && t !== "COFF" && t !== "TE") ?? (types.length > 0 ? "PE" : undefined);
 }
 
 /** How `path` is opened: by its bytes first, and by its name when its bytes match no format. */
@@ -121,8 +150,8 @@ export function formatOf(path: string): Opener {
     const size = fstatSync(fd).size;
     const head = new Uint8Array(Math.min(512, size));
     readSync(fd, head, 0, head.length, 0);
-    const tail = new Uint8Array(size >= 1024 ? 512 : 0);
-    if (tail.length > 0) readSync(fd, tail, 0, 512, size - 512);
+    const tail = new Uint8Array(size > 512 ? Math.min(TAIL_BYTES, size - 512) : 0);
+    if (tail.length > 0) readSync(fd, tail, 0, tail.length, size - tail.length);
     const byName = openerFor(basename(path));
     // The release's own installer is a PE file (no magic of its own here) that 7z opens as NSIS.
     if (byName === "nsis") return byName;
@@ -135,7 +164,7 @@ export function formatOf(path: string): Opener {
 /** The tool each opener needs, beyond Bun itself. */
 export const TOOLS: Readonly<Partial<Record<Opener, string>>> = {
   dmg: "hdiutil", zip: "bsdtar", rpm: "bsdtar", deb: "bsdtar", ar: "bsdtar", tar: "bsdtar",
-  "7z": "7z", nsis: "7z", cab: "7z", msi: "7z", rar: "7z", crx: "7z",
+  "7z": "7z", nsis: "7z", cab: "7z", msi: "7z", rar: "7z", crx: "7z", pe: "7z", appendedzip: "7z",
   appimage: "unsquashfs", squashfs: "unsquashfs", xz: "xz", lzma: "xz", bz2: "bzip2", lz4: "lz4", lzip: "lzip",
 };
 
@@ -250,7 +279,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], hom
           cleanup.push(() => { sh(["hdiutil", "detach", into, "-force"]); });
           return true;
         case "zip": case "rpm": case "tar": case "ar": return sh(["bsdtar", "-xf", file, "-C", into]);
-        case "7z": case "nsis": case "cab": case "msi": case "rar": case "crx": return sh([tool("7z")!, "x", "-y", `-o${into}`, file]);
+        case "7z": case "nsis": case "cab": case "msi": case "rar": case "crx": case "pe": case "appendedzip": return sh([tool("7z")!, "x", "-y", `-o${into}`, file]);
         case "deb": {
           if (!sh(["bsdtar", "-xf", file, "-C", into])) return false;
           // The control and data archives are opened in turn, as nested archives.
@@ -283,6 +312,15 @@ export function nameScan(assets: readonly string[], apps: readonly string[], hom
     if (!runGuard([...w.read, names])) problems.push(`the name scan found the owner's identity in ${label} (the guard printed where)`);
     let count = w.read.length;
     for (const inner of w.nested) {
+      // A plain executable or DLL is read raw (it is in w.read); only one 7z reads as an archive is opened.
+      if (formatOf(inner) === "pe") {
+        const seven = tool("7z");
+        if (seven === undefined) { problems.push(`${label}: ${relative(root, inner)} is a PE file, which the scan needs 7z to look inside`); continue; }
+        const r = spawnSync(seven, ["l", "-slt", inner], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+        const type = (r.status ?? 1) === 0 ? peArchiveType(r.stdout ?? "") : undefined;
+        if (type === undefined) { problems.push(`${label}: 7z can't read ${relative(root, inner)}`); continue; }
+        if (type === "PE") continue;
+      }
       if (depth >= MAX_DEPTH) { problems.push(`${label}: ${relative(root, inner)} nests deeper than ${MAX_DEPTH} archives`); continue; }
       const opened = open(inner, cleanup);
       if (opened !== undefined) count += scanRoot(`${label}/${relative(root, inner)}`, opened, depth + 1, cleanup);

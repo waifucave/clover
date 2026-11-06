@@ -23,13 +23,15 @@ describe("the Linux repositories", () => {
     const pub = await (await import("openpgp")).readKey({ armoredKey: k.publicKey });
     expect(pub.keyPacket.version).toBe(4);
     expect(pub.getAlgorithmInfo()).toMatchObject({ algorithm: "eddsaLegacy", curve: "ed25519Legacy" });
+    // Signing only: no encryption subkey.
+    expect(pub.getSubkeys()).toHaveLength(0);
     const store = memory();
     await expect(repoSigningKey(store, undefined)).rejects.toThrow(/key --generate/);
     await expect(repoSigningKey(store, k.publicKey)).rejects.toThrow(/has no/);
     await store.set({ ...REPO_KEY_ITEM, value: k.privateKey });
     const key = await repoSigningKey(store, k.publicKey);
     await expect(repoSigningKey(store, (await generateRepoKey()).publicKey)).rejects.toThrow(/not the one in/);
-    const release = new TextEncoder().encode("Origin: Clover\nSuite: stable\nSHA256:\n abc 1 main/binary-amd64/Packages\n");
+    const release = new TextEncoder().encode("Origin: Clover\nSuite: stable\nDate: Fri, 06 Nov 2026 00:00:00 UTC\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC\nSHA256:\n abc 1 main/binary-amd64/Packages\n");
     const s = await signRelease(release, key);
     expect(s.inRelease).toContain("-----BEGIN PGP SIGNED MESSAGE-----");
     expect(s.inRelease).toContain("Suite: stable");
@@ -45,6 +47,13 @@ describe("the Linux repositories", () => {
     expect(await verifyTree(dir, k.publicKey)).toEqual([]);
     expect(await verifyTree(dir, (await generateRepoKey()).publicKey)).toEqual(["apt/dists/stable/InRelease doesn't verify", "apt/dists/stable/Release.gpg doesn't verify"]);
     expect(await verifyTree(mkdtempSync(join(tmpdir(), "clover-repo-empty-")), k.publicKey)).toEqual(["the tree holds no repository metadata"]);
+    // A Release with no Date (signed all the same) is refused.
+    const undated = new TextEncoder().encode("Origin: Clover\nSuite: stable\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC\n");
+    const u = await signRelease(undated, key);
+    writeFileSync(join(dir, "apt", "dists", "stable", "Release"), undated);
+    writeFileSync(join(dir, "apt", "dists", "stable", "InRelease"), u.inRelease);
+    writeFileSync(join(dir, "apt", "dists", "stable", "Release.gpg"), u.detached);
+    expect(await verifyTree(dir, k.publicKey)).toEqual(["apt/dists/stable/Release has 0 Date fields, not one"]);
   }, 30_000);
 
   test("suites, Release settings, and the packages' architectures", () => {

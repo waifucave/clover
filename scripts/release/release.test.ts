@@ -418,6 +418,39 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     expect(TOOLS.cab).toBe("7z");
   });
 
+  test("knows a PE file (and asks 7z what it holds) and a zip appended to anything", async () => {
+    const { appendedZip, formatOf, magicOf, peArchiveType, TOOLS } = await import("./name-scan");
+    const pe = new Uint8Array(256);
+    pe.set([0x4d, 0x5a]);
+    new DataView(pe.buffer).setUint32(0x3c, 0x80, true);
+    pe.set([0x50, 0x45, 0, 0], 0x80);
+    expect(magicOf(pe)).toBe("pe");
+    const notPe = pe.slice();
+    notPe[0x80] = 0;
+    expect(magicOf(notPe)).toBeUndefined();
+    expect(TOOLS.pe).toBe("7z");
+    expect(peArchiveType("Path = a.exe\nType = PE\nCPU = x64\n")).toBe("PE");
+    expect(peArchiveType("Path = setup.exe\nType = Nsis\nMethod = LZMA\n")).toBe("Nsis");
+    expect(peArchiveType("Path = x.exe\nType = PE\n\nPath = x.exe\nType = zip\nOffset = 4096\n")).toBe("zip");
+    expect(peArchiveType("garbage")).toBeUndefined();
+    // An end-of-central-directory record whose comment ends the file; one that doesn't is not.
+    const eocd = (comment: number): Uint8Array => { const r = new Uint8Array(22 + comment); r.set([0x50, 0x4b, 5, 6]); new DataView(r.buffer).setUint16(20, comment, true); return r; };
+    const cat = (...parts: Uint8Array[]): Uint8Array => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
+    expect(appendedZip(cat(new Uint8Array(100).fill(7), eocd(0)))).toBe(true);
+    expect(appendedZip(cat(new Uint8Array(100).fill(7), eocd(5)))).toBe(true);
+    expect(appendedZip(cat(eocd(0), new Uint8Array(3)))).toBe(false);
+    expect(appendedZip(new Uint8Array(30))).toBe(false);
+    // A real zip behind other bytes, named .bin: known by its end, opened with 7z.
+    const dir = mkdtempSync(join(tmpdir(), "clover-name-appended-"));
+    writeFileSync(join(dir, "in.txt"), "inside");
+    const zip = join(dir, "z.zip");
+    expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", dir, "in.txt"]).exitCode).toBe(0);
+    const file = join(dir, "blob.bin");
+    writeFileSync(file, cat(new Uint8Array(4096).fill(0x41), new Uint8Array(readFileSync(zip))));
+    expect(formatOf(file)).toBe("appendedzip");
+    expect(TOOLS.appendedzip).toBe("7z");
+  });
+
   test("an AppImage's squashfs starts where its ELF runtime ends", async () => {
     const { elfEnd } = await import("./name-scan");
     const elf = new Uint8Array(128);

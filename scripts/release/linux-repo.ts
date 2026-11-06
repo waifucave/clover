@@ -165,10 +165,11 @@ export const repoKeychain: RepoKeyStore = { get: (i) => Bun.secrets.get(i), set:
 /**
  * A v4 key with Ed25519 as EdDSA (algorithm 22, `ed25519Legacy` in openpgp.js), the form gpgv and sqv on today's
  * Debian and Ubuntu verify. openpgp.js's `curve25519` is RFC 9580's Ed25519 (algorithm 27), which Ubuntu 24.04's
- * gpgv can't check (apt reports the signature as invalid, ERRSIG).
+ * gpgv can't check (apt reports the signature as invalid, ERRSIG). A signing key alone: no encryption subkey, since
+ * nothing is ever encrypted to it.
  */
 export async function generateRepoKey(): Promise<{ privateKey: string; publicKey: string; fingerprint: string }> {
-  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
+  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", subkeys: [], userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
   const fingerprint = (await openpgp.readKey({ armoredKey: publicKey })).getFingerprint();
   return { privateKey, publicKey, fingerprint };
 }
@@ -224,6 +225,12 @@ export async function verifyTree(dir: string, publicKey: string): Promise<string
     const release = join(dir, "apt", "dists", suite, "Release");
     if (existsSync(release)) {
       const bytes = new Uint8Array(readFileSync(release));
+      // A Release this repository wrote carries one Date and one Valid-Until (stampRelease); apt needs the date.
+      const text = new TextDecoder().decode(bytes);
+      for (const field of ["Date", "Valid-Until"]) {
+        const n = fieldCount(text, field);
+        if (n !== 1) problems.push(`${relative(dir, release)} has ${n} ${field} fields, not one`);
+      }
       const inRelease = join(dirname(release), "InRelease");
       const gpg = join(dirname(release), "Release.gpg");
       if (!existsSync(inRelease) || !(await verifyInRelease(readFileSync(inRelease, "utf8"), bytes, publicKey))) problems.push(`${relative(dir, inRelease)} doesn't verify`);
