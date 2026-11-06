@@ -169,7 +169,13 @@ export function nonAsciiAlias(path: string, set: readonly FencedPath[], cloverHo
 
 /** A Windows name that may be another file's (lane J's rules, shared here by #179's review, check 2): an alternate data
  *  stream (`a.json:x`, `a.json::$DATA`), which opens the file itself, or an 8.3 short name (`CLOVER~1`), which the disk
- *  answers to without listing it. A drive (`C:`) as the first name is neither. */
+ *  answers to without listing it. A drive (`C:`) as the first name is neither.
+ *
+ *  This judges a path as written. The real Windows fence (lane C) first canonicalises the paths it is handed, as the OS
+ *  would open them, before it judges them here and before `judge`: device and long-path prefixes (`\\?\`, `\\.\`,
+ *  `\\?\GLOBALROOT\…`), UNC paths (`\\server\share\…`, including `\\localhost\C$\…` and `\\127.0.0.1\…`
+ *  back to this disk), `/` and `\` alike, and junctions, symlinks and mount points resolved to their real paths
+ *  (#187's review). */
 export function windowsAlias(path: string): string | undefined {
   const names = namesOf(path);
   return names.find((n, i) => (n.includes(":") && !(i === 0 && /^[A-Za-z]:$/.test(n))) || /~\d/.test(n));

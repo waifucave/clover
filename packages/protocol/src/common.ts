@@ -178,17 +178,40 @@ export type ClientKind = z.infer<typeof ClientKind>;
 /** Who called (§5.4 "The caller"): the user and the client, a bot's or agent's session, a plugin by id, or the core
  *  itself (the routine engine, a hook run, compaction). The caller check (§3.1) decides between `user` and `session`
  *  for a CLI or app connection: a command started by a bot, an agent or a plugin never counts as the user. */
-/** The main computer's fencing token (H-M2's review): the lease's scope (an account's, or an account-less group's) and
- *  its epoch. An act one computer asks of another (`peer.call`, a tree call, a level change) carries the sender's, and
- *  the receiver refuses one older than the newest it has seen for that scope (`isStaleFence`), so a main that lost its
- *  lease without knowing can't act through others. */
-export const FencingToken = z.object({ scope: utf16(128, 1), epoch: z.number().int().nonnegative() });
+/** The main computer's fencing token (H-M2's review, and its check 2): the lease's scope (an account's, or an
+ *  account-less group's), its epoch and its holder. An act one computer asks of another (`peer.call`, a tree call, a
+ *  level change) carries the sender's as `fence`, and the receiver judges it against its own lease (`fenceVerdict`),
+ *  so a main that lost its lease without knowing can't act through others. */
+export const FencingToken = z.object({ scope: utf16(128, 1), epoch: z.number().int().nonnegative(), holder: utf16(64, 1) });
 export type FencingToken = z.infer<typeof FencingToken>;
 
-/** Whether `token` is older than the newest epoch seen for its scope; a receiver records each token it accepts. */
-export function isStaleFence(newest: ReadonlyMap<string, number>, token: FencingToken): boolean {
-  const seen = newest.get(token.scope);
-  return seen !== undefined && token.epoch < seen;
+/** What a receiver knows of its own lease, from its own lease events: the scope it belongs to, and the newest epoch
+ *  and holder it has seen. */
+export interface FenceView {
+  scope: string;
+  epoch: number;
+  holder: string | null;
+}
+
+/** `ok`; `stale`: another scope (a receiver takes only its own lease's), an older epoch, or the same epoch from another
+ *  holder (a split takeover, where two computers each think they won); `missing`: no token, where the receiver has
+ *  seen tokens for its scope, so an act without one is refused. */
+export type FenceVerdict = "ok" | "stale" | "missing";
+
+/** Judges an act's token against the receiver's own lease (`own`, undefined while it has none). A newer epoch than the
+ *  receiver has seen passes: its own lease events catch up, and it records the token (`noteFence`). */
+export function fenceVerdict(own: FenceView | undefined, token: FencingToken | undefined, seenForScope: boolean): FenceVerdict {
+  if (token === undefined) return seenForScope ? "missing" : "ok";
+  if (own === undefined) return "stale"; // a receiver with no lease of its own can't place a token's scope
+  if (token.scope !== own.scope) return "stale";
+  if (token.epoch < own.epoch) return "stale";
+  if (token.epoch === own.epoch && own.holder !== null && token.holder !== own.holder) return "stale";
+  return "ok";
+}
+
+/** The receiver's view once it accepts a token: a newer epoch moves it on. */
+export function noteFence(own: FenceView, token: FencingToken): FenceView {
+  return token.scope === own.scope && token.epoch > own.epoch ? { scope: own.scope, epoch: token.epoch, holder: token.holder } : own;
 }
 
 export const Caller = z.discriminatedUnion("kind", [

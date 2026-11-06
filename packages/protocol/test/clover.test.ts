@@ -13,7 +13,7 @@ import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
 import { paramsFor } from "../src/rpc";
 import {
-  AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, isStaleFence, levelAbove,
+  AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, fenceVerdict, levelAbove, noteFence,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
 } from "../src/common";
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
@@ -582,15 +582,22 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(DeviceView.shape.answers.safeParse({ held: "tpm", alg: "p256" }).success).toBe(true);
   });
 
-  test("H-M2's review: a fencing token on acts between computers, and a stale one is refused", () => {
-    const fence = { scope: "acct_1", epoch: 3 };
+  test("H-M2's review and check 2: a fencing token on acts between computers, judged against the receiver's own lease", () => {
+    const fence = { scope: "acct_1", epoch: 3, holder: "desk0000000000000001" };
     expect(CLOVER_METHODS.get("peer.call")!.params.safeParse({ method: "session.send", params: {}, as: { kind: "core" }, role: "remote", fence }).success).toBe(true);
     expect(CLOVER_METHODS.get("tree.write")!.params.safeParse({ path: "home/Studio/a", data: { encoding: "utf8", text: "x" }, level: "automatic", fence }).success).toBe(true);
     expect(paramsFor(CLOVER_METHODS.get("computer.setLevel")!, "peer").safeParse({ level: "ask", fence }).success).toBe(true);
-    const newest = new Map([["acct_1", 4]]);
-    expect(isStaleFence(newest, fence)).toBe(true);
-    expect(isStaleFence(newest, { scope: "acct_1", epoch: 4 })).toBe(false);
-    expect(isStaleFence(newest, { scope: "group_9", epoch: 0 })).toBe(false);
+    expect(CLOVER_METHODS.get("peer.call")!.params.safeParse({ method: "session.send", params: {}, as: { kind: "core" }, role: "remote", fence: { scope: "acct_1", epoch: 3 } }).success).toBe(false);
+    const own = { scope: "acct_1", epoch: 3, holder: "desk0000000000000001" };
+    expect(fenceVerdict(own, fence, false)).toBe("ok");
+    expect(fenceVerdict(own, { ...fence, epoch: 2 }, true)).toBe("stale");
+    expect(fenceVerdict(own, { ...fence, epoch: 4 }, true)).toBe("ok"); // the receiver's own events catch up
+    expect(fenceVerdict(own, { ...fence, holder: "desk0000000000000002" }, true)).toBe("stale"); // a split takeover
+    expect(fenceVerdict(own, { ...fence, scope: "group_9" }, false)).toBe("stale"); // not its own lease's scope
+    expect(fenceVerdict(undefined, fence, false)).toBe("stale");
+    expect(fenceVerdict(own, undefined, false)).toBe("ok");
+    expect(fenceVerdict(own, undefined, true)).toBe("missing");
+    expect(noteFence(own, { ...fence, epoch: 5, holder: "desk0000000000000002" })).toEqual({ scope: "acct_1", epoch: 5, holder: "desk0000000000000002" });
   });
 
   test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {

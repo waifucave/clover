@@ -245,6 +245,10 @@ describe("points and spots", () => {
       expect([a, b, foldTitle(a) === foldTitle(b)]).toEqual([a, b, true]);
     }
     expect(foldTitle("Iris")).toBe("lrls");
+    // #187's review: stroke letters, Lisu, the lunate sigma, and marks NFKC would spell out.
+    for (const t of ["Neeđs you", "Neeɗs you", "Needs yøu", "Ꮑeeds you", "ꓠeeds you", "Needs ყou"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
+    for (const t of ["Cłover", "Cƚover", "ꓚlover", "Ϲlover", "ϲlover", "Clover™", "Clover®", "Cloveɍ", "Clovɘr", "Clѻver", "Cl○ver"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
+    expect(foldTitle("ħŧđ")).toBe("htd");
     expect(foldTitle("Iris")).not.toBe(foldTitle("Irma"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
     expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
@@ -422,5 +426,17 @@ describe("the catalog document", () => {
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
+  });
+});
+
+describe("hosts from settings (#187's review)", () => {
+  test("never under a shared-hosting suffix", async () => {
+    const { parseNetworkHost, underSharedHosting } = await import("../src/catalogs/capabilities");
+    for (const h of ["${setting:r}.github.io", "${setting:r}.workers.dev", "${setting:r}.pages.dev", "${setting:r}.vercel.app", "${setting:r}.netlify.app",
+      "${setting:r}.herokuapp.com", "${setting:r}.appspot.com", "${setting:r}.cloudfront.net", "${setting:r}.azurewebsites.net", "${setting:r}.blogspot.com",
+      "x.${setting:r}.s3.amazonaws.com"]) expect([h, parseNetworkHost(h)]).toEqual([h, null]);
+    expect(parseNetworkHost("bedrock-runtime.${setting:r}.amazonaws.com")).not.toBeNull();
+    expect(underSharedHosting("me.github.io")).toBe(true);
+    expect(underSharedHosting("example.com")).toBe(false);
   });
 });

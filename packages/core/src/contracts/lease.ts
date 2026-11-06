@@ -16,22 +16,49 @@
 //   main that slept past its lease never acts on it. With that, 30 s and a 5 s margin are sound. Lane H adds the spec's
 //   exceptions (no other computer could take over; a live link to each one that could) in the real implementation.
 // * `release` (Hand over and quit, §3.1) lets another computer take the lease at once.
-// * The fencing token (H-M2's review) is the lease's scope and epoch (`fencingTokenOf`). Every act a computer asks of
-//   another (`peer.call`, a tree call, a level change) carries the sender's as `fence`, and the receiver keeps the
-//   newest epoch it has seen per scope and refuses an older one (`isStaleFence`), so a main that lost its lease
-//   without knowing, asleep or cut off, can't act through the others.
+// * The fencing token (H-M2's review, check 2) is the lease's scope, epoch and holder (`fencingTokenOf`). Every act a
+//   computer asks of another (`peer.call`, a tree call, a level change) carries the sender's as `fence`. The receiver
+//   judges it against its own lease, filled from its own lease events (`FenceGuard`): it takes only its own lease's
+//   scope, refuses an older epoch and the same epoch from another holder (a split takeover), and once it has seen a
+//   token for its scope refuses an act without one. So a main that lost its lease without knowing, asleep or cut off,
+//   can't act through the others.
 // * Without an account the user's account-less devices form one group (item 85): their lease is the group's record at
 //   the handshake, which members admit one another to when they pair, so a takeover works as with an account. Only a
 //   computer that can reach neither the handshake nor the last holder over any link leaves taking over to the user
 //   (§6.4, `{ byUser: true }`).
-import type { FencingToken, LeaseView } from "@waifucave/clover-protocol";
+import { fenceVerdict, noteFence, type FenceVerdict, type FenceView, type FencingToken, type LeaseView } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
 export type LeaseState = LeaseView;
 
 /** The token a lease's holder puts on its acts between computers; none without a scope or a holder. */
 export function fencingTokenOf(state: LeaseState): FencingToken | undefined {
-  return state.scope !== undefined && state.holder !== null ? { scope: state.scope, epoch: state.epoch } : undefined;
+  return state.scope !== undefined && state.holder !== null ? { scope: state.scope, epoch: state.epoch, holder: state.holder } : undefined;
+}
+
+/** A receiver's check of the tokens on acts asked of it (check 2): its own lease's view, from its own lease events
+ *  (`observe`), and whether it has seen a token for its scope, after which an act without one is refused. */
+export class FenceGuard {
+  #own: FenceView | undefined;
+  #seen = false;
+
+  /** This computer's own lease changed (its `watch`). */
+  observe(state: LeaseState): void {
+    if (state.scope === undefined) return;
+    if (this.#own?.scope !== state.scope) this.#seen = false;
+    const own = this.#own?.scope === state.scope && this.#own.epoch > state.epoch ? this.#own : { scope: state.scope, epoch: state.epoch, holder: state.holder };
+    this.#own = own;
+  }
+
+  /** Judges an act's token, and records one it accepts. */
+  check(token: FencingToken | undefined): FenceVerdict {
+    const v = fenceVerdict(this.#own, token, this.#seen);
+    if (v === "ok" && token !== undefined && this.#own !== undefined) {
+      this.#own = noteFence(this.#own, token);
+      this.#seen = true;
+    }
+    return v;
+  }
 }
 
 export interface Lease {

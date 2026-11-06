@@ -149,10 +149,18 @@ const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
 const LOOKALIKES: Readonly<Record<string, string>> = Object.fromEntries([
   // Small capitals
   ..."ᴀaʙbᴄcᴅdᴇeꜰfɢgʜhɪiᴊjᴋkʟlᴍmɴnᴏoᴘpǫqʀrꜱsᴛtᴜuᴠvᴡwʏyᴢz".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Letters with a stroke or hook, which NFD leaves whole (#187's review): đ ł ø ƚ ɗ ħ ŧ ɍ and their kin
+  ..."đdĐdɗdƊdłlŁlƚlȽlɫlɬløoØoǿoǾoħhĦhŧtŦtɍrɌrƀbɃbɨiƗiʉuɄuǥgǤgɇeɆeɉjɈjƶzƵzȼcȻcꝁkꝀkƥpƤpɓbƁbƈcƇcɠgƓgƙkƘkƴyƳyȥzȤz".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Greek lunate sigma (mapped before NFKC, which would make it Σ), and other letters that read as Latin ones
+  ..."ϲcϹcყyɘeѻoѺo○o◯oᏁnᏑn".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Lisu (U+A4D0–A4FF), whose letters are Latin capitals, some turned; its tone marks are dropped
+  ..."ꓐbꓑpꓒdꓓdꓔtꓕtꓖgꓗkꓘkꓙjꓚcꓛcꓜzꓝfꓞfꓟmꓠnꓡlꓢsꓣrꓤrꓥvꓦvꓧhꓨhꓩfꓪwꓫxꓬyꓭgꓮaꓯaꓰeꓱeꓲlꓳoꓴuꓵuꓶuꓷo".match(/../gu)!.map((p) => [...p] as [string, string]),
   // Cherokee capitals (a small letter is upper-cased to its capital first)
   ..."ᎪaᏴbᏟcᎠdᎬeᏀgᎻhᏆlᎫjᏦkᏞlᎷmᏢpᏒrᏚsᎢtᏙvᎳwᏔwᎩyᏃz".match(/../gu)!.map((p) => [...p] as [string, string]),
 ]);
 const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/u;
+/** ™ ® © ℠ ℗, and Lisu's tone marks (U+A4F8–A4FD), which read as nothing. */
+const DROPPED_MARKS = /[\u2122\u00AE\u00A9\u2120\u2117\uA4F8-\uA4FD]/gu;
 
 /** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review; lane
  *  G's island comparison): NFKC (width folded), invisible characters dropped (zero-width spaces and joiners, bidi
@@ -162,7 +170,8 @@ const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/u;
  *  Cyrillic Ι, І and і with them), "rn" as "m", "vv" as "w" and "cl" as "d" (lane G's island folds the same, so the
  *  two agree exactly: "Iris" is "iris" is "lris"). Folding too much only reserves more. */
 export function foldTitle(title: string): string {
-  const visible = title.normalize("NFKC").replace(INVISIBLE, "");
+  // Marks that NFKC would spell out as letters (™ as "TM") are dropped first, with Lisu's tone marks.
+  const visible = title.replace(DROPPED_MARKS, "").replace(/[\u03F2\u03F9]/gu, "c").normalize("NFKC").replace(INVISIBLE, "").replace(DROPPED_MARKS, "");
   const skeleton = [...visible].map((ch) => {
     const c = CHEROKEE_SMALL.test(ch) ? ch.toUpperCase() : ch;
     return CONFUSABLES[c] ?? LOOKALIKES[c] ?? c;
