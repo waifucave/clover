@@ -41,6 +41,6 @@ The repository's metadata is signed and lists each package's SHA-256 (`repo_gpgc
 2. On the owner's Mac, `linux-repo.ts sign --dir <the downloaded artifact>` signs apt's Release (InRelease and Release.gpg) and dnf's repomd.xml with the key in the login Keychain, after checking it is the committed one.
 3. `linux-repo.ts upload --dir <dir>` checks every signature against the committed key, then prints the upload (with the wrangler the repo pins); `--yes` runs it. Nothing else uploads, and `sign`, `upload` and `key` refuse to run in CI or off the Mac.
 
-apt's Release is valid for 14 days (`Valid-Until`): within that window the owner signs and uploads the repository again, even with no new release, or apt stops accepting it.
+apt's Release is valid for 30 days (`Valid-Until`, `RELEASE_VALID_DAYS`): within that window the repository must be signed and uploaded again, even with no new release, or apt stops accepting it. For now that is the owner's hand step; whether the window grows or the re-sign is automated is the owner's decision, still open.
 
 The key is made once, by the owner: `linux-repo.ts key --generate` keeps the private half in the login Keychain and writes the public half to `clover-archive-keyring.asc`, to commit. `key --check` confirms they match. The private half is never written anywhere else.

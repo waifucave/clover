@@ -48,7 +48,7 @@ describe("the Linux repositories", () => {
     expect(suiteFor("beta")).toBe("beta");
     expect(releaseConfig("beta")).toContain("APT::FTPArchive::Release::Suite=beta");
     const cfg = releaseConfig("stable", new Date(Date.UTC(2026, 10, 6)));
-    expect(cfg).toContain("APT::FTPArchive::Release::Valid-Until=Fri, 20 Nov 2026 00:00:00 UTC");
+    expect(cfg).toContain("APT::FTPArchive::Release::Valid-Until=Sun, 06 Dec 2026 00:00:00 UTC");
     expect(cfg).toContain("APT::FTPArchive::Release::Date=Fri, 06 Nov 2026 00:00:00 UTC");
     expect(archOf("clover_1.2.3_amd64.deb")).toEqual({ kind: "deb", arch: "amd64" });
     expect(archOf("clover-1.2.3.arm64.rpm")).toEqual({ kind: "rpm", arch: "aarch64" });

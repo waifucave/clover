@@ -35,9 +35,9 @@ export function suiteFor(channel: Channel): "stable" | "beta" {
   return channel === "latest" ? "stable" : "beta";
 }
 
-/** How long a signed Release stays valid (the controller's ruling): apt refuses it after, so the owner re-signs and
+/** How long a signed Release stays valid (30 days, the controller's ruling, pending the owner): apt refuses it after, so the owner re-signs and
  *  uploads the repository within that window. */
-export const RELEASE_VALID_DAYS = 14;
+export const RELEASE_VALID_DAYS = 30;
 
 /** apt-ftparchive's Release settings for a suite; `now` sets Date and Valid-Until. */
 export function releaseConfig(suite: string, now: Date = new Date()): string[] {
