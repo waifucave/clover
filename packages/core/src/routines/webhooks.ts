@@ -15,6 +15,8 @@ import type { PluginRegistry } from "../contracts/plugin-registry";
 import type { RoutineEngine } from "./engine";
 
 export const INGRESS_WAIT_MS = 60_000;
+/** How long the loop waits while no ingress is installed, or after every one failed. */
+export const IDLE_WAIT_MS = 5_000;
 
 interface Ingress {
   pluginId: string;
@@ -32,6 +34,8 @@ export interface WebhookIngressOptions {
 export class WebhookIngress {
   readonly #o: WebhookIngressOptions;
   #running = false;
+  /** Every ingress's `next` failed in the last round, so the loop waits before the next. */
+  #allFailed = false;
 
   constructor(o: WebhookIngressOptions) {
     this.#o = o;
@@ -63,7 +67,9 @@ export class WebhookIngress {
   /** One round of every ingress's long poll; the deliveries it ran. */
   async pollOnce(waitMs = INGRESS_WAIT_MS): Promise<number> {
     let ran = 0;
-    for (const i of this.#ingresses()) {
+    let failed = 0;
+    const ingresses = this.#ingresses();
+    for (const i of ingresses) {
       let deliveries: { id: string; routine: string; receivedAt: number; headers: [string, string][]; body: Uint8Array }[];
       try {
         deliveries = (await this.#o.host.invoke<{ deliveries: typeof deliveries }>({
@@ -71,6 +77,7 @@ export class WebhookIngress {
         })).deliveries;
       } catch (err) {
         this.#o.warn?.(`${i.pluginId}'s webhooks weren't fetched: ${err instanceof Error ? err.message : String(err)}`);
+        failed++;
         continue;
       }
       const ack: string[] = [];
@@ -91,6 +98,7 @@ export class WebhookIngress {
         });
       }
     }
+    this.#allFailed = ingresses.length > 0 && failed === ingresses.length;
     return ran;
   }
 
@@ -101,10 +109,19 @@ export class WebhookIngress {
     void (async () => {
       while (this.#running) {
         if (this.#ingresses().length === 0) {
-          await new Promise((r) => setTimeout(r, 5_000));
+          await new Promise((r) => setTimeout(r, IDLE_WAIT_MS));
           continue;
         }
-        await this.pollOnce();
+        const began = Date.now();
+        const ran = await this.pollOnce().catch((err: unknown) => {
+          this.#o.warn?.(`webhooks: ${err instanceof Error ? err.message : String(err)}`);
+          this.#allFailed = true;
+          return 0;
+        });
+        // A failing ingress (offline, not started yet) answers at once, and so does one that ignores `waitMs`: don't
+        // spin on either.
+        if (this.#allFailed) await new Promise((r) => setTimeout(r, IDLE_WAIT_MS));
+        else if (ran === 0 && Date.now() - began < 1_000) await new Promise((r) => setTimeout(r, 1_000));
       }
     })();
   }

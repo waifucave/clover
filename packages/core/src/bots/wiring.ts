@@ -24,6 +24,8 @@ import { RoutineEngine, type RoutineEngineOptions } from "../routines/engine";
 import { routineMethods } from "../routines/rpc";
 import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
 import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks";
+import { voicesMethods } from "../voices/rpc";
+import { VoiceService, type VoiceServiceOptions } from "../voices/service";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -65,6 +67,9 @@ export interface BotSideOptions {
   };
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
+  /** Bots' voices on this device (§6.6): the `voices` entries, the plugin host that streams them, and `voice.play`
+   *  to the app. Each bot's voice is its effective one (its user layer's, else its plugin's). */
+  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "play" | "listenIdleMs">;
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
   /** The compaction numbers for a session (the model's cache life and the settings); the spec's defaults otherwise. */
@@ -86,6 +91,8 @@ export interface BotSide {
   routines?: RoutineEngine;
   /** Its webhooks' way in, when an ingress was given. */
   ingress?: WebhookIngress;
+  /** Bots' voices here, when voices were given. */
+  voices?: VoiceService;
   /** `SendMessage` and `ListAgents` for one bot's session (or an agent's, through the bridge), with K's agent rows. */
   tools(sessionId: string): CoreToolDef[];
   /** Lane D's sessions methods, with K's `setAgentModel`. */
@@ -146,6 +153,11 @@ export function createBotSide(o: BotSideOptions): BotSide {
   ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
     registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  const voices = o.voices === undefined ? undefined : new VoiceService({
+    ...o.voices,
+    voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
+    ...(o.warn === undefined ? {} : { warn: o.warn }),
+  });
   const routineTool = routines === undefined || o.routines === undefined ? undefined : {
     home: o.home, computer: o.computer, routines,
     computers: o.routines.computers ?? (() => [{ name: o.computer, level: computerLevel() }]),
@@ -167,6 +179,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(agents === undefined ? {} : { agents }),
     ...(routines === undefined ? {} : { routines }),
     ...(ingress === undefined ? {} : { ingress }),
+    ...(voices === undefined ? {} : { voices }),
     tools: (sessionId) => {
       const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
       const bot = host.callerOf(sessionId).bot;
@@ -179,6 +192,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
       }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
+      ...(voices === undefined ? {} : voicesMethods({ voices })),
     }),
     start: async () => {
       await bots.start();

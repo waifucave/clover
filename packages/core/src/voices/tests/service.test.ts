@@ -1,16 +1,19 @@
 // The `voices` point in the core (../service.ts): speech streamed to the app piece by piece, push-to-talk audio
 // streamed into the plugin, and a text-only bot refused with why. The plugin runs on the contracts' fake host.
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { CLOVER_ERR, type Caller } from "@waifucave/clover-protocol";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakePluginHost } from "../../contracts/fakes/plugin-host";
 import { MethodError } from "../../bots/rpc";
+import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "../../bots/tests/fixtures";
 import { voicesMethods } from "../rpc";
 import { VoiceService, type VoicePlay } from "../service";
 
 const VOICE_PLUGIN = "clover/fish-audio";
 
-function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean } = {}) {
+afterEach(() => removeTemps());
+
+function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean; listenIdleMs?: number } = {}) {
   const host = new FakePluginHost({ clock: new FakeClock() });
   const heard: Uint8Array[] = [];
   const spoke: unknown[] = [];
@@ -31,14 +34,16 @@ function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean } = {}
     entries: () => [{ pluginId: VOICE_PLUGIN, entryId: "fish-audio", state: "active", value: { name: "Fish Audio", handler: "voice", speak: opts.speak ?? true, listen: opts.listen ?? true } }],
   } as never;
   const played: VoicePlay[] = [];
+  const warned: string[] = [];
   const voices = new VoiceService({
-    registry, host,
+    registry, host, warn: (m) => warned.push(m),
+    ...(opts.listenIdleMs === undefined ? {} : { listenIdleMs: opts.listenIdleMs }),
     voiceOf: (bot) => (opts.voice === false || bot !== "alpha" ? undefined : { provider: "fish-audio", voice: "v1", model: "s2.1-pro-free" }),
     play: (p) => {
       played.push(p);
     },
   });
-  return { voices, played, spoke, heard };
+  return { voices, played, spoke, heard, host, registry, warned };
 }
 
 const b64 = (s: string) => Buffer.from(s).toString("base64");
@@ -73,5 +78,32 @@ describe("the voices point", () => {
     const err = await m({ bot: "alpha", utterance: "u2", seq: 0, audio: b64("hi"), format: "pcm16-16k", final: true }, { caller: plugin }).catch((e: unknown) => e);
     expect(err instanceof MethodError && err.code).toBe(CLOVER_ERR.NOT_THE_USER);
     expect(await m({ bot: "alpha", utterance: "u3", seq: 0, audio: b64("hi"), format: "pcm16-16k", final: true }, { caller: { kind: "user", client: "app" } })).toEqual({ text: "hi" });
+  });
+
+  test("an utterance whose last piece never comes is dropped, and its plugin call ends", async () => {
+    const { voices, warned } = setup({ listenIdleMs: 20 });
+    expect(await voices.listen({ bot: "alpha", utterance: "u4", seq: 0, audio: b64("hel"), format: "pcm16-16k", final: false })).toEqual({});
+    await new Promise((r) => setTimeout(r, 60));
+    expect(warned).toEqual(["alpha's utterance u4 was dropped: no piece came for 0 s"]);
+    await expect(voices.listen({ bot: "alpha", utterance: "u4", seq: 1, audio: b64("lo"), format: "pcm16-16k", final: true })).rejects.toThrow("starts at piece 0");
+  });
+
+  test("on the bot side, a bot speaks with its effective voice: text-only until its user layer gives it one", async () => {
+    const { host, registry } = setup();
+    const played: VoicePlay[] = [];
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs,
+      voices: { registry, host, play: (p) => void played.push(p) },
+    });
+    const listen = b.side.methods({ localDevice: "studio" })["voice.listen"]!;
+    const theUser: Caller = { kind: "user", client: "app" };
+    const piece = { bot: "alpha", utterance: "u5", seq: 0, audio: b64("hi"), format: "pcm16-16k", final: true };
+    const refused = await listen(piece, { caller: theUser }).catch((e: unknown) => e);
+    expect(String((refused as Error).message)).toContain("text-only");
+    await b.bots.setUserLayer("alpha", { voice: { provider: "fish-audio", voice: "v2" } }, theUser);
+    expect(await listen({ ...piece, utterance: "u6" }, { caller: theUser })).toEqual({ text: "hi" });
+    await b.side.voices!.speak({ bot: "alpha", session: "b_alpha", text: "hello there" });
+    expect(played.at(-1)).toMatchObject({ bot: "alpha", final: true });
+    await b.shutdown();
   });
 });

@@ -54,6 +54,7 @@ interface Entry {
 class Pieces implements AsyncIterable<Uint8Array> {
   readonly #items: Uint8Array[] = [];
   #ended = false;
+  #error: Error | undefined;
   #wake: (() => void) | undefined;
   push(piece: Uint8Array): void {
     this.#items.push(piece);
@@ -63,8 +64,14 @@ class Pieces implements AsyncIterable<Uint8Array> {
     this.#ended = true;
     this.#wake?.();
   }
+  /** Ends the input with an error, which the plugin's read throws. */
+  fail(error: Error): void {
+    this.#error = error;
+    this.#wake?.();
+  }
   async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
     for (;;) {
+      if (this.#error) throw this.#error;
       const next = this.#items.shift();
       if (next !== undefined) {
         yield next;
@@ -84,7 +91,11 @@ interface Listening {
   next: number;
   pieces: Pieces;
   result: Promise<{ text: string }>;
+  idle: ReturnType<typeof setTimeout> | undefined;
 }
+
+/** How long an utterance waits for its next piece by default before it is dropped. */
+export const LISTEN_IDLE_MS = 30_000;
 
 let utteranceCount = 0;
 
@@ -143,6 +154,7 @@ export class VoiceService {
 
   /** One piece of push-to-talk audio (`voice.listen`). The last piece's answer is what was heard. */
   async listen(p: { bot: string; utterance: string; seq: number; audio: string; format: "pcm16-16k" | "opus"; final: boolean }): Promise<{ text?: string }> {
+    const idleMs = this.#o.listenIdleMs ?? LISTEN_IDLE_MS;
     let l = this.#listening.get(p.utterance);
     if (!l) {
       if (p.seq !== 0) throw new ContractError("invalid", `utterance ${p.utterance} starts at piece 0, not ${p.seq}`);
@@ -160,7 +172,7 @@ export class VoiceService {
           if (next.done) return { text: typeof next.value?.text === "string" ? next.value.text : "" };
         }
       })();
-      l = { bot: p.bot, next: 0, pieces, result };
+      l = { bot: p.bot, next: 0, pieces, result, idle: undefined };
       this.#listening.set(p.utterance, l);
       // A failed listen still ends the utterance: its last piece gets the error.
       result.catch(() => {});
@@ -168,8 +180,21 @@ export class VoiceService {
     if (l.bot !== p.bot) throw new ContractError("invalid", `utterance ${p.utterance} is ${l.bot}'s`);
     if (p.seq !== l.next) throw new ContractError("invalid", `utterance ${p.utterance} expected piece ${l.next}, not ${p.seq}`);
     l.next++;
+    if (l.idle !== undefined) clearTimeout(l.idle);
+    l.idle = undefined;
     if (p.audio !== "") l.pieces.push(new Uint8Array(Buffer.from(p.audio, "base64")));
-    if (!p.final) return {};
+    if (!p.final) {
+      // An utterance whose last piece never comes (the app went away) is dropped, and its plugin call ends.
+      const listening = l;
+      l.idle = setTimeout(() => {
+        if (this.#listening.get(p.utterance) !== listening) return;
+        this.#listening.delete(p.utterance);
+        listening.pieces.fail(new ContractError("timeout", `utterance ${p.utterance} had no piece for ${Math.round(idleMs / 1000)} s`));
+        this.#o.warn?.(`${p.bot}'s utterance ${p.utterance} was dropped: no piece came for ${Math.round(idleMs / 1000)} s`);
+      }, idleMs);
+      (l.idle as { unref?: () => void }).unref?.();
+      return {};
+    }
     l.pieces.end();
     this.#listening.delete(p.utterance);
     return { text: (await l.result).text };

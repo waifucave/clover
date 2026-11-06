@@ -457,6 +457,22 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/plugins/trigger-schedule": {
+      "name": "@waifucave/clover-plugin-trigger-schedule",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/trigger-webhook": {
+      "name": "@waifucave/clover-plugin-trigger-webhook",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/usage": {
       "name": "@waifucave/clover-plugin-usage",
       "version": "0.0.0",
@@ -987,6 +1003,10 @@
     "@waifucave/clover-plugin-shell": ["@waifucave/clover-plugin-shell@workspace:plugins/clover/plugins/shell"],
 
     "@waifucave/clover-plugin-sidebar": ["@waifucave/clover-plugin-sidebar@workspace:plugins/clover/plugins/sidebar"],
+
+    "@waifucave/clover-plugin-trigger-schedule": ["@waifucave/clover-plugin-trigger-schedule@workspace:plugins/clover/plugins/trigger-schedule"],
+
+    "@waifucave/clover-plugin-trigger-webhook": ["@waifucave/clover-plugin-trigger-webhook@workspace:plugins/clover/plugins/trigger-webhook"],
 
     "@waifucave/clover-plugin-usage": ["@waifucave/clover-plugin-usage@workspace:plugins/clover/plugins/usage"],
 

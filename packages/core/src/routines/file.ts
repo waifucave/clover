@@ -41,7 +41,7 @@ export interface RoutineFile {
   level?: Level;
   timezone?: string;
   missed: MissedRule;
-  /** Waiting for the user's review (a routine carried over from Winter, §12). */
+  /** Waiting for the user's review (a routine carried over from an earlier install, §12). */
   paused?: boolean;
   /** The instructions. */
   body: string;
