@@ -7,7 +7,7 @@ import { electronChromium, main, pinProblems, PIN_FILE, type HeadlessPin } from 
 
 const sha = "a".repeat(64);
 const asset = (chromium: string, platform: string) => ({ platform, url: `https://storage.googleapis.com/chrome-for-testing-public/${chromium}/${platform}/chrome-headless-shell-${platform}.zip`, sha256: sha });
-const pin = (chromium: string, electron = "45.2.3"): HeadlessPin => ({ electron, chromium, milestone: Number(chromium.split(".")[0]), assets: [asset(chromium, "linux64"), asset(chromium, "mac-arm64")] });
+const pin = (chromium: string, electron = "45.2.3"): HeadlessPin => ({ electron, chromium, milestone: Number(chromium.split(".")[0]), assets: [asset(chromium, "linux64"), asset(chromium, "linux-arm64"), asset(chromium, "mac-arm64")] });
 
 describe("the headless shell's pin", () => {
   test("Electron's exact Chromium, or the nearest build of the same milestone, passes", () => {
@@ -20,11 +20,12 @@ describe("the headless shell's pin", () => {
     expect(pinProblems(pin("155.0.7000.10"), "45.2.3", "156.0.8078.80")[0]).toContain("milestone 155");
     const bad = { ...pin("156.0.8078.80"), milestone: 155 };
     expect(pinProblems(bad, "45.2.3", "156.0.8078.80")[0]).toContain("is not its chromium's");
-    const noLinux = { ...pin("156.0.8078.80"), assets: [asset("156.0.8078.80", "mac-arm64")] };
+    const noLinux = { ...pin("156.0.8078.80"), assets: [asset("156.0.8078.80", "mac-arm64"), asset("156.0.8078.80", "linux-arm64")] };
     expect(pinProblems(noLinux, "45.2.3", "156.0.8078.80")).toEqual(["it pins no linux64 build (the server image's)"]);
-    const wrongUrl = { ...pin("156.0.8078.80"), assets: [{ ...asset("156.0.8078.80", "linux64"), url: "https://example.invalid/x.zip" }] };
+    const linux = [asset("156.0.8078.80", "linux-arm64")];
+    const wrongUrl = { ...pin("156.0.8078.80"), assets: [...linux, { ...asset("156.0.8078.80", "linux64"), url: "https://example.invalid/x.zip" }] };
     expect(pinProblems(wrongUrl, "45.2.3", "156.0.8078.80")[0]).toContain("url is https://example.invalid/x.zip");
-    const badSha = { ...pin("156.0.8078.80"), assets: [{ ...asset("156.0.8078.80", "linux64"), sha256: "nope" }] };
+    const badSha = { ...pin("156.0.8078.80"), assets: [...linux, { ...asset("156.0.8078.80", "linux64"), sha256: "nope" }] };
     expect(pinProblems(badSha, "45.2.3", "156.0.8078.80")).toEqual(["linux64's sha256 is not a SHA-256"]);
   });
 

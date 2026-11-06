@@ -14,9 +14,10 @@ import { fileURLToPath } from "node:url";
 
 export const PIN_FILE = "plugins/clover/plugins/browser/headless-shell.pins.json";
 export const ELECTRON_RELEASES = "https://releases.electronjs.org/releases.json";
-/** The platform a server needs (the official image is Linux, spec §4); the others are welcome, not required. */
-export const REQUIRED_PLATFORMS = ["linux64"] as const;
-const PLATFORMS = ["linux64", "mac-arm64", "mac-x64", "win64", "win32"];
+/** The platforms a server needs: the daemon's Linux targets, x64 and arm64 (the official image is Linux, spec §4). The
+ *  others are welcome, not required. */
+export const REQUIRED_PLATFORMS = ["linux64", "linux-arm64"] as const;
+const PLATFORMS = ["linux64", "linux-arm64", "mac-arm64", "mac-x64", "win64", "win32"];
 
 export interface HeadlessPin {
   electron: string;
