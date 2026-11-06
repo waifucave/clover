@@ -108,6 +108,17 @@ describe("cloud computers", () => {
     expect(cards.map((c) => c.kind)).toEqual(["cloud-create"]);
   });
 
+  test("a folder whose name changed keeps its VM: no second VM and no delete card", async () => {
+    const { cloud, provider, cards } = setup();
+    await cloud.reconcile([folder()]);
+    const r = await cloud.reconcile([folder({ name: "Cloud9" })]);
+    expect(r).toMatchObject({ created: [], deleted: [], declined: [] });
+    expect(r.failed[0]!.reason).toContain("rename it in the tree");
+    expect(cards.map((c) => c.kind)).toEqual(["cloud-create"]);
+    expect(provider.calls).toEqual(["create Cloud1 cx22 fsn1"]);
+    expect(cloud.get("Cloud1")).toBeDefined();
+  });
+
   test("a folder that says keep: removing it never asks and keeps the VM", async () => {
     const { cloud, provider, cards } = setup();
     await cloud.reconcile([folder({ onRemove: "keep" })]);

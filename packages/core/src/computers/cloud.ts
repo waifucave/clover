@@ -183,6 +183,7 @@ export class CloudComputers {
     const out: ReconcileResult = { created: [], resized: [], deleted: [], declined: [], failed: [] };
     this.remember(folders);
     const seen = new Set<string>();
+    const folderIds = new Set(folders.map((f) => f.folder));
     const attempt = async (name: string, fn: () => Promise<void>) => {
       try {
         await fn();
@@ -197,6 +198,10 @@ export class CloudComputers {
       await attempt(f.name, async () => {
         const vm = this.#vms.get(f.name);
         if (vm && vm.folder !== f.folder) throw new ContractError("conflict", `${f.name} is ${vm.folder}'s computer already`);
+        // A folder whose name changed still has its VM under the old name: no second VM, and no card to delete the
+        // first. The tree renames a computer (it keeps its old name as an alias); the folder follows.
+        const before = !vm ? [...this.#vms.values()].find((v) => v.folder === f.folder) : undefined;
+        if (before) throw new ContractError("conflict", `${f.folder}'s computer is ${before.name}; rename it in the tree, not in its folder`);
         if (!vm) {
           (await this.#create(f) ? out.created : out.declined).push(f.name);
         } else if (vm.size !== f.size && vm.state !== "deleting") {
@@ -205,7 +210,7 @@ export class CloudComputers {
       });
     }
     for (const vm of [...this.#vms.values()]) {
-      if (seen.has(vm.name) || held.has(vm.folder)) continue;
+      if (seen.has(vm.name) || held.has(vm.folder) || folderIds.has(vm.folder)) continue;
       // A folder that said `keep`, or whose VM the user kept when it went: not asked about again.
       if (this.#removedKeep.has(vm.name)) continue;
       await attempt(vm.name, async () => {
