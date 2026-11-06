@@ -320,15 +320,27 @@ describe("CloverLinkTransport, beyond the contract's cases", () => {
   test("'not paired yet' means try again only just after this side's own pairing; then the link stops being wanted", async () => {
     const c = await cluster(["a", "b"], { clock: new SystemClock(), pairAll: false, transport: { unpairedGraceMs: 300, redialBackoffMs: [0, 50, 50] } });
     const { recordFor } = await import("../testing");
-    // Only a added b: b doesn't know a.
+    // Only a added b: b doesn't know a. The caller waits through the grace, as the redials are refused.
     await c.devices.get("a")!.registry.add(recordFor(c.devices.get("b")!.key, "b"), { via: "terminal" });
     const link = c.t("a").link(c.id("b"));
+    const started = Date.now();
     const first = (await c.t("a").connect(c.id("b")).catch((e: unknown) => e)) as ContractError;
     expect(first.detail?.unpaired).toBe(true);
-    expect((link as unknown as { wanted: boolean }).wanted).toBe(true);
-    await Bun.sleep(400);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+    await Bun.sleep(100);
     await c.t("a").connect(c.id("b")).catch(() => undefined);
     await waitFor(() => !(link as unknown as { wanted: boolean }).wanted);
+  });
+
+  test("a caller dialling a peer that doesn't know this device yet waits for it to (just paired, or its sidecar restarted)", async () => {
+    const c = await cluster(["a", "b"], { clock: new SystemClock(), pairAll: false, transport: { redialBackoffMs: [0, 50, 50] } });
+    const { recordFor } = await import("../testing");
+    await c.devices.get("a")!.registry.add(recordFor(c.devices.get("b")!.key, "b"), { via: "terminal" });
+    c.t("b").handle("who", async () => "b");
+    const linked = c.t("a").connect(c.id("b"));
+    await Bun.sleep(150);
+    await c.devices.get("b")!.registry.add(recordFor(c.devices.get("a")!.key, "a"), { via: "terminal" });
+    expect(await (await linked).request<string>("who", null)).toBe("b");
   });
 });
 
