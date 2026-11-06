@@ -93,7 +93,9 @@ function Build-Launcher {
   Push-Location $crateDir
   try {
     # Static CRT: no VCRUNTIME140/MSVCP140 prerequisite on the target machine (S2).
-    $env:RUSTFLAGS = "-C target-feature=+crt-static"
+    # /BREPRO: deterministic output — the Authenticode digest must be identical on every
+    # rebuild of the same source, or the pinned digest could never match lane M's CI build.
+    $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/BREPRO"
     cargo build --release --locked
     if ($LASTEXITCODE -ne 0) { throw "build-srt-win: cargo build failed" }
   } finally { Pop-Location }

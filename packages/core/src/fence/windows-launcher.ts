@@ -30,7 +30,7 @@ export type SrtWinArch = "x64" | "arm64";
  * an arm64 launch fails closed (exit 3) until then.
  */
 export const SRT_WIN_PINS = Object.freeze({
-  x64: "148f8c5c1c1e1ab43ea20b2a12d1c68253a1b2789be12d71bb643da9a31aa113",
+  x64: "59df9c9135f171930975eeb046b451fa6b97fe505471574aa3a03c4dfe7eb026",
   arm64: "cf562110127e7612084de53782b0307326074d4e1958ca2c5262a974f6bc19c6",
 });
 
