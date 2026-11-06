@@ -15,7 +15,20 @@ import { API_KEY_SECRET, BUNDLED_CHILDREN_DIR, CODE_PLUGINS, keyPlacementFor, mo
 /** The files one provider's plugin holds, by path inside its folder. */
 export type GeneratedFiles = Record<"clover.json" | "catalog.json", string>;
 
-const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+/**
+ * Characters a reader can't see (bidi controls, zero-width ones, tags, variation selectors, the shell gallery's own
+ * list): written as `\u` escapes, which parse to the same string, so no committed file holds one raw. The catalog's
+ * vendor text carries some (an emoji's variation selector).
+ */
+const HIDDEN = /[\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\u3164\uFE00-\uFE0F\uFEFF\uFFA0\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
+const escapeHidden = (text: string): string =>
+  text.replace(HIDDEN, (c) => [...c].map((ch) => {
+    const cp = ch.codePointAt(0)!;
+    if (cp <= 0xffff) return `\\u${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+    const v = cp - 0x10000;
+    return `\\u${(0xd800 + (v >> 10)).toString(16).toUpperCase()}\\u${(0xdc00 + (v & 0x3ff)).toString(16).toUpperCase()}`;
+  }).join(""));
+const json = (value: unknown): string => `${escapeHidden(JSON.stringify(value, null, 2))}\n`;
 
 /** The `auth` a declarative provider declares: its API key, or nothing for a sign-in the core runs by a flow of its own. */
 function declarativeAuth(authKinds: readonly string[], protocol: keyof typeof GENERIC_ENDPOINT_ADAPTERS, name: string): AuthEntry[] {

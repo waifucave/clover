@@ -197,14 +197,14 @@
       "toolCalling": {
         "value": "native",
         "source": "official-doc",
-        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠️ 工具调用：可靠的 tools / tool_choice 调用能力，支持多步任务分解与计划执行\"",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力，支持多步任务分解与计划执行\"",
         "confidence": "declared",
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "nativeTools": {
         "value": true,
         "source": "official-doc",
-        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠️ 工具调用：可靠的 tools / tool_choice 调用能力，支持多步任务分解与计划执行\"",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力，支持多步任务分解与计划执行\"",
         "confidence": "declared",
         "observedAt": "2026-09-27T00:00:00Z"
       },
@@ -272,14 +272,14 @@
       "toolCalling": {
         "value": "native",
         "source": "official-doc",
-        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠️ 工具调用：可靠的 tools / tool_choice 调用能力\" — documented on the shared step-3.5-flash family page which explicitly covers the -2603 variant",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力\" — documented on the shared step-3.5-flash family page which explicitly covers the -2603 variant",
         "confidence": "declared",
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "nativeTools": {
         "value": true,
         "source": "official-doc",
-        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠️ 工具调用：可靠的 tools / tool_choice 调用能力\" — documented on the shared step-3.5-flash family page which explicitly covers the -2603 variant",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力\" — documented on the shared step-3.5-flash family page which explicitly covers the -2603 variant",
         "confidence": "declared",
         "observedAt": "2026-09-27T00:00:00Z"
       },
