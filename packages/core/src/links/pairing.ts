@@ -535,7 +535,7 @@ export class PairingService {
           await this.#o.store.set(groupKeyRef(p.group!), p.groupKey.seed(), { synced: false });
           const mine = toBase64Url(p.groupKey.publicKey);
           const join = {
-            key: mine, t: p.t!, sig: toBase64Url(p.groupKey.sign(joinStatement(p.group!, mine, p.t!))), by: peerGroupKey, bysig: toBase64Url(p.peerConfirm!.admit!),
+            key: mine, t: p.t!, sig: toBase64Url(p.groupKey.sign(joinStatement(p.group!, mine, p.t!, old?.id))), by: peerGroupKey, bysig: toBase64Url(p.peerConfirm!.admit!),
             ...(old ? { from: old.id } : {}),
           };
           let joined = false;

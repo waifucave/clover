@@ -416,7 +416,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           if (!b || typeof b.key !== "string" || typeof b.t !== "number" || typeof b.sig !== "string" || admits.length === 0) return err(400, "bad_request");
           if (Math.abs(b.t - now()) > 600_000) return err(401, "unauthorized");
           const [newKey, t] = [b.key, b.t];
-          if (!sigOk(newKey, joinStatement(id, newKey, t), b.sig) || admits.some((a) => !sigOk(a.by, admitStatement(id, newKey, t), a.sig))) return err(401, "unauthorized");
+          if (!sigOk(newKey, joinStatement(id, newKey, t, typeof b.from === "string" ? b.from : undefined), b.sig) || admits.some((a) => !sigOk(a.by, admitStatement(id, newKey, t), a.sig))) return err(401, "unauthorized");
           if (admits.some((a) => !g.members.has(a.by))) return err(403, "not_member");
           if ((g.removed.get(b.key) ?? -1) >= b.t) return err(403, "revoked");
           if (g.members.has(b.key)) return Response.json({}, { status: 200 });

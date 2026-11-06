@@ -30,8 +30,10 @@ export const pairStatement = (pair: string, keys: readonly [string, string], t: 
   utf8([`${HANDSHAKE_PREFIX} pair`, pair, keys[0], keys[1], String(t)].join("\n"));
 export const groupStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} group`, group, key, String(t)].join("\n"));
-export const joinStatement = (group: string, key: string, t: number): Bytes =>
-  utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t)].join("\n"));
+/** A device's statement joining a group; a move from another group binds that group as a fifth line (lane I's
+ *  #195 ruling: an unsigned `from` is refused). */
+export const joinStatement = (group: string, key: string, t: number, from?: string): Bytes =>
+  utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t), ...(from === undefined ? [] : [from])].join("\n"));
 export const admitStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} admit`, group, key, String(t)].join("\n"));
 /** A voter's agreement to remove a member other than itself, and to keep the keys its rollback would otherwise drop

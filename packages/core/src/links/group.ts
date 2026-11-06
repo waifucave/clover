@@ -265,7 +265,7 @@ export class GroupKeeper {
     await this.#o.beforeLeave?.(old.id).catch(() => undefined);
     await this.#o.store.set(groupKeyRef(group), key.seed(), { synced: false });
     try {
-      await hs.joinGroup(group, { key: mine, t, sig: toBase64Url(key.sign(joinStatement(group, mine, t))), by: admit.by, bysig: admit.sig, from: old.id });
+      await hs.joinGroup(group, { key: mine, t, sig: toBase64Url(key.sign(joinStatement(group, mine, t, old.id))), by: admit.by, bysig: admit.sig, from: old.id });
     } catch (err) {
       await this.#o.store.delete(groupKeyRef(group));
       throw err;
@@ -540,7 +540,8 @@ export class GroupKeeper {
         const t = hs.now();
         const link = await this.#o.transport.connect(by);
         const admit = await link.request<{ by: string; sig: string }>(GROUP_LINK.admit, { group: g2.id, key: g2.ownKey, t });
-        const join = { key: g2.ownKey, t, sig: toBase64Url(key.sign(joinStatement(g2.id, g2.ownKey, t))), by: admit.by, bysig: admit.sig };
+        const from = g2.pendingJoin.from;
+        const join = { key: g2.ownKey, t, sig: toBase64Url(key.sign(joinStatement(g2.id, g2.ownKey, t, from))), by: admit.by, bysig: admit.sig, ...(from ? { from } : {}) };
         this.#o.registry.setGroup({ ...g2, pendingJoin: join });
         await hs.joinGroup(g2.id, join);
         const { pendingJoin: _j, ...rest } = this.#o.registry.group()!;
