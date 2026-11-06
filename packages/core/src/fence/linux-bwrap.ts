@@ -16,6 +16,10 @@
 //     namespace doesn't cover them: a seccomp filter, `unixSocketFilter`, makes `socket(AF_UNIX)` and io_uring fail;
 //     `socketpair` stays, for pipes between its own processes), its own pid namespace (no other process's /proc), a new
 //     session (no TIOCSTI), and the user's D-Bus hidden (`systemd-run --user` and the rest of the closed doors).
+//
+// Notes for the runner (a bot's Bash under here): a denied part of the home looks absent, not "permission denied"
+// (the tmpfs view holds nothing there: no listing, no stat), and a write into the view fails as a read-only file
+// system (the view is remounted read-only around the bound-back own folders).
 import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
+import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { fencedSpawner } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
@@ -45,38 +46,40 @@ function worldBot() {
 const ok = (r: FencedRunResult) => r.kind === "exited" && r.code === 0;
 
 describe("the macOS profile, as text", () => {
-  test("Clover home default-deny first; holder folders; naming allows; specific fenced denies; per-caller allows last", () => {
+  test("Clover home default-deny first; holder folders; outside naming; specific fenced denies", () => {
     // Policy matching the real fence: Clover home in denyWrite/denyRead for default-deny,
-    // plus specific fenced items.
+    // plus specific fenced items, one of them outside the home.
     const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
       allowWrite: ["/U/me", "/tmp/x"],
-      denyWrite: ["/U/me/.clover/settings.json", "/U/me/.clover/plugins-state/oks", "/U/me/.clover"],
+      denyWrite: ["/U/me/.clover/settings.json", "/U/me/.clover/plugins-state/oks", "/U/me/.clover", "/U/me/Library/LaunchAgents/com.waifucave.clover.core.plist"],
       denyRead: ["/U/me/.clover/run", "/U/me/.clover"],
       closedDoors: ["open", "launchctl", "osascript"], blockedAddresses: [], network: "none" } });
     const at = (s: string) => p.indexOf(s);
     // Strings stored in variables to avoid TypeScript parser issues with parentheses in string literals.
     const denyCloverHome = '(deny file-write* (subpath "/U/me/.clover")';
     const allowWriteSubpath = '(allow file-write* (subpath';
-    const denyPluginsStateLiteral = '(deny file-write* (literal "/U/me/.clover/plugins-state")';
     const denyHomeLiteral = '(deny file-write* (literal "/U/me")';
-    const allowPluginsStateRegex = '(allow file-write* (regex #"^/U/me/\\.clover/plugins-state/[ -.0-~]+(/|$)")';
     const denySettingsJson = '(subpath "/U/me/.clover/settings.json")';
     const denyPluginsStateOks = '(subpath "/U/me/.clover/plugins-state/oks")';
-    const allowCloverHomeRegex = '(allow file-write* (regex #"^/U/me/\\.clover/[ -.0-~]+(/|$)")';
+    const denyLaunchAgentsPlist = '(subpath "/U/me/Library/LaunchAgents/com.waifucave.clover.core.plist")';
     const denyRunSubpath = '(deny file-read* (subpath "/U/me/.clover/run")';
     // 1. Clover home default-deny (subpath) comes after allowWrite
     expect(at(denyCloverHome)).toBeGreaterThan(at(allowWriteSubpath));
     // 2. Holder folder denies (literal) come after Clover home deny
-    expect(at(denyPluginsStateLiteral)).toBeGreaterThan(at(denyCloverHome));
     expect(at(denyHomeLiteral)).toBeGreaterThan(at(denyCloverHome)); // renaming home moves Clover home
     expect(p).not.toContain('(literal "/U")'); // above writable roots nothing writable
-    // 3. Naming folder allow for plugins-state (parent of fenced plugins-state/oks) comes after holder denies
-    expect(at(allowPluginsStateRegex)).toBeGreaterThan(at(denyPluginsStateLiteral));
-    // 4. Specific fenced item denies (settings.json, plugins-state/oks) come AFTER naming folder allows
-    expect(at(denySettingsJson)).toBeGreaterThan(at(allowPluginsStateRegex));
-    expect(at(denyPluginsStateOks)).toBeGreaterThan(at(allowPluginsStateRegex));
-    // 5. No naming folder allow for .clover itself (Clover home is default-deny, not a naming folder)
-    expect(p).not.toContain(allowCloverHomeRegex);
+    // 3. No naming handling for folders inside the Clover home: the home deny refuses every new name there.
+    expect(p).not.toContain("clover/plugins-state/[ -.0-~]");
+    expect(p).not.toContain("clover/sdk/[ -.0-~]");
+    // Naming handling only outside the home (the login places): deny non-ASCII names, then allow ASCII ones.
+    const nameLaunchAgentsDeny = '(deny file-write* (regex #"^/U/me/Library/LaunchAgents/[^/]"))';
+    const nameLaunchAgentsAllow = '(allow file-write* (regex #"^/U/me/Library/LaunchAgents/[ -.0-~]+(/|$)"))';
+    expect(p).toContain(nameLaunchAgentsDeny);
+    expect(at(nameLaunchAgentsAllow)).toBeGreaterThan(at(denyHomeLiteral));
+    // 4. Specific fenced item denies come AFTER naming folder allows so they can't be overridden by them.
+    expect(at(denySettingsJson)).toBeGreaterThan(at(nameLaunchAgentsAllow));
+    expect(at(denyPluginsStateOks)).toBeGreaterThan(at(nameLaunchAgentsAllow));
+    expect(at(denyLaunchAgentsPlist)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(p).toContain(denyRunSubpath);
     expect(p).toContain('(deny process-exec (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/osascript"))');
     expect(p.trim().endsWith("(deny network*)")).toBe(true);
@@ -111,6 +114,93 @@ describe("the macOS profile, as text", () => {
     expect(someoneElse).not.toContain("/U/me/\\.clover/scratch/");
     expect(someoneElse).not.toContain("/U/me/\\.clover/routines/");
   });
+});
+
+describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox", () => {
+  test("read, write, create and delete, for each caller kind", async () => {
+    const callers: Caller[] = [
+      { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
+      { kind: "session", sessionId: "t1", sessionKind: "side-thread", bot: "luna" },
+      { kind: "session", sessionId: "a1", sessionKind: "agent", bot: "luna" },
+      { kind: "session", sessionId: "c1", sessionKind: "coding" },
+      { kind: "session", sessionId: "s9", sessionKind: "bot", bot: "alpha" },
+      { kind: "plugin", pluginId: "tarot" },
+    ];
+    for (const caller of callers) {
+      const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-equiv-")));
+      try {
+        const home = join(root, "home"), clover = join(home, ".clover");
+        const sid = caller.kind === "session" ? caller.sessionId : "nobody";
+        const bseg = caller.kind === "session" && (caller.sessionKind === "bot" || caller.sessionKind === "side-thread") ? caller.bot!.replace("/", "--") : null;
+        const ownScratch = bseg === null ? join(clover, "scratch", "luna") : join(clover, "scratch", bseg);
+        const ownRoutines = bseg === null ? join(clover, "routines", "luna") : join(clover, "routines", bseg);
+        const ownOutputs = join(clover, "outputs", sid);
+        const ownPluginData = caller.kind === "plugin" ? join(clover, "plugin-data", String(caller.pluginId).replace("/", "--")) : join(clover, "plugin-data", "tarot");
+        const dirs = [join(clover, "run"), join(clover, "plugins-state", "oks"), join(clover, "sessions-runtime"), join(clover, "projects", "k"),
+          join(clover, "bots", "luna", "memory"), join(clover, "bots", "luna", "agents"), join(clover, "bots", "sol", "memory"),
+          join(clover, "bots", "alpha", "memory"), join(home, "project"), join(clover, "sdk"),
+          join(clover, "scratch", "luna"), join(clover, "scratch", "alpha"),
+          join(clover, "routines", "luna"), join(clover, "routines", "alpha"),
+          join(clover, "plugin-data", "tarot"), join(clover, "plugin-data", "luna"), ownOutputs];
+        for (const d of dirs) mkdirSync(d, { recursive: true });
+        const files: Record<string, string> = {
+          [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
+          [join(clover, "bots", "luna", "memory", "MEMORY.md")]: "l", [join(clover, "bots", "luna", "agents", "t.json")]: "{}",
+          [join(clover, "bots", "sol", "memory", "MEMORY.md")]: "s", [join(clover, "sessions-runtime", "rt.json")]: "{}",
+          [join(clover, "projects", "k", "s.jsonl")]: "{}", [join(home, "project", "a.txt")]: "a",
+          [join(home, "project", "del.txt")]: "d", [join(ownOutputs, "r.md")]: "r", [join(ownOutputs, "del.md")]: "d",
+        };
+        for (const [p, c] of Object.entries(files)) writeFileSync(p, c);
+        const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp: join(root, "tmp") });
+        const ctx = fenceContextFor(caller);
+        const policy = fence.policy(ctx);
+        const profile = macFenceProfile({ policy, cloverHome: clover, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx) });
+        type Probe = { shell: string; op: "read" | "write" | "unlink"; path: string };
+        const P: Probe[] = [
+          { shell: `cat '${join(clover, "settings.json")}'`, op: "read", path: join(clover, "settings.json") },
+          { shell: `echo x >> '${join(clover, "settings.json")}'`, op: "write", path: join(clover, "settings.json") },
+          { shell: `cat '${join(clover, "run", "tok")}'`, op: "read", path: join(clover, "run", "tok") },
+          { shell: `cat '${join(clover, "bots", "luna", "agents", "t.json")}'`, op: "read", path: join(clover, "bots", "luna", "agents", "t.json") },
+          { shell: `echo x >> '${join(clover, "bots", "luna", "agents", "t.json")}'`, op: "write", path: join(clover, "bots", "luna", "agents", "t.json") },
+          { shell: `echo x > '${join(clover, "bots", "luna", "agents", "new.json")}'`, op: "write", path: join(clover, "bots", "luna", "agents", "new.json") },
+          { shell: `cat '${join(clover, "bots", "luna", "memory", "MEMORY.md")}'`, op: "read", path: join(clover, "bots", "luna", "memory", "MEMORY.md") },
+          { shell: `echo x >> '${join(clover, "bots", "luna", "memory", "MEMORY.md")}'`, op: "write", path: join(clover, "bots", "luna", "memory", "MEMORY.md") },
+          { shell: `echo x > '${join(clover, "bots", "luna", "memory", "new.md")}'`, op: "write", path: join(clover, "bots", "luna", "memory", "new.md") },
+          { shell: `rm '${join(clover, "bots", "luna", "memory", "MEMORY.md")}'`, op: "unlink", path: join(clover, "bots", "luna", "memory", "MEMORY.md") },
+          { shell: `cat '${join(clover, "bots", "sol", "memory", "MEMORY.md")}'`, op: "read", path: join(clover, "bots", "sol", "memory", "MEMORY.md") },
+          { shell: `ls '${join(clover, "bots")}'`, op: "read", path: join(clover, "bots") },
+          { shell: `cat '${join(clover, "projects", "k", "s.jsonl")}'`, op: "read", path: join(clover, "projects", "k", "s.jsonl") },
+          { shell: `cat '${join(clover, "sessions-runtime", "rt.json")}'`, op: "read", path: join(clover, "sessions-runtime", "rt.json") },
+          { shell: `echo x > '${join(clover, "plugins-state", "evil")}'`, op: "write", path: join(clover, "plugins-state", "evil") },
+          { shell: `echo x > '${join(clover, "sdk", "evil")}'`, op: "write", path: join(clover, "sdk", "evil") },
+          { shell: `cat '${join(home, "project", "a.txt")}'`, op: "read", path: join(home, "project", "a.txt") },
+          { shell: `echo x >> '${join(home, "project", "a.txt")}'`, op: "write", path: join(home, "project", "a.txt") },
+          { shell: `echo x > '${join(home, "project", "new.txt")}'`, op: "write", path: join(home, "project", "new.txt") },
+          { shell: `rm '${join(home, "project", "del.txt")}'`, op: "unlink", path: join(home, "project", "del.txt") },
+          { shell: `cat '${join(ownOutputs, "r.md")}'`, op: "read", path: join(ownOutputs, "r.md") },
+          { shell: `echo x >> '${join(ownOutputs, "r.md")}'`, op: "write", path: join(ownOutputs, "r.md") },
+          { shell: `echo x > '${join(ownOutputs, "new.md")}'`, op: "write", path: join(ownOutputs, "new.md") },
+          { shell: `rm '${join(ownOutputs, "del.md")}'`, op: "unlink", path: join(ownOutputs, "del.md") },
+          { shell: `rmdir '${ownOutputs}'`, op: "unlink", path: ownOutputs },
+          { shell: `ls '${ownOutputs}'`, op: "read", path: ownOutputs },
+          { shell: `echo x > '${join(ownScratch, "new.md")}'`, op: "write", path: join(ownScratch, "new.md") },
+          { shell: `echo x > '${join(ownRoutines, "new.md")}'`, op: "write", path: join(ownRoutines, "new.md") },
+          { shell: `echo x > '${join(ownPluginData, "new.json")}'`, op: "write", path: join(ownPluginData, "new.json") },
+          { shell: `echo x > '${join(clover, "plugin-data", "luna", "new.json")}'`, op: "write", path: join(clover, "plugin-data", "luna", "new.json") },
+        ];
+        const script = P.map((pr, i) => `{ ${pr.shell}; } >/dev/null 2>&1; echo "${i}:$?";`).join("\n");
+        const proc = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, "/bin/sh", "-c", script], { stdout: "pipe", stderr: "pipe" });
+        const out = await new Response(proc.stdout).text();
+        await proc.exited;
+        const codes = new Map(out.trim().split("\n").map((l) => l.split(":") as [string, string]).map(([i, c]) => [Number(i), c === "0"]));
+        expect(codes.size).toBe(P.length);
+        for (const [i, pr] of P.entries()) {
+          const expected = policyAllows(policy, pr.op, pr.path, "macos");
+          expect([caller, pr.op, pr.path, codes.get(i)]).toEqual([caller, pr.op, pr.path, expected]);
+        }
+      } finally { rmSync(root, { recursive: true, force: true }); }
+    }
+  }, 120_000);
 });
 
 describe("the Linux sandbox's mounts, as arguments", () => {
@@ -260,7 +350,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     expect(ok(await w.run(`cat '${join(w.clover, "settings.json")}'`))).toBe(false);
     expect(ok(await w.run(`mkdir '${join(w.clover, "plugins-state", "öks")}'`))).toBe(false);
     expect(ok(await w.run(`mkdir '${join(w.clover, "nötes")}'`))).toBe(false);
-    expect(ok(await w.run(`mkdir '${join(w.clover, "plugins-state", "new")}'`))).toBe(here === "macos"); // Linux: nothing new there
+    expect(ok(await w.run(`mkdir '${join(w.clover, "plugins-state", "new")}'`))).toBe(false); // the home deny refuses every new name in it
     expect(ok(await w.run(`mkdir -p '${join(w.home, "project", "nötes")}'`))).toBe(true); // the user's own names elsewhere
     if (here === "macos") {
       expect(ok(await w.run("/usr/bin/open -g -j /nonexistent-lane-c"))).toBe(false);
