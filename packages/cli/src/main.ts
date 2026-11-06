@@ -1754,6 +1754,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         return;
       }
       console.log(st.ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${st.reason ?? "unknown"}`);
+      process.exitCode = st.exit;
       return;
     }
     default:
