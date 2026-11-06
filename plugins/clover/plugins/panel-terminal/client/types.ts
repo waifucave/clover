@@ -29,6 +29,10 @@ export interface TerminalPanelProps {
   /** What the user pasted, whole: the host brackets it for the shell, and asks before a paste of several
    *  lines runs. Without it, a paste does nothing. */
   onPaste?: (text: string) => void;
+  /** The trusted input event itself, a key press the terminal sends or a paste (lane B's `TerminalApi.input`): the
+   *  app's runtime derives the bytes from it, so nothing the component makes up reaches the shell. When this is
+   *  given, `onInput` and `onPaste` aren't called. */
+  onEvent?: (event: KeyboardEvent | ClipboardEvent) => void;
   /** Which keys paste: ⌘V on macOS, Ctrl+V and Ctrl+Shift+V elsewhere. The platform it runs on when absent. */
   platform?: Platform;
 }

@@ -163,6 +163,40 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/archive:
+    dependencies:
+      lucide-react:
+        specifier: 1.61.0
+        version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
+      '@happy-dom/global-registrator':
+        specifier: 21.0.4
+        version: 21.0.4
+      '@testing-library/dom':
+        specifier: 10.4.2
+        version: 10.4.2
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/base-theme:
     devDependencies:
       '@types/bun':
@@ -202,6 +236,40 @@ importers:
       playwright:
         specifier: 1.64.1
         version: 1.64.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/bot-editor:
+    dependencies:
+      lucide-react:
+        specifier: 1.61.0
+        version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
+      '@happy-dom/global-registrator':
+        specifier: 21.0.4
+        version: 21.0.4
+      '@testing-library/dom':
+        specifier: 10.4.2
+        version: 10.4.2
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -537,6 +605,40 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/plugin-index:
+    dependencies:
+      lucide-react:
+        specifier: 1.61.0
+        version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
+      '@happy-dom/global-registrator':
+        specifier: 21.0.4
+        version: 21.0.4
+      '@testing-library/dom':
+        specifier: 10.4.2
+        version: 10.4.2
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/push:
     devDependencies:
       '@types/bun':
@@ -582,6 +684,12 @@ importers:
 
   plugins/clover/plugins/shell:
     dependencies:
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      '@waifucave/clover-protocol':
+        specifier: workspace:*
+        version: link:../../../../packages/protocol
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)

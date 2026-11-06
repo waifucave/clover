@@ -1,0 +1,35 @@
+/* The shell's own stories: a stand-in for a panel's contents. */
+.story-panel-placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--clover-color-text-muted);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+/* The add-ons screen's example plugin: a header button, a status line and reactions under an answer. */
+.story-addon-button {
+  font-size: 15px;
+}
+
+.story-addon-status {
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-label);
+}
+
+.story-addon-reactions {
+  display: flex;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-xs);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-label);
+  color: var(--clover-color-text-secondary);
+}
+
+.story-addon-reactions span {
+  padding: 0 var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-round);
+}

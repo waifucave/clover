@@ -15,14 +15,42 @@
     "ui": [
       {
         "spot": "composer",
-        "component": "Composer",
+        "component": "ComposerEntry",
         "declares": {
           "composer.action": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The composer's buttons, keyed by action id: attach, model, level, voice, send, stop."
           }
         }
       }
     ]
-  }
+  },
+  "capabilities": [
+    "conversation.read",
+    "bots.read",
+    "computers.read",
+    "approvals"
+  ]
 }
