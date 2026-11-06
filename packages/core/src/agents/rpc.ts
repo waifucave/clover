@@ -24,7 +24,9 @@ export interface AgentMethodsOptions {
 
 export type AgentMethod = (params: unknown, ctx: { caller: Caller }) => Promise<unknown>;
 
-export const BACKEND_NAMES: Readonly<Record<string, string>> = { cursor: "Cursor", antigravity: "Antigravity CLI" };
+export const BACKEND_NAMES: Readonly<Record<string, string>> = {
+  cursor: "Cursor", antigravity: "Antigravity CLI", "claude-code": "Claude Code", codex: "Codex", grok: "Grok", gemini: "Gemini CLI", deepseek: "DeepSeek Harness",
+};
 
 function parse<S extends MethodSpec>(spec: S, raw: unknown): z.output<S["params"]> {
   const r = spec.params.safeParse(raw ?? {});

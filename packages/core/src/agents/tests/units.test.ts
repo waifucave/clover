@@ -11,7 +11,7 @@ import { versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
 import { buildAgentEnv } from "../process/launch";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
-import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS } from "../quirks";
+import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
@@ -273,5 +273,25 @@ describe("sandbox admissions and OKs", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the backends' rows", () => {
+  test("every backend has a command on every OS, a version pattern that reads its real version line, and a source", () => {
+    const lines: Record<string, string> = {
+      cursor: "2026.10.22-27dcf5f", antigravity: "1.4.12", grok: "grok 1.0.70 (f50904eaee6c) [stable]", gemini: "0.46.0",
+      "claude-code": "0.100.0", codex: "2.5.0", deepseek: "dsh 0.1.2",
+    };
+    for (const [id, q] of Object.entries(QUIRKS)) {
+      for (const os of ["macos", "linux", "windows"] as const) expect(q.launch.command[os]?.length ?? 0).toBeGreaterThan(0);
+      const m = new RegExp(q.launch.identity.versionPattern, "m").exec(lines[id]!);
+      expect(m).not.toBeNull();
+      expect(QUIRK_SOURCES[id]).toBeDefined();
+      expect(q.mcp.transports).toContain("stdio");
+      // No backend's sandbox is admitted yet: each asks for the user's OK until its gates pass.
+      expect(admissionFor(ADMISSIONS, id, "macos", (m![1] ?? m![0]).trim()).status).not.toBe("protected");
+    }
+    // `agent` is Cursor's and Grok's: neither row resolves that name.
+    for (const q of Object.values(QUIRKS)) expect(q.launch.command.macos![0]).not.toBe("agent");
   });
 });
