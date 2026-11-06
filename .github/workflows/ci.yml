@@ -528,6 +528,23 @@ jobs:
           if ($p.ExitCode -ne 7) { throw "a bad SID exited $($p.ExitCode)" }
           Write-Output 'the elevated step: the copy and its folders are protected, an old copy is replaced, a writable one refused, a wrong digest and a bad SID refused'
 
+      # The NSIS installer itself: the unsigned release build (scripts/release/build.ts) with the srt-win.exe just built
+      # beside the daemon (checked against core's pin) and the elevated step's script compacted into it, every update
+      # file checked against what it names. Nothing is signed or uploaded.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The installer builds (unsigned)
+        run: |
+          bun scripts/release/build.ts --channel latest
+          ls -l apps/desktop/out/dist
+
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
   # boolean>`, fails core's tsc when a `SessionEvent` variant is added). `bun run typecheck` is every workspace
