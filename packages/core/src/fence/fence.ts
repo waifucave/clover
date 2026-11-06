@@ -145,12 +145,20 @@ export class CloverFence implements Fence {
     return null;
   }
 
+  /** A coding agent runs unsandboxed (§9.3), so its root may neither hold nor sit inside the Clover home (an OK'd
+   *  plugin's folder, the settings, plugin data), a development folder, or any other fenced item (#197's check 3).
+   *  Compared folded, so a different case or a decomposed name is the same folder. */
   checkAgentRoot(root: string): FenceVerdict {
     const r = this.#fold(this.#canonical(root));
-    if (inside(this.#fold(this.#cloverHome), r)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    const home = this.#fold(this.#cloverHome);
+    if (inside(home, r) || inside(r, home)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     for (const dev of this.#layout["dev-folders"] ?? this.#devFolders) {
       const d = this.#fold(this.#canonical(dev));
       if (inside(d, r) || inside(r, d)) return { allowed: false, reason: "dev-folders", path: this.#canonical(dev) };
+    }
+    for (const item of this.fencedSet()) {
+      const f = this.#fold(item.path);
+      if (inside(f, r) || inside(r, f)) return { allowed: false, reason: item.kind, path: item.path };
     }
     return { allowed: true };
   }

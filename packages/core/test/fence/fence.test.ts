@@ -6,7 +6,7 @@ import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
-import { pendingFenced } from "../../src/fence/layout";
+import { botFolders, botMemoryReadDenied, pendingFenced } from "../../src/fence/layout";
 import { FENCED_SPAWN_NOT_YET } from "../../src/fence/spawn";
 import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
 
@@ -86,6 +86,10 @@ describe("the real fence on a real disk", () => {
     symlinkSync(clover, join(home, "c"));
     expect(fence.check({ op: "read", path: join(home, "c", "run", "core.sock") })).toMatchObject({ allowed: false, reason: "run-folder" });
     expect(fence.checkAgentRoot(join(home, "project"))).toEqual({ allowed: true });
+    // Never inside the Clover home or a fenced item either, folded (#197's check 3): an agent runs unsandboxed.
+    for (const inner of [join(clover, "plugins", "luna"), join(clover, "settings"), join(clover, "plugin-data"), join(clover, "PLUGINS", "luna"), clover, join(home, "c", "plugins", "luna")]) {
+      expect(fence.checkAgentRoot(inner)).toMatchObject({ allowed: false, reason: "clover-home" });
+    }
   });
 
   test("a home that is itself reached through a link is fenced at its real path", () => {
@@ -130,6 +134,16 @@ describe("the real fence on a real disk", () => {
     expect(p["sessions-runtime"]).toEqual(["/Users/me/.clover/sessions-runtime"]);
     expect(p["bot-memory"]).toEqual(["/Users/me/.clover/bots"]);
     expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" }).plugins).toEqual(["C:\\Users\\me\\.clover\\plugins"]);
+  });
+
+  test("bots' memory: a bot's sessions read only their own bot's folder; one with no bot is left to the kind's default", () => {
+    const { clover } = make();
+    for (const f of ["luna", "pack--alpha", "sol"]) mkdirSync(join(clover, "bots", f, "memory"), { recursive: true });
+    const folders = botFolders(clover).sort();
+    expect(folders).toEqual(["luna", "pack--alpha", "sol"]);
+    expect(botMemoryReadDenied({ cloverHome: clover, os: "linux", bot: "pack/alpha", folders })).toEqual([join(clover, "bots", "luna"), join(clover, "bots", "sol")]);
+    expect(botMemoryReadDenied({ cloverHome: clover, os: "linux", folders })).toEqual([]);
+    expect(botFolders(join(clover, "nowhere"))).toEqual([]);
   });
 
   test("the fenced spawn door (a hook's command, A-M3) is closed until the fenced process lands: refused, never run outside", async () => {
