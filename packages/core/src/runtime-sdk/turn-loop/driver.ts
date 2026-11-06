@@ -22,9 +22,8 @@
 //   does an input about to fold in; the turn starts once the user resumes, and never on a computer that stopped
 //   running the bot.
 // * **The pause stops background work** (the owner's rule: the pause stops everything): once the switch says no, the
-//   session's background shells and monitors are stopped through the runtime (`Query.stopTask`, agent SDK 0.0.69;
-//   until then the runtime ends, which ends them, and the transcript resumes at the next turn). Resuming doesn't
-//   restart them; the next turn says they were stopped.
+//   session's background shells and monitors are stopped through the runtime (`Query.stopTask`, by the host). Resuming
+//   doesn't restart them; the runtime's own notification of each stop reaches the model once the user resumes.
 // * **At each turn's end** the session lets go of its holds on every computer's screen (J's `releaseSession`); at the
 //   session's end its terminals close (J's `TerminalRouter.closeSession`).
 // * **Compaction:** `compact()` on the host's word (lane D's cache-timed or forced compaction), and the runtime's own
@@ -152,9 +151,6 @@ interface Incarnation {
   /** Looks at the pause while `tasks` isn't empty. */
   taskWatch?: ReturnType<typeof setInterval>;
 }
-
-/** The agent SDK's `Query.stopTask` (0.0.69), where the runtime has it. */
-type StopTaskQuery = Query & { stopTask?: (taskId: string, opts?: { by?: "host" | "assistant" }) => Promise<unknown> };
 
 /** How often a session with background tasks looks at the pause switch (it has no event for it). */
 const PAUSE_POLL_MS = 1_000;
@@ -647,11 +643,12 @@ export class BotSessionDriver implements SessionDriver {
     return this.#inc;
   }
 
-  async #closeIncarnation(inc: Incarnation, grace = this.#d.stopGraceMs ?? 10_000): Promise<void> {
+  async #closeIncarnation(inc: Incarnation): Promise<void> {
     this.#releasePromptHolds("closing");
     if (inc.taskWatch !== undefined) clearInterval(inc.taskWatch);
     inc.taskWatch = undefined;
     if (!inc.queue.closed) inc.queue.close();
+    const grace = this.#d.stopGraceMs ?? 10_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([inc.pump, new Promise<void>((r) => { timer = setTimeout(r, grace); })]);
     if (timer !== undefined) clearTimeout(timer);
@@ -681,30 +678,18 @@ export class BotSessionDriver implements SessionDriver {
     look();
   }
 
-  /** The pause stops the session's background shells and monitors (the owner's rule). Resuming doesn't restart them. */
+  /** The pause stops the session's background shells and monitors (the owner's rule), as the host (the model is told
+   *  "stopped by the host" when its turn may start again). Resuming doesn't restart them. */
   async #stopTasks(inc: Incarnation): Promise<void> {
-    const ids = [...inc.tasks];
-    if (ids.length === 0) return;
-    const q = inc.query as StopTaskQuery;
-    if (typeof q.stopTask === "function") {
-      for (const id of ids) {
-        try {
-          await q.stopTask(id);
-          inc.tasks.delete(id);
-        } catch (err) {
-          this.#log(`bot driver ${this.#ctx.sessionId}: stopping background task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
+    for (const id of [...inc.tasks]) {
+      try {
+        if (typeof inc.query.stopTask !== "function") throw new Error("this runtime can't stop a task (agent SDK 0.0.69's stopTask)");
+        await inc.query.stopTask(id, { by: "host" });
+        inc.tasks.delete(id);
+      } catch (err) {
+        this.#log(`bot driver ${this.#ctx.sessionId}: stopping background task ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-      return;
     }
-    // A runtime without `stopTask` (before agent SDK 0.0.69): it ends, and its end ends every shell and monitor it
-    // started. The turn the pause holds ends interrupted, what it was folding leads the next turn, and the transcript
-    // resumes there, told what was stopped.
-    this.#log(`bot driver ${this.#ctx.sessionId}: the bots are paused: ending the runtime to stop ${ids.length} background task(s)`);
-    if (this.#turn !== undefined) await this.interrupt();
-    if (this.#inc !== inc || inc.closed) return;
-    await this.#closeIncarnation(inc, 0);
-    this.#carry.push(formatTurnInput({ from: "note", label: "pause", text: `The user paused the bots, which stopped your background tasks (${ids.join(", ")}). They don't restart; start them again if they're still needed.`, by: { kind: "core" } }, this.#ctx.kind));
   }
 
   #push(inc: Incarnation, text: string): void {

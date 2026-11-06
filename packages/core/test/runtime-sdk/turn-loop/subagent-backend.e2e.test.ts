@@ -82,7 +82,7 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     }
   }, 60_000);
 
-  test("the pause holds a turn the agent's runtime starts on its own (a background task's notification) until the user resumes", async () => {
+  test("the pause stops the agent's background shells, and holds the turn their notification starts until the user resumes", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");
     let paused = false;
@@ -93,12 +93,15 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     const usage: number[] = [];
     session.onEvent((e) => { if (e.type === "usage") usage.push(Date.now()); });
     try {
-      const end = await session.prompt({ text: 'CALL Bash {"command":"sleep 2; echo finished","run_in_background":true,"description":"wait"}' });
+      const marker = join(root, "ran.txt");
+      const end = await session.prompt({ text: `CALL Bash ${JSON.stringify({ command: `sleep 3; touch ${JSON.stringify(marker)}`, run_in_background: true, description: "wait" })}` });
       expect(end.stopReason).toBe("end_turn");
       paused = true;
       const pausedAt = Date.now();
       await Bun.sleep(5_000);
       expect(usage.filter((t) => t > pausedAt)).toEqual([]);
+      // ...and the pause stopped the shell (as the host): its notification is what waits for the resume.
+      expect(existsSync(marker)).toBe(false);
       const resumedAt = Date.now();
       paused = false;
       for (const fn of listeners) fn();

@@ -260,7 +260,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
-  test("the pause stops the bot's background shells; the resume doesn't restart them, and the next turn is told", async () => {
+  test("the pause stops the bot's background shells as the host; the resume doesn't restart them, and the model hears of it then", async () => {
     const home = tempHome();
     let may = true;
     let resume: () => void = () => {};
@@ -272,19 +272,24 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       }),
     });
     const marker = join(tempHome(), "ran.txt");
-    const driver = new BotSessionDriver(ctx, deps(home, spawn));
+    const { frames, query } = tappedQuery();
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, pausePollMs: 200 }));
     try {
       const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command: `sleep 4; touch ${JSON.stringify(marker)}`, run_in_background: true, description: "wait" })}`), control());
       expect(results(end)[0]!.content).toContain("background task");
       may = false;
-      await Bun.sleep(7_000);
+      const pausedAt = Date.now();
+      await Bun.sleep(6_000);
       expect(existsSync(marker)).toBe(false);
-      may = true;
+      expect(frames.some((f) => f.msg.subtype === "task_notification" && f.msg.status === "stopped")).toBe(true);
+      // The stop's notification would start a model turn: it waits for the resume.
+      expect(frames.some((f) => f.at > pausedAt && f.msg.type === "result")).toBe(false);
+      const resumedAt = Date.now();
       resume();
-      ctx.bot.model = "winter-test/echo";
+      for (let i = 0; i < 150 && !frames.some((f) => f.at > resumedAt && f.msg.type === "result"); i++) await Bun.sleep(100);
+      expect(frames.some((f) => f.at > resumedAt && f.msg.type === "result")).toBe(true);
       const next = await driver.turn(user("back again"), control());
       expect(next.reason).toBe("end_turn");
-      expect(next.text).toContain("stopped your background tasks");
       expect(existsSync(marker)).toBe(false);
     } finally {
       await driver.stop();

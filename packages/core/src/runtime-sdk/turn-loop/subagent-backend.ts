@@ -76,9 +76,6 @@ const SYSTEM_PROMPT = [
 /** What a delegation with no pause gate gets: held, never open. */
 const CLOSED_GATE: AgentPauseGate = { mayAct: () => false };
 
-/** The agent SDK's `Query.stopTask` (0.0.69), where the runtime has it. */
-type StopTaskQuery = Query & { stopTask?: (taskId: string, opts?: { by?: "host" | "assistant" }) => Promise<unknown> };
-
 class InProcessSession implements AgentSession {
   readonly agentSessionId: string;
   #state: AgentSessionState = "starting";
@@ -269,21 +266,20 @@ class InProcessSession implements AgentSession {
     }
   }
 
-  /** While background tasks run, the pause stops them (the owner's rule). Through the runtime's `stopTask` (agent SDK
-   *  0.0.69); a runtime without it leaves them to the agent's end, which ends them. */
+  /** While background tasks run, the pause stops them (the owner's rule), through the runtime's `stopTask`, as the host. */
   #watchPause(): void {
     if (this.#offPause !== undefined || this.#pausePoll !== undefined) return;
     const look = () => {
       if (this.#tasks.size === 0 || this.#state === "stopped" || this.#state === "failed") return this.#unwatchPause();
       if (this.#gate.mayAct()) return;
       this.#unwatchPause();
-      const q = this.#query as StopTaskQuery | undefined;
-      if (typeof q?.stopTask !== "function") {
-        this.deps.log?.(`in-process agent ${this.agentSessionId}: paused with ${this.#tasks.size} background task(s); this runtime can't stop them before the agent ends`);
+      const q = this.#query;
+      if (q === undefined || typeof q.stopTask !== "function") {
+        this.deps.log?.(`in-process agent ${this.agentSessionId}: paused with ${this.#tasks.size} background task(s), and this runtime can't stop a task`);
         return;
       }
       for (const id of [...this.#tasks]) {
-        void q.stopTask(id).then(() => this.#tasks.delete(id), (err: unknown) => this.deps.log?.(`in-process agent ${this.agentSessionId}: stopping background task ${id} failed: ${err instanceof Error ? err.message : String(err)}`));
+        void q.stopTask(id, { by: "host" }).then(() => this.#tasks.delete(id), (err: unknown) => this.deps.log?.(`in-process agent ${this.agentSessionId}: stopping background task ${id} failed: ${err instanceof Error ? err.message : String(err)}`));
       }
     };
     this.#offPause = this.#gate.watch?.(look);
