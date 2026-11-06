@@ -346,7 +346,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       // The read-denied list includes the run folder; an implementation may hide more (lane C keeps `runtimes/`).
       expect(mac.denyRead).toContain(`${CLOVER}/run`);
       expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
-      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
+      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents`]));
       // The installed plugins folder is write-denied, not read-denied (#197's check 2).
       expect(fence("macos").check({ op: "write", path: `${CLOVER}/plugins/tarot/clover.json` })).toEqual({ allowed: false, reason: "plugins", path: `${CLOVER}/plugins` });
       expect(fence("macos").forCaller({ kind: "user", client: "app" }).check({ op: "read", path: `${CLOVER}/plugins/tarot/clover.json` }).allowed).toBe(true);

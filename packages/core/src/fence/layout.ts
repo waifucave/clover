@@ -86,14 +86,37 @@ export function pendingFenced(o: {
   };
 }
 
-/** The login item's files (B's contract `login-start`): macOS's LaunchAgents plist and its parked copy, Linux's
- *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */
+/** The login-start places (B's contract `login-start`): everything a command run for a session could plant to run
+ *  later outside the sandbox (spec item 1116) — Clover's own login item first, then every folder and startup file
+ *  that part 1's `pendingFenced` listed:
+ *  macOS: its LaunchAgents plist and its parked copy, the LaunchAgents, LaunchDaemons and StartupItems folders, the
+ *  login-items storage, the shell startup files and fish's config;
+ *  Linux: the systemd user units, autostart entries, environment files and session scripts, plus the shell startup files;
+ *  Windows: the Startup folder, the shell folders and startup files (the Run keys are the Windows lane's). */
 export function loginStartPaths(home: string, cloverHome: string, os: Os): string[] {
   const p = pathFor(os, home);
   const u = (...parts: string[]) => p.join(home, ...parts);
-  if (os === "macos") return [u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), p.join(cloverHome, "login")];
-  if (os === "linux") return [u(".config", "systemd", "user", "clover-core.service")];
-  return [];
+  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"];
+  if (os === "macos") {
+    return [
+      u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), p.join(cloverHome, "login"),
+      u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"), u("Library", "StartupItems"),
+      u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
+      ...shell.map((f) => u(f)), u(".config", "fish"),
+    ];
+  }
+  if (os === "linux") {
+    return [
+      u(".config", "systemd", "user"), u(".config", "autostart"), u(".local", "share", "systemd", "user"),
+      u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".xsessionrc"), u(".xinitrc"),
+      ...shell.map((f) => u(f)),
+    ];
+  }
+  return [
+    u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
+    u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"),
+    u(".bashrc"), u(".bash_profile"), u(".profile"), u(".minttyrc"),
+  ];
 }
 
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */

@@ -60,11 +60,12 @@ export function macFenceProfile(input: MacProfileInput): string {
   // to their writable root. A name that isn't ASCII there is refused outright, as the fence's second wall is, and an
   // ASCII name stays allowed. Inside the Clover home there is no naming handling: the home deny above already refuses
   // every new name there, and a later allow must never open one (a bot's own folders come last, for their runner).
+  // A naming folder that contains the home is skipped for the same reason: its allow must never reach inside the deny.
   const naming = new Set<string>();
   for (const d of policy.denyWrite) {
     if (!inside(d, input.cloverHome) && d !== input.cloverHome) {
       const parent = dirname(d);
-      if (!inside(parent, input.cloverHome) && !writable.some((w) => w === parent)) naming.add(parent);
+      if (!inside(parent, input.cloverHome) && !inside(input.cloverHome, parent) && !writable.some((w) => w === parent)) naming.add(parent);
     }
   }
   const doors = policy.closedDoors.flatMap((d) => (input.doorPaths ?? DOOR_PATHS)[d] ?? []);

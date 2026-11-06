@@ -163,7 +163,10 @@ describe("the real fence on a real disk", () => {
     expect(transcriptPaths).toEqual([join(clover, "sessions"), join(clover, "transcripts")].sort());
     expect(kinds.get("usage")).toBe(join(clover, "usage"));
     expect(kinds.get("sessions-runtime")).toBe(join(clover, "sessions-runtime"));
-    expect(fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path)).toContain(join(root, "home", "Library", "LaunchAgents", "com.waifucave.clover.core.plist"));
+    expect(fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path)).toEqual(expect.arrayContaining([
+      join(root, "home", "Library", "LaunchAgents"), join(root, "home", "Library", "LaunchDaemons"),
+      join(root, "home", ".zshrc"), join(root, "home", ".bashrc"), join(root, "home", ".config", "fish"),
+    ]));
     expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions")]);
   });
 

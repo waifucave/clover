@@ -51,6 +51,15 @@ describe("the core's own files in a caller's own folders", () => {
     } finally { rmSync(b("luna", "peek")); }
   });
 
+  test("the handle's real path decides, faked for Windows", () => {
+    // Without the path Windows can't answer, so every call would refuse; the fake stands in for its answer.
+    expect(() => readOwnFile(luna, b("luna", "memory", "MEMORY.md"), { realPath: () => null })).toThrow(FenceRefused);
+    // A real path outside the caller's own folders refuses, even with no link on disk.
+    expect(() => readOwnFile(luna, b("luna", "memory", "MEMORY.md"), { realPath: () => b("sol", "memory", "MEMORY.md") })).toThrow(FenceRefused);
+    // A matching answer reads through.
+    expect(readOwnFile(luna, b("luna", "memory", "MEMORY.md"), { realPath: () => b("luna", "memory", "MEMORY.md") }).toString()).toBe("luna's");
+  });
+
   test("refuseLinksIn guards a walked folder", () => {
     expect(refuseLinksIn(b("luna", "memory"))).toBeUndefined();
     symlinkSync(b("sol", "memory", "MEMORY.md"), b("luna", "memory", "peek.md"));

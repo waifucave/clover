@@ -64,10 +64,30 @@ function defaultUserData(os: Os, home: string): string {
 }
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
+/** The login-start places: everything a command run for a session could plant to run later outside the sandbox
+ *  (spec item 1116) — Clover's own login item first, then every folder and startup file lane C's layout lists. */
 function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
-  if (os === "macos") return [`${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`];
-  if (os === "linux") return [`${home}/.config/systemd/user/clover-core.service`];
-  return [];
+  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"];
+  if (os === "macos") {
+    return [
+      `${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`,
+      `${home}/Library/LaunchAgents`, `${home}/Library/LaunchDaemons`, `${home}/Library/StartupItems`,
+      `${home}/Library/Application Support/com.apple.backgroundtaskmanagementagent`,
+      ...shell.map((f) => `${home}/${f}`), `${home}/.config/fish`,
+    ];
+  }
+  if (os === "linux") {
+    return [
+      `${home}/.config/systemd/user`, `${home}/.config/autostart`, `${home}/.local/share/systemd/user`,
+      `${home}/.config/environment.d`, `${home}/.pam_environment`, `${home}/.xprofile`, `${home}/.xsessionrc`, `${home}/.xinitrc`,
+      ...shell.map((f) => `${home}/${f}`),
+    ];
+  }
+  return [
+    `${home}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup`,
+    `${home}/Documents/PowerShell`, `${home}/Documents/WindowsPowerShell`,
+    `${home}/.bashrc`, `${home}/.bash_profile`, `${home}/.profile`, `${home}/.minttyrc`,
+  ];
 }
 
 export class FakeFence implements Fence {
