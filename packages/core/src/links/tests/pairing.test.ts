@@ -25,14 +25,15 @@ afterEach(async () => {
   cleanup = [];
 });
 
-async function device(net: MemoryNetwork, name: string, opts: { hs?: FakeHandshake; rendezvous?: MemoryRendezvous; account?: string; kind?: "phone" } = {}) {
+async function device(net: MemoryNetwork, name: string, opts: { hs?: FakeHandshake; rendezvous?: MemoryRendezvous; account?: string; kind?: "phone"; clockOffsetMs?: number } = {}) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
   const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-pair-")), key, clock, self: { name, os: "macos", ...(opts.kind ? { kind: opts.kind } : {}) } });
   const wire = net.endpoint(key.publicKey);
   const handshake = opts.hs ? new HandshakeClient({ baseUrl: opts.hs.url, clock }) : undefined;
+  const devClock = opts.clockOffsetMs ? { ...clock, now: () => clock.now() + opts.clockOffsetMs!, monotonic: () => clock.monotonic(), setTimeout: clock.setTimeout.bind(clock), clearTimeout: clock.clearTimeout.bind(clock), status: () => clock.status() } : clock;
   const pairing = new PairingService({
-    self: key, registry, wire, clock, store, selfTarget: () => ({ relay: "https://relay.test/" }), account: () => opts.account ?? null,
+    self: key, registry, wire, clock: devClock, store, selfTarget: () => ({ relay: "https://relay.test/" }), account: () => opts.account ?? null,
     ...(handshake ? { handshake } : {}), ...(opts.rendezvous ? { rendezvous: opts.rendezvous } : {}),
   });
   cleanup.push(() => pairing.close());
@@ -192,6 +193,15 @@ describe("pairing", () => {
     expect(await host.registry.verifyAnswer(phone.key.id, data, phone.key.sign(data))).toBe(false);
     // The statement covers the algorithm: an Ed25519 statement doesn't register the same key.
     await expect(phone.registry.setOwnAnswerKey(pub, "secure-enclave", es256(answerKeyStatement(phone.key.id, pub, "secure-enclave")), undefined, "p256")).rejects.toThrow();
+  });
+
+  test("a host whose t is out of the statements' window is refused at its welcome (I's review)", async () => {
+    const net = new MemoryNetwork();
+    const host = await device(net, "Studio", { clockOffsetMs: -15 * 60_000 });
+    const joiner = await device(net, "Laptop");
+    const view = await host.pairing.begin();
+    expect(isContractError(await joiner.pairing.join(view.qr!).catch((e: unknown) => e), "refused")).toBe(true);
+    expect(joiner.registry.list()).toHaveLength(1);
   });
 
   test("two devices on the same account keep no pair credential and form no group", async () => {

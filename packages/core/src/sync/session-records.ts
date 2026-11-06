@@ -50,6 +50,9 @@ export interface SessionRecordSyncOptions {
   transport: Pick<LinkTransport, "connect" | "handle" | "links" | "watch">;
   registry: Pick<FileDeviceRegistry, "get" | "list">;
   host: SessionHostForSync;
+  /** The device that holds the lease now (lease.ts `state().holder`): after a takeover or a hand-back it runs the bots,
+   *  so this computer takes a known session's records from it, as its own view moves to it. */
+  holder?(): string | null;
   /** The lease's fencing token, (scope, epoch) (lease.ts `isStale`). */
   isStale?(epoch: number, scope?: string): boolean;
   /** The lease record this computer is on (lease.ts `scopeId`): stamped on what it sends, beside each record's epoch. */
@@ -210,10 +213,13 @@ export class SessionRecordSync {
     const known = this.#o.host.get(id);
     const view = known ?? entries[0]?.payload?.view;
     if (!view || view.id !== id) return { ok: false, reason: "refused" };
-    // Only the computer running the session gives its records places.
+    // Only the computer running the session gives its records places. For a session this computer knows, which one
+    // that is comes from its own view, never from what the sender says (H-M2's check 2): the runner changes only
+    // through the lease or a hand-back, which lane D's host records itself.
     const writer = this.#o.registry.get(from)?.computer;
-    const named = entries.find((e) => e.payload?.view)?.payload.view?.computer ?? view.computer;
-    if (writer === undefined || named !== writer) return { ok: false, reason: "not_writer" };
+    const named = known ? known.computer : view.computer;
+    const moved = known !== undefined && writer !== undefined && named !== writer && this.#o.holder?.() === from;
+    if (writer === undefined || (named !== writer && !moved)) return { ok: false, reason: "not_writer" };
     const records: SessionRecord[] = [];
     let next = head;
     for (const e of entries) {
@@ -223,7 +229,8 @@ export class SessionRecordSync {
       next++;
     }
     const late = entries.some((e) => this.#o.isStale?.(e.payload.record.epoch ?? 0, typeof e.scope === "string" ? e.scope : undefined) ?? false);
-    const v = entries.find((e) => e.payload?.view)?.payload.view ?? view;
+    // A peer's view never rewrites a known session's (its runner, its title); only a new session takes the sender's.
+    const v = known ? (moved ? { ...known, computer: writer! } : known) : (entries.find((e) => e.payload?.view)?.payload.view ?? view);
     this.#o.host.ingest(v, records, { from, late });
     return { ok: true, head: next - 1 };
   }

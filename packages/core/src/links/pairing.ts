@@ -42,7 +42,7 @@ import { type AnswerKeyRecord, answerKeyStatement, type FileDeviceRegistry, type
 import { decode, encode } from "./codec";
 import { FrameReader, frame } from "./frames";
 import {
-  admitStatement, groupKeyRef, groupStatement, type HandshakeClient, joinStatement, openPairBox, pairKeyRef, pairSecretRef,
+  admitStatement, groupKeyRef, groupStatement, type HandshakeClient, joinStatement, openPairBox, pairKeyRef, pairSecretRef, STATEMENT_FRESH_MS,
   pairStatement, sealPairBox,
 } from "./handshake";
 import { ALPN_PAIR, CLOSE_NORMAL, CLOSE_PROTOCOL, type DialTarget, type WireConn, type WireEndpoint, type WireStream, WIRE_PRIORITY } from "./wire";
@@ -246,6 +246,13 @@ export class PairingService {
     const host = this.#readSide(w, conn.peerKey);
     if (!host || toBase64(conn.peerKey) !== toBase64(offer.hostKey) || (await deviceIdFor(conn.peerKey)) !== host.record.id) return this.#protocol(p);
     if (typeof w.t !== "number" || typeof w.group !== "string" || typeof w.fresh !== "boolean") return this.#protocol(p);
+    // The host's `t` dates the statements both sign, its admit of this device among them: an old one is refused, so a
+    // host holding another device's old admit can't replay it here (I's review).
+    if (Math.abs(w.t - this.#o.clock.now()) > STATEMENT_FRESH_MS) {
+      this.#fail(p, "the other device's clock is too far off (or it replayed an old pairing)");
+      conn.close(CLOSE_PROTOCOL, "stale t");
+      throw new ContractError("refused", p.error!);
+    }
     if (!(w.nonce instanceof Uint8Array) || w.nonce.length !== PAIR_NONCE_BYTES) return this.#protocol(p);
     const transcript = fullTranscript(joinerPart, sideForTranscript(host, false), { t: w.t, group: w.group, nonce: w.nonce });
     if (!(w.proof instanceof Uint8Array) || !verifyPairProof(p.secret, PAIR_PROOF_HOST, transcript, w.proof)) {
@@ -547,18 +554,29 @@ export class PairingService {
               // Kept below with its signatures: `retryRegistrations` sends it again.
             }
           }
-          if (old) {
-            if (joined) {
+          if (old && !joined) {
+            // A merge the service didn't take: this device stays in its own group (it never leaves on a join that
+            // isn't in), and the user can pair again.
+            if (old.id !== p.group) await this.#o.store.delete(groupKeyRef(p.group!));
+          } else {
+            if (old) {
               // The service moved the key already; a service that didn't takes its own removal.
               await this.#o.handshake!.removeGroupMember(old.id, p.groupKey, mine).catch(() => undefined);
+              if (old.id !== p.group) await this.#o.store.delete(groupKeyRef(old.id));
+              this.#o.registry.leaveGroup("moved");
             }
-            if (old.id !== p.group) await this.#o.store.delete(groupKeyRef(old.id));
-            this.#o.registry.leaveGroup("moved");
+            this.#o.registry.setGroup({
+              id: p.group!, joinedAt: this.#o.clock.now(), ownKey: mine, members: {},
+              ...(joined ? {} : { pendingJoin: { ...join, via: peer.record.id } }),
+            });
+            if (old) this.#o.onMerged?.(old, peer.record.id);
           }
-          this.#o.registry.setGroup({ id: p.group!, joinedAt: this.#o.clock.now(), ownKey: mine, members: {}, ...(joined ? {} : { pendingJoin: join }) });
-          if (old) this.#o.onMerged?.(old, peer.record.id);
+          // The host's key is bound here only once the service took the join it admitted (I's review): otherwise the
+          // possession-proved `link.group.info` binds it later.
+          if (joined) this.#o.registry.addGroupMember(peer.record.id, peerGroupKey);
+        } else {
+          this.#o.registry.addGroupMember(peer.record.id, peerGroupKey);
         }
-        this.#o.registry.addGroupMember(peer.record.id, peerGroupKey);
       }
       p.status = "paired";
       this.#emit(p);
@@ -614,7 +632,8 @@ export class PairingService {
     const g2 = this.#o.registry.group();
     if (g2?.pendingJoin) {
       try {
-        await hs.joinGroup(g2.id, g2.pendingJoin);
+        const { via: _via, ...join } = g2.pendingJoin;
+        await hs.joinGroup(g2.id, join);
         const { pendingJoin: _j, ...rest } = this.#o.registry.group()!;
         this.#o.registry.setGroup(rest);
       } catch {

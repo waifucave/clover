@@ -61,9 +61,12 @@ export interface GroupRecord {
   size?: number;
   /** The group this one replaced after this device was removed from it (group recovery's two-voter case). */
   recoveredFrom?: string;
+  /** Every key ever bound to each device in this group, so a revoke removes them all (H-M2's check 2). */
+  keysEver?: Record<string, string[]>;
   /** A founding or a join the service hasn't taken yet (it was unreachable), signed, to send again. */
   pendingCreate?: { group: string; key: string; t: number; sig: string };
-  pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string; from?: string };
+  /** `via`: the device whose admit it is, to ask for a fresh one when this one goes stale. */
+  pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string; from?: string; via?: string };
 }
 
 /** How this device left a group: moved with a merge or an invite, removed by another member, or left on its own
@@ -107,8 +110,8 @@ export interface PendingRevoke {
   steps: string[];
   /** The account-less pair to end, whose keys are kept until the service has ended it. */
   pair?: string;
-  /** The group and the revoked member's key in it, to remove at the service. */
-  group?: { id: string; member: string };
+  /** The group and the revoked member's key in it, to remove at the service, with every other key ever bound to it. */
+  group?: { id: string; member: string; others?: string[] };
 }
 
 /** What makes a peer take a device's answer key: the app's own registration of the key (signed by it), and the chain
@@ -480,12 +483,27 @@ export class FileDeviceRegistry implements DeviceRegistry {
     this.#save();
   }
 
-  addGroupMember(device: string, key: string): void {
+  /** Binds a device's member key: from a confirmed pairing, an invited move, or a key the device proved it holds and
+   *  the service lists. A bound key is never overwritten, and a key bound to one device is never bound to another
+   *  (H-M2's check 2). False when it isn't bound. */
+  addGroupMember(device: string, key: string): boolean {
     const g = this.#state.group;
     if (!g) throw new ContractError("not_found", "no group");
-    if (g.members[device]?.key === key) return;
+    const bound = g.members[device];
+    if (bound) return bound.key === key;
+    if (key === g.ownKey || Object.values(g.members).some((m) => m.key === key)) return false;
     g.members[device] = { key, since: this.#clock.now() };
+    const ever = (g.keysEver ??= {});
+    ever[device] = [...new Set([...(ever[device] ?? []), key])];
     this.#save();
+    return true;
+  }
+
+  /** Every key this group record ever bound to `device` (its current one among them). */
+  groupKeysOf(device: string): string[] {
+    const g = this.#state.group;
+    if (!g) return [];
+    return [...new Set([...(g.keysEver?.[device] ?? []), ...(g.members[device] ? [g.members[device].key] : [])])];
   }
 
   /** What the service's read of the group says: who votes from when, and how many members it has. A member the read
@@ -533,7 +551,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
   // ---- a revocation's steps at the services (S5) ----
 
   pendingRevokes(): PendingRevoke[] {
-    return this.#state.pendingRevokes.map((r) => ({ ...r, steps: [...r.steps], ...(r.group ? { group: { ...r.group } } : {}) }));
+    return this.#state.pendingRevokes.map((r) => ({ ...r, steps: [...r.steps], ...(r.group ? { group: { ...r.group, ...(r.group.others ? { others: [...r.group.others] } : {}) } } : {}) }));
   }
 
   addPendingRevoke(r: Omit<PendingRevoke, "at">): void {

@@ -97,7 +97,9 @@ export interface RevokeOutcome {
 export async function revokeDevice(o: RevokeOptions, id: string, reason?: string): Promise<RevokeOutcome> {
   const pair = o.registry.pairWith(id);
   const group = o.registry.group();
-  const memberKey = group?.members[id]?.key;
+  // Every key ever bound to it in the group, not only the last (H-M2's check 2).
+  const keys = group ? o.registry.groupKeysOf(id) : [];
+  const memberKey = group?.members[id]?.key ?? keys[0];
   await o.registry.revoke(id, reason);
   const steps: RevokeStep[] = [];
   if (pair) steps.push("handshake-pair");
@@ -110,7 +112,8 @@ export async function revokeDevice(o: RevokeOptions, id: string, reason?: string
     if (o.services?.handshake) steps.push("handshake-account");
   }
   o.registry.addPendingRevoke({
-    device: id, steps, ...(pair ? { pair: pair.pairId } : {}), ...(group && memberKey ? { group: { id: group.id, member: memberKey } } : {}),
+    device: id, steps, ...(pair ? { pair: pair.pairId } : {}),
+    ...(group && memberKey ? { group: { id: group.id, member: memberKey, ...(keys.length > 1 ? { others: keys.filter((k) => k !== memberKey) } : {}) } } : {}),
   });
   const outcome = await runRevokeSteps(o, id);
   return outcome;
@@ -155,11 +158,14 @@ async function runRevokeSteps(o: RevokeOptions, id: string): Promise<RevokeOutco
   const g = pending.group;
   if (g) {
     await run("handshake-group", async () => {
-      if (o.removeGroupMember) return o.removeGroupMember(g.id, g.member, id);
+      if (o.removeGroupMember) {
+        for (const k of [g.member, ...(g.others ?? [])]) await o.removeGroupMember(g.id, k, id);
+        return;
+      }
       if (!o.handshake) throw new ContractError("offline", "no handshake to remove the member at yet");
       const stored = await o.store.get(groupKeyRef(g.id));
       if (!stored) throw new ContractError("not_found", "the group's key is gone");
-      await o.handshake.removeGroupMember(g.id, ed25519FromSecret(stored.value), g.member);
+      for (const k of [g.member, ...(g.others ?? [])]) await o.handshake.removeGroupMember(g.id, ed25519FromSecret(stored.value), k);
     });
   }
   const account = o.account;

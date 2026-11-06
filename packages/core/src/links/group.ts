@@ -30,8 +30,8 @@ import type { LinkTransport } from "../contracts/link-transport";
 import type { SecretStore } from "../contracts/secret-store";
 import type { CardOpener } from "../devices/rpc";
 import type { FileDeviceRegistry, GroupLeaving, GroupRecord } from "../devices/registry";
-import { fromBase64Url, randomBytes, toBase64Url } from "../identity/bytes";
-import { ed25519FromSecret, generateEd25519, type Ed25519Key } from "../identity/keys";
+import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "../identity/bytes";
+import { ed25519FromSecret, generateEd25519, type Ed25519Key, verifyEd25519 } from "../identity/keys";
 import {
   admitStatement, groupKeyRef, groupStatement, HandshakeError, joinStatement, pairKeyRef, pairStatement, quorumOf, removeStatement,
   ROLLBACK_MS, STATEMENT_FRESH_MS, type GroupMember, type HandshakeClient,
@@ -60,6 +60,9 @@ export interface GroupInfo {
   account: boolean;
   /** The group it replaced after it was removed from that one. */
   recoveredFrom: string | null;
+  /** The sender's group key's signature over `groupKeyStatement(group, its device id)`, base64url: that it holds the
+   *  key it names (H-M2's check 2). */
+  proof: string | null;
 }
 
 export interface GroupKeeperOptions {
@@ -227,17 +230,31 @@ export class GroupKeeper {
 
   async #info(): Promise<GroupInfo> {
     const g = this.#o.registry.group();
+    const key = g ? await this.#key(g) : undefined;
     return {
       group: g?.id ?? null, key: g?.ownKey ?? null, size: g ? sizeOf(g) : 0,
       account: await this.#o.signedIn(), recoveredFrom: g?.recoveredFrom ?? null,
+      proof: g && key ? toBase64Url(key.sign(groupKeyStatement(g.id, this.#o.registry.self().id))) : null,
     };
   }
 
-  /** A linked computer of the same group says its key. Nothing else follows from what a peer says of its group. */
+  /** A linked member of the same group says its key. It's bound only if it proves holding the key, the service lists
+   *  the key, the device has no key bound yet, and no other device has that one (H-M2's check 2: a paired member
+   *  can't rebind its own key or take another's). Nothing else follows from what a peer says of its group. */
   async #consider(peer: string, theirs: GroupInfo): Promise<void> {
     if (this.#closed || theirs.account || (await this.#o.signedIn())) return;
     const mine = this.#o.registry.group();
-    if (theirs.group !== null && mine?.id === theirs.group && theirs.key) this.#o.registry.addGroupMember(peer, theirs.key);
+    if (theirs.group === null || mine?.id !== theirs.group || !theirs.key || !theirs.proof) return;
+    const bound = mine.members[peer];
+    if (bound) return;
+    if (theirs.key === mine.ownKey || Object.values(mine.members).some((m) => m.key === theirs.key)) return;
+    const raw = fromBase64Url(theirs.key);
+    const sig = fromBase64Url(theirs.proof);
+    if (!raw || raw.length !== 32 || !sig || !verifyEd25519(raw, groupKeyStatement(mine.id, peer), sig)) return;
+    const key = await this.#key(mine);
+    if (!key) return;
+    const listed = (await this.#o.handshake.readGroup(mine.id, key)).members.some((m) => m.key === theirs.key);
+    if (listed) this.#o.registry.addGroupMember(peer, theirs.key);
   }
 
   // ---- joining and leaving ----
@@ -415,6 +432,7 @@ export class GroupKeeper {
     // key it paired with. One key per device: never one that already has a live key here.
     const expected = this.#expected.get(from);
     const invited = expected !== undefined && expected.group === p.group && expected.key === p.key;
+    // The key bound at pairing (bindings are never overwritten), and only while its join is pending (not live below).
     const resign = g.members[from]?.key === p.key;
     if (!invited && !resign) throw new ContractError("refused", "this computer didn't invite that key");
     const live = new Set((await this.#o.handshake.readGroup(g.id, key)).members.map((m) => m.key));
@@ -534,7 +552,7 @@ export class GroupKeeper {
     }
     const g2 = this.#o.registry.group()!;
     if (g2.pendingJoin && now - g2.pendingJoin.t > STATEMENT_FRESH_MS) {
-      const by = deviceOfKey(g2, g2.pendingJoin.by);
+      const by = g2.pendingJoin.via ?? deviceOfKey(g2, g2.pendingJoin.by);
       if (!by) return;
       try {
         const t = hs.now();
@@ -653,8 +671,13 @@ function parseInfo(raw: unknown): GroupInfo | undefined {
   const str = (x: unknown) => (typeof x === "string" ? x : null);
   return {
     group: str(p.group), key: str(p.key), size: typeof p.size === "number" && Number.isFinite(p.size) ? p.size : 0,
-    account: p.account === true, recoveredFrom: str(p.recoveredFrom),
+    account: p.account === true, recoveredFrom: str(p.recoveredFrom), proof: str(p.proof),
   };
+}
+
+/** What a member signs with its group key to show it holds the key it names for its device. */
+export function groupKeyStatement(group: string, device: string): Uint8Array {
+  return utf8(`clover/group-key/1\n${group}\n${device}`);
 }
 
 /** The first `n` defined results of `ps`, as soon as they're in (or all there are, once every one has settled). */

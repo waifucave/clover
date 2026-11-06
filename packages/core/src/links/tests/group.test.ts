@@ -164,6 +164,85 @@ describe("merging two groups (R18)", () => {
   }, 40_000);
 });
 
+describe("a member's key is bound once (H-M2's check 2, the reviewer's P1 and P2)", () => {
+  test("P1: a paired member claiming a fresh key gets no admit for it, and its revoke removes its key", async () => {
+    const hs = service();
+    const net = new MemoryNetwork();
+    const [a, b, t] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Thief")];
+    await pair(a, b);
+    await pair(a, t);
+    const g = groupOf(a)!;
+    await waitFor(() => hs.groups.get(g)?.members.size === 3);
+    const tKey = t.links.registry.group()!.ownKey;
+    t.links.groups!.close();
+    const link = await t.links.transport.connect(a.links.key.id);
+    const { generateEd25519 } = await import("../../identity/keys");
+    const { GROUP_LINK, groupKeyStatement } = await import("../group");
+    for (let i = 0; i < 3; i++) {
+      const x = generateEd25519();
+      const xk = toBase64Url(x.publicKey);
+      // Even with a proof that it holds the fresh key, the service doesn't list it, and the thief has a key bound.
+      await link.request(GROUP_LINK.info, { group: g, key: xk, size: 3, account: false, recoveredFrom: null, proof: toBase64Url(x.sign(groupKeyStatement(g, t.links.key.id))) });
+      await Bun.sleep(100);
+      expect(isContractError(await link.request(GROUP_LINK.admit, { group: g, key: xk, t: Date.now() }).catch((e: unknown) => e), "refused")).toBe(true);
+    }
+    expect(a.links.registry.group()!.members[t.links.key.id]?.key).toBe(tKey);
+    expect(hs.groups.get(g)!.members.size).toBe(3);
+    const out = revokeDevice(a.links.revokeOptions(), t.links.key.id);
+    await answer(b, "device-revoke", true);
+    expect((await out).steps.find((x) => x.step === "handshake-group")).toMatchObject({ ok: true });
+    expect(hs.groups.get(g)!.members.has(tKey)).toBe(false);
+  }, 40_000);
+
+  test("P2: a paired member claiming another's key doesn't take it, so revoking the thief leaves the laptop", async () => {
+    const hs = service();
+    const net = new MemoryNetwork();
+    const [a, b, t] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Thief")];
+    await pair(a, b);
+    await pair(a, t);
+    const g = groupOf(a)!;
+    await waitFor(() => hs.groups.get(g)?.members.size === 3);
+    const [bKey, tKey] = [b.links.registry.group()!.ownKey, t.links.registry.group()!.ownKey];
+    t.links.groups!.close();
+    const link = await t.links.transport.connect(a.links.key.id);
+    // No proof it holds the laptop's key, and the laptop's key is bound already: nothing changes.
+    await link.request("link.group.info", { group: g, key: bKey, size: 3, account: false, recoveredFrom: null, proof: null });
+    await Bun.sleep(200);
+    expect(a.links.registry.group()!.members[t.links.key.id]?.key).toBe(tKey);
+    const out = revokeDevice(a.links.revokeOptions(), t.links.key.id);
+    await answer(b, "device-revoke", true);
+    await out;
+    const left = hs.groups.get(g)!.members;
+    expect(left.has(tKey)).toBe(false);
+    expect(left.has(bKey)).toBe(true);
+  }, 40_000);
+});
+
+describe("a join the service didn't take (I's review)", () => {
+  test("the joiner binds no host key, and a merge that didn't go through leaves it in its own group", async () => {
+    const hs = service();
+    const net = new MemoryNetwork();
+    let down = false;
+    const [a, b] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop", { down: () => down })];
+    down = true;
+    await pair(a, b);
+    // The laptop's join is pending: the studio's key isn't bound on it yet (the proved info binds it later).
+    expect(b.links.registry.group()?.pendingJoin).toBeDefined();
+    expect(b.links.registry.group()!.members[a.links.key.id]).toBeUndefined();
+    // A merge the service doesn't take: the server stays in its own group.
+    down = false;
+    const [c, d] = [await daemon(net, hs, "Server", { down: () => down }), await daemon(net, hs, "Mini")];
+    await pair(c, d);
+    const g2 = groupOf(c)!;
+    const [x, y] = [await daemon(net, hs, "Spare"), await daemon(net, hs, "Spare2")];
+    await pair(x, y);
+    down = true;
+    await pair(x, c);
+    expect(groupOf(c)).toBe(g2);
+    expect(c.links.registry.groupLeft(g2)).toBeUndefined();
+  }, 40_000);
+});
+
 describe("voters and the quorum (lane I's proposal)", () => {
   test("removing a member asks the other voters, each by its card: one declines, one agrees, and that's a quorum", async () => {
     const hs = service({ voteAfterMs: 0 });

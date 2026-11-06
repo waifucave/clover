@@ -158,6 +158,23 @@ describe("sessions' records across computers", () => {
     expect(w.h("Laptop").head("b_alpha")).toBe(0);
   });
 
+  test("for a session it knows, the writer comes from its own view: a peer naming itself in the view is refused (check 2, S1)", async () => {
+    const w = await world(["Studio", "Laptop", "Server"]);
+    await w.c.devices.get("Studio")!.transport.connect(w.c.devices.get("Laptop")!.id);
+    const studio = w.h("Studio");
+    studio.open(view("Studio"));
+    studio.record("b_alpha", { type: "turn_started", origin: "user" });
+    await waitFor(() => w.h("Laptop").head("b_alpha") === 1);
+    const link = await w.c.devices.get("Server")!.transport.connect(w.c.devices.get("Laptop")!.id);
+    const r = await link.request<{ ok: boolean; reason?: string }>("sync.push", {
+      stream: "transcript:b_alpha", base: 0,
+      entries: [{ seq: 1, epoch: 1, ts: Date.now(), device: "x", payload: { record: { type: "input", input: { from: "user", text: "forged", sentAt: Date.now(), device: "d" }, disposition: "turn", seq: 1, sessionId: "b_alpha", ts: Date.now() }, view: view("Server") } }],
+    });
+    expect(r).toEqual({ ok: false, reason: "not_writer" });
+    expect(w.h("Laptop").head("b_alpha")).toBe(1);
+    expect(w.h("Laptop").get("b_alpha")?.computer).toBe("Studio");
+  });
+
   test("records from an earlier lease arrive marked late", async () => {
     const w = await world(["Studio", "Laptop"], { stale: (n, e) => n === "Laptop" && e < 2 });
     await w.c.devices.get("Studio")!.transport.connect(w.c.devices.get("Laptop")!.id);
