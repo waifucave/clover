@@ -1626,7 +1626,7 @@ async function runDaemonStart(): Promise<void> {
  *  `setup` is idempotent, `remove` exits 0 when nothing is left, `status` never elevates. Exits 0
  *  on done, 2 when not elevated, 3 on a launcher hash mismatch (both fail closed). */
 async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
-  const { SANDBOX_EXIT, srtWinPath, launcherPinned, setupArgs, removeArgs, statusArgs, parseSrtStatus, setupExitMessage, NET_SESSION_PROBE } =
+  const { SANDBOX_EXIT, SANDBOX_PRINCIPAL, srtWinPath, srtWinArch, launcherPinned, launcherProblem, setupArgs, removeArgs, statusArgs, parseSrtStatus, setupExitMessage, NET_SESSION_PROBE } =
     await import("@waifucave/clover-core");
   const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
   if (process.platform !== "win32") {
@@ -1635,6 +1635,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     return;
   }
   const launcher = srtWinPath();
+  const arch = srtWinArch();
   const run = async (argv: readonly string[]): Promise<{ code: number; out: string }> => {
     try {
       const proc = Bun.spawn([...argv], { stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true });
@@ -1652,8 +1653,9 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
         return;
       }
-      if (!launcherPinned(launcher)) {
-        console.error("sandbox setup refused: the launcher's hash doesn't match the pinned build");
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        console.error(`sandbox setup refused: ${problem}`);
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
@@ -1677,14 +1679,14 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       }
       // The launcher is gone: only exit 0 when the principal is gone too (nothing is left).
       // When the principal exists but the pinned launcher is missing, removal can't proceed.
-      if (!launcherPinned(launcher)) {
-        const { SANDBOX_PRINCIPAL } = await import("@waifucave/clover-core");
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
         const probe = await run(["net", "user", SANDBOX_PRINCIPAL]);
         if (probe.code !== 0) {
           console.log("Bash's fence is removed");
           return;
         }
-        console.error("sandbox remove refused: the principal exists but the pinned launcher is missing");
+        console.error(`sandbox remove refused: the principal exists but ${problem}`);
         process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
@@ -1698,9 +1700,11 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       return;
     }
     case "status": {
-      if (!launcherPinned(launcher)) {
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
         if (rest.includes("--json")) console.log(JSON.stringify({ ready: false, reason: "launcher-missing-or-unpinned" }));
         else console.log("Bash isn't set up under Clover's fence: the launcher is missing or unpinned");
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
         return;
       }
       const { code, out } = await run([...statusArgs(launcher)]);
@@ -1709,7 +1713,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         process.exitCode = 1;
         return;
       }
-      const st = parseSrtStatus(out, launcher);
+      const st = parseSrtStatus(out, { launcher, arch });
       if (rest.includes("--json")) {
         console.log(JSON.stringify({ ready: st.ready, reason: st.reason, user: st.user }));
         return;
