@@ -337,7 +337,15 @@ describe("TabStreams", () => {
     expect(transport.streams[4]!.written.at(-1)).toEqual({ kind: "ended", reason: "failed", message: "encoder error" });
     expect(app.commands.length).toBe(n5);
     expect(streams.list()).toEqual([]);
-    expect(ended.map((e) => e.reason)).toEqual(["stopped", "closed", "gone", "gone", "failed"]);
+    // The app goes away (restarts): its encoders are gone, so its streams end, and there is nothing to stop.
+    await streams.start({ tab: "tab_6", device: "phone" });
+    const n6 = app.commands.length;
+    streams.appGone();
+    await flush();
+    expect(transport.streams[5]!.written.at(-1)).toEqual({ kind: "ended", reason: "failed", message: "the Clover app stopped" });
+    expect(transport.streams[5]!.ended).toBe(true);
+    expect(app.commands.length).toBe(n6);
+    expect(ended.map((e) => e.reason)).toEqual(["stopped", "closed", "gone", "gone", "failed", "failed"]);
   });
 
   test("an offline device, no app or an app that can't stream fail the start and leave nothing behind", async () => {

@@ -15,13 +15,19 @@ const viewportAssets = { preload: process.env.CLOVER_BROWSER_TEST_PRELOAD ?? "",
 const streamAssets = { preload: process.env.CLOVER_STREAM_TEST_PRELOAD ?? "", html: process.env.CLOVER_STREAM_TEST_HTML ?? "" };
 const viewerHtml = process.env.CLOVER_STREAM_TEST_VIEWER ?? "";
 
-/** A red block that stays (the colour the viewer checks), on white, and a blue box that moves every frame. */
+/** A red block that stays (the colour the viewer checks), on white, and below it a band of random tiles redrawn
+ *  every frame: enough motion that the encoder spends its whole target, so a lower target shows. */
 const ANIM = `<!doctype html><html><head><meta charset="utf-8"><title>Stream fixture</title>
 <style>html,body{margin:0;background:#fff;overflow:hidden} #red{position:fixed;left:100px;top:100px;width:300px;height:300px;background:#d02020}
-#box{position:fixed;left:0;top:500px;width:160px;height:160px;background:#2040d0} #n{position:fixed;left:600px;top:120px;font:40px monospace}</style></head>
-<body><div id="red"></div><div id="box"></div><div id="n">0</div><script>
-  let i = 0; const box = document.getElementById("box"), n = document.getElementById("n");
-  (function f(){ i++; box.style.left = ((i * 7) % 1100) + "px"; n.textContent = String(i); requestAnimationFrame(f); })();
+#c{position:fixed;left:0;top:460px} #n{position:fixed;left:600px;top:120px;font:40px monospace}</style></head>
+<body><div id="red"></div><canvas id="c" width="1280" height="340"></canvas><div id="n">0</div><script>
+  let i = 0, seed = 1; const n = document.getElementById("n"), ctx = document.getElementById("c").getContext("2d");
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  (function f(){
+    i++; n.textContent = String(i);
+    for (let y = 0; y < 340; y += 20) for (let x = 0; x < 1280; x += 20) { ctx.fillStyle = "rgb(" + (rnd() * 255 | 0) + "," + (rnd() * 255 | 0) + "," + (rnd() * 255 | 0) + ")"; ctx.fillRect(x, y, 20, 20); }
+    requestAnimationFrame(f);
+  })();
 </script></body></html>`;
 const STILL = `<!doctype html><html><head><meta charset="utf-8"><title>Still fixture</title>
 <style>html,body{margin:0;background:#fff} #g{position:fixed;left:200px;top:200px;width:200px;height:200px;background:#20b040}</style></head>
@@ -118,6 +124,18 @@ async function main(): Promise<void> {
   await viewer.loadFile(viewerHtml);
   const bot = { kind: "bot" as const, bot: "alpha" };
   let tab!: TabView;
+  // Recorded, not asserted: which encoders this runner says it has, with a hardware encoder required.
+  summary.encoders = await viewer.webContents.executeJavaScript(`(async () => {
+    const out = {};
+    for (const codec of ["avc1.42E01F", "avc1.42E020", "avc1.42E028", "avc1.4D0028", "avc1.640028", "vp8", "vp09.00.10.08", "av01.0.04M.08"]) {
+      for (const hw of ["prefer-hardware", "no-preference"]) {
+        const cfg = { codec, width: 1280, height: 720, bitrate: 2500000, framerate: 30, latencyMode: "realtime", hardwareAcceleration: hw };
+        if (codec.startsWith("avc1")) cfg.avc = { format: "annexb" };
+        try { out[codec + " " + hw] = (await VideoEncoder.isConfigSupported(cfg)).supported; } catch (e) { out[codec + " " + hw] = String(e); }
+      }
+    }
+    return out;
+  })()`);
 
   await step("a bot's tab on an animating page opens offscreen at 10 fps, with no window on screen", async () => {
     tab = await host.open({ id: "tab_anim", owner: bot, url: `${origin}/anim`, place: "headless" });
@@ -174,7 +192,7 @@ async function main(): Promise<void> {
     const after = kbpsBetween("s1", t1, Date.now());
     const stats = host.streams().find((s) => s.stream === "s1");
     summary.bitrate = { before, after, target: 300 };
-    return { ok: stats?.kbps === 300 && after < before * 0.8, detail: { before, after, stats } };
+    return { ok: stats?.kbps === 300 && after < before * 0.6, detail: { before, after, stats } };
   });
 
   await step("stopping sends `ended`, lets the encoder page go and puts the tab back at 10 fps", async () => {

@@ -358,6 +358,16 @@ export class TabStreams {
     }
   }
 
+  /** The app stopped or restarted (lane E's pair went down): its encoders are gone, so every stream ends (`failed`);
+   *  a viewer that still wants the tab asks again. */
+  appGone(): void {
+    for (const group of [...this.groups.values()]) {
+      this.groups.delete(group.id);
+      for (const v of [...group.viewers]) this.finish(v, { kind: "ended", reason: "failed", message: "the Clover app stopped" });
+      group.viewers.clear();
+    }
+  }
+
   /** A device's link went down (also wired to the transport's `watch`): its streams go, quietly. */
   deviceGone(device: string): void {
     for (const v of [...this.viewers.values()]) if (v.device === device) this.remove(v, "gone", false);
