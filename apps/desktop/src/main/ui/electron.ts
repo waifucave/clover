@@ -88,7 +88,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // itself is 20 crypto-random bytes, so no header gate is needed.
   ses.protocol.handle(SEALED_SCHEME, (request) => {
     const url = new URL(request.url);
-    if (url.pathname !== "/" && !url.pathname.startsWith("/card/")) return notFound();
+    // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
+    // single use is the real gate.
+    if (url.host !== "card") return notFound();
     const token = url.searchParams.get("token");
     if (token === null || token === "" || token.length > 128) return forbidden();
     const serving = runtime.serveSeal(token);
@@ -196,10 +198,13 @@ export function guardContents(wc: WebContents, log: (line: string) => void): voi
   wc.on("will-navigate", (e) => e.preventDefault());
   wc.on("will-frame-navigate", (e) => {
     if (e.isMainFrame) {
-      if (!e.url.startsWith(`${CORE_SCHEME}://app/`)) e.preventDefault();
+      // A fallback card's own window is a main frame on the sealed scheme; every other main frame stays on the core.
+      if (!e.url.startsWith(`${CORE_SCHEME}://app/`) && !e.url.startsWith(`${SEALED_SCHEME}://`)) e.preventDefault();
       return;
     }
-    if (!e.url.startsWith(`${LAYER_SCHEME}://`)) {
+    // A sealed frame is an iframe on the sealed scheme inside a plugin's layer document; every other subframe stays
+    // on the layer scheme.
+    if (!e.url.startsWith(`${LAYER_SCHEME}://`) && !e.url.startsWith(`${SEALED_SCHEME}://`)) {
       log(`layers: a frame tried to leave for ${e.url.slice(0, 120)}`);
       e.preventDefault();
     }
