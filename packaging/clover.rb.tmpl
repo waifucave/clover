@@ -45,16 +45,14 @@ cask "clover" do
               must_succeed: false,
             }
 
-  # ~/.clover is not here: it holds the user's bots, their history and their keys.
+  # The owner's rule: zap removes the caches, the preferences, the logs and the login item, and nothing else. ~/.clover
+  # (the user's bots, their history and their keys) and the app's own data stay.
   zap trash: [
-    "~/Library/Application Support/Clover",
     "~/Library/Caches/@waifucaveclover-desktop-updater",
     "~/Library/Caches/com.waifucave.clover",
     "~/Library/Caches/com.waifucave.clover.ShipIt",
-    "~/Library/HTTPStorages/com.waifucave.clover",
     "~/Library/LaunchAgents/com.waifucave.clover.core.plist",
     "~/Library/Logs/Clover",
     "~/Library/Preferences/com.waifucave.clover.plist",
-    "~/Library/Saved Application State/com.waifucave.clover.savedState",
   ]
 end
