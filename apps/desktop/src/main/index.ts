@@ -32,6 +32,7 @@ import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
+import { startUpdater } from "./updater";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -189,6 +190,16 @@ async function ready(): Promise<void> {
   pair = makePair();
   setMenu();
   if (!headless) {
+    // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
+    void startUpdater({
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      log,
+      onReady: (version) => {
+        const t = (key: string) => translate(runtime.coreStrings(), `clover.core.update.ready.${key}`, { version });
+        new Notification({ title: t("title"), body: t("body") }).show();
+      },
+    }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
     tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
