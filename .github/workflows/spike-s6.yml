@@ -17,12 +17,12 @@ name: Spike S6 · folder-tree mounts
 # [s6-win-tsc-probe] makes the Windows speed-tsc suite run ci/windows-tsc.ps1 instead of its
 # speed matrix, and [s6-win-netvol] measures tsc on the tree mounted as a network volume.
 # Manual runs (workflow_dispatch) run on the lane branch only; every job checks the ref.
-# J-M1: on `lane/j-m1` only the `tree` job runs: the core's tree and computers tests (lane B's conformance suites
+# J-M1 and J-M2: on `lane/j-m1` and `lane/j-m2` only the `tree` job runs: the core's tree and computers tests (lane B's conformance suites
 # against the real code, and several computers on the fake link) on Linux, Windows and macOS, since ci.yml runs the
 # core suite on macOS alone. Lane M decides whether ci.yml takes it over.
 on:
   push:
-    branches: [lane/j-m0, lane/j-m1]
+    branches: [lane/j-m0, lane/j-m1, lane/j-m2]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,7 @@ permissions:
 jobs:
   tree:
     name: tree · ${{ matrix.runner }}
-    if: github.ref == 'refs/heads/lane/j-m1'
+    if: github.ref == 'refs/heads/lane/j-m1' || github.ref == 'refs/heads/lane/j-m2'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
