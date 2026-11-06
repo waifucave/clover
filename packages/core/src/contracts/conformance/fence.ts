@@ -172,7 +172,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       }
     });
 
-    test("the Clover home is default-deny for every tool and runner; three per-caller ways in (the controller's ruling)", () => {
+    test("the Clover home is default-deny for every tool and runner; the per-caller ways in (the controller's rulings)", () => {
       const f = fence("macos");
       const session = (bot: string | undefined, sessionKind: "bot" | "side-thread" | "agent" | "coding", sessionId = "s_1") =>
         ({ kind: "session", sessionId, sessionKind, ...(bot ? { bot } : {}) }) as const;
@@ -184,7 +184,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       const callers = { main, side: session("luna", "side-thread"), agent: session("luna", "agent"), coding: session(undefined, "coding"), other: session("alpha", "bot", "s_9"),
         plugin: { kind: "plugin", pluginId: "tarot" } as const, peer: { kind: "peer", device: "desk0000000000000001", sessionId: "s_1", bot: "luna" } as const };
       // Everything a conversation lives in, and every other top folder, for every caller.
-      for (const top of ["projects", "sdk/projects", "sessions", "transcripts", "diffs", "cache/runs", "logs", "usage", "routines", "plugin-data/tarot", "whatever-comes-next"]) {
+      for (const top of ["projects", "sdk/projects", "sessions", "transcripts", "diffs", "cache/runs", "logs", "usage", "routines", "routines/x", "plugin-data", "plugin-data/x", "whatever-comes-next"]) {
         for (const [name, c] of [...Object.entries(callers), ["none", undefined] as const]) {
           expect([top, name, reach(c, `${CLOVER}/${top}/x.json`)]).toEqual([top, name, [false, false]]);
         }
@@ -196,6 +196,23 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       // 2. A bot's own scratch, for its main conversation and side threads.
       expect([reach(main, `${CLOVER}/scratch/luna/a.md`), reach(callers.side, `${CLOVER}/scratch/luna/a.md`)]).toEqual([[true, true], [true, true]]);
       for (const c of [callers.agent, callers.coding, callers.other, callers.plugin]) expect(reach(c, `${CLOVER}/scratch/luna/a.md`)).toEqual([false, false]);
+      // Its own routines too, read and write, for the same two; another bot's, and every other caller, neither.
+      expect([reach(main, `${CLOVER}/routines/luna/morning.md`), reach(callers.side, `${CLOVER}/routines/luna/morning.md`)]).toEqual([[true, true], [true, true]]);
+      expect(reach(session("newbot", "side-thread"), `${CLOVER}/routines/newbot/a.md`)).toEqual([true, true]);
+      for (const c of [callers.agent, callers.coding, callers.other, callers.plugin, callers.peer, undefined]) expect(reach(c, `${CLOVER}/routines/luna/morning.md`)).toEqual([false, false]);
+      expect(reach(main, `${CLOVER}/routines/alpha/morning.md`)).toEqual([false, false]);
+      // A plugin's own data folder, read and write, for that plugin alone, by its own id (`/` as `--`); never a bot's or
+      // a session's, not even for a session the plugin acts for.
+      expect(reach(callers.plugin, `${CLOVER}/plugin-data/tarot/deck.json`)).toEqual([true, true]);
+      expect(reach({ kind: "plugin", pluginId: "pack/tarot" }, `${CLOVER}/plugin-data/pack--tarot/deck.json`)).toEqual([true, true]);
+      expect(reach({ kind: "plugin", pluginId: "pack/tarot" }, `${CLOVER}/plugin-data/pack/tarot/deck.json`)).toEqual([false, false]);
+      expect(reach(callers.plugin, `${CLOVER}/plugin-data/TAROT/deck.json`)).toEqual([true, true]);
+      expect(reach(callers.plugin, `${CLOVER}/plugin-data/luna/x.json`)).toEqual([false, false]);
+      expect(reach(callers.plugin, `${CLOVER}/plugin-data/tarot/../luna/x.json`)).toEqual([false, false]);
+      for (const c of [main, callers.side, callers.agent, callers.coding, callers.peer, undefined]) expect(reach(c, `${CLOVER}/plugin-data/tarot/deck.json`)).toEqual([false, false]);
+      expect(reach(session("tarot", "bot"), `${CLOVER}/plugin-data/tarot/deck.json`)).toEqual([false, false]);
+      expect(reach(callers.plugin, `${CLOVER}/scratch/tarot/a.md`)).toEqual([false, false]);
+      expect(reach(callers.plugin, `${CLOVER}/routines/tarot/a.md`)).toEqual([false, false]);
       // 3. Its own bot folder, read; its memory, read and write; an unlisted bot's the same way.
       expect(reach(main, `${CLOVER}/bots/luna/agents/a_1.jsonl`)).toEqual([true, false]);
       expect(reach(main, `${CLOVER}/bots/luna/memory/MEMORY.md`)).toEqual([true, true]);
@@ -207,18 +224,32 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       expect(reach(main, `${CLOVER}/SCRATCH/LUNA/a.md`)).toEqual([true, true]);
       expect(reach(session("luna", "bot", ".."), `${CLOVER}/outputs/x`)).toEqual([false, false]);
       // The folders themselves are never written over, deleted or moved.
-      for (const path of [`${CLOVER}/outputs/s_1`, `${CLOVER}/scratch/luna`, `${CLOVER}/bots/luna`, `${CLOVER}/bots/luna/memory`]) {
+      for (const path of [`${CLOVER}/outputs/s_1`, `${CLOVER}/scratch/luna`, `${CLOVER}/routines/luna`, `${CLOVER}/routines`, `${CLOVER}/bots/luna`, `${CLOVER}/bots/luna/memory`]) {
         expect([path, f.forCaller(main).check({ op: "delete", path }).allowed]).toEqual([path, false]);
+        expect([path, f.forCaller(main).check({ op: "move", path, to: `${CLOVER}/scratch/luna/moved` }).allowed]).toEqual([path, false]);
       }
+      for (const path of [`${CLOVER}/plugin-data/tarot`, `${CLOVER}/plugin-data`]) {
+        expect([path, f.forCaller(callers.plugin).check({ op: "delete", path }).allowed]).toEqual([path, false]);
+      }
+      // Moves stay inside the folder: out of it, or in from another, is refused.
+      expect(f.forCaller(main).check({ op: "move", path: `${CLOVER}/routines/luna/a.md`, to: `${CLOVER}/routines/luna/b.md` }).allowed).toBe(true);
+      expect(f.forCaller(main).check({ op: "move", path: `${CLOVER}/routines/luna/a.md`, to: `${CLOVER}/routines/alpha/a.md` }).allowed).toBe(false);
+      expect(f.forCaller(callers.plugin).check({ op: "move", path: `${CLOVER}/plugin-data/tarot/a`, to: `${CLOVER}/plugin-data/luna/a` }).allowed).toBe(false);
       // The user's surfaces and the core reach it freely, less what is fenced by kind.
       expect(reach({ kind: "user", client: "app" }, `${CLOVER}/sessions/s_1.jsonl`)).toEqual([true, false]);
       // Runners, by the reference order: the same three ways in, and the home denied otherwise.
       const p = f.forCaller(main).policy();
-      expect([p.ownOutputs, p.ownScratch, p.ownBot, p.ownMemory]).toEqual([`${CLOVER}/outputs/s_1`, `${CLOVER}/scratch/luna`, `${CLOVER}/bots/luna`, `${CLOVER}/bots/luna/memory`]);
+      expect([p.ownOutputs, p.ownScratch, p.ownBot, p.ownRoutines, p.ownMemory, p.ownPluginData]).toEqual([`${CLOVER}/outputs/s_1`, `${CLOVER}/scratch/luna`, `${CLOVER}/bots/luna`, `${CLOVER}/routines/luna`, `${CLOVER}/bots/luna/memory`, undefined]);
+      expect([policyAllows(p, "write", `${CLOVER}/routines/luna/a.md`), policyAllows(p, "write", `${CLOVER}/routines/alpha/a.md`), policyAllows(p, "unlink", `${CLOVER}/routines/luna`), policyAllows(p, "rename", `${CLOVER}/routines`)]).toEqual([true, false, false, false]);
+      expect(policyAllows(p, "write", `${CLOVER}/plugin-data/tarot/a`)).toBe(false);
+      const plugin = f.forCaller(callers.plugin).policy();
+      expect([plugin.ownPluginData, plugin.ownOutputs, plugin.ownScratch, plugin.ownRoutines, plugin.ownBot, plugin.ownMemory]).toEqual([`${CLOVER}/plugin-data/tarot`, undefined, undefined, undefined, undefined, undefined]);
+      expect([policyAllows(plugin, "read", `${CLOVER}/plugin-data/tarot/a`), policyAllows(plugin, "write", `${CLOVER}/plugin-data/tarot/a`), policyAllows(plugin, "write", `${CLOVER}/plugin-data/luna/a`), policyAllows(plugin, "unlink", `${CLOVER}/plugin-data/tarot`), policyAllows(plugin, "read", `${CLOVER}/routines/tarot/a`)]).toEqual([true, true, false, false, false]);
+      expect(f.forCaller({ kind: "plugin", pluginId: "../x" } as never).policy().ownPluginData).toBeUndefined();
       expect([policyAllows(p, "write", `${CLOVER}/outputs/s_1/a`), policyAllows(p, "write", `${CLOVER}/scratch/luna/a`), policyAllows(p, "read", `${CLOVER}/bots/luna/agents/x`), policyAllows(p, "write", `${CLOVER}/bots/luna/agents/x`)]).toEqual([true, true, true, false]);
       expect([policyAllows(p, "read", `${CLOVER}/projects/x.jsonl`), policyAllows(p, "read", `${CLOVER}/sessions/s_1.jsonl`), policyAllows(p, "unlink", `${CLOVER}/outputs/s_1`)]).toEqual([false, false, false]);
       const coding = f.forCaller(callers.coding).policy();
-      expect([coding.ownOutputs, coding.ownScratch, coding.ownBot, coding.ownMemory]).toEqual([`${CLOVER}/outputs/s_1`, undefined, undefined, undefined]);
+      expect([coding.ownOutputs, coding.ownScratch, coding.ownBot, coding.ownRoutines, coding.ownMemory, coding.ownPluginData]).toEqual([`${CLOVER}/outputs/s_1`, undefined, undefined, undefined, undefined, undefined]);
     });
 
     test("a bot id that isn't one reaches no memory: `..` and `LUNA` (#197's check 5)", () => {
@@ -263,7 +294,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       }
     });
 
-    test("routine files are not fenced; the installed plugins folder is (#197's check 2): bots get plugins in by the OK card", () => {
+    test("routine files are their own bot's alone; the installed plugins folder is fenced (#197's check 2): bots get plugins in by the OK card", () => {
       const f = fence();
       expect(f.check({ op: "write", path: `${CLOVER}/plugins/luna/clover.json` })).toEqual({ allowed: false, reason: "plugins", path: `${CLOVER}/plugins` });
       expect(f.check({ op: "write", path: `${CLOVER}/routines/alpha/morning.md` })).toEqual({ allowed: false, reason: "clover-home", path: CLOVER });
