@@ -77,8 +77,9 @@ function expectQuiet(r: ReturnType<typeof smoke>, allowed: Parameters<typeof off
   const activity = readNetLog(r.netlog);
   expect(activity.events, "the net log recorded nothing").toBeGreaterThan(0);
   expect(offMachine(activity, allowed)).toEqual({ lookups: [], sockets: [], requests: [] });
-  // Loopback is allowed above, so the spellchecker's own word is checked too: no dictionary download began.
-  expect(r.output).not.toContain("began a dictionary download");
+  // Loopback is allowed above, so the spellchecker's own word is checked too: no dictionary download began (asserted
+  // on the whole run's output: a fast run's tail can cut an early line off).
+  expect(r.all).not.toContain("began a dictionary download");
   return activity;
 }
 
@@ -192,11 +193,12 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
     expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 5 });
     for (const x of surfaces) expect(x.visible).toBe(false);
-    // Menus wait for the user's input in their window: refused before the test's key press, shown after it.
-    expect(r.output).toContain("menu: refused (a menu needs the user's recent click or key press in its window)");
+    // Menus wait for the user's input in their window: refused before the test's key press, shown after it. The log
+    // lines are asserted on the run's whole output: the refused ones begin early, and a fast run's tail can cut them.
+    expect(r.all).toContain("menu: refused (a menu needs the user's recent click or key press in its window)");
     // The composer's menu came from a frame inside the shell's frame: placed by each frame's offset, low in the window.
-    const at = [...r.output.matchAll(/menu: 1 item\(s\) at (\d+),(\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
-    expect(at.length, r.output).toBeGreaterThan(0);
+    const at = [...r.all.matchAll(/menu: 1 item\(s\) at (\d+),(\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+    expect(at.length, r.all).toBeGreaterThan(0);
     expect(at[0]!.y).toBeGreaterThan(300);
     expectBothStopped(r);
     expectQuiet(r);
@@ -207,9 +209,10 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     // the app pings each document (3 s), stops the silent layer's process, and the census finds it gone.
     const r = smoke(electron(), [root], "spin", { CLOVER_SMOKE_HANG: "spin", CLOVER_SMOKE_WAIT_TEXT: "stopped drawing" });
     expectShell(r);
-    expect(r.output).toContain("went unresponsive; not answering: fixture-spin");
-    expect(r.output).toContain("stopping a hung layer's process");
-    expect(r.output).not.toContain("restarting in safe mode");
+    // The whole run's output: these lines come early in it, and a fast run's 6,000-character tail cuts them.
+    expect(r.all).toContain("went unresponsive; not answering: fixture-spin");
+    expect(r.all).toContain("stopping a hung layer's process");
+    expect(r.all).not.toContain("restarting in safe mode");
     const spin = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "spin");
     expect(spin?.frames.some((f) => f.text.includes("stopped drawing")), r.output).toBe(true);
     expect(r.facts!.safeMode).toBe(false);
@@ -226,7 +229,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     ];
     const r = smoke(electron(), [root], "welcome", { CLOVER_SMOKE_ROOT_STEPS: JSON.stringify(steps), CLOVER_SMOKE_WAIT_TEXT: "Saved. Clover keeps the key" });
     expectShell(r);
-    expect(r.output).toContain("welcome: no model provider is signed in; the guide opens");
+    expect(r.all).toContain("welcome: no model provider is signed in; the guide opens");
     const rootFrame = r.facts!.frames.find((x) => x.origin === "clover-core://app")!;
     expect(rootFrame.text).toContain("Welcome to Clover");
     expect(rootFrame.text).toContain("Use it kindly.");

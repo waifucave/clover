@@ -972,7 +972,14 @@ async function smoke(): Promise<void> {
   let webFacts: WebFact[] = [];
   const probeWeb = async (): Promise<WebFact[]> => Promise.all(webViews.list().map(async (v) => {
     const text = await Promise.race([v.contents.executeJavaScript("document.body ? document.body.innerText : ''", true).then((t) => String(t), () => ""), new Promise<string>((r) => setTimeout(() => r(""), 1_000))]);
-    return { mount: v.mount, url: v.url, visible: v.visible, text: text.slice(0, 200) };
+    // A page's text is readable before its URL is (the commit window): the URL comes a beat later, so wait for it.
+    let url = v.url;
+    const end = Date.now() + 2_000;
+    while (url === "" && Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 100));
+      url = v.contents.getURL();
+    }
+    return { mount: v.mount, url, visible: v.visible, text: text.slice(0, 200) };
   }));
   // Texts the run waits for, all of them (`|` between).
   const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
