@@ -15,9 +15,14 @@
 // ever drawn over the frame.
 //
 // Two panels (ruling R8). The panel the person used last has the live view. When another panel takes it, this one's
-// tab leaves the view, and the frame holds the tab's last picture, marked as paused. Using the picture brings the live
-// view back here.
+// tab leaves the view, and the frame holds the tab's last picture, marked as paused. Using the picture, or using the
+// panel at all (lane F's host says so with `usedLast`), brings the live view back here.
+//
+// The header. Lane F's panel host hands each panel its header row (`header`); the tab row is drawn there, inside
+// `.cl-panel__head-own`, and the host's title steps aside. Without a host row (the gallery, another host) the panel
+// draws the row itself, above the toolbar.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BrowserChrome } from "./BrowserChrome";
 import { BrowserTabs } from "./BrowserTabs";
 import { readSteps, type Steps } from "./history";
@@ -48,6 +53,8 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
   const api = usePluginApi()?.browser;
   const bot = props?.bot;
   const session = props?.session;
+  const header = props?.header ?? null;
+  const usedLast = props?.usedLast;
   const owner = useMemo<TabOwner>(() => (bot ? { kind: "bot", bot } : session ? { kind: "session", session } : { kind: "user" }), [bot, session]);
 
   const [tabs, setTabs] = useState<TabView[]>([]);
@@ -150,6 +157,15 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
   // Paused: this panel had the tab in the view, and it has left (another panel took the live view, R8).
   const paused = active !== undefined && size !== null && liveHere === active.id && active.place !== "shown";
   const pausedId = paused ? active.id : undefined;
+
+  // R8: becoming the panel the person used last takes the live view back, if another panel has it.
+  const wasUsedLast = useRef(usedLast);
+  const claim = live.claim;
+  useEffect(() => {
+    const before = wasUsedLast.current;
+    wasUsedLast.current = usedLast;
+    if (usedLast === true && before === false && paused) claim();
+  }, [usedLast, paused, claim]);
   useEffect(() => {
     if (!api || pausedId === undefined) return;
     let stale = false;
@@ -189,7 +205,8 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
     if (!api) return;
     setError(null);
     try {
-      const tab = await api.open({ owner, show: true });
+      // Straight into this panel's view at its size when it has one; the live view keeps it there.
+      const tab = await api.open({ owner, ...(size ? { show: { view: VIEW, viewport: size } } : {}) });
       setTabs((cur) => upsert(cur, tab));
       setPicked(tab.id);
     } catch (e) {
@@ -247,11 +264,11 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
   }));
   const current = rows.find((r) => r.id === active?.id);
 
+  const tabRow = <BrowserTabs tabs={rows} active={active?.id} onSelect={select} onClose={(id) => void close(id)} onNew={api ? () => void open() : undefined} />;
+
   return (
-    <div className="cl-browser-panel" data-owner={owner.kind}>
-      <div className="cl-browser-panel__head">
-        <BrowserTabs tabs={rows} active={active?.id} onSelect={select} onClose={(id) => void close(id)} onNew={api ? () => void open() : undefined} />
-      </div>
+    <div className="cl-browser-panel" data-owner={owner.kind} data-used-last={usedLast === undefined ? undefined : String(usedLast)}>
+      {header ? createPortal(<div className="cl-panel__head-own cl-browser-panel__head-own">{tabRow}</div>, header) : <div className="cl-browser-panel__head">{tabRow}</div>}
       <BrowserChrome
         tab={current}
         live={active?.place === "shown"}

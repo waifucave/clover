@@ -79,7 +79,7 @@ export function fakeBrowser(initial: TabView[] = [], opts: { shows?: boolean } =
     },
     async open(o) {
       record("open", [o]);
-      const tab = tabView(`t${next++}`, { owner: o.owner, url: o.url ?? "about:blank", place: o.show ? "shown" : "headless" });
+      const tab = tabView(`t${next++}`, { owner: o.owner, url: o.url ?? "about:blank", place: o.show ? "shown" : "headless", ...(o.show ? { viewport: o.show.viewport } : {}) });
       tabs = [...tabs, tab];
       return tab;
     },
