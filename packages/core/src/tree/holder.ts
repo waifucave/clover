@@ -34,6 +34,7 @@ import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import { judge as fenceJudge, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
 import { splitTreePath, treeCallBinding, type TreeChange, type TreeData } from "../contracts/tree";
+import { atOps, type AtOps } from "./at";
 import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
 import { FolderWatches, type TreeWatchEvent } from "./watch";
 import { judgePeer, type PeerReviewer } from "./judge";
@@ -45,6 +46,9 @@ export interface HolderCall {
   level?: Level;
   /** A peer's change only: the user's signed answer bound to this call. */
   answer?: SignedCardAnswer;
+  /** In-process only, never from the link: the change is part of a call already judged (an MCP call's files), so it
+   *  isn't judged again. The fence still applies. */
+  approved?: boolean;
 }
 
 /** The most one read returns, and the most one write carries: bigger files move in parts (`offset`, `length`). */
@@ -254,7 +258,7 @@ export class LocalHolder implements Holder {
     if (bytes.length > TREE_IO_MAX) throw new ContractError("invalid", `${path}: a write carries at most ${TREE_IO_MAX} bytes`);
     const r = await this.#resolve(path, { follow: true, create: true });
     this.#fenced({ op: "write", path: r.real }, call);
-    await this.#judge(call, treeCallBinding("tree.write", { path, data }), "edit");
+    if (!call.approved) await this.#judge(call, treeCallBinding("tree.write", { path, data }), "edit");
     if (r.st?.isDirectory()) throw new ContractError("invalid", `${path} is a folder`);
     await this.#mkdirs(r.root, dirname(r.real), path);
     // Truncated only once the open file is checked (a hard link to a fenced item is refused untouched).
@@ -323,6 +327,12 @@ export class LocalHolder implements Holder {
     this.#fenced({ op: "delete", path: r.real }, call);
     await this.#judge(call, treeCallBinding("tree.remove", call.recursive === undefined ? { path } : { path, recursive: call.recursive }), "delete");
     if (!r.exists) throw new ContractError("not_found", `${path} doesn't exist`);
+    // Anchored to each folder on the way where libc allows (`at.ts`, review minor 6).
+    const at = this.#at();
+    if (at) {
+      at.remove(r.root, this.#rel(r.root, r.real), { dir: r.st?.isDirectory() === true, recursive: call.recursive === true }, path);
+      return;
+    }
     try {
       if (r.st?.isDirectory()) {
         if (call.recursive) await fsp.rm(r.real, { recursive: true, force: false });
@@ -350,9 +360,18 @@ export class LocalHolder implements Holder {
       throw new ContractError("invalid", `${to} is inside ${from}`);
     }
     await this.#mkdirs(dst.root, dirname(dst.real), to);
+    const at = this.#at();
     try {
-      await fsp.rename(src.real, dst.real);
+      if (at) at.rename(src.root, this.#rel(src.root, src.real), dst.root, this.#rel(dst.root, dst.real), from);
+      else await fsp.rename(src.real, dst.real);
     } catch (e) {
+      if ((e as { code?: string }).code === "invalid" && at) {
+        // Another disk: copied, then removed, as below.
+        await fsp.cp(src.real, dst.real, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+        at.remove(src.root, this.#rel(src.root, src.real), { dir: src.st?.isDirectory() === true, recursive: true }, from);
+        return;
+      }
+      if (at) throw e;
       if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw diskError(e, from);
       await fsp.cp(src.real, dst.real, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
       await fsp.rm(src.real, { recursive: true, force: false });
@@ -611,8 +630,24 @@ export class LocalHolder implements Holder {
   }
 
   /** Makes the folders from the deepest one that exists down to `dir`, each made inside the area. */
+  /** The anchored changes, on macOS and Linux. */
+  #at(): AtOps | null {
+    return this.os === "windows" ? null : atOps();
+  }
+
+  /** `real`'s names below `root`. */
+  #rel(root: string, real: string): string[] {
+    const r = relative(root, real);
+    return r === "" ? [] : r.split(sep);
+  }
+
   async #mkdirs(root: string, dir: string, path: string): Promise<void> {
     this.#landsInside(dir, root, path);
+    const at = this.#at();
+    if (at) {
+      at.mkdirs(root, this.#rel(root, dir), path);
+      return;
+    }
     const missing: string[] = [];
     let p = dir;
     for (;;) {

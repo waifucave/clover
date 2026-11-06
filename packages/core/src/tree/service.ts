@@ -93,6 +93,8 @@ export interface TreeServiceOptions {
   level?: () => Level;
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   tools?: ToolExecutor;
+  /** Another computer's MCP call on this computer's host (`tool.run` with an `mcp__` tool; `McpRouter.serveHere`). */
+  mcp?: (call: { tool: string; input: unknown; as: Caller; session: string; callId: string; signal: AbortSignal }) => Promise<{ output: unknown; isError: boolean }>;
   /** This computer's reviewer for a peer's command at `ask-risky` (R1). */
   reviewer?: PeerReviewer;
 }
@@ -246,6 +248,7 @@ export class TreeService {
   }
 
   async #run(p: z.infer<(typeof TREE_PEER_PARAMS)["tool.run"]>, call: HolderCall, from: string): Promise<{ output: unknown; isError: boolean }> {
+    if (p.tool.startsWith("mcp__")) return this.#runMcp(p, call, from);
     const tools = this.#o.tools;
     if (!tools) throw new ContractError("refused", "this computer runs no tool calls for others");
     if (p.tool !== "Bash") throw new ContractError("not_installed", `${p.tool} doesn't run on another computer yet`);
@@ -270,6 +273,22 @@ export class TreeService {
           else void t.connect(from).then((l) => { link = l; send(l); }, () => {});
         },
       });
+    } finally {
+      this.#running.delete(key);
+    }
+  }
+
+  /** An MCP call from another computer: judged as a command (R1), then run on this computer's host. */
+  async #runMcp(p: z.infer<(typeof TREE_PEER_PARAMS)["tool.run"]>, call: HolderCall, from: string): Promise<{ output: unknown; isError: boolean }> {
+    const mcp = this.#o.mcp;
+    if (!mcp) throw new ContractError("not_installed", `${this.#o.holder.name} runs no MCP tools for others`);
+    await this.#judge(p, call);
+    const key = runKey(from, p.session, p.callId);
+    if (this.#running.has(key)) throw new ContractError("conflict", `the call ${p.callId} is already running`);
+    const abort = new AbortController();
+    this.#running.set(key, { device: from, session: p.session, callId: p.callId, abort });
+    try {
+      return await mcp({ tool: p.tool, input: p.input, as: call.as, session: p.session, callId: p.callId, signal: abort.signal });
     } finally {
       this.#running.delete(key);
     }

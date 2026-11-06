@@ -11,7 +11,7 @@ import { FakeDeviceRegistry } from "../../src/contracts/fakes/device-registry";
 import type { Fence, FenceOp } from "../../src/contracts/fence";
 import { FakeFence } from "../../src/contracts/fakes/fence";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
-import { startComputerNode, type ComputerNode } from "../../src/computers/node";
+import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "../../src/computers/node";
 import { hostOs } from "../../src/tree/names";
 import type { AnswerAsker, PeerReviewer } from "../../src/tree/judge";
 import type { ToolExecutor } from "../../src/tree/service";
@@ -118,6 +118,7 @@ export interface ClusterOptions {
   askUser?: (name: string) => AnswerAsker | undefined;
   reviewer?: (name: string) => PeerReviewer | undefined;
   terminals?: (name: string) => { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> } | undefined;
+  mcp?: (name: string) => ComputerNodeOptions["mcp"] | undefined;
 }
 
 export class Cluster {
@@ -157,6 +158,7 @@ export class Cluster {
     const askUser = opts.askUser?.(name);
     const reviewer = opts.reviewer?.(name);
     const terminals = opts.terminals?.(name);
+    const mcp = opts.mcp?.(name);
     const node = startComputerNode({
       clock,
       transport: this.net.endpoint(device),
@@ -171,6 +173,7 @@ export class Cluster {
       ...(askUser ? { askUser } : {}),
       ...(reviewer ? { reviewer } : {}),
       ...(terminals ? { terminals } : {}),
+      ...(mcp ? { mcp } : {}),
     });
     const c: TestComputer = { name, device, home, cloverHome, node, bots };
     this.computers.set(name, c);

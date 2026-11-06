@@ -22,6 +22,8 @@ import type { AnswerAsker, PeerReviewer } from "../tree/judge";
 import { LocalTerminals, serveTerminals, TerminalRouter, type ShellLauncher } from "../tree/terminals";
 import { CoreTree } from "../tree/tree";
 import { FolderWatches } from "../tree/watch";
+import { HoldRouter, serveHolds } from "./holds";
+import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
 import { CoreComputerRegistry, type SelfStateStore } from "./registry";
 import { FileSelfStateStore, selfStatePath } from "./store";
@@ -56,6 +58,15 @@ export interface ComputerNodeOptions {
   askUser?: AnswerAsker;
   /** This computer's reviewer for another computer's calls at `ask-risky` (R1; lane C's). */
   reviewer?: PeerReviewer;
+  /** MCP across computers (lanes B and D's host): where each server runs, the fields the session's prompt gave its
+   *  tools, this computer's host, a session's scratch folder, and how a mirrored server installs here. */
+  mcp?: {
+    placement: (server: string) => McpServerPlacement | undefined;
+    fields: (server: string, session: string) => McpFields;
+    call: McpCaller;
+    scratch: (session: string) => string;
+    install?: McpInstaller;
+  };
   /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
   terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
   log?: (line: string) => void;
@@ -69,6 +80,14 @@ export interface ComputerNode {
   tree: CoreTree;
   tools: TreeTools;
   terminals: TerminalRouter;
+  /** Holds on any computer's screen, kept by that computer (review minor 4). */
+  holds: HoldRouter;
+  /** How many terminals run on this computer, its own and the others'. */
+  terminalCount(): number;
+  /** Where each MCP call runs (with `mcp`). */
+  mcp: McpRouter | undefined;
+  /** Mirror: installs a local server on other computers, with the user's answer for each. */
+  mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
   close(): void;
@@ -130,6 +149,13 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     transport: o.transport, holder, clock: o.clock, level: () => registry.self().level, mayCall,
     ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
     ...(o.reviewer ? { reviewer: o.reviewer } : {}),
+    ...(o.mcp ? { mcp: (call: Parameters<McpRouter["serveHere"]>[0]) => mcpRouter!.serveHere(call) } : {}),
+  });
+  const offHolds = serveHolds({ transport: o.transport, registry, mayCall });
+  const holds = new HoldRouter({ registry, transport: o.transport });
+  const offMirror = serveMirror({
+    transport: o.transport, self: () => registry.self().name, mayCall, clock: o.clock,
+    ...(o.mcp?.install ? { install: o.mcp.install } : {}), ...(o.answers ? { answers: o.answers } : {}),
   });
   const localTerminals = new LocalTerminals(o.terminals ?? {});
   const offTerminals = serveTerminals({
@@ -180,6 +206,13 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     ...(o.executor ? { local: { holder, executor: o.executor } } : {}),
     ...(o.askUser ? { ask: o.askUser } : {}),
   });
+  const mcpRouter: McpRouter | undefined = o.mcp
+    ? new McpRouter({
+      tree, holder, directory, transport: o.transport, deviceOf: (name) => registry.get(name)?.device,
+      placement: o.mcp.placement, fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
+      ...(o.askUser ? { ask: o.askUser } : {}),
+    })
+    : undefined;
   const terminals = new TerminalRouter({
     transport: o.transport,
     self: () => registry.self().name,
@@ -209,11 +242,18 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     });
   }
   return {
-    registry, peers, holder, service, tree, tools, terminals,
+    registry, peers, holder, service, tree, tools, terminals, holds, mcp: mcpRouter,
+    terminalCount: () => localTerminals.count,
+    mirror: (server, config, computers, session) => mirror({
+      transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,
+      ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
+    }),
     treeRootReady: () => rootReady,
     close: () => {
       offRoot();
       terminals.dispose();
+      offMirror();
+      offHolds();
       offTerminals();
       localTerminals.closeAll();
       tools.close();
