@@ -12,6 +12,7 @@ import {
 } from "@waifucave/clover-protocol";
 import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
+import { MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
@@ -76,6 +77,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       },
       botComputer: () => undefined,
       devices: registry,
+      // Each holder keeps its own ledger of used answers (R15: one answer counts once at each end).
+      ledgers: { Studio: new MemoryAnswerLedger(), Laptop1: new MemoryAnswerLedger() },
       render,
     });
     const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
@@ -228,7 +231,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
     });
 
-    pendingOr("r15")("R15: a peer's move between computers is one call that one card binds at both ends (#179's review, F2)", async () => {
+    pendingOr("r15")("R15: a peer's move between computers is one answer both ends check against `transferBinding`'s card (`bindsComputer`), with their own ledgers; a swapped one moves nothing (`transferEndsHold`)", async () => {
       const { sha256, tree, PEER, answer, code } = await peerSetup();
       await tree.write("home/Laptop1/old.log", utf8("x"), { as: USER });
       // Studio asks for risky actions; each holder checks the one answer against its own card, with its own ledger.
