@@ -255,7 +255,10 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (!key || (await deviceIdFor(key)) !== device.id) throw new ContractError("invalid", "the id doesn't match the key");
     if (!NAME_RE.test(device.name)) throw new ContractError("invalid", "a device name is 1–63 characters");
     if (!KINDS.includes(device.kind)) throw new ContractError("invalid", `unknown device kind ${String(device.kind)}`);
-    if (device.answerKey !== undefined) this.#checkAnswerKey(device.answerKey);
+    // A record's answer key as its pairing or the account gave it: its holder and algorithm must be known ones; a key
+    // that doesn't fit its algorithm (a P-256 point labelled Ed25519) is kept, and simply never verifies an answer
+    // (B's DeviceRegistry conformance, `answer-alg`).
+    if (device.answerKey !== undefined) this.#checkAnswerKeyLabel(device.answerKey);
     // Every computer has its tree name (§9.1; lane J's ask): the one it names, if it passes lane J's rules, else one made
     // from its name; unique here ignoring case, with a `-2` on a collision (S4 of H-M1's review).
     const computer = device.runsCore ? { computer: this.#treeName(device.computer ?? device.name, device.id) } : {};
@@ -418,6 +421,12 @@ export class FileDeviceRegistry implements DeviceRegistry {
     this.#save();
     this.#listeners.emit({ type: "changed", device: { ...d } });
     return true;
+  }
+
+  #checkAnswerKeyLabel(k: { publicKey: string; held: string; alg?: unknown }): void {
+    if (k.alg !== undefined && k.alg !== "ed25519" && k.alg !== "p256") throw new ContractError("invalid", `unknown answer key algorithm ${String(k.alg)}`);
+    if (typeof k.publicKey !== "string" || fromBase64(k.publicKey) === null) throw new ContractError("invalid", "an answer key is base64");
+    if (!AnswerKeyHolder.safeParse(k.held).success) throw new ContractError("invalid", `unknown answer key holder ${k.held}`);
   }
 
   #checkAnswerKey(k: { publicKey: string; held: string; alg?: unknown }): void {
