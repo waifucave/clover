@@ -353,7 +353,7 @@ export function markerAllowsSetup(marker: InstallMarker | null, ownerSid: string
 export function markerAllowsRemove(marker: InstallMarker | null, ownerSid: string, principal: string): { ok: true } | { ok: false; reason: string } {
   if (marker === null) return { ok: true };
   if (marker.ownerSid !== ownerSid || marker.principal !== principal) {
-    return { ok: false, reason: "sandbox remove refused: the install belongs to another user" };
+    return { ok: false, reason: "the install belongs to another user" };
   }
   return { ok: true };
 }
