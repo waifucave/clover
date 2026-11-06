@@ -189,6 +189,56 @@ export function isTemporaryProfile(profileRoot: string): boolean {
   return leaf === "TEMP" || leaf.startsWith("TEMP.") || leaf.startsWith("TEMP-");
 }
 
+/** The per-launch profile verdict (spec item 1116; brief item 7): the principal's profile, resolved by SID,
+ *  must exist and must not be temporary. The daemon's Windows spawn runs the session reset first
+ *  (`sessionResetPlan`) and then this check; either failure refuses the launch, never a fallback. */
+export function profileLaunchCheck(profile: { sid: string; path: string } | null): { ok: true } | { ok: false; reason: string } {
+  if (profile === null) return { ok: false, reason: "the principal's profile isn't resolved by its SID" };
+  if (isTemporaryProfile(profile.path)) return { ok: false, reason: "the principal is running on a temporary profile" };
+  return { ok: true };
+}
+
+/** The child environment every Bash launch sets explicitly (controller ruling 2): `HOME`, `USERPROFILE`
+ *  and `APPDATA` point at the principal's own profile, resolved by SID. The broker's environment is never
+ *  inherited — `execArgs` only forwards the `env` it is given, and the caller passes exactly this plus
+ *  proxy/CA entries, so the child's home can never be the real user's. */
+export function sandboxHomeEnv(profileRoot: string): { HOME: string; USERPROFILE: string; APPDATA: string } {
+  return {
+    HOME: profileRoot,
+    USERPROFILE: profileRoot,
+    APPDATA: win32.join(profileRoot, "AppData", "Roaming"),
+  };
+}
+
+/** `Set-LocalUser -Description <ownerSid>`: stamp the owning user's full SID on the principal (Addendum 9).
+ *  srt-win leaves its own description; setup overwrites it right after provisioning. */
+export function setDescriptionArgs(principal: string, ownerSid: string): readonly string[] {
+  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
+    `Set-LocalUser -Name "${principal}" -Description "${ownerSid}"`];
+}
+
+/** Read the principal's description back (works unelevated). */
+export function getDescriptionArgs(principal: string): readonly string[] {
+  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
+    `(Get-LocalUser -Name "${principal}").Description`];
+}
+
+/** Whether the principal's description names exactly this owner SID. Anything else — srt-win's default,
+ *  another user's SID, unreadable output — never touches another user's principal. */
+export function descriptionMatches(description: string | null, ownerSid: string): boolean {
+  return description !== null && description.trim() === ownerSid;
+}
+
+/** The owner SID in `whoami /user /fo csv /nh` output (`"DOMAIN\\user","S-1-5-21-…"`), or null.
+ *  Kept as the portable reader; on Windows the CLI prefers core's token-based `currentUserSid`. */
+export function parseWhoamiSid(stdout: string): string | null {
+  for (const line of stdout.split(/\r?\n/)) {
+    const m = /"[^"]*","(S-1-[0-9-]+)"/.exec(line.trim());
+    if (m) return m[1]!;
+  }
+  return null;
+}
+
 /** The three Startup folders the fence denies the principal: its own, the real user's and all users'. */
 export function startupFolders(o: { profileRoot: string; realUserProfile: string; commonStartup: string }): readonly string[] {
   const under = (root: string) => win32.join(root, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");

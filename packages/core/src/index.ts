@@ -31,7 +31,10 @@ export {
   srtWinPath, srtWinArch, launcherDigest, launcherPinned, launcherProblem, setupArgs, removeArgs, statusArgs,
   parseSrtStatus, setupBashRefusal, elevatedFromNetSession, NET_SESSION_PROBE, setupExitMessage,
   winCallerRules, winLaunchPlan, principalResetPlan, sessionResetPlan, setupProfileSteps,
-  protectedCopyPath, isProtectedCopy,
+  protectedCopyPath, isProtectedCopy, profileLaunchCheck, sandboxHomeEnv,
+  setDescriptionArgs, getDescriptionArgs, descriptionMatches, parseWhoamiSid,
+  warmUpArgs, profileQueryArgs, parseProfileImagePath, startupFolders,
+  mkdirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs,
   type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
 } from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";

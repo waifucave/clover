@@ -25,6 +25,13 @@ import {
   statusArgs,
   winCallerRules,
   winLaunchPlan,
+  profileLaunchCheck,
+  sandboxHomeEnv,
+  setDescriptionArgs,
+  getDescriptionArgs,
+  descriptionMatches,
+  parseWhoamiSid,
+  isTemporaryProfile,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -425,5 +432,49 @@ describe("certificate table validation (Addendum 4)", () => {
     // launcherDigest should return present: false because validation fails
     // We can't easily test launcherDigest without a file, but we can test validateCertificateTable directly
     expect(() => validateCertificateTable(buf2)).toThrow("starts before the end of the last section's raw data");
+  });
+});
+
+describe("the per-launch profile verdict (brief item 7)", () => {
+  test("null or temporary profiles fail closed", () => {
+    expect(profileLaunchCheck(null).ok).toBe(false);
+    expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\TEMP" }).ok).toBe(false);
+    expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\TEMP.testvm" }).ok).toBe(false);
+    expect(profileLaunchCheck({ sid: "S-1-5-21-1", path: "C:\\Users\\clover-sb-f41c96d1" })).toEqual({ ok: true });
+    expect(isTemporaryProfile("C:\\Users\\TEMP")).toBe(true);
+    expect(isTemporaryProfile("C:\\Users\\clover-sb-f41c96d1")).toBe(false);
+  });
+});
+
+describe("the child home environment (controller ruling 2)", () => {
+  test("HOME, USERPROFILE and APPDATA point at the principal's profile", () => {
+    const env = sandboxHomeEnv("C:\\Users\\clover-sb-f41c96d1");
+    expect(env).toEqual({
+      HOME: "C:\\Users\\clover-sb-f41c96d1",
+      USERPROFILE: "C:\\Users\\clover-sb-f41c96d1",
+      APPDATA: "C:\\Users\\clover-sb-f41c96d1\\AppData\\Roaming",
+    });
+    // Never the broker's: the caller passes exactly this plus proxy/CA entries.
+    expect(env.HOME).not.toContain("real-user");
+  });
+});
+
+describe("the owner-SID description check (Addendum 9)", () => {
+  const sid = "S-1-5-21-2049286435-129160171-2159440921-1000";
+  test("stamp and read args name the principal and SID", () => {
+    expect(setDescriptionArgs("clover-sb-f41c96d1", sid).join(" ")).toContain(`-Description "${sid}"`);
+    expect(getDescriptionArgs("clover-sb-f41c96d1").join(" ")).toContain("Get-LocalUser");
+  });
+  test("only the exact SID matches", () => {
+    expect(descriptionMatches(sid, sid)).toBe(true);
+    expect(descriptionMatches(`  ${sid}\r\n`, sid)).toBe(true);
+    expect(descriptionMatches("sandbox-runtime sandboxed-child account", sid)).toBe(false);
+    expect(descriptionMatches("S-1-5-21-2049286435-129160171-2159440921-1002", sid)).toBe(false);
+    expect(descriptionMatches(null, sid)).toBe(false);
+    expect(descriptionMatches("", sid)).toBe(false);
+  });
+  test("whoami csv output parses to the SID", () => {
+    expect(parseWhoamiSid(`"test-vm\\testuser","${sid}"\r\n`)).toBe(sid);
+    expect(parseWhoamiSid("garbage")).toBeNull();
   });
 });
