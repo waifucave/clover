@@ -103,7 +103,11 @@ export function linkBuildEnv(env: Record<string, string | undefined>, root: stri
     ...(cargoHome === undefined ? [] : [`--remap-path-prefix=${cargoHome}=/cargo`]),
     `--remap-path-prefix=${root}=/clover`,
   ];
-  return { ...env, RUSTFLAGS: [env.RUSTFLAGS, ...remaps].filter(Boolean).join(" ") };
+  // CARGO_ENCODED_RUSTFLAGS, one flag per 0x1f: a path with a space (the owner's checkout has one) stays one flag.
+  // Flags already set (either form) come first; RUSTFLAGS is then dropped, as cargo would ignore it.
+  const before = env.CARGO_ENCODED_RUSTFLAGS ? env.CARGO_ENCODED_RUSTFLAGS.split("\x1f") : (env.RUSTFLAGS ?? "").split(" ").filter(Boolean);
+  const { RUSTFLAGS: _dropped, ...rest } = env;
+  return { ...rest, CARGO_ENCODED_RUSTFLAGS: [...before, ...remaps].join("\x1f") };
 }
 
 /** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
@@ -223,7 +227,8 @@ export function main(argv: readonly string[], root: string): number {
   }
   rmSync(outDir, { recursive: true, force: true });
   // The sidecar's build carries no path of this machine's (linkBuildEnv).
-  process.env.RUSTFLAGS = linkBuildEnv(process.env, root).RUSTFLAGS;
+  process.env.CARGO_ENCODED_RUSTFLAGS = linkBuildEnv(process.env, root).CARGO_ENCODED_RUSTFLAGS;
+  delete process.env.RUSTFLAGS;
   for (const s of steps) {
     console.log(`build-packages: ${s.say}…`);
     if (s.stage !== undefined) {

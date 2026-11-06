@@ -82,6 +82,7 @@ jobs:
             apps/desktop/out/dist/*.dmg
             apps/desktop/out/dist/*.zip
             apps/desktop/out/dist/*.exe
+            apps/desktop/out/dist/win-unpacked
             apps/desktop/out/dist/*.yml
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt

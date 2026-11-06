@@ -2,7 +2,7 @@
 // the release build's and the owner's publish step's plans, and the release workflow's limits (no secrets, nothing
 // published). Nothing here signs, builds or publishes.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
@@ -371,24 +371,84 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     expect(r.problems[0]).toContain("can't cut a release");
   });
 
-  test("reads every file, opens what opens without running anything, and accepts only third-party notices", async () => {
-    const { openerFor, scanFiles, NAME_SCAN_ACCEPTED } = await import("./name-scan");
-    expect(["a.zip", "b.rpm", "c.deb", "d.dmg", "e.exe", "f.AppImage", "latest.yml"].map(openerFor)).toEqual(["zip", "rpm", "deb", "raw", "raw", "raw", "raw"]);
-    const tree: Record<string, string[]> = { "/r": ["daemon", "app.asar"], "/r/daemon": ["clover-core.exe", "srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"] };
-    const { read, accepted } = scanFiles("/r", (d) => tree[d] ?? [], (p) => p in tree);
-    expect(read.sort()).toEqual(["/r/app.asar", "/r/daemon/clover-core.exe", "/r/daemon/srt-win.exe"]);
-    expect(accepted).toEqual(["/r/daemon/srt-win.THIRD_PARTY_NOTICES.txt"]);
-    expect(NAME_SCAN_ACCEPTED).toHaveLength(1);
-    expect(NAME_SCAN_ACCEPTED[0]!.test("x/NOTICES.txt")).toBe(false);
+  test("opens every kind of asset, and what nests inside, without running anything", async () => {
+    const { openerFor, TOOLS } = await import("./name-scan");
+    const names = ["Clover-1.dmg", "Clover-1-mac.zip", "Clover-Setup-1.exe", "clover_1_amd64.deb", "clover-1.x86_64.rpm", "Clover-1-x86_64.AppImage",
+      "data.tar.xz", "control.tar.zst", "x.tar", "app-64.7z", "a.gz", "Clover-1.dmg.blockmap", "b.br", "latest.yml", "clover-core.exe", "app.asar"];
+    expect(names.map(openerFor)).toEqual(["dmg", "zip", "nsis", "deb", "rpm", "appimage", "xz", "zst", "tar", "7z", "gz", "gz", "br", "raw", "raw", "raw"]);
+    expect(TOOLS.dmg).toBe("hdiutil");
+    expect(TOOLS.appimage).toBe("unsquashfs");
+    expect(read("scripts/release/name-scan.ts")).toContain('"hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint"');
+  });
+
+  test("an AppImage's squashfs starts where its ELF runtime ends", async () => {
+    const { elfEnd } = await import("./name-scan");
+    const elf = new Uint8Array(128);
+    const v = new DataView(elf.buffer);
+    v.setUint32(0, 0x7f454c46);
+    elf[4] = 2;
+    v.setBigUint64(0x28, 1000n, true);
+    v.setUint16(0x3a, 64, true);
+    v.setUint16(0x3c, 3, true);
+    expect(elfEnd(elf)).toBe(1192);
+    expect(() => elfEnd(new Uint8Array(64))).toThrow(/not an ELF/);
+  });
+
+  test("reads every file, lists every path and link target, refuses an absolute link, and accepts only the shipped notices", async () => {
+    const { walkTree } = await import("./name-scan");
+    const root = mkdtempSync(join(tmpdir(), "clover-name-walk-"));
+    mkdirSync(join(root, "resources", "daemon"), { recursive: true });
+    writeFileSync(join(root, "resources", "daemon", "srt-win.exe"), "x");
+    writeFileSync(join(root, "resources", "daemon", "srt-win.THIRD_PARTY_NOTICES.txt"), "license");
+    writeFileSync(join(root, "srt-win.THIRD_PARTY_NOTICES.txt"), "elsewhere");
+    writeFileSync(join(root, ".DS_Store"), "ds");
+    writeFileSync(join(root, "data.tar.xz"), "xz");
+    symlinkSync("resources/daemon/srt-win.exe", join(root, "rel-link"));
+    symlinkSync("/Users/someone/thing", join(root, "abs-link"));
+    const w = walkTree(root);
+    expect(w.read.map((p) => p.slice(root.length + 1)).sort()).toEqual([".DS_Store", "data.tar.xz", "resources/daemon/srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(w.accepted.map((p) => p.slice(root.length + 1))).toEqual(["resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(w.names).toContain("resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt");
+    expect(w.names).toContain("resources/daemon/srt-win.exe");
+    expect(w.names).toContain("/Users/someone/thing");
+    expect(w.problems).toEqual(["abs-link links to an absolute path (/Users/someone/thing)"]);
+    expect(w.nested.map((p) => p.slice(root.length + 1))).toEqual(["data.tar.xz"]);
   });
 });
 
 describe("the privacy scrub", () => {
   test("the sidecar's build remaps the cargo home, the checkout and the home folder, after any flags already set", async () => {
     const { linkBuildEnv } = await import("../build-packages");
-    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/src/clover");
-    // rustc takes the last match: the home folder first, the paths inside it after.
-    expect(env.RUSTFLAGS).toBe("-C opt-level=3 --remap-path-prefix=/Users/someone=/home --remap-path-prefix=/Users/someone/.cargo=/cargo --remap-path-prefix=/Users/someone/src/clover=/clover");
-    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c" }, "/r").RUSTFLAGS).toBe("--remap-path-prefix=/h=/home --remap-path-prefix=/c=/cargo --remap-path-prefix=/r=/clover");
+    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/Xcode projects/clover");
+    // rustc takes the last match: the home folder first, the paths inside it after; a space stays inside its flag.
+    expect(env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-C", "opt-level=3", "--remap-path-prefix=/Users/someone=/home", "--remap-path-prefix=/Users/someone/.cargo=/cargo", "--remap-path-prefix=/Users/someone/Xcode projects/clover=/clover"]);
+    expect(env.RUSTFLAGS).toBeUndefined();
+    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c", CARGO_ENCODED_RUSTFLAGS: "-Cx\x1f-Cy" }, "/r").CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-Cx", "-Cy", "--remap-path-prefix=/h=/home", "--remap-path-prefix=/c=/cargo", "--remap-path-prefix=/r=/clover"]);
+  });
+});
+
+describe("the name scan, end to end with a stand-in guard", () => {
+  test("hands the guard the asset, what is inside it (a nested gzip too) and the names list, and reports a hit", async () => {
+    if (process.platform === "win32") return;
+    const { nameScan } = await import("./name-scan");
+    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-e2e-"));
+    const log = join(home, "read.log");
+    mkdirSync(join(home, "norma-private", "git-hooks"), { recursive: true });
+    // The stand-in reads what it's given and "finds" a hit in any file holding PLANTED.
+    writeFileSync(join(home, "norma-private", "git-hooks", "name-guard.sh"), `#!/bin/sh\nshift\nfor f in "$@"; do echo "$f" >> '${log}'; if grep -q PLANTED "$f"; then exit 1; fi; done\n`, { mode: 0o755 });
+    const tree = join(home, "tree");
+    mkdirSync(join(tree, "resources"), { recursive: true });
+    writeFileSync(join(tree, "resources", "app.asar"), "app");
+    writeFileSync(join(tree, "notes.txt.gz"), Bun.gzipSync(new TextEncoder().encode("hidden PLANTED words")));
+    const zip = join(home, "Clover-1.2.3-mac.zip");
+    expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", tree, "."]).exitCode).toBe(0);
+    const r = nameScan([zip], [], home);
+    const seen = readFileSync(log, "utf8");
+    expect(seen).toContain("Clover-1.2.3-mac.zip");
+    expect(seen).toContain("app.asar");
+    expect(seen).toMatch(/notes\.txt(\n|$)/);
+    expect(seen).toContain("names.txt");
+    expect(r.read).toBeGreaterThanOrEqual(4);
+    expect(r.problems.some((p) => p.includes("found the owner's identity in Clover-1.2.3-mac.zip/notes.txt.gz"))).toBe(true);
   });
 });

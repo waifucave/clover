@@ -249,7 +249,11 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   if (dmg !== undefined) plan.problems.push(...macSignedAndStapled(join(dmg.dir, dmg.name)));
   // The name scan: every asset, inside where it opens, and the signed app as built (scripts/release/name-scan.ts).
   if (plan.problems.length === 0) {
-    const apps = dmg !== undefined && existsSync(join(dmg.dir, "mac-arm64", "Clover.app")) ? [join(dmg.dir, "mac-arm64", "Clover.app")] : [];
+    // The unpacked apps beside the builds: the signed Clover.app, and CI's win-unpacked.
+    const apps = [
+      ...(dmg !== undefined && existsSync(join(dmg.dir, "mac-arm64", "Clover.app")) ? [join(dmg.dir, "mac-arm64", "Clover.app")] : []),
+      ...a.from.map((d) => join(d, "win-unpacked")).filter((d) => existsSync(d)),
+    ];
     const scan = nameScan(plan.assets.map((x) => join(x.dir, x.name)), apps);
     plan.problems.push(...scan.problems);
     if (scan.problems.length === 0) console.log(`release/publish: the name scan read ${scan.read} files, nothing found; accepted unread: ${scan.accepted.map((p) => p.split("/").pop()).join(", ") || "none"}`);
