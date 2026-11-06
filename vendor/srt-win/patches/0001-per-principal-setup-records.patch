@@ -4,6 +4,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 ---
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -37,8 +38,12 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
  2 files changed, 215 insertions(+), 34 deletions(-)
 
+ src/cli.rs     |  84 +++++++++++++++++++------
+ src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 216 insertions(+), 35 deletions(-)
+
 diff --git a/src/cli.rs b/src/cli.rs
-index 8e616e2..2ad32e3 100644
+index 8e616e2..5b99c7e 100644
 --- a/src/cli.rs
 +++ b/src/cli.rs
 @@ -181,6 +181,13 @@ enum Cmd {
@@ -175,6 +180,15 @@ index 8e616e2..2ad32e3 100644
                  "Sandbox user, credential, and setup marker removed."
              };
              // Migration: best-effort remove the legacy
+@@ -1726,7 +1770,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+             println!(
+                 "{}",
+                 json!({
+-                    "user": user_status_json()?,
++                    "user": user_status_json(None)?,
+                     "wfp": wfp_status(&sl)?,
+                     "ambient": ambient_status_json()?,
+                 })
 @@ -1735,9 +1779,9 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
  
          // ─── user ──────────────────────────────────────────────────
