@@ -1712,13 +1712,13 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       }
       if (fromProtected) {
         // Remove only this user's protected copy folder.
-        const { execSync } = await import("node:child_process");
-        const pf = execSync("powershell", ["-NoProfile", "-Command", `
-          Add-Type -AssemblyName System.Environment
-          $pf = [Environment]::GetFolderPath("ProgramFiles")
-          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-          Write-Output "${pf}\\Clover Sandbox\\$sid"
-        `], { encoding: "utf8" }).trim();
+        const { execFileSync } = await import("node:child_process");
+        const pf = String(execFileSync("powershell", ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", [
+          '$ProgressPreference = ' + "'SilentlyContinue'",
+          '$pf = [Environment]::GetFolderPath("ProgramFiles")',
+          '$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
+          'Write-Output "$pf\\Clover Sandbox\\$sid"',
+        ].join('; ')], { encoding: "utf8", windowsHide: true })).trim();
         await run(["cmd", "/d", "/s", "/c", `rmdir /s /q "${pf}" 2>nul & exit 0`]);
         console.log("Bash's fence is removed");
         return;

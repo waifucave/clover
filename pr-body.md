@@ -32,6 +32,13 @@
 - `principalResetPlan()` / `sessionResetPlan()` — remove profile by SID, leftover dirs (spec item 1116)
 - `parseSrtStatus()` — full readiness verdict: launcher, user (credPresent, hiddenFromLogon, inSandboxGroup), WFP (state, filters, allowLoopback, userSid), profile (SID, path, temporary)
 
+### Protected copy per user SID (Addendum 6)
+- **`protectedCopyPath()`** — `%ProgramFiles%\Clover Sandbox\<user SID>\clover-core.exe` via `[Environment]::GetFolderPath`
+- **`currentSandboxPrincipal()`** — per-user principal `clover-sb-<8hex>` (Addendum 9) for isolation
+- **`isProtectedCopy()`** — detects if running from protected copy
+- CLI uses protected copy launcher for setup/remove; status works from either location
+- `remove` from protected copy only deletes that user's copy folder (not principal/filters)
+
 ### CLI integration
 - `runSandboxCommand` uses `launcherProblem(launcher, arch)` for setup/remove/status
 - `sandbox status` exits 3 on launcher missing/unpinned; 1 on other failures; 0 only when fully ready
@@ -43,13 +50,13 @@
 ---
 
 ## What's measured on the VM
-- **Not yet measured** — the Windows VM `clover-c-win` has not been started. The pure half (launcher args, status parsing, deny plan, reset plan, certificate validation) is tested on macOS via unit tests. Live measurement of `sandbox setup|remove|status`, principal provisioning, WFP filters, profile reset, and per-launch deny ACEs requires the VM.
+- **Not yet measured** — the Windows VM `clover-c-win` has not been started. The pure half (launcher args, status parsing, deny plan, reset plan, certificate validation, protected copy path) is tested on macOS via unit tests. Live measurement of `sandbox setup|remove|status`, principal provisioning, WFP filters, profile reset, and per-launch deny ACEs requires the VM.
 
 ---
 
 ## What's still missing
-1. **VM measurement** — start `clover-c-win`, run `sandbox setup`, verify principal `clover-sandbox` created with write-restricted token, WFP filters under `CLOVER_WFP_SUBLAYER`, profile reset between sessions, deny ACEs applied
-2. **Credential broker integration** — principal's password lives in daemon's credential broker (item 76); broker may be a later step
-3. **Session 0 / startup task** — spec's password-principal startup task for Session 0; if gap can't be closed, becomes Windows live gate (item 8)
-4. **Windows signing check** — once Clover's certificate exists, launch must also verify signature is from Clover (Addendum 1)
-5. **Protected copy path** — `%ProgramFiles%\Clover Sandbox\<user SID>\clover-core.exe` per user (Addendum 6); `status|setup|remove` must use `[Environment]::GetFolderPath`
+1. **VM measurement** — start `clover-c-win`, run `sandbox setup`, verify principal `clover-sb-<8hex>` created with write-restricted token, WFP filters under `CLOVER_WFP_SUBLAYER`, profile reset between sessions, deny ACEs applied
+2. **Launch Git Bash as principal** — through pinned srt-win with kill-on-close job, verify write to fenced path and network egress refused while allowed folder works
+3. **Session 0 startup task** — spec's password-principal startup task for Session 0; if gap can't be closed, becomes Windows live gate (item 8)
+4. **Credential broker integration** — principal's password lives in daemon's credential broker (item 76); broker may be a later step
+5. **Windows signing check** — once Clover's certificate exists, launch must also verify signature is from Clover (Addendum 1)

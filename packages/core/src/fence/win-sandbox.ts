@@ -12,6 +12,7 @@
 // run on macOS); the live half — elevation, the install/remove/status spawns, the profile work and
 // the per-session reset — runs on Windows only, driven by `clover-core sandbox setup|remove|status`.
 import { win32 } from "node:path";
+import { createHash } from "node:crypto";
 import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
 import type { SandboxPolicy } from "../contracts/fence";
@@ -23,15 +24,15 @@ import { SRT_WIN_PINS, launcherDigest, launcherProblem, srtWinArch, srtWinPath, 
  *  Uses `[Environment]::GetFolderPath("ProgramFiles")` to find Program Files.
  *  Path: `%ProgramFiles%\Clover Sandbox\<user SID>\clover-core.exe` */
 export async function protectedCopyPath(): Promise<string> {
-  const { execSync } = await import("node:child_process");
+  const { execFileSync } = await import("node:child_process");
   const ps = `
-    Add-Type -AssemblyName System.Environment
+    $ProgressPreference = 'SilentlyContinue'
     $pf = [Environment]::GetFolderPath("ProgramFiles")
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    Write-Output "${pf}\\Clover Sandbox\\$sid\\clover-core.exe"
+    Write-Output "$pf\\Clover Sandbox\\$sid\\clover-core.exe"
   `.trim();
-  const out = execSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
-  return out.trim();
+  const out = execFileSync("powershell", ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true });
+  return String(out).trim();
 }
 
 /** Whether the current process is running from the protected copy location. */
@@ -56,7 +57,6 @@ export function sandboxPrincipal(): string {
  *  Returns `clover-sb-` + first 8 hex characters of SHA-256(SID).
  *  This is a pure function for testing; the live version uses the current user's SID. */
 export function principalNameFromSid(sid: string): string {
-  const { createHash } = require("node:crypto");
   const hash = createHash("sha256").update(sid).digest("hex");
   return `${SANDBOX_PRINCIPAL_PREFIX}${hash.slice(0, 8)}`;
 }
@@ -65,8 +65,9 @@ export function principalNameFromSid(sid: string): string {
  *  Uses `clover-sb-` + first 8 hex chars of SHA-256(current user's SID).
  *  The full SID is stored in the principal's description field and verified on status/remove. */
 export async function currentSandboxPrincipal(): Promise<string> {
-  const { execSync } = await import("node:child_process");
+  const { execFileSync } = await import("node:child_process");
   const ps = `
+    $ProgressPreference = 'SilentlyContinue'
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($sid)
     $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -75,7 +76,7 @@ export async function currentSandboxPrincipal(): Promise<string> {
     $short = $hex.Substring(0, 8)
     Write-Output "clover-sb-$short"
   `.trim();
-  const out = execSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
+  const out = execFileSync("powershell", ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true });
   return String(out).trim();
 }
 
