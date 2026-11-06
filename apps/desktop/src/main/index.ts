@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, Notification, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, Notification, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -25,6 +25,7 @@ import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, type DaemonClient } from "./protocol/client";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
+import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
@@ -191,7 +192,11 @@ function makePair(): Pair {
     // A pipe's name is in a namespace every Windows user shares: the token goes only to this user's own daemon.
     checkServer: process.platform === "win32",
     log,
-    onConnected: (client) => loadRegistry(client),
+    onConnected: (client, hello) => {
+      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
+      void answerKey().register(client, hello.device);
+      return loadRegistry(client);
+    },
     onState: (s) => stateChanged(s),
     onDaemonQuit: (reason) => {
       log(`the daemon asked the app to quit (${reason})`);
@@ -240,6 +245,13 @@ function makePair(): Pair {
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found") scheduleReload();
   });
   return p;
+}
+
+/** The answer key, in the OS's protected store (a headless run's in memory: it never touches the OS's store). */
+let answerKeyValue: AnswerKey | undefined;
+function answerKey(): AnswerKey {
+  answerKeyValue ??= new AnswerKey(headless ? memoryVault("none") : safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage), log);
+  return answerKeyValue;
 }
 
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
