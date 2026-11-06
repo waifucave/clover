@@ -6,10 +6,11 @@
 //            (AppArmor's restriction on Ubuntu without bwrap's profile) the door says so and refuses
 //   Windows  not yet: the door says so and refuses
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
+import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
 import { macFenceProfile } from "./macos-profile";
@@ -45,8 +46,9 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       available: true,
       run: (r) => {
-        const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
-        const profile = macFenceProfile({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller });
+        const ctx = fenceContextFor(r.who.caller);
+        const policy = o.fence.policy(ctx);
+        const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
         return runCommand(r, { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
       },
     };
@@ -65,6 +67,14 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
       run: async (r) => {
         const why = probe();
         if (why !== null) return { kind: "refused", reason: `a fenced process can't be started here: ${why}` };
+        // The home the view is built from is a plain folder: nothing else gets a tmpfs view.
+        try {
+          if (!lstatSync(o.fence.cloverHome).isDirectory()) {
+            return { kind: "refused", reason: `a fenced process can't be started here: ${o.fence.cloverHome} isn't a plain folder` };
+          }
+        } catch {
+          return { kind: "refused", reason: `a fenced process can't be started here: no Clover home at ${o.fence.cloverHome}` };
+        }
         const filter = unixSocketFilter();
         if (filter === null) return { kind: "refused", reason: `a fenced process can't be started here: no seccomp filter for ${process.arch}` };
         // The filter reaches bwrap as the child's fd 3, read from a file only this run uses.
@@ -73,8 +83,17 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         writeFileSync(file, filter, { mode: 0o600 });
         const fd = openSync(file, "r");
         try {
-          const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
-          const plan = bwrapPlan({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
+          const ctx = fenceContextFor(r.who.caller);
+          const caller = callerPlaces(o.fence.cloverHome, os, ctx);
+          // The runner's own folders exist before the sandbox hides everything else: a first write lands on the
+          // disk, the way the macOS profile's allows do. Parents included, each 0700, as `makeBotFolders` makes
+          // them; a folder that can't be made refuses the run rather than silently staying unbound.
+          for (const p of [caller.ownOutputs, caller.ownScratch, caller.ownRoutines, caller.ownPluginData, caller.ownMemory, caller.ownBot]) {
+            if (p === null) continue;
+            try { mkdirSync(p, { recursive: true, mode: 0o700 }); }
+            catch (e) { return { kind: "refused", reason: `a fenced process can't be started here: its own folder ${p} can't be made (${e instanceof Error ? e.message : String(e)})` }; }
+          }
+          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
           const result = await runCommand(r, { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
           const note = heldFolderNote(result.stderr, plan.held);
