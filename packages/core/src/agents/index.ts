@@ -8,7 +8,7 @@
 // | `process/`          | launching an agent contained as a group, its environment allow-list, the process table |
 // | `quirks.ts`         | the quirks table: how each measured backend bends ACP (spike S5)                        |
 // | `backend.ts`        | `AcpAgentBackend`, the spine's `AgentBackend` for a local ACP agent                     |
-// | `bridge/`           | the bridge MCP server (its own process), its token, and the daemon's end of it          |
+// | `bridge/`           | the bridge MCP server (its own process), its token, and its parts for C's Clover server |
 // | `driver.ts`         | the session driver: the host runs an agent's turns through it                           |
 // | `manager.ts`        | `Agent`, `TaskStop`, lane D's hooks, the bridge's methods, reattaching after a restart |
 // | `transcript.ts`     | `bots/<bot>/agents/<session>/`: the wire minus replays, Clover's own record, stderr    |
@@ -33,7 +33,7 @@ import type { SessionHost } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import { UserSelections } from "./acp/selections";
 import { AcpAgentBackend } from "./backend";
-import { BridgeEndpoint } from "./bridge/endpoint";
+import { bridgeCloverParts, type BridgeCloverParts } from "./bridge/handlers";
 import { bridgeCommand } from "./bridge/main";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeToolSource } from "./bridge/tools";
@@ -48,7 +48,7 @@ import { StallWatchdog } from "./watchdog";
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
 export { RpcPeer, RpcError } from "./acp/jsonrpc";
 export { AcpAgentBackend, versionSatisfies, type AcpStartSpec, type AgentWire, type BackendCommand } from "./backend";
-export { BridgeEndpoint, type BridgeHandlers } from "./bridge/endpoint";
+export { bridgeCloverParts, type BridgeCloverParts, type BridgeHandlers } from "./bridge/handlers";
 export { bridgeCommand, BRIDGE_MAIN_PATH } from "./bridge/main";
 export { peerPidOf } from "./bridge/peer";
 export { BRIDGE_ENV, runBridge } from "./bridge/server";
@@ -74,8 +74,8 @@ export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOk
 export interface AgentsOptions {
   home: string;
   computer: string;
-  device: string;
-  serverVersion: string;
+  /** The daemon's own endpoint (`<home>/run/core.sock`, or the Windows pipe), where the bridge says hello. */
+  socketPath: string;
   host: SessionHost;
   approvals: ApprovalBroker;
   tree: Pick<Tree, "resolve">;
@@ -92,12 +92,14 @@ export interface AgentsOptions {
   log?: (line: string) => void;
 }
 
-/** Wires the Agent tool for one daemon: the tokens, the bridge's endpoint at `<home>/run/bridge.sock`, the watchdog,
+/** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's Clover server (`clover`: pass
+ *  them to `createCloverServer` as its `bridge`, and its `handlers` among the server's), the watchdog,
  *  the backends and the manager. `close` ends every agent's process (the sessions stay to be reattached), revokes
- *  every token and closes the endpoint. */
-export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoint: BridgeEndpoint; tokens: BridgeTokens; backends: () => AgentBackend[]; close(): Promise<void> } {
+ *  every token. */
+export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; close(): Promise<void> } {
   const tokens = new BridgeTokens();
-  const socketPath = join(o.home, "run", "bridge.sock");
+  // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
+  const socketPath = o.socketPath;
   let backends: AgentBackend[] = [];
   const manager: AgentManager = new AgentManager({
     home: o.home, computer: o.computer, host: o.host, approvals: o.approvals, tree: o.tree, fence: o.fence, clock: o.clock, tokens,
@@ -120,14 +122,12 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; endpoin
     id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, selections, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
     ...(READ_ONLY_MODES[id] ? { readOnlyMode: READ_ONLY_MODES[id] } : {}),
   }));
-  const endpoint = new BridgeEndpoint({ socketPath, tokens, handlers: manager.bridgeHandlers(), device: o.device, serverVersion: o.serverVersion, ...(o.log ? { log: o.log } : {}) });
-  endpoint.listen();
+  const clover = bridgeCloverParts(tokens, manager.bridgeHandlers());
   return {
-    manager, endpoint, tokens, backends: () => backends,
+    manager, clover, tokens, backends: () => backends,
     close: async () => {
       await manager.close();
       tokens.revokeAll();
-      endpoint.close();
     },
   };
 }

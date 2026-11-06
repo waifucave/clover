@@ -26,7 +26,8 @@ import { AcpAgentSession, type WireTap } from "./acp/session";
 import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admission";
 import type { PluginParts } from "./placement";
 import type { StdioMcpServer } from "./acp/types";
-import { buildAgentEnv, launchContained } from "./process/launch";
+import { AgentJob } from "../platform/win-job";
+import { buildAgentEnv, launchContained, type AgentJobLike } from "./process/launch";
 import { versionSatisfies } from "./version";
 
 export { versionSatisfies } from "./version";
@@ -66,6 +67,8 @@ export interface AcpBackendOptions {
   /** The record of the user's own selections where the agent saves a session's choice as theirs (review 10); one per
    *  backend instance in memory by default. */
   selections?: UserSelections;
+  /** Makes the Windows job object for one agent; lane C's `AgentJob.create` by default. */
+  makeJob?: () => AgentJobLike | null;
   /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
   readOnlyMode?: { option: string; values: readonly string[] };
 }
@@ -81,7 +84,8 @@ export interface AcpStartSpec extends AgentStartSpec {
 export interface AgentWire {
   tap?: WireTap;
   stderr?: (chunk: Uint8Array) => void;
-  launched?: (pid: number) => void;
+  /** `contains`: on Windows, the agent's job, which the bridge's caller check reads instead of the process tree. */
+  launched?: (pid: number, contains?: (pid: number) => boolean) => void;
   /** The agent's process exited, for whatever reason. */
   exited?: () => void;
   /** Where its sandbox files go: inside the fenced run folder, so no bot or agent can rewrite them. */
@@ -184,14 +188,21 @@ export class AcpAgentBackend implements AgentBackend {
       }
     }
     const meta = setup.meta || placedMeta ? mergeObjects(setup.meta ?? {}, placedMeta ?? {}) : undefined;
+    // Windows: every agent runs in its own job object (lane C's), or not at all.
+    let job: AgentJobLike | undefined;
+    if ((this.#opts.os ?? currentOs()) === "windows") {
+      job = (this.#opts.makeJob ?? (() => AgentJob.create()))() ?? undefined;
+      if (!job) throw new ContractError("refused", `${this.id} wasn't started: Windows wouldn't make a job object to hold it`);
+    }
     const proc = launchContained({
       command: d.path,
       args: [...(cmd.prefixArgs ?? []), ...cmd.acpArgs, ...(setup.args ?? [])],
       cwd: spec.root,
       env: { ...this.#env(), ...(setup.env ?? {}) },
       ...(wire.stderr ? { onStderr: wire.stderr } : {}),
-    }, this.#opts.table ? { table: this.#opts.table } : {});
-    if (proc.pid) wire.launched?.(proc.pid);
+    }, { ...(this.#opts.table ? { table: this.#opts.table } : {}), ...(job ? { job } : {}) });
+    if (!proc.contained) throw new ContractError("refused", `${this.id} wasn't started: it couldn't be put in its job object`);
+    if (proc.pid) wire.launched?.(proc.pid, proc.contains);
     void proc.exited.then(() => wire.exited?.());
     return AcpAgentSession.open({
       quirks: this.quirks,

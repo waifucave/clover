@@ -2,8 +2,11 @@
 //
 // * One agent process serves one delegation, contained as a group: on macOS and Linux it leads its own process group,
 //   so `stop` reaches every child that stayed in it, and every descendant the process table still shows is ended
-//   too (a command run under a terminal often starts its own session). On Windows the containment is a job object,
-//   which needs lane C's native code; until it lands, `stop` ends the tree with `taskkill /T` (untested here).
+//   too (a command run under a terminal often starts its own session). On Windows the containment is lane C's job
+//   object (`AgentJob`, platform/win-job.ts): the process is assigned to a new, unnamed job with no breakaway right
+//   after it starts, and an agent no job can be made for is ended at once and refused. `stop` ends the job (then the
+//   `taskkill /T` tree, for anything that escaped), and the job is closed when the process exits. The job is also
+//   the bridge's caller check there (`contains`), since a Windows process tree proves nothing.
 // * Its environment comes from an allow-list (edit 4): a small base set every program needs, plus the names the
 //   backend's quirks allow and set. Nothing named `CLOVER_*` from the daemon's own environment passes. The bridge
 //   entry's `env` at `session/new` is the one place Clover's names reach the agent: the token, the session id, and the
@@ -55,11 +58,23 @@ export interface LaunchSpec {
   onStderr?: (chunk: Uint8Array) => void;
 }
 
+/** The job object an agent's process goes into on Windows (`AgentJob`'s shape). */
+export interface AgentJobLike {
+  assign(pid: number): boolean;
+  contains(pid: number): boolean;
+  terminate(exitCode?: number): boolean;
+  close(): void;
+}
+
 export interface LaunchedAgent {
   readonly pid: number;
   readonly child: ChildProcess;
   /** Settles when the process has exited, with its code or signal. */
   readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  /** False when the agent couldn't join its job (Windows); it was ended. */
+  readonly contained: boolean;
+  /** Windows: whether a process is in the agent's job, for the bridge's caller check. */
+  readonly contains?: (pid: number) => boolean;
   write(line: string): void;
   onData(fn: (chunk: Uint8Array) => void): void;
   /** Ends the group: SIGTERM, then SIGKILL after `graceMs` (and every descendant the table still shows). */
@@ -68,7 +83,7 @@ export interface LaunchedAgent {
 
 export const STOP_GRACE_MS = 3_000;
 
-export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableReader } = {}): LaunchedAgent {
+export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableReader; job?: AgentJobLike } = {}): LaunchedAgent {
   const posix = process.platform !== "win32";
   const child = spawn(spec.command, [...spec.args], {
     cwd: spec.cwd,
@@ -88,6 +103,17 @@ export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableRe
   }
   const pid = child.pid ?? 0;
   const table = opts.table ?? readProcessTable;
+  const job = opts.job;
+  // Windows: into the job right away; one it can't join is ended, and the caller refuses the agent.
+  const contained = !job || (pid > 0 && job.assign(pid));
+  if (job && !contained) {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // Gone.
+    }
+  }
+  if (job) void exited.then(() => job.close());
   let stopping: Promise<void> | undefined;
 
   const signalGroup = (sig: NodeJS.Signals) => {
@@ -104,6 +130,8 @@ export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableRe
     pid,
     child,
     exited,
+    contained,
+    ...(job ? { contains: (p: number) => job.contains(p) } : {}),
     write(line) {
       if (!child.stdin || child.stdin.destroyed) throw new Error("the agent's stdin is closed");
       child.stdin.write(line);
@@ -115,6 +143,7 @@ export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableRe
       stopping ??= (async () => {
         if (!pid) return;
         if (!posix) {
+          job?.terminate(1);
           await taskkillTree(pid, false);
           const done = await Promise.race([exited.then(() => true), sleep(graceMs).then(() => false)]);
           if (!done) await taskkillTree(pid, true);

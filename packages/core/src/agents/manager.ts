@@ -37,7 +37,7 @@ import type { SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
 import { BridgeTokens } from "./bridge/tokens";
-import type { BridgeHandlers } from "./bridge/endpoint";
+import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
 import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
@@ -186,7 +186,7 @@ export class AgentManager {
     return {
       tap: (dir, msg, replay) => e.transcript.wire(dir, msg, replay, this.#o.clock.now()),
       stderr: (chunk) => e.transcript.stderr(chunk),
-      launched: (pid) => this.#o.tokens.bind(sessionId, pid),
+      launched: (pid, contains) => this.#o.tokens.bind(sessionId, pid, contains),
       // A leaked copy of the token is useless once the agent is gone (S5 edit 4).
       exited: () => this.#o.tokens.revoke(sessionId),
       setupDir: this.setupDir(sessionId),

@@ -8,9 +8,15 @@ import { RpcError, RpcPeer, type JsonRpcMessage } from "../acp/jsonrpc";
 import { UserSelections } from "../acp/selections";
 import { MAX_RAW_INPUT_CHARS, capRawInput, onceOnly } from "../acp/session";
 import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "../acp/types";
-import { versionSatisfies } from "../backend";
+import { AcpAgentBackend, versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
-import { buildAgentEnv } from "../process/launch";
+import { buildAgentEnv, launchContained } from "../process/launch";
+import { bridgeCloverParts } from "../bridge/handlers";
+import type { CloverConn } from "../../ipc/clover";
+import { FakeClock } from "../../contracts/fakes/clock";
+import { FakeFence } from "../../contracts/fakes/fence";
+import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
+import { fakeLaunch } from "../testing/harness";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
 import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
@@ -246,6 +252,29 @@ describe("the bridge's tokens", () => {
     expect(t2.isLive("s2", ok.connection)).toBe(false);
   });
 
+  test("on Windows the agent's job object is the caller check, not the process tree", async () => {
+    const t = new BridgeTokens({ table: table(tree), bindWaitMs: 50 });
+    const token = t.mint("s1");
+    const inJob = new Set([777]);
+    t.bind("s1", 500, (pid) => inJob.has(pid));
+    // 501 descends from 500 in the table, but isn't in the job: refused; 777 is in the job: accepted.
+    expect(await t.accept(token, "s1", 501)).toEqual({ ok: false, reason: "not-the-agent" });
+    expect((await t.accept(token, "s1", 777)).ok).toBe(true);
+  });
+
+  test("the bridge's methods on C's server refuse a session whose token is gone", async () => {
+    const t = new BridgeTokens({ table: table(tree) });
+    t.mint("s1");
+    const parts = bridgeCloverParts(t, {
+      sessionInfo: () => ({ bot: "alpha" }), tools: async () => ({ tools: [], instructions: "" }),
+      call: async () => ({ content: [], isError: false }), sendMessage: async () => {}, glossary: async () => ({ results: [], loaded: [] }),
+    });
+    const conn = { caller: { kind: "session", sessionId: "s1", sessionKind: "agent", bot: "alpha" } } as unknown as CloverConn;
+    expect(await parts.handlers["bridge.tools"]!(conn, {})).toEqual({ tools: [], instructions: "" });
+    t.revoke("s1");
+    expect(await Promise.resolve(parts.handlers["bridge.tools"]!(conn, {})).catch((e: unknown) => (e as Error).message)).toBe("this bridge's token was revoked");
+  });
+
   test("minting again revokes the earlier token (a reattach)", async () => {
     const t = new BridgeTokens({ table: table(tree) });
     const a = t.mint("s1");
@@ -351,6 +380,22 @@ describe("a hostile agent's sizes (review 12)", () => {
   test("redactDeep replaces the token in every string and key, at any depth", () => {
     const tok: string = "tok_ABCDEFGHIJKLMNOP";
     expect(redactDeep<unknown>({ a: [`x ${tok} y`, { [tok]: tok }], n: 1 }, [tok])).toEqual({ a: [`x ${REDACTED_TOKEN} y`, { [REDACTED_TOKEN]: REDACTED_TOKEN }], n: 1 });
+  });
+});
+
+describe("Windows containment (lane C's AgentJob)", () => {
+  test("an agent that can't join its job is ended and refused; a backend with no job refuses to start", async () => {
+    const job = { assign: () => false, contains: () => false, terminate: () => true, close: () => {} };
+    const p = launchContained({ command: process.execPath, args: ["-e", "setTimeout(() => {}, 30000)"], cwd: tmpdir(), env: { PATH: process.env["PATH"] ?? "" } }, { job });
+    expect(p.contained).toBe(false);
+    await p.exited;
+    const backend = new AcpAgentBackend({
+      id: "w", pluginId: "clover/agent-w", quirks: fakeLaunch(WELL_BEHAVED_QUIRKS), clock: new FakeClock(), os: "windows", makeJob: () => null,
+      command: { program: process.execPath, prefixArgs: ["-e", "1"], acpArgs: [] },
+    });
+    backend.detect = async () => ({ installed: true, path: process.execPath, version: "1.0.0", identityOk: true, versionOk: true, sandboxed: true });
+    const err = await backend.start({ sessionId: "s", root: tmpdir(), bridge: { name: "b", command: "x", args: [], env: {}, tools: [] }, fence: new FakeFence({ home: tmpdir(), cloverHome: join(tmpdir(), ".c") }).policy() }).catch((e: unknown) => e);
+    expect((err as Error).message).toContain("job object");
   });
 });
 

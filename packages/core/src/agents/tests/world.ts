@@ -1,6 +1,7 @@
 // A small world for the Agent tool's end-to-end tests: one computer ("Studio") with a temp home, lane B's fakes for
 // everything that isn't lane K's (the session host, the approval broker, the tree, the fence, the clock), and lane
-// K's real parts: the manager, the ACP backend launching the scripted agent, the bridge's tokens and endpoint, the
+// K's real parts: the manager, the ACP backend launching the scripted agent, the bridge's tokens, lane C's Clover server
+// serving the bridge role (testing/clover-endpoint.ts), the
 // real bridge process, the watchdog. A bot "alpha" has its main session `s_alpha` to delegate from.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +18,8 @@ import type { SessionRecord } from "../../contracts/session-host";
 import { UserSelections } from "../acp/selections";
 import { AcpAgentBackend, type AcpBackendOptions } from "../backend";
 import type { PluginPartsSource } from "../placement";
-import { BridgeEndpoint } from "../bridge/endpoint";
+import { bridgeCloverParts } from "../bridge/handlers";
+import { serveClover, type TestCloverEndpoint } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
@@ -99,7 +101,7 @@ export class World {
   readonly tokens: BridgeTokens;
   readonly watchdog: StallWatchdog;
   readonly manager: AgentManager;
-  readonly endpoint: BridgeEndpoint;
+  readonly endpoint: TestCloverEndpoint;
   readonly backend: AcpAgentBackend;
   readonly agent: FakeAgentRun;
   level: Level;
@@ -144,8 +146,7 @@ export class World {
       ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;
-    this.endpoint = new BridgeEndpoint({ socketPath: sock, tokens: this.tokens, handlers: manager.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });
-    this.endpoint.listen();
+    this.endpoint = serveClover(sock, bridgeCloverParts(this.tokens, manager.bridgeHandlers()));
   }
 
   /** What the scripted agent process reported. */

@@ -26,6 +26,8 @@ interface Grant {
   hash: string;
   mintedAt: number;
   agentPid?: number;
+  /** Windows: the agent's job object, the caller check there (a Windows process tree proves nothing). */
+  contains?: (pid: number) => boolean;
   pidKnown: Promise<number>;
   setPid: (pid: number) => void;
   live?: number;
@@ -71,10 +73,11 @@ export class BridgeTokens {
   }
 
   /** The agent process the session's token is bound to. */
-  bind(sessionId: string, agentPid: number): void {
+  bind(sessionId: string, agentPid: number, contains?: (pid: number) => boolean): void {
     const g = this.#bySession.get(sessionId);
     if (!g || g.revoked || g.agentPid !== undefined || agentPid <= 0) return;
     g.agentPid = agentPid;
+    if (contains) g.contains = contains;
     g.setPid(agentPid);
   }
 
@@ -94,8 +97,12 @@ export class BridgeTokens {
     const agentPid = g.agentPid ?? (await Promise.race([g.pidKnown, new Promise<undefined>((r) => setTimeout(() => r(undefined), this.#bindWaitMs))]));
     if (agentPid === undefined) return { ok: false, reason: "agent-not-started" };
     if (g.revoked) return { ok: false, reason: "revoked" };
-    const rows = await this.#table().catch(() => []);
-    if (!isDescendant(rows, peerPid, agentPid)) return { ok: false, reason: "not-the-agent" };
+    if (g.contains) {
+      if (!g.contains(peerPid)) return { ok: false, reason: "not-the-agent" };
+    } else {
+      const rows = await this.#table().catch(() => []);
+      if (!isDescendant(rows, peerPid, agentPid)) return { ok: false, reason: "not-the-agent" };
+    }
     // Checked again after the last await: a revoke (or the expiry) while the table was read wins (review 5).
     if (g.revoked || this.#bySession.get(sessionId) !== g) return { ok: false, reason: "revoked" };
     if (g.live !== undefined) return { ok: false, reason: "in-use" };

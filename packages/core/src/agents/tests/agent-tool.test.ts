@@ -12,7 +12,8 @@ import { isContractError } from "../../contracts/common";
 import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
 import { AcpAgentBackend } from "../backend";
-import { BridgeEndpoint } from "../bridge/endpoint";
+import { bridgeCloverParts } from "../bridge/handlers";
+import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
@@ -377,8 +378,7 @@ async function restart(w: World, quirks: AgentQuirks) {
     levelOf: () => w.level,
   });
   w.endpoint.close();
-  const ep2 = new BridgeEndpoint({ socketPath: w.endpoint.socketPath, tokens: tokens2, handlers: m2.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });
-  ep2.listen();
+  const ep2 = serveClover(w.endpoint.socketPath, bridgeCloverParts(tokens2, m2.bridgeHandlers()));
   afterRestart.push(async () => {
     await m2.close();
     ep2.close();
