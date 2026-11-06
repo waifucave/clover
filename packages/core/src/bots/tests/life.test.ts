@@ -315,6 +315,13 @@ describe("SendMessage and ListAgents (§6.7, §9.3)", () => {
     expect(lines.at(-1)).toStartWith("- s_code · coding");
     expect((await list.run({ kind: "agent", bot: "luna" })).text).toStartWith("- s_lunas · agent");
     expect((await list.run({ kind: "side-thread" })).text).toBe("No running sessions match.");
+    // With lane K's rows, its agents are listed in place of the host's.
+    const row = { ...b.host.get("s_mine")!, id: "s_remote", computer: "Laptop", status: "prompting" as const };
+    const withK = botToolDefs({ host: b.host, bots: b.bots, agents: { list: () => [row] } }, "b_alpha")[1]!;
+    const kLines = (await withK.run({ kind: "agent" })).text.split("\n");
+    expect(kLines).toHaveLength(1);
+    expect(kLines[0]).toContain("s_remote · agent");
+    expect(kLines[0]).toContain("on Laptop");
     await b.shutdown();
   });
 });

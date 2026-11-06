@@ -29,9 +29,17 @@ export const SEND_MESSAGE_MAX_CHARS = 100_000;
 /** The most sessions `ListAgents` lists. */
 export const LIST_AGENTS_MAX = 200;
 
+/** Lane K's background agents, as `ListAgents` lists them (the controller's ruling: one `ListAgents`, lane D's, with
+ *  the agent rows from lane K): on any computer, with their status. */
+export interface AgentRows {
+  list(): SessionView[];
+}
+
 export interface BotToolsDeps {
   host: Pick<DurableSessionHost, "get" | "list" | "deliver" | "callerOf">;
   bots: Pick<BotService, "list" | "has" | "mainSession" | "deliverTo">;
+  /** Lane K's agent rows; without them, the agents are the host's own agent sessions. */
+  agents?: AgentRows;
 }
 
 const isEnded = (v: SessionView) => v.status === "stopped" || v.status === "failed";
@@ -159,7 +167,10 @@ export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[
           if ((v.parent !== undefined && (v.parent === sessionId || v.parent === own)) && v.kind !== "bot") return 0;
           return { bot: 1, "side-thread": 2, agent: 3, coding: 4 }[v.kind];
         };
-        const all = host.list()
+        // The agents are lane K's rows when it gives them, in place of the host's own agent sessions.
+        const agentRows = deps.agents?.list();
+        const sessions = agentRows === undefined ? host.list() : [...host.list().filter((v) => v.kind !== "agent"), ...agentRows];
+        const all = sessions
           .filter((v) => !isEnded(v))
           .filter((v) => kind === undefined || v.kind === kind)
           .filter((v) => bot === undefined || v.bot === bot)
