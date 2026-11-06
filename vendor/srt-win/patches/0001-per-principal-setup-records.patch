@@ -7,6 +7,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -53,6 +54,12 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/reg.rs     |  26 ++++++++
  src/user.rs    |  16 +++--
  4 files changed, 292 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 116 ++++++++++++++++++++++++++------
+ src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  37 +++++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 303 insertions(+), 43 deletions(-)
 
 diff --git a/src/cli.rs b/src/cli.rs
 index 8e616e2..cdbb36a 100644
@@ -290,7 +297,7 @@ index 8e616e2..cdbb36a 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..ce6a825 100644
+index ba0ac37..70c213e 100644
 --- a/src/install.rs
 +++ b/src/install.rs
 @@ -49,19 +49,83 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
@@ -500,7 +507,7 @@ index ba0ac37..ce6a825 100644
 +/// leaves pool members behind must keep the group (and its logon
 +/// denials); only the last one out removes them.
 +pub fn other_principals_remain(name: &str) -> Result<bool> {
-+    Ok(crate::reg::Key::subkey_names(USERS_SUBKEY)?
++    Ok(crate::reg::subkey_names(USERS_SUBKEY)?
 +        .iter()
 +        .any(|n| n != name))
 +}
@@ -531,10 +538,10 @@ index ba0ac37..ce6a825 100644
  }
  
 diff --git a/src/reg.rs b/src/reg.rs
-index 68ff089..9d67cda 100644
+index 68ff089..e3ab422 100644
 --- a/src/reg.rs
 +++ b/src/reg.rs
-@@ -319,6 +319,32 @@ pub fn set_key_dacl_from_sddl(path: &str, sddl: &str) -> Result<()> {
+@@ -319,6 +319,43 @@ pub fn set_key_dacl_from_sddl(path: &str, sddl: &str) -> Result<()> {
      crate::util::win32_ok(r, &format!("SetNamedSecurityInfoW(HKLM\\{path})"))
  }
  
@@ -553,7 +560,18 @@ index 68ff089..9d67cda 100644
 +        let mut len = buf.len() as u32;
 +        // RegEnumKeyExW writes at most `len` chars and sets `len` to
 +        // the count actually written (no NUL).
-+        let r = unsafe { RegEnumKeyExW(key.0, index, PWSTR(buf.as_mut_ptr()), &mut len, None, None, None, None) };
++        let r = unsafe {
++            RegEnumKeyExW(
++                key.0,
++                index,
++                Some(PWSTR(buf.as_mut_ptr())),
++                Some(&mut len),
++                None,
++                None,
++                None,
++                None,
++            )
++        };
 +        if r == ERROR_NO_MORE_ITEMS {
 +            break;
 +        }
