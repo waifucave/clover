@@ -20,7 +20,7 @@ export const S = {
   levels: {
     "read-only": { label: "Read only", detail: "Looks around, never changes anything" },
     ask: { label: "Ask first", detail: "Asks before every action" },
-    risky: { label: "Ask when risky", detail: "Asks only before risky actions" },
+    "ask-risky": { label: "Ask when risky", detail: "Asks only before risky actions" },
     "accept-edits": { label: "Accept edits", detail: "Edits files freely, asks for the rest" },
     automatic: { label: "Fully automatic", detail: "Never asks; the fences still hold" },
   } as const,

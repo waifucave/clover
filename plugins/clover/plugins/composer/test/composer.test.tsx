@@ -218,7 +218,7 @@ describe("model, voice and actions", () => {
   test("a level asked for shows beside the old one, which stands until the card is answered", () => {
     setup({ level: { ...LEVEL, requested: "automatic" } });
     const pill = screen.getByRole("button", { name: "Approval level on Studio: Ask when risky, Fully automatic asked for" });
-    expect(pill.getAttribute("data-level")).toBe("risky");
+    expect(pill.getAttribute("data-level")).toBe("ask-risky");
     expect(pill.textContent).toContain("Fully automatic asked for");
     fireEvent.click(pill);
     expect(screen.getByRole("menuitemradio", { name: /Ask when risky/ }).getAttribute("aria-checked")).toBe("true");

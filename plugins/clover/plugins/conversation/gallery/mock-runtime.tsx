@@ -3,7 +3,7 @@
 // field and an option's label here are the MOCK CORE's, handed to the frame, never to the
 // conversation plugin — exactly the split the real runtime keeps (spec §5.5).
 import { createContext, useContext, type ReactNode } from "react";
-import type { CardButtonProps, SealedField, UiRuntime } from "../client/sdk";
+import { runtimeWith, type CardButtonProps, type SealedField, type SealedRenderers, type UiRuntime } from "../../shell/runtime/ui";
 
 export type SealedCardData = Partial<Record<SealedField, string>>;
 
@@ -28,7 +28,13 @@ export interface MockRuntimeOptions {
   onDeny?: (cardId: string, option?: string) => void;
 }
 
+/** A runtime with only the sealed frames and MCP Apps views: what the conversation's own stories and tests need. */
 export function mockRuntime(options: MockRuntimeOptions = {}): UiRuntime {
+  return runtimeWith({ sealed: mockSealed(options) });
+}
+
+/** The mock core's sealed frames and MCP Apps views. */
+export function mockSealed(options: MockRuntimeOptions = {}): SealedRenderers {
   const cards = options.cards ?? {};
   const apps = options.apps ?? {};
   return {
