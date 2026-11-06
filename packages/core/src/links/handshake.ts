@@ -34,9 +34,10 @@ export const joinStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t)].join("\n"));
 export const admitStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} admit`, group, key, String(t)].join("\n"));
-/** A voter's agreement to remove a member other than itself (PROTOCOL.md "Group recovery", proposed). */
-export const removeStatement = (group: string, key: string, t: number): Bytes =>
-  utf8([`${HANDSHAKE_PREFIX} remove`, group, key, String(t)].join("\n"));
+/** A voter's agreement to remove a member other than itself (PROTOCOL.md "Group recovery", proposed), and to keep
+ *  the keys it names that the removal's rollback would otherwise drop, sorted, one a line (none: the four lines). */
+export const removeStatement = (group: string, key: string, t: number, keeps: readonly string[] = []): Bytes =>
+  utf8([`${HANDSHAKE_PREFIX} remove`, group, key, String(t), ...[...keeps].sort()].join("\n"));
 
 // ---- group recovery (PROTOCOL.md "Group recovery", lane I's proposal adopted for H-M2) ----
 
@@ -259,7 +260,7 @@ export class HandshakeClient {
 
   /** Removes a member: itself with its own signature alone, another with the removes of a quorum of voters
    *  (`quorum`; refused `403 no_quorum` short of one). */
-  async removeGroupMember(group: string, signer: Ed25519Key, member: string, quorum?: { t: number; removes: { by: string; sig: string }[] }): Promise<void> {
+  async removeGroupMember(group: string, signer: Ed25519Key, member: string, quorum?: { t: number; removes: { by: string; sig: string }[]; keeps?: string[] }): Promise<void> {
     try {
       await this.#signed(`group:${group}`, signer, "DELETE", `/v1/groups/${group}/members/${member}`, quorum);
     } catch (err) {

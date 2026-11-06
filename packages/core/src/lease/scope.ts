@@ -6,8 +6,9 @@
 // * **The account scope.** The holder is a device id; requests carry the device's account token for the handshake.
 // * **The group scope.** The holder is a member key, this device's own key for the group or a peer's, which the
 //   registry's group record maps back to a device (linked computers tell each other their group keys,
-//   `link.group.info` in links/group.ts). A holder no record names is shown as no one (`holder: null` in the views above), so a
-//   device never guesses whose lease it is.
+//   `link.group.info` in links/group.ts). A holder no record names (a member this computer isn't linked to) is `holder: null` with
+//   `state: "held"` in the views: "held by another computer in your group", never "no holder", and a device never
+//   guesses whose lease it is.
 // * **Failures.** A refusal (`409 held`) is `conflict` with the record the service holds. Anything that keeps the
 //   request from an answer (no network, a 5xx, a timeout) is `offline`: the lease never treats an unanswered request
 //   as a refusal, nor the other way round.

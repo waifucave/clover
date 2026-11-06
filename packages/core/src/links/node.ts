@@ -279,7 +279,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   const revokeOptions = (): RevokeOptions => ({
     registry, store: o.store, ...(o.handshake ? { handshake: o.handshake } : {}), ...(o.account ? { account: o.account } : {}),
     ...(o.services ? { services: o.services } : {}),
-    ...(groups ? { removeGroupMember: (group: string, member: string) => groups.removeMember(group, member) } : {}),
+    ...(groups ? { removeGroupMember: (group: string, member: string, device?: string) => groups.removeMember(group, member, device) } : {}),
   });
   const refresh = async () => {
     await readNet().catch(() => undefined);

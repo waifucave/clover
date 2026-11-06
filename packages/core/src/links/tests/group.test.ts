@@ -75,11 +75,21 @@ async function pair(a: Daemon, b: Daemon): Promise<void> {
   await waitFor(() => a.links.transport.links().some((l) => l.peer === b.links.key.id && l.up));
 }
 
-async function answer(d: Daemon, change: string, allow: boolean): Promise<void> {
+/** Answers the card of that change on `d`; `check` picks the children to check by their labels (and returns them, for
+ *  the test to look at). */
+async function answer(d: Daemon, change: string, allow: boolean, check?: (labels: string[]) => string[]): Promise<string[]> {
   await waitFor(() => d.broker.cards().some((c) => c.change === change));
   const card = d.broker.cards().find((c) => c.change === change)!;
   const channel = d.broker.frameChannel(card.id)!;
-  expect(await d.broker.answer(card.id, { optionId: allow ? "approve" : "deny", hash: card.hash, proof: { via: "sealed-frame", frame: channel, input: "click", at: Date.now() } }, { role: "app" })).toBe("accepted");
+  const text = (l: string | { en: string }) => (typeof l === "string" ? l : l.en);
+  const labels = (card.children ?? []).map((c) => text(c.label));
+  const picked = check ? check(labels) : [];
+  const children = (card.children ?? []).filter((c) => picked.includes(text(c.label))).map((c) => c.id);
+  expect(await d.broker.answer(card.id, {
+    optionId: allow ? "approve" : "deny", hash: card.hash, proof: { via: "sealed-frame", frame: channel, input: "click", at: Date.now() },
+    ...(check ? { children } : {}),
+  }, { role: "app" })).toBe("accepted");
+  return labels;
 }
 
 const groupOf = (d: Daemon) => d.links.registry.group()?.id;
@@ -186,6 +196,32 @@ describe("voters and the quorum (lane I's proposal)", () => {
     expect(removed[0]!.slice(0, 1).concat(removed[0]!.slice(2))).toEqual(["g1", "target"]);
   });
 
+  test("the removal's card lists the keys its rollback would drop; the one the user keeps stays, the other goes", async () => {
+    const hs = service({ voteAfterMs: 0 });
+    const net = new MemoryNetwork();
+    const [a, b, c, d] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Server"), await daemon(net, hs, "Mini")];
+    await pair(a, b);
+    // The laptop let the server and the mini in.
+    await pair(b, c);
+    await pair(b, d);
+    const g = groupOf(a)!;
+    await waitFor(() => hs.groups.get(g)?.members.size === 4);
+    await c.links.groups!.refresh();
+    await d.links.groups!.refresh();
+    const [cKey, dKey] = [c.links.registry.group()!.ownKey, d.links.registry.group()!.ownKey];
+    // The studio revokes the laptop. It's the only voter left besides the keys the laptop let in, so it's a quorum
+    // alone; its card asks which of those to keep. The studio never linked to them, so it names them by date.
+    const out = revokeDevice(a.links.revokeOptions(), b.links.key.id, "lost");
+    const labels = await answer(a, "device-revoke", true, (l) => [l[0]!]);
+    expect(labels).toHaveLength(2);
+    expect(labels.every((l) => l.startsWith("Keep a device that joined on "))).toBe(true);
+    expect((await out).steps.find((s) => s.step === "handshake-group")).toMatchObject({ ok: true });
+    const members = hs.groups.get(g)!.members;
+    expect(members.has(b.links.registry.group()!.ownKey)).toBe(false);
+    // Exactly one of the two stayed: the one checked.
+    expect([members.has(cKey), members.has(dKey)].filter(Boolean)).toHaveLength(1);
+  }, 40_000);
+
   test("who counts: voters now, not the target, not the keys it admitted in the last 7 days", () => {
     const now = Date.now();
     const m = (key: string, votesFrom: number | null, admittedBy: string[] = [], joinedAt = now - 1000) => ({ key, joinedAt, votesFrom, admittedBy });
@@ -196,14 +232,15 @@ describe("voters and the quorum (lane I's proposal)", () => {
 });
 
 describe("recovery after another member removed this one (two voters)", () => {
-  test("the removed computer founds a new group; the computer it's still linked with follows when its user agrees", async () => {
+  test("the removed computer founds a new group; its card names the computers to invite, and the one checked follows when its user agrees", async () => {
     const hs = service({ rollbackMs: 1 });
     const net = new MemoryNetwork();
-    const [a, b, c] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Server")];
+    const [a, b, c, d] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Server"), await daemon(net, hs, "Mini")];
     await pair(a, b);
     await pair(a, c);
+    await pair(a, d);
     const g = groupOf(a)!;
-    await waitFor(() => hs.groups.get(g)?.members.size === 3);
+    await waitFor(() => hs.groups.get(g)?.members.size === 4);
     await Bun.sleep(5);
     // The laptop is stolen. The thief removes the studio: the laptop is the only voter besides it.
     const bKey = ed25519FromSecret((await b.store.get(groupKeyRef(g)))!.value);
@@ -212,10 +249,13 @@ describe("recovery after another member removed this one (two voters)", () => {
     await b.client.removeGroupMember(g, bKey, aKey, { t, removes: [{ by: toBase64Url(bKey.publicKey), sig: toBase64Url(bKey.sign(removeStatement(g, aKey, t))) }] });
     expect(hs.groups.get(g)?.members.has(aKey)).toBe(false);
     // The user revokes the laptop on the studio: here at once, but not at the group, which no longer has the studio.
-    const out = await revokeDevice(a.links.revokeOptions(), b.links.key.id);
+    const out = await revokeDevice(a.links.revokeOptions(), b.links.key.id, "lost");
     expect(out.steps.find((s) => s.step === "handshake-group")).toMatchObject({ ok: false });
-    // The studio's next refresh finds it was removed: it founds a new group and invites the server.
+    // The studio's next refresh finds it was removed: it founds a new group, and its card names the computers it
+    // would invite. The laptop, revoked as lost, isn't on it; the user leaves the mini out.
     void a.links.refresh();
+    const named = await answer(a, "device-add", true, () => ["Server"]);
+    expect(named.sort()).toEqual(["Mini", "Server"]);
     await answer(c, "device-add", true);
     await waitFor(() => groupOf(c) !== undefined && groupOf(c) === groupOf(a) && groupOf(a) !== g);
     const fresh = groupOf(a)!;
@@ -223,7 +263,10 @@ describe("recovery after another member removed this one (two voters)", () => {
     expect(a.links.registry.group()!.recoveredFrom).toBe(g);
     expect(a.links.registry.groupLeft(g)?.how).toBe("removed");
     expect(c.links.registry.groupLeft(g)?.how).toBe("moved");
-    expect(hs.groups.get(g)?.members.size).toBe(1);
+    // The mini wasn't asked: it stays where it was, with the laptop.
+    expect(d.broker.cards()).toHaveLength(0);
+    expect(groupOf(d)).toBe(g);
+    expect(hs.groups.get(g)?.members.size).toBe(2);
     // The revocation's group step is done: the studio left that group.
     await retryRevokes(a.links.revokeOptions());
     expect(a.links.registry.pendingRevokes()).toEqual([]);

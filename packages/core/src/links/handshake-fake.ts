@@ -8,7 +8,7 @@
 // * removing a member other than yourself takes the removes of a quorum of the voters other than it, not counting the
 //   keys it admitted in the last `rollbackMs` (403 `no_quorum` short of one); removing yourself takes only you;
 // * a quorum's removal undoes the changes the removed member signed in the last `rollbackMs`: the keys it admitted go
-//   (and theirs in turn), the members it removed come back;
+//   (and theirs in turn), the members it removed come back; the keys the quorum's removes name as kept stay;
 // * a member that doesn't vote yet can't take the lease over (403 `not_voter`).
 import { createHash } from "node:crypto";
 import { fromBase64Url, randomBytes, toBase64Url } from "../identity/bytes";
@@ -81,16 +81,17 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
   const votes = (m: Member | undefined): boolean => m !== undefined && m.votesFrom !== null && m.votesFrom <= now();
   const memberList = (g: Group) => [...g.members].map(([key, m]) => ({ key, joinedAt: m.joinedAt, votesFrom: m.votesFrom, admittedBy: [...m.admittedBy] }));
   /** Undoes what `gone` signed in the last `rollbackMs`: the keys it admitted (and theirs), the members it removed. */
-  const rollBack = (g: Group, gone: string, seen = new Set<string>()): void => {
+  const rollBack = (g: Group, gone: string, keeps: ReadonlySet<string>, seen = new Set<string>()): void => {
     if (seen.has(gone)) return;
     seen.add(gone);
     const since = now() - rollbackMs;
     for (const c of g.changes.filter((x) => x.at >= since && x.signers.includes(gone))) {
+      if (c.kind === "admit" && keeps.has(c.target)) continue;
       if (c.kind === "admit" && g.members.has(c.target)) {
         g.members.delete(c.target);
         g.removed.set(c.target, now());
         if (g.lease.holder === c.target) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
-        rollBack(g, c.target, seen);
+        rollBack(g, c.target, keeps, seen);
       } else if (c.kind === "remove" && c.member && !g.members.has(c.target)) {
         g.members.set(c.target, c.member);
         g.removed.delete(c.target);
@@ -438,9 +439,11 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           const member = g.members.get(gone);
           if (!member) return new Response(null, { status: 204 });
           let signers: string[] = [gone];
+          let keeps = new Set<string>();
           if (gone !== who) {
             // Another member: a quorum of the voters other than it, leaving out the keys it admitted lately.
-            const b = body() as { t?: unknown; removes?: unknown } | undefined;
+            const b = body() as { t?: unknown; removes?: unknown; keeps?: unknown } | undefined;
+            const kept = Array.isArray(b?.keeps) ? (b.keeps as unknown[]).filter((k): k is string => typeof k === "string") : [];
             const since = now() - rollbackMs;
             const its = new Set(g.changes.filter((c) => c.kind === "admit" && c.at >= since && c.signers.includes(gone)).map((c) => c.target));
             const eligible = new Set([...g.members].filter(([k, m]) => k !== gone && !its.has(k) && votes(m)).map(([k]) => k));
@@ -448,19 +451,21 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
             if (eligible.has(who)) agreed.add(who);
             if (typeof b?.t === "number" && Math.abs(b.t - now()) <= 600_000 && Array.isArray(b.removes)) {
               for (const r of b.removes as { by?: unknown; sig?: unknown }[]) {
-                if (typeof r?.by === "string" && typeof r.sig === "string" && eligible.has(r.by) && sigOk(r.by, removeStatement(id, gone, b.t), r.sig)) agreed.add(r.by);
+                if (typeof r?.by === "string" && typeof r.sig === "string" && eligible.has(r.by) && sigOk(r.by, removeStatement(id, gone, b.t, kept), r.sig)) agreed.add(r.by);
               }
             }
             const need = quorumOf(eligible.size);
             if (eligible.size === 0 || agreed.size < need) return err(403, "no_quorum", { need, have: agreed.size });
             signers = [...agreed];
+            // The quorum signed the kept keys again: the rollback leaves them.
+            keeps = new Set(kept);
           }
           g.members.delete(gone);
           g.removed.set(gone, now());
           if (g.lease.holder === gone) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
           if (gone !== who) {
             g.changes.push({ kind: "remove", target: gone, signers, at: now(), member });
-            rollBack(g, gone);
+            rollBack(g, gone, keeps);
           }
           g.changes = g.changes.filter((c) => c.at >= now() - rollbackMs);
           if (g.members.size === 0) groups.delete(id);

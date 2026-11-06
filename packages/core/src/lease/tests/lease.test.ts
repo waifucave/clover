@@ -5,11 +5,28 @@ import { describe, expect, test } from "bun:test";
 import { runLeaseConformance, type LeaseFactory } from "../../contracts/conformance/lease";
 import { isContractError } from "../../contracts/common";
 import { FakeClock } from "../../contracts/fakes/clock";
+import { MainLease } from "../lease";
 import { MainLeaseHarness, MemoryLeaseService, memoryLease } from "../testing";
 
 runLeaseConformance(((opts: ConstructorParameters<typeof MainLeaseHarness>[0]) => new MainLeaseHarness(opts)) as unknown as LeaseFactory);
 
 describe("MainLease beyond the contract", () => {
+  test("a lease held by a group member this computer doesn't know reads as held, by no device it can name, never as lapsed", async () => {
+    const clock = new FakeClock();
+    const lease = new MainLease({
+      self: "studio", clock,
+      scope: () => ({
+        id: "group:g1",
+        read: async () => ({ holder: null, holderRaw: "a-member-key", epoch: 3, expiresAt: clock.now() + 30_000 }),
+        op: async () => { throw new Error("not here"); },
+      }),
+    });
+    await lease.refresh();
+    // The views show "held by another computer in your group" for this (the controller's ruling).
+    expect(lease.state()).toMatchObject({ holder: null, state: "held", epoch: 3 });
+    expect(lease.canAct()).toBe(false);
+  });
+
   test("the epoch is a fencing token: a takeover raises it, and acts stamped with an older one are stale", async () => {
     const clock = new FakeClock();
     const service = new MemoryLeaseService(clock);

@@ -71,26 +71,41 @@ const inTerminal = (ctx: MethodContext): boolean => ctx.caller.kind === "user" &
 export const UNNAMED_CARD = "card:unnamed";
 
 /** Opens a sealed card and hands back its id with the decision still to come. */
-export type CardOpener = (req: ApprovalRequest) => Promise<{ card?: string; allowed: Promise<boolean> }>;
+/** Opens a card. `checked` is the children the answer checked, for a card with a checkbox per child (the group's
+ *  cards: the computers to invite, the keys to keep). */
+export type CardOpener = (req: ApprovalRequest) => Promise<{ card?: string; allowed: Promise<boolean>; checked?: Promise<readonly string[]> }>;
 
-/** The opener over lane C's broker: the card's id comes from its `requested` event. */
+/** The opener over lane C's broker: the card's id comes from its `requested` event, the checked children from its
+ *  `resolved` one. */
 export function brokerCardOpener(broker: Pick<ApprovalBroker, "request" | "watch">): CardOpener {
   return (req) => new Promise((resolve) => {
     let settled = false;
+    let cardId: string | undefined;
+    let gotChecked: (c: readonly string[]) => void = () => undefined;
+    const checked = new Promise<readonly string[]>((r) => (gotChecked = r));
     let off: Unsubscribe = () => undefined;
     const allowed = broker.request(req).then((d) => d.allowed);
     off = broker.watch((e) => {
-      if (settled || e.type !== "requested" || e.card.kind !== req.kind || e.card.change !== req.change) return;
-      settled = true;
-      off();
-      resolve({ card: e.card.id, allowed });
+      if (e.type === "requested" && !settled && e.card.kind === req.kind && e.card.change === req.change) {
+        settled = true;
+        cardId = e.card.id;
+        resolve({ card: e.card.id, allowed, checked });
+      } else if (e.type === "resolved" && cardId !== undefined && e.cardId === cardId) {
+        gotChecked(e.children ?? []);
+        off();
+      }
     });
-    void allowed.then(() => {
-      if (settled) return;
-      settled = true;
-      off();
-      resolve({ allowed });
-    });
+    void allowed.finally(() => {
+      if (!settled) {
+        settled = true;
+        resolve({ allowed, checked });
+      }
+      // A card decided without a resolved event that names it (a level, a rule) checked nothing.
+      setTimeout(() => {
+        gotChecked([]);
+        off();
+      }, 0);
+    }).catch(() => undefined);
   });
 }
 

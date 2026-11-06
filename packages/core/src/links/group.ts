@@ -87,6 +87,8 @@ export class GroupKeeper {
   /** Co-signatures asked for and declined, so a retry doesn't show the same card again: `<device>|<target key>`. */
   readonly #declined = new Set<string>();
   readonly #asking = new Map<string, Promise<{ by: string; sig: string } | undefined>>();
+  /** The keys the user chose to keep in a removal (or that they declined it), by `<group>|<member>`. */
+  readonly #keeps = new Map<string, readonly string[] | "declined">();
   #closed = false;
 
   constructor(o: GroupKeeperOptions) {
@@ -136,7 +138,7 @@ export class GroupKeeper {
   /** Removes a member other than this device: with this computer's remove, and as many of the other voters' as a quorum
    *  needs, each asked over the link and agreed to by its user. Refused (`refused`) short of a quorum: the revocation
    *  keeps the step and tries again (S5). */
-  async removeMember(group: string, member: string): Promise<void> {
+  async removeMember(group: string, member: string, device?: string): Promise<void> {
     const g = this.#o.registry.group();
     // This device left that group already: nothing of its own is there to remove.
     if (!g || g.id !== group) return;
@@ -148,21 +150,58 @@ export class GroupKeeper {
     // A service without group recovery yet (v1: no member shows `votesFrom`) takes any member's removal alone.
     if (read.members.every((m) => m.votesFrom === undefined)) return this.#o.handshake.removeGroupMember(group, key, member);
     const now = this.#o.handshake.now();
+    const name = (device && this.#o.registry.get(device)?.name) ?? "the device";
+    // The keys its removal would roll back: the user keeps the ones they recognise (the controller's ruling).
+    const keeps = await this.#keepsFor(g, group, member, name, rolledBack(read.members, member, now));
     const eligible = eligibleVoters(read.members, member, now);
     const need = quorumOf(eligible.length);
     const t = now;
     const removes: { by: string; sig: string }[] = [];
-    if (eligible.some((m) => m.key === g.ownKey)) removes.push({ by: g.ownKey, sig: toBase64Url(key.sign(removeStatement(group, member, t))) });
+    if (eligible.some((m) => m.key === g.ownKey)) removes.push({ by: g.ownKey, sig: toBase64Url(key.sign(removeStatement(group, member, t, keeps))) });
     if (removes.length < need) {
       const others = eligible.filter((m) => m.key !== g.ownKey).map((m) => ({ key: m.key, device: deviceOfKey(g, m.key) }));
       const asked = others.filter((o) => o.device !== undefined && !this.#declined.has(`${o.device}|${member}`) && this.#isComputer(o.device));
-      const results = await firstN(asked.map((o) => this.#askCosign(o.device!, group, member, t)), need - removes.length);
+      const results = await firstN(asked.map((o) => this.#askCosign(o.device!, group, member, t, keeps, name)), need - removes.length);
       removes.push(...results);
     }
     if (eligible.length === 0 || removes.length < need) {
       throw new ContractError("refused", `removing it takes ${need} of your devices' agreement (${removes.length} so far)`, { need, have: removes.length });
     }
-    await this.#o.handshake.removeGroupMember(group, key, member, { t, removes });
+    await this.#o.handshake.removeGroupMember(group, key, member, { t, removes, ...(keeps.length > 0 ? { keeps: [...keeps] } : {}) });
+  }
+
+  /** Asks this device's user which of the keys a removal would roll back to keep: one card, a checkbox each, none
+   *  checked. Asked once per removal while the daemon runs; a declined card stops the removal there. */
+  async #keepsFor(g: GroupRecord, group: string, member: string, name: string, dropped: GroupMember[]): Promise<readonly string[]> {
+    if (dropped.length === 0) return [];
+    const id = `${group}|${member}`;
+    const known = this.#keeps.get(id);
+    if (known === "declined") throw new ContractError("refused", "the user didn't go on with the removal");
+    if (known) return known;
+    const ids = dropped.map((_, i) => `k${i + 1}`);
+    const answer = await this.#ask({
+      kind: "change", origin: "user", computers: [], effect: "other", change: "device-revoke",
+      fields: {
+        title: { type: "text", text: `Remove ${name} from your devices' group?` },
+        detail: { type: "list", items: [`${name} let these in during the last 7 days. They leave with it, unless you keep them. Keep only the ones you recognise.`] },
+      },
+      children: dropped.map((m, i) => ({ id: ids[i]!, label: `Keep ${this.#labelOf(g, m)}`, checked: false })),
+    }, { noTimeout: true });
+    if (!answer.ok) {
+      this.#keeps.set(id, "declined");
+      throw new ContractError("refused", "the user didn't go on with the removal");
+    }
+    const keeps = dropped.filter((_, i) => answer.checked.includes(ids[i]!)).map((m) => m.key);
+    this.#keeps.set(id, keeps);
+    return keeps;
+  }
+
+  #labelOf(g: GroupRecord, m: GroupMember): string {
+    const d = deviceOfKey(g, m.key);
+    const name = d ? this.#o.registry.get(d)?.name : undefined;
+    // One this computer never linked to: when it joined, and its key's start, so two on one day differ.
+    const at = new Date(m.joinedAt).toISOString();
+    return name ?? `a device that joined on ${at.slice(0, 10)} at ${at.slice(11, 16)} UTC (key ${m.key.slice(0, 8)})`;
   }
 
   close(): void {
@@ -299,9 +338,26 @@ export class GroupKeeper {
       this.#log(`founding the new group: ${errText(err)}`);
     }
     this.#o.onChanged?.();
-    for (const device of invitees) {
-      if (!this.#isComputer(device)) continue;
-      void this.#invite(device, id).catch((e: unknown) => this.#log(`inviting ${device}: ${errText(e)}`));
+    // A card first, naming each computer it would invite, so the user can leave one out (the controller's ruling). A
+    // computer the user revoked, as lost or otherwise, is never on it.
+    const computers = invitees.filter((d) => this.#isComputer(d));
+    if (computers.length > 0) void this.#inviteByCard(id, computers).catch((e: unknown) => this.#log(`inviting: ${errText(e)}`));
+  }
+
+  async #inviteByCard(group: string, computers: string[]): Promise<void> {
+    const ids = computers.map((_, i) => `c${i + 1}`);
+    const answer = await this.#ask({
+      kind: "change", origin: "user", computers: [], effect: "other", change: "device-add",
+      fields: {
+        title: { type: "text", text: "Start a new group for your devices?" },
+        detail: { type: "list", items: ["Another device removed this computer from your devices' group. The computers you check are asked to move with it; leave out any you don't trust."] },
+      },
+      children: computers.map((d, i) => ({ id: ids[i]!, label: this.#o.registry.get(d)?.name ?? "a computer", checked: true })),
+    }, { noTimeout: true });
+    if (!answer.ok) return;
+    for (const [i, device] of computers.entries()) {
+      if (!answer.checked.includes(ids[i]!) || !this.#isComputer(device)) continue;
+      void this.#invite(device, group).catch((e: unknown) => this.#log(`inviting ${device}: ${errText(e)}`));
     }
   }
 
@@ -330,8 +386,9 @@ export class GroupKeeper {
 
   async #cosignFor(raw: unknown, from: string): Promise<{ by: string; sig: string }> {
     this.#mustBeComputer(from);
-    const p = raw as { group?: unknown; key?: unknown; t?: unknown } | undefined;
+    const p = raw as { group?: unknown; key?: unknown; t?: unknown; keeps?: unknown; name?: unknown } | undefined;
     if (typeof p?.group !== "string" || typeof p.key !== "string" || typeof p.t !== "number") throw new ContractError("invalid", "link.group.cosign takes a group, a member key and t");
+    const keeps = Array.isArray(p.keeps) ? p.keeps.filter((k): k is string => typeof k === "string").slice(0, 32) : [];
     const g = this.#o.registry.group();
     if (!g || g.id !== p.group || g.members[from] === undefined) throw new ContractError("refused", "not a member of this computer's group");
     if (p.key === g.ownKey) throw new ContractError("refused", "this computer doesn't agree to its own removal");
@@ -339,17 +396,22 @@ export class GroupKeeper {
     const key = await this.#key(g);
     if (!key) throw new ContractError("not_found", "the group's key is gone");
     const target = deviceOfKey(g, p.key);
-    const name = (target && this.#o.registry.get(target)?.name) ?? "a device this computer doesn't know";
+    // Its name as this computer knows it, else as the asker named it.
+    const name = (target && this.#o.registry.get(target)?.name) ?? (typeof p.name === "string" ? p.name.slice(0, 64) : "a device this computer doesn't know");
     const asker = this.#o.registry.get(from)?.name ?? "another computer";
-    const ok = await this.#ask({
+    const keptNames = keeps.map((k) => {
+      const d = deviceOfKey(g, k);
+      return (d && this.#o.registry.get(d)?.name) ?? "a device this computer doesn't know";
+    });
+    const { ok } = await this.#ask({
       kind: "change", origin: "user", computers: [], effect: "other", change: "device-revoke",
       fields: {
         title: { type: "text", text: `Remove ${name} from your devices?` },
-        detail: { type: "list", items: [`${asker} asks, to revoke it`, name] },
+        detail: { type: "list", items: [`${asker} asks, to revoke it`, name, ...keptNames.map((n) => `Kept: ${n}`)] },
       },
     });
     if (!ok) throw new ContractError("refused", "the user didn't agree");
-    return { by: g.ownKey, sig: toBase64Url(key.sign(removeStatement(p.group, p.key, p.t))) };
+    return { by: g.ownKey, sig: toBase64Url(key.sign(removeStatement(p.group, p.key, p.t, keeps))) };
   }
 
   async #invited(raw: unknown, from: string): Promise<{ joined: boolean }> {
@@ -360,7 +422,7 @@ export class GroupKeeper {
     if (this.#o.registry.group()?.id === p.group) return { joined: true };
     if (this.#o.registry.groupLeft(p.group)) throw new ContractError("refused", "this computer left that group");
     const asker = this.#o.registry.get(from)?.name ?? "Another computer";
-    const ok = await this.#ask({
+    const { ok } = await this.#ask({
       kind: "change", origin: "user", computers: [], effect: "other", change: "device-add",
       fields: {
         title: { type: "text", text: `Move this computer to ${asker}'s new group?` },
@@ -443,14 +505,14 @@ export class GroupKeeper {
 
   // ---- helpers ----
 
-  #askCosign(device: string, group: string, member: string, t: number): Promise<{ by: string; sig: string } | undefined> {
+  #askCosign(device: string, group: string, member: string, t: number, keeps: readonly string[], name: string): Promise<{ by: string; sig: string } | undefined> {
     const id = `${device}|${member}|${t}`;
     const running = this.#asking.get(id);
     if (running) return running;
     const p = (async () => {
       try {
         const link = await this.#o.transport.connect(device);
-        const r = await link.request<{ by: string; sig: string }>(GROUP_LINK.cosign, { group, key: member, t }, { timeoutMs: (this.#o.cardTimeoutMs ?? CARD_TIMEOUT_MS) + 30_000 });
+        const r = await link.request<{ by: string; sig: string }>(GROUP_LINK.cosign, { group, key: member, t, keeps: [...keeps], name }, { timeoutMs: (this.#o.cardTimeoutMs ?? CARD_TIMEOUT_MS) + 30_000 });
         return typeof r?.by === "string" && typeof r.sig === "string" ? r : undefined;
       } catch (err) {
         if (err instanceof ContractError && err.code === "refused") this.#declined.add(`${device}|${member}`);
@@ -463,13 +525,14 @@ export class GroupKeeper {
     return p;
   }
 
-  async #ask(req: ApprovalRequest): Promise<boolean> {
-    if (!this.#o.openCard) return false;
+  async #ask(req: ApprovalRequest, o: { noTimeout?: boolean } = {}): Promise<{ ok: boolean; checked: readonly string[] }> {
+    if (!this.#o.openCard) return { ok: false, checked: [] };
     const opened = await this.#o.openCard(req);
     const ms = this.#o.cardTimeoutMs ?? CARD_TIMEOUT_MS;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([opened.allowed, new Promise<boolean>((r) => (timer = setTimeout(() => r(false), ms)))]);
+      const ok = await (o.noTimeout ? opened.allowed : Promise.race([opened.allowed, new Promise<boolean>((r) => (timer = setTimeout(() => r(false), ms)))]));
+      return { ok, checked: ok ? ((await opened.checked) ?? []) : [] };
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -512,6 +575,21 @@ export function eligibleVoters(members: GroupMember[], target: string, now: numb
   const since = now - ROLLBACK_MS;
   return members.filter((m) =>
     m.key !== target && m.votesFrom != null && m.votesFrom <= now && !(m.joinedAt >= since && (m.admittedBy ?? []).includes(target)));
+}
+
+/** The members a quorum's removal of `target` would roll back: the keys it admitted in the last 7 days, and theirs. */
+export function rolledBack(members: GroupMember[], target: string, now: number): GroupMember[] {
+  const since = now - ROLLBACK_MS;
+  const out = new Map<string, GroupMember>();
+  const walk = (k: string) => {
+    for (const m of members) {
+      if (out.has(m.key) || m.key === target || m.joinedAt < since || !(m.admittedBy ?? []).includes(k)) continue;
+      out.set(m.key, m);
+      walk(m.key);
+    }
+  };
+  walk(target);
+  return [...out.values()];
 }
 
 function sizeOf(g: GroupRecord): number {
