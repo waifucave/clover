@@ -10,9 +10,10 @@
 //   only while no other computer could take over, or while it has had a live link to each one that could since
 //   before the deadline passed (a link that came back later may be to a computer that took over meanwhile). The
 //   coordinator answers that from the links (coordinator.ts).
-// * **A newer epoch from a peer** (its hello, or the announcement a computer sends its links when it starts a tenure,
-//   passed on once by each): another computer holds a later lease in the same scope, so this one stops acting until a
-//   renew or an acquire succeeds, as after a wake (H-M2's checks 3 and 4, L3 and L4).
+// * **A newer epoch from a peer** (its hello, or the announcement each computer sends its links of every new epoch it
+//   learns, coordinator.ts): another computer may hold a later lease in the same scope, so this one stops acting until
+//   a renew or an acquire succeeds, as after a wake (H-M2's checks 3 to 5, L3 to L7). Newer means newer than the
+//   newest the service has shown this device: a peer's word never raises that, so a bogus epoch costs one renew.
 // * **The fencing token is (scope, epoch)** (H-M2's review): epochs count within one lease record (the account's, a
 //   group's, or this computer's own), so a sign-in or a merge starts a new count. `fence()` is what an act is stamped
 //   with; `isStale(epoch, scope)` tells a receiver to refuse an act from an earlier lease: an older epoch in the
@@ -72,8 +73,6 @@ export class MainLease implements Lease {
   #woke = false;
   /** A peer named a newer epoch than any this device has seen: nothing is acted on until a renew or acquire. */
   #behind = false;
-  /** Per scope, the newest epoch a peer named: so an announcement is taken, and passed on, once. */
-  readonly #peerSeen = new Map<string, number>();
   /** The last device the record named as holder (a hand-over's or hand-back's sender, after it released). */
   #lastHolder: string | null = null;
   #handingOver = false;
@@ -180,16 +179,16 @@ export class MainLease implements Lease {
     this.#changed();
   }
 
-  /** A peer named `epoch` in `scope` (its hello, or a tenure's announcement): newer than any seen here in this
-   *  scope, another computer holds a later lease, so this one stops acting until its own renew or acquire succeeds.
-   *  An epoch of another scope is never compared. Returns whether it was newer (and so to be passed on). */
+  /** A peer named `epoch` in `scope` (its hello, or an announcement): newer than the newest the service has shown
+   *  this device in this scope, another computer may hold a later lease, so this one stops acting until its own renew
+   *  or acquire succeeds. An epoch of another scope is never compared. Returns whether it was newer. */
   peerEpoch(epoch: number, scope?: string): boolean {
-    const id = this.scopeId();
-    if (this.#local || (scope !== undefined && scope !== id)) return false;
-    if (epoch <= Math.max(this.highestEpoch(), this.#peerSeen.get(id) ?? 0)) return false;
-    this.#peerSeen.set(id, epoch);
-    this.#behind = true;
-    this.#changed();
+    if (this.#local || (scope !== undefined && scope !== this.scopeId())) return false;
+    if (epoch <= this.highestEpoch()) return false;
+    if (!this.#behind) {
+      this.#behind = true;
+      this.#changed();
+    }
     return true;
   }
 
@@ -368,8 +367,6 @@ export class MainLease implements Lease {
       this.#deadline = sent + this.ttlMs - this.marginMs;
       this.#woke = false;
       this.#behind = false;
-      // The service says this device holds the newest lease: a peer's later word counts against this epoch again.
-      this.#peerSeen.set(this.scopeId(), record.epoch);
       this.#armDeadline();
     }
     this.#changed();

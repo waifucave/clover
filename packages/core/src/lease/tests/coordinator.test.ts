@@ -70,6 +70,16 @@ async function computers(names: string[], wrap?: (name: string, scope: Scope) =>
   return { c, service, nodes, n: (name: string) => nodes.get(name)!, id, holder, off };
 }
 
+/** Over 20 samples, how many found more than one of `names` acting. */
+async function twoActing(w: Awaited<ReturnType<typeof computers>>, names: string[]): Promise<number> {
+  let two = 0;
+  for (let i = 0; i < 20; i++) {
+    await Bun.sleep(150);
+    if (names.filter((n) => w.n(n).mc.lease.canAct()).length > 1) two++;
+  }
+  return two;
+}
+
 async function waitFor(cond: () => boolean, ms = 6_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
@@ -238,6 +248,69 @@ describe("the main computer", () => {
     }
     expect(two).toBe(0);
     expect(w.n("Studio").mc.lease.canAct()).toBe(false);
+  }, 30_000);
+
+  test("L5: down a three-hop chain, the main cut off from the service hears of the takeover (check 5)", async () => {
+    const names = ["Studio", "Laptop", "Server", "Mini"];
+    const w = await computers(names, undefined, [["Studio", "Laptop"], ["Laptop", "Server"], ["Server", "Mini"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    w.service.cutOff(w.id("Studio"), true);
+    await waitFor(() => w.holder() !== "Studio" && w.holder() !== null, 10_000);
+    expect(await twoActing(w, names)).toBe(0);
+  }, 30_000);
+
+  test("L5b: a computer that read the new epoch from the service before the taker's word reached it passes it on (check 5)", async () => {
+    let slow = false;
+    const w = await computers(["Studio", "Laptop", "Server"], (name, scope) => name !== "Server" ? scope : {
+      ...scope,
+      // The server's acquire lands at the service, but its answer (and so its announcement) comes late.
+      op: async (op, epoch, ttl) => {
+        const r = await scope.op(op, epoch, ttl);
+        if (op === "acquire" && slow) await Bun.sleep(1200);
+        return r;
+      },
+    }, [["Studio", "Laptop"], ["Laptop", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    slow = true;
+    w.service.cutOff(w.id("Studio"), true);
+    await waitFor(() => w.holder() !== "Studio" && w.holder() !== null, 10_000);
+    expect(await twoActing(w, ["Studio", "Laptop", "Server"])).toBe(0);
+  }, 30_000);
+
+  test("L6: an announcement lost to a dropped link still reaches the main once the link is back (check 5)", async () => {
+    const names = ["Studio", "Laptop", "Server"];
+    // The laptop doesn't vote yet, so the server is the one that takes over.
+    const w = await computers(names, (name, scope) => (name === "Laptop" ? { ...scope, votes: () => false } : scope), [["Studio", "Laptop"], ["Laptop", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    const [lk, sk] = [w.c.devices.get("Laptop")!.key.publicKey, w.c.devices.get("Server")!.key.publicKey];
+    w.service.cutOff(w.id("Studio"), true);
+    // The laptop-server link drops just as the record lapses; the server still reaches the service and takes over.
+    await waitFor(() => w.n("Server").mc.lease.known().expiresAt !== null && Date.now() >= w.n("Server").mc.lease.known().expiresAt! - 200, 10_000);
+    w.c.net.partition(lk, sk);
+    await waitFor(() => w.holder() !== "Studio" && w.holder() !== null, 10_000);
+    await Bun.sleep(500);
+    w.c.net.heal(lk, sk);
+    await w.c.devices.get("Laptop")!.transport.connect(w.id("Server")).catch(() => undefined);
+    expect(await twoActing(w, names)).toBe(0);
+  }, 30_000);
+
+  test("L7: a bogus epoch from a paired computer costs the main one renew, and never keeps the real takeover's word from it (check 5)", async () => {
+    const names = ["Studio", "Laptop", "Server"];
+    // The laptop doesn't vote yet, so the server is the one that takes over.
+    const w = await computers(names, (name, scope) => (name === "Laptop" ? { ...scope, votes: () => false } : scope), [["Studio", "Laptop"], ["Laptop", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    const scope = w.n("Laptop").mc.lease.scopeId();
+    await (await w.c.devices.get("Server")!.transport.connect(w.id("Laptop"))).notify("link.lease.epoch", { scope, epoch: 1_000_000_000 });
+    // The studio stops, renews, and acts again.
+    await Bun.sleep(1_000);
+    await waitFor(() => w.n("Studio").mc.lease.canAct(), 3_000);
+    w.service.cutOff(w.id("Studio"), true);
+    await waitFor(() => w.holder() !== "Studio" && w.holder() !== null, 10_000);
+    expect(await twoActing(w, names)).toBe(0);
   }, 30_000);
 
   test("only a computer that votes starts a new tenure: a non-voter never takes over a lapse, nor is handed the lease, and a not_voter refusal stops its tries (check 3)", async () => {

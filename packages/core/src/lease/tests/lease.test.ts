@@ -69,11 +69,17 @@ describe("MainLease beyond the contract", () => {
     expect(studio.canAct()).toBe(true);
     // Newer in this scope: another computer may hold a later lease; nothing is acted on until the service says so.
     expect(studio.peerEpoch(2, studio.scopeId())).toBe(true);
-    // Heard once: the same word again isn't passed on twice.
-    expect(studio.peerEpoch(2)).toBe(false);
     expect(studio.canAct()).toBe(false);
     await studio.renew();
     expect(studio.canAct()).toBe(true);
+    // A bogus epoch costs one renew and blocks nothing after it (check 5, L7): a peer's word never raises the
+    // newest epoch the service has shown, so a real epoch 2 still stops the holder.
+    expect(studio.peerEpoch(1_000_000_000)).toBe(true);
+    await studio.renew();
+    expect(studio.canAct()).toBe(true);
+    expect(studio.highestEpoch()).toBe(1);
+    expect(studio.peerEpoch(2)).toBe(true);
+    expect(studio.canAct()).toBe(false);
   });
 
   test("an acquire answered after a release gives the lease back instead of holding it unasked (check 3)", async () => {

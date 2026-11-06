@@ -45,11 +45,14 @@ export const LEASE_LINK = {
   handBack: "link.lease.handBack",
   /** notify `{at}`: the sender is the main the user chose, since `at`. */
   main: "link.lease.main",
-  /** notify `{scope, epoch}`: a computer started a tenure with this epoch (sent to every live link, and passed on once
-   *  by each computer that hadn't heard it), so a main cut off from the handshake stops even when it never paired with
-   *  the computer that took over (H-M2's check 4, L4). */
+  /** notify `{scope, epoch}`: a lease epoch, newer than the sender knew before. Every computer sends each new
+   *  (scope, epoch) it learns, from the service or a peer, once, to every live link but the one it came from, so a main
+   *  cut off from the handshake stops even when it never paired with the computer that took over (checks 4 and 5). */
   epoch: "link.lease.epoch",
 } as const;
+
+/** How many (scope, epoch) pairs a computer remembers passing on. */
+const PASSED_ON_MAX = 256;
 
 /** After the service refused a new tenure `not_voter`, how long before trying again. */
 const NOT_VOTER_BACKOFF_MS = 60_000;
@@ -100,9 +103,10 @@ export class LeaseCoordinator {
   #handingBack: Promise<void> | undefined;
   /** Per peer, since when (monotonic) its link has been up without a break. */
   readonly #upSince = new Map<string, number>();
-  /** The computer whose `take` nudge is pending, and the tenure last announced (`scope@epoch`). */
+  /** The computer whose `take` nudge is pending. */
   #takeFrom: string | undefined;
-  #announced: string | undefined;
+  /** The (scope, epoch) pairs already passed on, oldest first. */
+  readonly #passed = new Set<string>();
   /** Until when (monotonic) not to try a new tenure again, after the service said this computer doesn't vote yet. */
   #notVoterUntil = Number.NEGATIVE_INFINITY;
   #handBackHook: (() => Promise<void>) | undefined;
@@ -120,7 +124,7 @@ export class LeaseCoordinator {
     const t = o.transport;
     for (const l of t.links()) if (l.up) this.#upSince.set(l.peer, o.clock.monotonic());
     this.#offs.push(this.lease.watch((s) => {
-      this.#announceTenure();
+      this.#announceLearned();
       this.#events.emit(s);
       this.#kick();
     }));
@@ -219,21 +223,28 @@ export class LeaseCoordinator {
     // the word on once, so a computer the new holder never paired with hears it too.
     if (this.lease.peerEpoch(epoch, scope)) {
       this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: not acting until the handshake says otherwise`);
-      this.#sendEpoch(scope ?? this.lease.scopeId(), epoch, from);
+      this.#passOn(scope ?? this.lease.scopeId(), epoch, from);
       this.#lastRead = Number.NEGATIVE_INFINITY;
       this.#kick();
     }
   }
 
-  /** This computer started a tenure (any acquire or takeover that gave it a new epoch): every live link hears it. */
-  #announceTenure(): void {
-    if (!this.lease.holds() || !this.lease.hasScope()) return;
-    const scope = this.lease.scopeId();
-    const epoch = this.lease.state().epoch;
+  /** The service showed this computer a newer epoch (its own tenure, or a read or push of another's): every live link
+   *  hears it, however this computer learned it (check 5, L5b and L6). */
+  #announceLearned(): void {
+    if (!this.lease.hasScope()) return;
+    const epoch = this.lease.highestEpoch();
+    if (epoch > 0) this.#passOn(this.lease.scopeId(), epoch);
+  }
+
+  /** Sends (scope, epoch) on once: exact pairs, a bounded set, so neither a loop nor a bogus epoch from a peer keeps a
+   *  real one from going on (check 5, L7). */
+  #passOn(scope: string, epoch: number, except?: string): void {
     const key = `${scope}@${epoch}`;
-    if (this.#announced === key) return;
-    this.#announced = key;
-    this.#sendEpoch(scope, epoch);
+    if (this.#passed.has(key)) return;
+    this.#passed.add(key);
+    if (this.#passed.size > PASSED_ON_MAX) this.#passed.delete(this.#passed.values().next().value!);
+    this.#sendEpoch(scope, epoch, except);
   }
 
   #sendEpoch(scope: string, epoch: number, except?: string): void {
