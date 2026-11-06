@@ -9,7 +9,7 @@ import { isContractError } from "../../src/contracts/common";
 import { computersApiRoutes } from "../../src/computers/api";
 import { placementFields, type McpResult, type McpServerPlacement } from "../../src/computers/mcp";
 import type { PeerReviewer } from "../../src/tree/judge";
-import type { TerminalOutput } from "../../src/tree/terminals";
+import { OUTPUT_BYTES_PER_SECOND, outputPacer, type TerminalOutput } from "../../src/tree/terminals";
 import { answersFor, makePhone, type Phone } from "./answer-support";
 import { Cluster, until, type ClusterOptions } from "./cluster-support";
 
@@ -306,6 +306,43 @@ describe("the terminal panel (R4)", () => {
     studio.node.terminals.dispose();
     await until(() => laptop.node.terminalCount() === 0, 3000, "the rest to close on Laptop1");
   });
+
+  test("the pacer gathers small chunks on its tick, keeps to its rate, and drops past its backlog with a note", async () => {
+    const got: TerminalOutput[] = [];
+    // 200 KB/s and a 400 KB backlog, so the test is quick: 1,000 chunks of 600 bytes, all at once.
+    const pace = outputPacer((o) => got.push(o), { rate: 200_000, backlog: 400_000 });
+    const t0 = performance.now();
+    for (let i = 0; i < 1000; i++) pace({ terminalId: "t", data: "y\n".repeat(300) });
+    pace({ terminalId: "t", data: "", exited: { code: 0 } });
+    expect(got.length).toBe(0); // nothing goes out at once
+    await until(() => got.some((o) => o.exited), 10_000, "the exit");
+    const seconds = (performance.now() - t0) / 1000;
+    const delivered = got.filter((o) => !o.data.startsWith("\r\n[clover")).reduce((n, o) => n + o.data.length, 0);
+    expect(delivered).toBeLessThanOrEqual(400_000);
+    expect(delivered).toBeGreaterThan(390_000);
+    expect(delivered / seconds).toBeLessThan(200_000 * 1.25);
+    // A frame per tick, not per chunk; the note in a frame of its own, then the exit.
+    expect(got.length).toBeLessThan(seconds * 20 + 5);
+    expect(got.at(-2)!.data).toContain("some output was dropped");
+    expect(got.at(-1)!.exited).toEqual({ code: 0 });
+  });
+
+  test("a terminal on another computer streams a steady flood at the pacer's rate", async () => {
+    if (!posix || typeof Bun.Terminal !== "function") return;
+    const flood = () => ({ launch: () => ({ cmd: ["/bin/sh", "-c", "yes | head -c 3000000"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } }) });
+    const { studio } = await two({ levels: { Laptop1: "automatic" }, extra: { terminals: flood } });
+    let bytes = 0;
+    let frames = 0;
+    let done = false;
+    studio.node.terminals.onOutput((o) => { bytes += o.data.length; frames++; if (o.exited) done = true; });
+    const t0 = performance.now();
+    await studio.node.terminals.open({ computer: "Laptop1", cols: 80, rows: 24 });
+    await until(() => done, 20_000, "the flood to end");
+    const seconds = (performance.now() - t0) / 1000;
+    expect(bytes).toBeGreaterThan(2_900_000); // the PTY turns \n into \r\n, so a little more
+    expect(bytes / seconds).toBeLessThan(OUTPUT_BYTES_PER_SECOND * 1.25);
+    expect(frames).toBeLessThan(seconds * 20 + 5);
+  }, 30_000);
 
   test("a paste of several lines waits for the user's OK, and goes bracketed when the program asked", async () => {
     if (!posix || typeof Bun.Terminal !== "function") return;

@@ -209,39 +209,40 @@ const PeerOutput = z.object({
   exited: z.object({ code: z.number().int().nullable() }).optional(),
 });
 
-/** Paces one terminal's output to another computer at `OUTPUT_BYTES_PER_SECOND`, in order, with its exit last. */
-function outputPacer(send: (o: TerminalOutput) => void): (o: TerminalOutput) => void {
-  let queue: string[] = [];
+/** Paces one terminal's output to another computer at `rate` bytes a second, in order, with its exit last. Output
+ *  goes out on a 50 ms tick and never at once, so small chunks are gathered rather than passed through one by one;
+ *  past `backlog` waiting, output is dropped and a note says so, in a frame of its own. */
+export function outputPacer(
+  send: (o: TerminalOutput) => void,
+  opts: { rate?: number; backlog?: number } = {},
+): (o: TerminalOutput) => void {
+  const rate = opts.rate ?? OUTPUT_BYTES_PER_SECOND;
+  const backlog = opts.backlog ?? OUTPUT_BACKLOG_MAX;
+  const queue: string[] = [];
   let queued = 0;
   let dropped = false;
   let exited: TerminalOutput["exited"];
   let id = "";
   let timer: ReturnType<typeof setInterval> | null = null;
-  const perTick = Math.max(1, Math.floor((OUTPUT_BYTES_PER_SECOND * OUTPUT_TICK_MS) / 1000));
+  const perTick = Math.max(1, Math.floor((rate * OUTPUT_TICK_MS) / 1000));
   const tick = () => {
     let budget = perTick;
     let out = "";
-    while (queue.length && budget > 0) {
+    while (queue.length && budget > 0 && out.length < OUTPUT_CHUNK_MAX) {
       const head = queue[0]!;
-      if (head.length <= budget && out.length + head.length <= OUTPUT_CHUNK_MAX) {
-        out += head;
-        budget -= head.length;
-        queue.shift();
-      } else {
-        const take = Math.min(budget, OUTPUT_CHUNK_MAX - out.length);
-        if (take <= 0) break;
-        out += head.slice(0, take);
-        queue[0] = head.slice(take);
-        budget -= take;
-      }
+      const take = Math.min(head.length, budget, OUTPUT_CHUNK_MAX - out.length);
+      out += head.slice(0, take);
+      budget -= take;
+      if (take === head.length) queue.shift();
+      else queue[0] = head.slice(take);
     }
     queued -= out.length;
-    if (dropped && queue.length === 0) {
-      out += "\r\n[clover: some output was dropped; the terminal printed faster than it could be sent]\r\n";
-      dropped = false;
-    }
     if (out) send({ terminalId: id, data: out });
     if (queue.length === 0) {
+      if (dropped) {
+        send({ terminalId: id, data: "\r\n[clover: some output was dropped; the terminal printed faster than it could be sent]\r\n" });
+        dropped = false;
+      }
       if (exited !== undefined) send({ terminalId: id, data: "", exited });
       if (timer) clearInterval(timer);
       timer = null;
@@ -251,16 +252,16 @@ function outputPacer(send: (o: TerminalOutput) => void): (o: TerminalOutput) => 
     id = o.terminalId;
     if (o.exited) exited = o.exited;
     if (o.data) {
-      if (queued + o.data.length > OUTPUT_BACKLOG_MAX) dropped = true;
+      if (queued + o.data.length > backlog) dropped = true;
       else {
         queue.push(o.data);
         queued += o.data.length;
       }
     }
+    // Never a tick at once: the first delivery waits for the next one (#177's check 2).
     if (!timer) {
       timer = setInterval(tick, OUTPUT_TICK_MS);
       (timer as { unref?: () => void }).unref?.();
-      tick();
     }
   };
 }
