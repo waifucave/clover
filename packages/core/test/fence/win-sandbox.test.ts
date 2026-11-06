@@ -135,9 +135,19 @@ describe("the status verdict", () => {
     expect(ready.ready).toBe(true);
     expect(ready.exit).toBe(SANDBOX_EXIT.OK);
     // A marker from another build is still refused, numeric or string.
-    expect(parse({ exists: true, marker_version: 2, setup_version: 3, seclogon: "ok" }).ready).toBe(false);
     expect(parse({ exists: true, marker_version: "2", setup_version: "3", seclogon: "ok" }).ready).toBe(false);
     expect(parse({ exists: true, marker_version: "3", setup_version: "3", seclogon: "ok" }).ready).toBe(true);
+    // The real srt-win shape nests the account under user.user; the install state stays on top.
+    const nested = parse({
+      cred_present: true,
+      marker_version: 3,
+      setup_version: 3,
+      seclogon: "ok",
+      user: { exists: true, sid: "S-1-5-21-1", hidden_from_logon: true, in_builtin_users: true, in_sandbox_group: true },
+    });
+    expect(nested.ready).toBe(true);
+    expect(nested.user?.sid).toBe("S-1-5-21-1");
+    expect(nested.user?.hiddenFromLogon).toBe(true);
   });
 
   test("anything but a matching-marker, existing principal with Secondary Logon up is refused", () => {

@@ -317,16 +317,32 @@ function versionField(o: Record<string, unknown>, k: string): string | undefined
 function parseUser(raw: unknown): SrtUserStatus | null {
   if (raw === null || typeof raw !== "object") return null;
   const u = raw as Record<string, unknown>;
+  // The real shape nests the account under `user.user`: the outer object carries the install state
+  // (`marker_version`, `setup_version`, `seclogon`, `cred_present`) while the inner one carries the
+  // account (`exists`, `sid`, `hidden_from_logon`, `in_builtin_users`, `in_sandbox_group`). Read both.
+  const n = u.user !== null && typeof u.user === "object" ? (u.user as Record<string, unknown>) : undefined;
+  const pick = (k: string): unknown => (n !== undefined && n[k] !== undefined ? n[k] : u[k]);
+  const pickStr = (k: string): string | undefined => {
+    const v = pick(k);
+    return typeof v === "string" ? v : undefined;
+  };
+  const pickBool = (k: string): boolean | undefined => {
+    const v = pick(k);
+    return typeof v === "boolean" ? v : undefined;
+  };
+  const markerRaw = u.marker_version;
   return {
-    exists: u.exists === true,
-    ...(stringField(u, "sid") !== undefined ? { sid: stringField(u, "sid") } : {}),
-    ...(u.marker_version === null || typeof u.marker_version === "string" || typeof u.marker_version === "number" ? { markerVersion: u.marker_version === null ? null : String(u.marker_version) } : {}),
+    exists: pick("exists") === true,
+    ...(pickStr("sid") !== undefined ? { sid: pickStr("sid") } : {}),
+    ...(markerRaw === null || typeof markerRaw === "string" || typeof markerRaw === "number"
+      ? { markerVersion: markerRaw === null ? null : String(markerRaw) }
+      : {}),
     ...(versionField(u, "setup_version") !== undefined ? { setupVersion: versionField(u, "setup_version") } : {}),
-    ...(stringField(u, "seclogon") !== undefined ? { seclogon: stringField(u, "seclogon") } : {}),
-    ...(typeof u.cred_present === "boolean" ? { credPresent: u.cred_present } : {}),
-    ...(typeof u.hidden_from_logon === "boolean" ? { hiddenFromLogon: u.hidden_from_logon } : {}),
-    ...(typeof u.in_builtin_users === "boolean" ? { inBuiltinUsers: u.in_builtin_users } : {}),
-    ...(typeof u.in_sandbox_group === "boolean" ? { inSandboxGroup: u.in_sandbox_group } : {}),
+    ...(pickStr("seclogon") !== undefined ? { seclogon: pickStr("seclogon") } : {}),
+    ...(pickBool("cred_present") !== undefined ? { credPresent: pickBool("cred_present") } : {}),
+    ...(pickBool("hidden_from_logon") !== undefined ? { hiddenFromLogon: pickBool("hidden_from_logon") } : {}),
+    ...(pickBool("in_builtin_users") !== undefined ? { inBuiltinUsers: pickBool("in_builtin_users") } : {}),
+    ...(pickBool("in_sandbox_group") !== undefined ? { inSandboxGroup: pickBool("in_sandbox_group") } : {}),
   };
 }
 
