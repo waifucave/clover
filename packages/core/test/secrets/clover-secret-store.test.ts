@@ -160,6 +160,30 @@ describe("what the disk holds", () => {
     expect((await reopened.get({ owner: { kind: "core" }, name: "b" }))?.value.reveal()).toBe(VALUE);
   });
 
+  test("#205 check 2: a secrets file swapped for one claiming a weaker key is locked, never opened or written", async () => {
+    // A keyring holds the real key; an attacker replaces secrets.enc with one recorded as `key-file`, and plants secrets.key.
+    const h = home();
+    const keys = memoryVault();
+    const real = await openCloverSecretStore({ home: h, service: "svc", os: "linux", vault: () => keys });
+    await real.set({ owner: { kind: "core" }, name: "a" }, VALUE);
+    const elsewhere = home();
+    const planted = await openCloverSecretStore({ home: elsewhere, service: "svc", os: "linux", vault: () => absent(), interactive: false, systemdCreds: null });
+    await planted.set({ owner: { kind: "core" }, name: "x" }, "attacker's");
+    const fs = require("node:fs") as typeof import("node:fs");
+    fs.copyFileSync(join(elsewhere, "secrets.enc"), join(h, "secrets.enc"));
+    fs.copyFileSync(join(elsewhere, "secrets.key"), join(h, "secrets.key"));
+    expect(recordedKeySource(join(h, "secrets.enc"))).toBe("key-file");
+    const reopened = await openCloverSecretStore({ home: h, service: "svc", os: "linux", vault: () => keys });
+    expect(reopened.status()).toMatchObject({ state: "locked" });
+    await expect(reopened.set({ owner: { kind: "core" }, name: "new" }, "fresh")).rejects.toThrow(/locked/);
+    // The same with a sealed credential where the keyring doesn't answer: systemd-creds outranks a key file.
+    const h2 = home();
+    fs.copyFileSync(join(elsewhere, "secrets.enc"), join(h2, "secrets.enc"));
+    fs.copyFileSync(join(elsewhere, "secrets.key"), join(h2, "secrets.key"));
+    fs.writeFileSync(join(h2, "secrets.key.cred"), "sealed");
+    expect((await openCloverSecretStore({ home: h2, service: "svc", os: "linux", vault: () => absent(), interactive: false, systemdCreds: null })).status()).toMatchObject({ state: "locked" });
+  });
+
   test("a plaintext key is a warning, never silent; a sealed one isn't", () => {
     expect(secretStoreWarning(encryptedFileStatus("key-file"))).toMatch(/unsealed/);
     expect(secretStoreWarning(encryptedFileStatus("systemd-creds", true))).toBeNull();

@@ -211,6 +211,24 @@ describe("the real fence on a real disk", () => {
     expect(fence.checkAgentRoot(`${join(home, "X")}\\..\\.clover`)).toMatchObject({ allowed: false });
   });
 
+  test("#205 check 2: Windows device paths: \\??\\ and \\\\?\\ are the drive path they name; anything else behind a prefix is refused", () => {
+    const win = new CloverFence({ os: "windows", home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", canonical: (p) => p });
+    const settings = "C:\\Users\\me\\.clover\\settings.json";
+    for (const prefix of ["\\??\\", "\\\\?\\", "\\\\.\\", "//?/"]) {
+      expect(win.check({ op: "write", path: `${prefix}${settings}` })).toMatchObject({ allowed: false, reason: "settings" });
+      expect(win.touches([`${prefix}${settings}`])).toMatchObject({ kind: "settings" });
+      expect(win.checkAgentRoot(`${prefix}C:\\Users\\me`)).toMatchObject({ allowed: false, reason: "clover-home" });
+      expect(win.check({ op: "write", path: `${prefix}C:\\Users\\me\\project\\a.txt` })).toEqual({ allowed: true });
+    }
+    expect(win.check({ op: "write", path: "\\??\\UNC\\nas\\share\\x.txt" })).toEqual({ allowed: true });
+    for (const odd of ["\\\\?\\GLOBALROOT\\Device\\HarddiskVolume3\\Users\\me\\.clover\\settings.json", "\\??\\Volume{0a1b2c3d-0000-0000-0000-000000000000}\\Users\\me\\.clover\\settings.json", "\\\\.\\pipe\\x", "\\??\\C:\\Users\\me\\x\\..\\.clover\\settings.json"]) {
+      expect(win.check({ op: "read", path: odd })).toMatchObject({ allowed: false });
+      expect(win.checkAgentRoot(odd)).toMatchObject({ allowed: false });
+      expect(win.touches([odd])).not.toBeNull();
+    }
+    expect(win.check({ op: "read", path: "\\\\nas\\share\\notes.txt" })).toEqual({ allowed: true });
+  });
+
   test("#205 B2: a hard link to a read-denied file can't be read either; past 40 links a path is refused", () => {
     const { home, clover, fence } = make();
     mkdirSync(join(clover, "run"), { recursive: true });

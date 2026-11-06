@@ -365,6 +365,17 @@ export async function openCloverSecretStore(o: {
 
   // Linux. A file already made keeps its key's source, and is locked while that source can't be reached (#205's S3).
   const service = await probeSecretService(keys);
+  // A file that claims a weaker key than this computer keeps (a planted secrets.enc saying `key-file`, with a planted
+  // secrets.key) is taken as replaced: locked, never opened or written under the weaker key (#205's check 2).
+  if (recorded !== null) {
+    const rank: Record<SecretKeySource, number> = { "key-file": 0, "systemd-creds": 1, "secret-service": 2, "credential-manager": 2 };
+    let vaultHasKey = false;
+    try { vaultHasKey = (await keys.get("secrets-file-key")) !== null; } catch { /* unreachable: no evidence either way */ }
+    const strongest = vaultHasKey ? 2 : existsSync(join(o.home, "secrets.key.cred")) ? 1 : 0;
+    if (rank[recorded] < strongest) {
+      return store(recorded, async () => { throw new ContractError("locked", "the secrets file may have been replaced"); }, { locked: "the secrets file claims a weaker key than this computer keeps: it may have been replaced, so saved logins stay locked" });
+    }
+  }
   const interactive = o.interactive ?? Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
   const credsOf = async () => (o.systemdCreds !== undefined ? o.systemdCreds : await probeSystemdCreds(o.credsRunner));
   const sealed = (creds: SystemdCreds) => store("systemd-creds", systemdCredsKey(join(o.home, "secrets.key.cred"), creds, file, o.credsRunner), { tpm: creds.tpm });
