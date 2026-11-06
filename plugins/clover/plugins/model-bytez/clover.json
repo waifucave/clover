@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Bytez",
+  "description": "Bytez's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "bytez",
+        "name": "Bytez",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Bytez API key. Clover keeps it in your credential store and adds it to Bytez's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.bytez.com/models/v2/openai/v1"
+        }
+      }
+    ]
+  }
+}

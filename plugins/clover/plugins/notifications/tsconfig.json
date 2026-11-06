@@ -4,7 +4,8 @@
     "lib": [
       "ESNext",
       "DOM"
-    ]
+    ],
+    "resolveJsonModule": true
   },
   "include": [
     "host",

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "AnyAPI AI",
+  "description": "AnyAPI AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "anyapi",
+        "name": "AnyAPI AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your AnyAPI AI API key. Clover keeps it in your credential store and adds it to AnyAPI AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.anyapi.ai/v1"
+        }
+      }
+    ]
+  }
+}

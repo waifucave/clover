@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Alibaba Cloud Model Studio (Anthropic dialect)",
+  "description": "Alibaba Cloud Model Studio (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "alibaba-anthropic",
+        "name": "Alibaba Cloud Model Studio (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Alibaba Cloud Model Studio (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Alibaba Cloud Model Studio (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://dashscope-intl.aliyuncs.com/apps/anthropic"
+        }
+      }
+    ]
+  }
+}

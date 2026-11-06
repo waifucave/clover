@@ -1,0 +1,519 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.airforce/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/api-airforce/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://api.airforce — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.airforce/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "api-airforce/anthropic/claude-3.7-sonnet",
+      "providerId": "api-airforce",
+      "upstreamId": "anthropic/claude-3.7-sonnet",
+      "displayName": "Claude 3.7 Sonnet (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#anthropic/claude-3.7-sonnet",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#anthropic/claude-3.7-sonnet",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#anthropic/claude-3.7-sonnet",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#anthropic/claude-3.7-sonnet — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/claude-3-7-sonnet-20250219/ (read 2026-09-27): \"Capabilities include Vision, Tool calling, Reasoning, Documents, Prompt caching.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/claude-3-7-sonnet-20250219/ (read 2026-09-27): \"Capabilities include Vision, Tool calling, Reasoning, Documents, Prompt caching.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.airforce/models/claude-3-7-sonnet-20250219/ (read 2026-09-27): \"Capabilities include Vision, Tool calling, Reasoning, Documents, Prompt caching.\" — Page lists Reasoning as a capability but documents no request-level effort parameter/values.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "claude-3.7-sonnet",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "api-airforce/deepseek/deepseek-v3",
+      "providerId": "api-airforce",
+      "upstreamId": "deepseek/deepseek-v3",
+      "displayName": "DeepSeek V3 (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131000,
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/deepseek-v3/ (read 2026-09-27): \"It has a 131K-token context window.\" — Row's stored value is 262144; the model's own page states 131K. (CORRECTS the upstream-extracted 262144, which carried no vendor statement: open-sse/config/providers/registry/api-airforce/index.ts#deepseek/deepseek-v3)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/deepseek-v3/ (read 2026-09-28): Specifications \"Max output 8K tokens\" (read as 8192 per the controller review)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#deepseek/deepseek-v3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#deepseek/deepseek-v3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/deepseek-v3/ (read 2026-09-27): \"Capabilities include Tool calling, Reasoning.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/deepseek-v3/ (read 2026-09-27): \"Capabilities include Tool calling, Reasoning.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.airforce/models/deepseek-v3/ (read 2026-09-27): \"Capabilities include Tool calling, Reasoning.\" — No request-level effort parameter documented.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v3",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "api-airforce/google/gemini-2.5-flash",
+      "providerId": "api-airforce",
+      "upstreamId": "google/gemini-2.5-flash",
+      "displayName": "Gemini 2.5 Flash (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#google/gemini-2.5-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#google/gemini-2.5-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/gemini-2.5-flash/ (read 2026-09-27): \"Beyond text, it accepts image, audio, video, document as input.\" — Row's stored value is ['text'] only; page states additional modalities (document dropped as it is outside the catalog's allowed set).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#google/gemini-2.5-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/gemini-2.5-flash/ (read 2026-09-27): \"Capabilities include Vision, Tool calling, Reasoning, Documents, Prompt caching.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.airforce/models/gemini-2.5-flash/ (read 2026-09-27): \"Capabilities include Vision, Tool calling, Reasoning, Documents, Prompt caching.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.airforce/models/gemini-2.5-flash/ (read 2026-09-27): \"Capabilities include Vision, Tool calling, Reasoning, Documents, Prompt caching.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "gemini-2.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "api-airforce/moonshot/kimi-k2.6",
+      "providerId": "api-airforce",
+      "upstreamId": "moonshot/kimi-k2.6",
+      "displayName": "Kimi K2.6 (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#moonshot/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#moonshot/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#moonshot/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#moonshot/kimi-k2.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#moonshot/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#moonshot/kimi-k2.6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.kimi.ai/docs/models (read 2026-09-27): \"Supports both visual and text input, thinking and non-thinking modes, and dialogue and Agent tasks.\" — api.airforce's own model page states no capabilities list for this model; reasoning confirmed via Moonshot AI's own docs for the exact model.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "api-airforce/qwen/qwen3-32b",
+      "providerId": "api-airforce",
+      "upstreamId": "qwen/qwen3-32b",
+      "displayName": "Qwen3 32B (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#qwen/qwen3-32b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#qwen/qwen3-32b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#qwen/qwen3-32b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#qwen/qwen3-32b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3-32B (read 2026-09-27): \"Qwen3 excels in tool calling capabilities\" ... recommends Qwen-Agent, which \"encapsulates tool-calling templates and tool-calling parsers internally\"\" — api.airforce's page lists only 'Reasoning' among capabilities (omission, not an explicit denial), so tool support is confirmed instead via Qwen's own model card for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3-32B (read 2026-09-27): \"Qwen3 excels in tool calling capabilities\" ... recommends Qwen-Agent, which \"encapsulates tool-calling templates and tool-calling parsers internally\"\" — api.airforce's page lists only 'Reasoning' among capabilities (omission, not an explicit denial), so tool support is confirmed instead via Qwen's own model card for this exact model.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.airforce/models/qwen3-32b/ (read 2026-09-27): \"Capabilities include Reasoning.\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "qwen3-32b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "api-airforce/x-ai/grok-2-1212",
+      "providerId": "api-airforce",
+      "upstreamId": "x-ai/grok-2-1212",
+      "displayName": "Grok-2 1212 (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-2-1212",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-2-1212",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-2-1212",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-2-1212 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-2-1212",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-2-1212",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-2-1212",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "api-airforce/x-ai/grok-3",
+      "providerId": "api-airforce",
+      "upstreamId": "x-ai/grok-3",
+      "displayName": "Grok-3 (Free)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/api-airforce/index.ts#x-ai/grok-3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-3",
+      "modelFamily": "grok"
+    }
+  ]
+}

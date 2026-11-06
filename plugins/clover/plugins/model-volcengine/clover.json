@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Volcengine",
+  "description": "Volcengine's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "volcengine",
+        "name": "Volcengine",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Volcengine API key. Clover keeps it in your credential store and adds it to Volcengine's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ark.cn-beijing.volces.com/api/v3"
+        }
+      }
+    ]
+  }
+}

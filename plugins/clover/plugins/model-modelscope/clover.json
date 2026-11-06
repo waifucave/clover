@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "ModelScope",
+  "description": "ModelScope's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "modelscope",
+        "name": "ModelScope",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your ModelScope API key. Clover keeps it in your credential store and adds it to ModelScope's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api-inference.modelscope.cn/v1"
+        }
+      }
+    ]
+  }
+}

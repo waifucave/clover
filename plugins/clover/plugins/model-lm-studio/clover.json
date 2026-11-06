@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "LM Studio (local)",
+  "description": "LM Studio (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "lm-studio",
+        "name": "LM Studio (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:1234/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "manifest": 1,
+  "name": "Codex (OAuth)",
+  "description": "Codex (OAuth)'s models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "network:chatgpt.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "codex-oauth",
+        "name": "Codex (OAuth)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "oauth-pkce",
+            "authorizeUrl": "https://auth.openai.com/oauth/authorize",
+            "tokenUrl": "https://auth.openai.com/oauth/token",
+            "clientId": "app_EMoamEEZ73f0CkXaXp7hrann",
+            "scopes": [
+              "openid",
+              "profile",
+              "email",
+              "offline_access",
+              "api.connectors.read",
+              "api.connectors.invoke"
+            ],
+            "secret": "chatgpt"
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "Lemonade Server (local)",
+  "description": "Lemonade Server (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "lemonade",
+        "name": "Lemonade Server (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:8000/api/v1"
+        }
+      }
+    ]
+  }
+}

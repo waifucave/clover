@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "FreeAIAPIKey",
+  "description": "FreeAIAPIKey's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "freeaiapikey",
+        "name": "FreeAIAPIKey",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your FreeAIAPIKey API key. Clover keeps it in your credential store and adds it to FreeAIAPIKey's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.freeaiapikey.com/v1"
+        }
+      }
+    ]
+  }
+}

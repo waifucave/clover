@@ -3,13 +3,13 @@
 // hashes, and a reason. Both are signed with Ed25519 over their exact bytes, in a `.sig` file beside them. The
 // official index's key ships in the app; another index is added by URL with its key and a warning.
 import { z } from "zod";
-import { SemverVersion, TopPluginId, TreeHash } from "@waifucave/clover-protocol";
+import { SemverVersion, TopPluginId, TreeHash, utf16 } from "@waifucave/clover-protocol";
 import { Text, Url } from "../manifest/fields";
 
 export const IndexSchema = z.strictObject({
-  $schema: z.string().max(2048).optional(),
+  $schema: utf16(2048).optional(),
   index: z.literal(1),
-  name: z.string().min(1).max(200),
+  name: utf16(200, 1),
   plugins: z.array(z.strictObject({
     id: TopPluginId,
     name: Text.optional(),
@@ -22,14 +22,14 @@ export const IndexSchema = z.strictObject({
 export type IndexFile = z.infer<typeof IndexSchema>;
 
 export const RevocationsSchema = z.strictObject({
-  $schema: z.string().max(2048).optional(),
+  $schema: utf16(2048).optional(),
   revocations: z.literal(1),
   entries: z.array(z.strictObject({
     id: TopPluginId,
     /** Revoked versions; with neither `versions` nor `hashes`, every version is. */
     versions: z.array(SemverVersion).max(10_000).optional(),
     hashes: z.array(TreeHash).max(10_000).optional(),
-    reason: z.string().min(1).max(2000),
+    reason: utf16(2000, 1),
   })).max(100_000),
 });
 export type RevocationsFile = z.infer<typeof RevocationsSchema>;

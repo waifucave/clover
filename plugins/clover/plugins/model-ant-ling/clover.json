@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Ant Ling / Ring (inclusionAI)",
+  "description": "Ant Ling / Ring (inclusionAI)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "ant-ling",
+        "name": "Ant Ling / Ring (inclusionAI)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Ant Ling / Ring (inclusionAI) API key. Clover keeps it in your credential store and adds it to Ant Ling / Ring (inclusionAI)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.ant-ling.com/v1"
+        }
+      }
+    ]
+  }
+}

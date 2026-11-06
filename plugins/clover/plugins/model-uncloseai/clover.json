@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "uncloseai",
+  "description": "uncloseai's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "uncloseai",
+        "name": "uncloseai",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://hermes.ai.unturf.com/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "PLaMo",
+  "description": "PLaMo's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "plamo",
+        "name": "PLaMo",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your PLaMo API key. Clover keeps it in your credential store and adds it to PLaMo's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.platform.preferredai.jp/v1"
+        }
+      }
+    ]
+  }
+}

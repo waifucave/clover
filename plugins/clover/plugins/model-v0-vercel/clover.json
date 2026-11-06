@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "v0 (Vercel)",
+  "description": "v0 (Vercel)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "v0-vercel",
+        "name": "v0 (Vercel)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your v0 (Vercel) API key. Clover keeps it in your credential store and adds it to v0 (Vercel)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.v0.dev/v1"
+        }
+      }
+    ]
+  }
+}

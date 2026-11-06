@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "DigitalOcean Gradient (Serverless Inference)",
+  "description": "DigitalOcean Gradient (Serverless Inference)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "digitalocean",
+        "name": "DigitalOcean Gradient (Serverless Inference)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your DigitalOcean Gradient (Serverless Inference) API key. Clover keeps it in your credential store and adds it to DigitalOcean Gradient (Serverless Inference)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://inference.do-ai.run/v1"
+        }
+      }
+    ]
+  }
+}

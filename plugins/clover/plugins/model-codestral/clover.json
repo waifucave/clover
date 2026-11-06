@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Codestral",
+  "description": "Codestral's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "codestral",
+        "name": "Codestral",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Codestral API key. Clover keeps it in your credential store and adds it to Codestral's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://codestral.mistral.ai/v1"
+        }
+      }
+    ]
+  }
+}

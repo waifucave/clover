@@ -72,12 +72,18 @@ export const APP_METHODS = {
         z.object({ kind: z.literal("bot"), bot: BotId }),
         z.object({ kind: z.literal("session"), session: SessionId }),
         z.object({ kind: z.literal("card"), card: CardId }),
-        z.object({ kind: z.literal("settings"), section: utf16(128).optional() }),
+        /** Settings at a section, and an item in it (a device, a plugin; lane E's ask). */
+        z.object({ kind: z.literal("settings"), section: utf16(128).optional(), item: utf16(256).optional() }),
         z.object({ kind: z.literal("url"), url: z.string().url() }),
       ]),
     }),
     result: Ok,
     doc: "The daemon asks the app to open a window or a place in it (a sign-in page, a card from the CLI's `clover open`).",
+  }),
+  appPing: defineMethod({
+    name: "app.ping", owner: "E", roles: ["app"], direction: "from-daemon",
+    params: Empty, result: Ok,
+    doc: "The pair's heartbeat (ruling R9): the app answers at once from its main process; a daemon that hears nothing for a while restarts it in safe mode (lane C).",
   }),
   appQuit: defineMethod({
     name: "app.quit", owner: "E", roles: ["app"], direction: "from-daemon",
@@ -118,6 +124,29 @@ export const APP_METHODS = {
     result: Ok,
     doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
   }),
+  pillSend: defineMethod({
+    /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree
+     *  surface's `useUserSend` inside the key press or click that sends (its transient user activation), so a script
+     *  can't speak as the user. A layer's own sends are `conversation.send`, whose turns are the plugin's. */
+    name: "pill.send", owner: "G", roles: ["app"], userOnly: true,
+    params: z.object({
+      /** A bot's main conversation, a session, or a `pill.target` entry by its ref (`<plugin-id>#<entry-id>`). */
+      to: z.union([
+        z.strictObject({ bot: BotId }),
+        z.strictObject({ session: SessionId }),
+        z.strictObject({ target: EntryRef }),
+      ]),
+      text: utf16(1_000_000),
+      /** Pictures the user made or chose (an annotated screenshot from the browser view's strip), base64. */
+      images: z.array(z.object({ mediaType: z.enum(["image/png", "image/jpeg", "image/webp"]), data: utf16(10_000_000, 1) })).max(4).optional(),
+      /** The client's id for this message, so a resend is not a second message. */
+      clientMessageId: utf16(128, 1),
+    }),
+    /** `seq`: where the words landed in the bot's or the session's transcript; a `pill.target` entry gets them through
+     *  its handler (`PillTargetHandler.send`), with no seq. */
+    result: z.object({ seq: z.number().int().nonnegative().optional() }),
+    doc: "The user's own words from the Dispatch pill: to a bot or a session as the user's message, or to a `pill.target` entry's handler.",
+  }),
   notifySend: defineMethod({
     name: "notify.send", owner: "G", roles: ["layer"], capability: "notify",
     params: z.object({ title: Text, body: Text.optional(), session: SessionId.optional() }), result: Ok,
@@ -125,9 +154,15 @@ export const APP_METHODS = {
   }),
   appNotify: defineMethod({
     name: "app.notify", owner: "G", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional() }),
-    result: Ok,
-    doc: "A desktop notification, which the app shows for the bundled desktop notifier.",
+    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional() }),
+    /** `shown: false` when the app showed nothing because it is in front showing that session already. */
+    result: z.object({ shown: z.boolean() }),
+    doc: "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
+  }),
+  appNotifyClose: defineMethod({
+    name: "app.notify.close", owner: "G", roles: ["app"], direction: "from-daemon",
+    params: z.object({ id: utf16(128, 1).optional() }), result: Ok,
+    doc: "Closes one desktop notification, or every one the notifier showed.",
   }),
   updateStatus: defineMethod({
     name: "update.status", owner: "M", roles: ["app", "cli"],

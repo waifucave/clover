@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Moonshot AI China (Anthropic dialect)",
+  "description": "Moonshot AI China (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "moonshot-cn-anthropic",
+        "name": "Moonshot AI China (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Moonshot AI China (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Moonshot AI China (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.moonshot.cn/anthropic"
+        }
+      }
+    ]
+  }
+}

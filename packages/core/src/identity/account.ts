@@ -140,7 +140,8 @@ export class AccountClient {
         const code = url.searchParams.get("code");
         if (!code) {
           fail(new ContractError("refused", "the sign-in was cancelled"));
-          this.#endPending();
+          // After this answer is sent: stopping now would cut the browser's connection before the page arrives.
+          setTimeout(() => this.#endPending(server), 0);
           return new Response("Sign-in cancelled. You can close this tab.", { status: 400 });
         }
         try {
@@ -152,7 +153,7 @@ export class AccountClient {
           fail(err);
           return new Response("Sign-in failed. Start again from Clover.", { status: 400 });
         } finally {
-          setTimeout(() => this.#endPending(), 0);
+          setTimeout(() => this.#endPending(server), 0);
         }
       },
     });
@@ -244,8 +245,9 @@ export class AccountClient {
 
   // ---- internals ----
 
-  #endPending(): void {
-    if (!this.#pending) return;
+  /** Ends the pending sign-in; with `only`, only if it is still that one's (a deferred end never stops a newer one). */
+  #endPending(only?: ReturnType<typeof Bun.serve>): void {
+    if (!this.#pending || (only !== undefined && this.#pending.server !== only)) return;
     clearTimeout(this.#pending.timer);
     this.#pending.server.stop(true);
     this.#pending = undefined;

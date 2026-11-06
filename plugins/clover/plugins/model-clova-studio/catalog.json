@@ -1,0 +1,170 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/clova-studio/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://api.ncloud-docs.com/docs/en/ai-naver-clovastudio-summary — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://clovastudio.stream.ntruss.com/v1/openai. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "clova-studio/HCX-005",
+      "providerId": "clova-studio",
+      "upstreamId": "HCX-005",
+      "displayName": "HCX-005",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/clova-studio/index.ts#HCX-005",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/clova-studio/index.ts#HCX-005 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3 (read 2026-09-27): \"finishReason enum: \"tool_calls\": 모델이 정상적으로 도구 호출 완료 (model successfully completed a tool call)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3 (read 2026-09-27): \"finishReason enum: \"tool_calls\": 모델이 정상적으로 도구 호출 완료 (model successfully completed a tool call)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3 (read 2026-09-27): \"입력 토큰과 출력 토큰의 합은 128000 토큰을 초과할 수 없습니다. 입력 토큰은 최대 128000 토큰까지 가능합니다.\" — KR: \"The sum of input and output tokens cannot exceed 128000 tokens. Input tokens can be up to 128000 tokens.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3 (read 2026-09-27): \"모델에 요청할 출력 토큰(maxTokens)은 최대 4096 토큰까지 가능합니다.\" — KR: \"The output tokens requested from the model (maxTokens) can be up to 4096 tokens max.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "hcx-005",
+      "modelFamily": "other"
+    },
+    {
+      "key": "clova-studio/HCX-007",
+      "providerId": "clova-studio",
+      "upstreamId": "HCX-007",
+      "displayName": "HCX-007",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/clova-studio/index.ts#HCX-007",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/clova-studio/index.ts#HCX-007 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-thinking (read 2026-09-27): \"추론과 Function calling 또는 Structured Outputs를 동시에 요청할 수 없습니다. (Reasoning and Function calling or Structured Outputs cannot be requested at the same time)\" — Function calling IS supported by HCX-007; it is simply mutually exclusive with thinking/reasoning mode being enabled in the same request.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-thinking (read 2026-09-27): \"추론과 Function calling 또는 Structured Outputs를 동시에 요청할 수 없습니다. (Reasoning and Function calling or Structured Outputs cannot be requested at the same time)\" — Function calling IS supported by HCX-007; it is simply mutually exclusive with thinking/reasoning mode being enabled in the same request.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-thinking (read 2026-09-27): \"입력 토큰과 출력 토큰의 합은 128000 토큰을 초과할 수 없습니다. 입력 토큰은 최대 128000 토큰까지 가능합니다.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-thinking (read 2026-09-27): \"모델에 요청할 출력 토큰(maxCompletionTokens)은 최대 32768 토큰까지 설정 가능합니다.\" — KR: \"The output tokens requested from the model (maxCompletionTokens) can be set up to 32768 tokens max.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-thinking (read 2026-09-27): \"복잡한 문제 해결 능력을 갖춘 HCX-007 추론 모델 (HCX-007 reasoning model with complex problem-solving ability). thinking.effort (Enum, Optional): none | low (기본값=default) | medium | high\" — Default maxCompletionTokens per effort level: none=512, low=5120, medium=10240, high=20480. — effort values ['none', 'low', 'medium', 'high'] ride `thinking.effort`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "hcx-007",
+      "modelFamily": "other"
+    }
+  ]
+}

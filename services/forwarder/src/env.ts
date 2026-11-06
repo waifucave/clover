@@ -14,7 +14,11 @@ export interface Env {
 
   /** The account service's token issuer and its public signing keys (JWKS JSON). */
   ACCOUNT_ISSUER: string;
-  ACCOUNT_JWKS: string;
+  /** The account service's keys: inline, or at a URL fetched and cached (shared/jwks.ts), which wins when set. */
+  ACCOUNT_JWKS?: string;
+  ACCOUNT_JWKS_URL?: string;
+  /** Production: a service binding to the account service, for its JWKS (shared/jwks.ts). */
+  ACCOUNT_SERVICE?: Fetcher;
   /** The `aud` an account token must carry for this service. */
   HOOKS_AUDIENCE: string;
   /** Where webhook URLs point, e.g. https://hooks.waifucave.com */

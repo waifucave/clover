@@ -149,7 +149,7 @@ export interface SessionRow {
  *
  *  The ellipsis is part of the budget, not extra (whole-branch WB-I1). Emitting `MAX + 1` made the
  *  daemon's own clamped output UN-PUSHABLE through its own wire: `SyncPushParams.meta.title` is
- *  `z.string().max(SESSION_TITLE_MAX_CHARS)`, enforced by `parseParams` BEFORE `validateSyncMeta`'s
+ *  `utf16(SESSION_TITLE_MAX_CHARS)`, enforced by `parseParams` BEFORE `validateSyncMeta`'s
  *  clamp can run, and the phone echoes daemon-served titles verbatim into every push — so a single
  *  over-long title wedged that session's replication with INVALID_PARAMS on every pass, healing only
  *  if the title changed. A clamp whose output its own schema rejects is a contradiction regardless

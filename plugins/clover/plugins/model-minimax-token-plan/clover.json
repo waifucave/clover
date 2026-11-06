@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "MiniMax Token Plan (OpenAI dialect)",
+  "description": "MiniMax Token Plan (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "minimax-token-plan",
+        "name": "MiniMax Token Plan (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your MiniMax Token Plan (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to MiniMax Token Plan (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.minimax.io/v1"
+        }
+      }
+    ]
+  }
+}

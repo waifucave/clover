@@ -31,8 +31,15 @@ export interface DevicesListProps {
 export function DevicesList({ devices, now, hovered: hoveredId, onOpenDevices }: DevicesListProps): ReactElement {
   const [hovered, setHovered] = useState<string | null>(hoveredId ?? null);
   if (devices.length === 0) return <EmptyTab line={t("clover.devices.none")} />;
+  // "Manage devices" is pinned above the list, so a long list never scrolls it out of sight.
   return (
-    <TabScroll>
+    <>
+      {onOpenDevices ? (
+        <div className="clv-devices-manage">
+          <LinkWords text={t("clover.devices.manage")} onClick={() => onOpenDevices()} />
+        </div>
+      ) : null}
+      <TabScroll>
       <div className="clv-rows">
         {deviceGroups(devices, now).map((group) => (
           <Fragment key={group.id}>
@@ -56,13 +63,9 @@ export function DevicesList({ devices, now, hovered: hoveredId, onOpenDevices }:
             })}
           </Fragment>
         ))}
-        {onOpenDevices ? (
-          <span className="clv-devices-manage">
-            <LinkWords text={t("clover.devices.manage")} onClick={() => onOpenDevices()} />
-          </span>
-        ) : null}
       </div>
-    </TabScroll>
+      </TabScroll>
+    </>
   );
 }
 

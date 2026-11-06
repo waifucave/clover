@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "Text generation web UI (local)",
+  "description": "Text generation web UI (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "oobabooga",
+        "name": "Text generation web UI (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:5000/v1"
+        }
+      }
+    ]
+  }
+}

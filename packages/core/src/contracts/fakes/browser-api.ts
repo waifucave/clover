@@ -7,7 +7,9 @@ import {
 } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, isInside, Listeners, normalizePosix, type Unsubscribe } from "../common";
-import { CDP_PATH_PARAMS, mayActOnHeldTab, sameViewport, type BrowserApi, type BrowserChange, type CdpOptions } from "../browser-api";
+import {
+  CDP_PATH_PARAMS, mayActOnHeldTab, mayOpenFor, partitionFor, sameViewport, type BrowserApi, type BrowserChange, type BrowserInput, type CdpOptions,
+} from "../browser-api";
 
 /** A 1×1 transparent PNG. */
 const PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -30,6 +32,7 @@ export class FakeBrowser implements BrowserApi {
   readonly #listeners = new Listeners<BrowserChange>();
   readonly #scratchOf: (bot: string) => string;
   readonly #cdp = new Map<string, (params: Record<string, unknown> | undefined, tab: TabView) => unknown>();
+  readonly #userPartition = new Set<string>();
   #seq = 0;
 
   constructor(opts: { clock: Clock; computer?: string; scratchOf?: (bot: string) => string }) {
@@ -72,12 +75,13 @@ export class FakeBrowser implements BrowserApi {
       .map((v) => structuredClone(v));
   }
 
-  async open(req: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport } }, _as: Caller): Promise<TabView> {
+  async open(req: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport } }, as: Caller): Promise<TabView> {
+    if (!mayOpenFor(req.owner, as, (s) => this.#userPartition.has(s))) throw new ContractError("refused", "that caller may not open a tab for that owner");
     if (req.url !== undefined && !this.#sessionAllows(req.url)) throw new ContractError("refused", "a browser tab doesn't load that kind of URL");
     const id = `tab_${++this.#seq}`;
     const view: TabView = {
       id, computer: this.computer, owner: structuredClone(req.owner),
-      partition: req.owner.kind === "bot" ? `persist:bot-${req.owner.bot.replace("/", "--")}` : "persist:user",
+      partition: partitionFor(req.owner),
       url: req.url ?? "about:blank", title: "", place: req.show ? "shown" : "headless",
       viewport: req.show ? { ...req.show.viewport } : { ...AGENT_VIEWPORT }, loading: false, heldByUser: false,
     };
@@ -88,17 +92,17 @@ export class FakeBrowser implements BrowserApi {
     return structuredClone(view);
   }
 
-  async close(id: string, as: Caller): Promise<void> {
+  async close(id: string, as: Caller, input: BrowserInput = {}): Promise<void> {
     const t = this.#must(id);
-    this.#mayAct(t, as);
+    this.#mayAct(t, as, input);
     if (t.restTimer) this.#clock.clearTimeout(t.restTimer);
     this.#tabs.delete(id);
     this.#listeners.emit({ type: "closed", id, by: as.kind === "user" ? "user" : "api" });
   }
 
-  async navigate(id: string, url: string, as: Caller): Promise<TabView> {
+  async navigate(id: string, url: string, as: Caller, input: BrowserInput = {}): Promise<TabView> {
     const t = this.#must(id);
-    this.#mayAct(t, as);
+    this.#mayAct(t, as, input);
     if (!this.#sessionAllows(url)) throw new ContractError("refused", "a browser tab doesn't load that kind of URL");
     this.#wake(t);
     t.view = { ...t.view, url };
@@ -125,9 +129,9 @@ export class FakeBrowser implements BrowserApi {
     return structuredClone(t.view);
   }
 
-  async screenshot(id: string, as: Caller, opts: { format?: Screenshot["format"] } = {}): Promise<Screenshot> {
+  async screenshot(id: string, as: Caller, opts: { format?: Screenshot["format"] } & BrowserInput = {}): Promise<Screenshot> {
     const t = this.#must(id);
-    this.#mayAct(t, as);
+    this.#mayAct(t, as, opts);
     this.#wake(t);
     if (t.stalledSince !== undefined) throw new ContractError("failed", `the tab's host stopped drawing ${this.#clock.now() - t.stalledSince} ms ago; no stale picture is given`);
     this.#touch(t);
@@ -137,7 +141,7 @@ export class FakeBrowser implements BrowserApi {
   async cdp(id: string, method: string, params: Record<string, unknown> | undefined, as: Caller, opts: CdpOptions = {}): Promise<unknown> {
     const t = this.#must(id);
     if (!isCdpMethodAllowed(method)) throw new ContractError("refused", `${method} isn't on the DevTools allow list`);
-    this.#mayAct(t, as);
+    this.#mayAct(t, as, opts);
     this.#wake(t);
     if (opts.viewport && !sameViewport(opts.viewport, t.view.viewport)) {
       throw new ContractError("refused", `that point came from a ${opts.viewport.width}×${opts.viewport.height} picture; the tab is ${t.view.viewport.width}×${t.view.viewport.height} now: take a new screenshot`);
@@ -172,6 +176,11 @@ export class FakeBrowser implements BrowserApi {
     this.#changed(t);
   }
 
+  setUserPartition(session: string, allowed: boolean): void {
+    if (allowed) this.#userPartition.add(session);
+    else this.#userPartition.delete(session);
+  }
+
   watch(fn: (change: BrowserChange) => void): Unsubscribe {
     return this.#listeners.add(fn);
   }
@@ -187,8 +196,8 @@ export class FakeBrowser implements BrowserApi {
     return t;
   }
 
-  #mayAct(t: Tab, as: Caller): void {
-    if (t.view.heldByUser && !mayActOnHeldTab(as)) throw new ContractError("held", "the user is holding this tab; the agent's commands wait until they give it back");
+  #mayAct(t: Tab, as: Caller, input: BrowserInput): void {
+    if (t.view.heldByUser && !mayActOnHeldTab(as, input)) throw new ContractError("held", "the user is holding this tab; the agent's commands wait until they give it back");
   }
 
   /** A resting tab goes back to the host window before a command reaches it (S7 edit 2). */

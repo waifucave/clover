@@ -1,0 +1,281 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions",
+      "openai-responses"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://cloud.tencent.com/document/product/1823/130079 — Tencent Cloud TokenHub API documentation, retrieved 2026-09-25: one base `https://tokenhub-intl.tencentmaas.com/v1` serves OpenAI Chat Completions (`/chat/completions`), Responses (`/responses`) and Anthropic Messages (`/messages`) with the TokenHub API key; per-token billing. The International site issues its own keys (China `tokenhub.tencentmaas.com`, Singapore `tokenhub-intl.tencentmaas.com`).",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "tencent-tokenhub-intl/hy3",
+      "providerId": "tencent-tokenhub-intl",
+      "upstreamId": "hy3",
+      "displayName": "Hy3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3: context window 256k tokens; k/M expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxInputTokens": {
+        "value": 192000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3: maximum input 192k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3: maximum output 128k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 appears as a language model with no image/video understanding flag.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table lists structured output.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table lists Cache caching.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130079 (read 2026-10-29): the OpenAI dialect returns `reasoning_content`",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130930 (交错思考, read 2026-10-29): \"step2 中输出的推理内容（reasoning_content）用于交错思考的必要信息，在多步调用时，必须回填给模型进行推理，否则将影响效果。\" (the reasoning_content is required information for interleaved thinking and must be sent back in multi-step calls, or results suffer); https://cloud.tencent.com/document/product/1823/133534 (保留式思考): with `tools` present preserved thinking is on by default (\"请求携带 tools（工具调用场景）时：默认开启保留式思考\"), extending retention across user turns, and \"开发者需要将模型上一轮返回的完整、未经修改的 reasoning_content 与工具结果一并原样回填给 API\";",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130930 (交错思考, read 2026-10-29): \"step2 中输出的推理内容（reasoning_content）用于交错思考的必要信息，在多步调用时，必须回填给模型进行推理，否则将影响效果。\" (the reasoning_content is required information for interleaved thinking and must be sent back in multi-step calls, or results suffer); https://cloud.tencent.com/document/product/1823/133534 (保留式思考): with `tools` present preserved thinking is on by default (\"请求携带 tools（工具调用场景）时：默认开启保留式思考\"), extending retention across user turns, and \"开发者需要将模型上一轮返回的完整、未经修改的 reasoning_content 与工具结果一并原样回填给 API\";",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "tencent-tokenhub-intl/hy3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://cloud.tencent.com/document/product/1823/130930 (交错思考, read 2026-10-29): \"step2 中输出的推理内容（reasoning_content）用于交错思考的必要信息，在多步调用时，必须回填给模型进行推理，否则将影响效果。\" (the reasoning_content is required information for interleaved thinking and must be sent back in multi-step calls, or results suffer); https://cloud.tencent.com/document/product/1823/133534 (保留式思考): with `tools` present preserved thinking is on by default (\"请求携带 tools（工具调用场景）时：默认开启保留式思考\"), extending retention across user turns, and \"开发者需要将模型上一轮返回的完整、未经修改的 reasoning_content 与工具结果一并原样回填给 API\"; Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.132,
+          "outputPerMTokUsd": 0.528,
+          "cacheReadPerMTokUsd": 0.033
+        },
+        "source": "official-doc",
+        "sourceRef": "https://proxy-hk.tencentcloud.com/pt/document/product/1300/78937 — Singapore international USD list, hy3: $0.132 input/$0.528 output/$0.033 cache-hit per million tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "hy3",
+      "modelFamily": "hunyuan"
+    },
+    {
+      "key": "tencent-tokenhub-intl/hy4-preview",
+      "providerId": "tencent-tokenhub-intl",
+      "upstreamId": "hy4-preview",
+      "displayName": "Hy4 Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview: context window 1M tokens; k/M expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxInputTokens": {
+        "value": 960000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview: maximum input 960k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview: maximum output 64k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview appears as a language model with no image/video understanding flag.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table lists structured output.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table lists Cache caching.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.834,
+          "outputPerMTokUsd": 2.501,
+          "cacheReadPerMTokUsd": 0.042
+        },
+        "source": "official-doc",
+        "sourceRef": "https://proxy-hk.tencentcloud.com/pt/document/product/1300/78937 — Singapore international USD list, hy4-preview: $0.834 input/$2.501 output/$0.042 cache-hit per million tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "hy4-preview",
+      "modelFamily": "hunyuan"
+    }
+  ]
+}

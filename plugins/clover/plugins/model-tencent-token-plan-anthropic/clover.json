@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Tencent Cloud Token Plan (Anthropic dialect)",
+  "description": "Tencent Cloud Token Plan (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "tencent-token-plan-anthropic",
+        "name": "Tencent Cloud Token Plan (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Tencent Cloud Token Plan (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Tencent Cloud Token Plan (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.lkeap.cloud.tencent.com/plan/anthropic"
+        }
+      }
+    ]
+  }
+}
