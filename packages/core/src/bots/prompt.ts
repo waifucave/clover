@@ -59,9 +59,11 @@ export function readMemoryIndex(paths: BotPaths): { text: string; cut: boolean }
   }
 }
 
-/** The block's own tags written in the bot's file can't close it early: their `<` becomes `‹`. */
-function escapeTags(text: string): string {
-  return text.replace(/<(\/?)(memory-index|memory)\b/gi, "‹$1$2");
+/** No tag written in the bot's file is a tag in the prompt: any `<` or `</` before a tag-like name becomes `‹`, so the
+ *  index (which the bot writes, perhaps from a web page's text) can't close its own block or `</bot-instructions>`, nor
+ *  open a `<safety>`, `<harness>` or any other harness block (A-M3's review). Other `<`s, as in `a < b`, stay. */
+export function escapeTags(text: string): string {
+  return text.replace(/<(\/?)(?=[A-Za-z_!?])/g, "‹$1");
 }
 
 /** The block itself. `computer` is the one whose scratch folder it names (the session's own computer). */
