@@ -38,7 +38,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
   extension: ["extensions/"],
-  core: CORE,
+  // lane A's model plugins: the core's catalog and generator check reads them
+  core: [...CORE, "plugins/clover/plugins/model-*/**/*"],
   cli: [...CORE, "packages/cli/"],
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
   scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],

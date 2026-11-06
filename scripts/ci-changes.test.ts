@@ -63,6 +63,12 @@ describe("ci-changes", () => {
     expect(core).not.toContain("app");
   });
 
+  test("a model plugin alone runs the core's suite (lane A's catalog and generator check), and other plugins don't", () => {
+    expect(on(["plugins/clover/plugins/model-openai/clover.json"])).toContain("core");
+    expect(on(["plugins/clover/plugins/model-anthropic/src/catalog.ts"])).toContain("core");
+    expect(on(["plugins/clover/plugins/shell/src/a.tsx"])).not.toContain("core");
+  });
+
   test("the tree job (Linux and Windows) runs for the tree's and the computers' code and tests, and their conformance suites", () => {
     for (const f of ["packages/core/src/tree/index.ts", "packages/core/src/computers/registry.ts", "packages/core/test/tree/x.test.ts",
       "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"]) {

@@ -66,13 +66,12 @@ describe("the installers' hooks", () => {
     }
   });
 
-  test("the cask's zap takes the app's caches, web storage, updater cache and login agent, never ~/.clover", () => {
+  test("the cask's zap takes exactly the caches, the preferences, the logs and the login item (the owner's rule)", () => {
     const code = codeLines(read("packaging/clover.rb.tmpl"), "#").join("\n");
-    for (const path of ["~/Library/Application Support/Clover", "~/Library/Caches/com.waifucave.clover", "~/Library/Caches/com.waifucave.clover.ShipIt",
-      "~/Library/Caches/@waifucaveclover-desktop-updater", "~/Library/HTTPStorages/com.waifucave.clover", `~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`]) {
-      expect(code).toContain(JSON.stringify(path));
-    }
-    expect(code).not.toMatch(/"~\/\.clover[^"]*"/);
+    const zap = code.slice(code.indexOf("zap trash: ["), code.indexOf("]", code.indexOf("zap trash: [")));
+    const paths = [...zap.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(paths).toEqual(["~/Library/Caches/@waifucaveclover-desktop-updater", "~/Library/Caches/com.waifucave.clover", "~/Library/Caches/com.waifucave.clover.ShipIt",
+      `~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`, "~/Library/Logs/Clover", "~/Library/Preferences/com.waifucave.clover.plist"]);
   });
 
   test("the Windows uninstaller removes it through the daemon, without a console window, and not on an upgrade", () => {
