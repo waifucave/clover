@@ -1,0 +1,5248 @@
+{
+  "meta": {
+    "label": "macos",
+    "status": "done",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.6.0",
+    "cpus": 3,
+    "memGiB": 7,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "(default)",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": "",
+    "displays": [
+      "1024x768@1"
+    ],
+    "gpu": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "enabled_on",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "seconds": 866.01
+  },
+  "checks": {
+    "move": {
+      "detached": {
+        "place": "detached",
+        "fit": false,
+        "ok": true,
+        "reloaded": false,
+        "checks": {
+          "mediaStart": "video.play ok; audio running",
+          "sameDocument": true,
+          "navigationsDuringMoves": 0,
+          "loadsDuringMoves": 0,
+          "fieldKept": true,
+          "sessionStorageKept": true,
+          "scrollKept": true,
+          "scrollSeen": "1234",
+          "sseOpensPage": 1,
+          "sseOpensServer": 1,
+          "sseErrors": 0,
+          "sseGaps": 0,
+          "sseKept": true,
+          "layoutBackToAgentSize": true,
+          "mediaPlayedPerSec": 0.95,
+          "mediaPausedAtEnd": false,
+          "mediaPauseEvents": 0,
+          "mediaDecodedFps": 28.49,
+          "audioState": "running",
+          "mediaKept": true,
+          "processGone": "none"
+        },
+        "cycles": [
+          {
+            "toShown": {
+              "freshPictureMs": 926,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 277,
+              "firstRafMs": 277
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 81.23,
+              "chainHz": 60.59,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 24,
+              "maxChainGapMs": 25,
+              "maxRafGapMs": 25,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.88,
+              "decodedFps": 29.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2.14,
+              "intervalHz": 36.03,
+              "chainHz": 27.61,
+              "rafHz": 2.34,
+              "maxIntervalGapMs": 339,
+              "maxChainGapMs": 339,
+              "maxRafGapMs": 1088,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 0.95,
+              "decodedFps": 29.01,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 144,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 115,
+              "firstRafMs": 115
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 70.57,
+              "chainHz": 51.93,
+              "rafHz": 55.26,
+              "maxIntervalGapMs": 62,
+              "maxChainGapMs": 68,
+              "maxRafGapMs": 68,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.94,
+              "decodedFps": 27.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 53.95,
+              "chainHz": 44.46,
+              "rafHz": 2,
+              "maxIntervalGapMs": 50,
+              "maxChainGapMs": 50,
+              "maxRafGapMs": 1003,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 29.47,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 46,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 13,
+              "firstRafMs": 13
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 85.94,
+              "chainHz": 61.96,
+              "rafHz": 59.96,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.99,
+              "decodedFps": 29.31,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 56.42,
+              "chainHz": 43.93,
+              "rafHz": 2,
+              "maxIntervalGapMs": 51,
+              "maxChainGapMs": 51,
+              "maxRafGapMs": 1000,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 28.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 85,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 26,
+              "firstRafMs": 26
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 86.49,
+              "chainHz": 59.88,
+              "rafHz": 60.55,
+              "maxIntervalGapMs": 18,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 18,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2.66,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 27.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 62.94,
+              "chainHz": 51.45,
+              "rafHz": 1.5,
+              "maxIntervalGapMs": 48,
+              "maxChainGapMs": 48,
+              "maxRafGapMs": 1000,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 29.47,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          }
+        ],
+        "timing": {
+          "showResizeMs": {
+            "n": 4,
+            "min": 13,
+            "p50": 26,
+            "p95": 277,
+            "max": 277,
+            "mean": 107.75
+          },
+          "showFirstRafMs": {
+            "n": 4,
+            "min": 13,
+            "p50": 26,
+            "p95": 277,
+            "max": 277,
+            "mean": 107.75
+          },
+          "showVisibleEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "showFreshPictureMs": {
+            "n": 4,
+            "min": 46,
+            "p50": 85,
+            "p95": 926,
+            "max": 926,
+            "mean": 300.25
+          },
+          "hideResizeMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideFitMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideHiddenEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "layout": {
+          "hidden": "1280x800@1",
+          "shown": "1000x700@1"
+        },
+        "initialRates": {
+          "seconds": 2,
+          "intervalHz": 55.89,
+          "chainHz": 45.41,
+          "rafHz": 0,
+          "maxIntervalGapMs": 50,
+          "maxChainGapMs": 53,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0,
+          "mediaPlayedPerSec": 0.97,
+          "decodedFps": 24.95,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        }
+      },
+      "hiddenWindow": {
+        "place": "hiddenWindow",
+        "fit": false,
+        "ok": true,
+        "reloaded": false,
+        "checks": {
+          "mediaStart": "video.play ok; audio running",
+          "sameDocument": true,
+          "navigationsDuringMoves": 0,
+          "loadsDuringMoves": 0,
+          "fieldKept": true,
+          "sessionStorageKept": true,
+          "scrollKept": true,
+          "scrollSeen": "1234",
+          "sseOpensPage": 1,
+          "sseOpensServer": 1,
+          "sseErrors": 0,
+          "sseGaps": 0,
+          "sseKept": true,
+          "layoutBackToAgentSize": true,
+          "mediaPlayedPerSec": 0.97,
+          "mediaPausedAtEnd": false,
+          "mediaPauseEvents": 0,
+          "mediaDecodedFps": 29.01,
+          "audioState": "running",
+          "mediaKept": true,
+          "processGone": "none"
+        },
+        "cycles": [
+          {
+            "toShown": {
+              "freshPictureMs": 67,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 15,
+              "firstRafMs": 15
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 74.62,
+              "chainHz": 61.29,
+              "rafHz": 59.96,
+              "maxIntervalGapMs": 31,
+              "maxChainGapMs": 30,
+              "maxRafGapMs": 33,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.95,
+              "decodedFps": 27.98,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 59.91,
+              "chainHz": 46.93,
+              "rafHz": 2,
+              "maxIntervalGapMs": 48,
+              "maxChainGapMs": 48,
+              "maxRafGapMs": 1018,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 28.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 0.99
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 74,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 24,
+              "firstRafMs": 24
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 80.51,
+              "chainHz": 61.21,
+              "rafHz": 60.55,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 29.27,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 59.88,
+              "chainHz": 46.91,
+              "rafHz": 2,
+              "maxIntervalGapMs": 47,
+              "maxChainGapMs": 48,
+              "maxRafGapMs": 1001,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1.01,
+              "decodedFps": 29.44,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 153,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 32,
+              "firstRafMs": 32
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 79.17,
+              "chainHz": 61.21,
+              "rafHz": 59.88,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 24,
+              "maxRafGapMs": 21,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.06,
+              "decodedFps": 27.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 62.41,
+              "chainHz": 46.93,
+              "rafHz": 1.5,
+              "maxIntervalGapMs": 49,
+              "maxChainGapMs": 49,
+              "maxRafGapMs": 1016,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 29.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 75,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 27,
+              "firstRafMs": 28
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 79.23,
+              "chainHz": 61.25,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 24,
+              "maxRafGapMs": 18,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 30.63,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 61.41,
+              "chainHz": 45.93,
+              "rafHz": 2.5,
+              "maxIntervalGapMs": 65,
+              "maxChainGapMs": 60,
+              "maxRafGapMs": 1017,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 27.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 0.97
+            }
+          }
+        ],
+        "timing": {
+          "showResizeMs": {
+            "n": 4,
+            "min": 15,
+            "p50": 24,
+            "p95": 32,
+            "max": 32,
+            "mean": 24.5
+          },
+          "showFirstRafMs": {
+            "n": 4,
+            "min": 15,
+            "p50": 24,
+            "p95": 32,
+            "max": 32,
+            "mean": 24.75
+          },
+          "showVisibleEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "showFreshPictureMs": {
+            "n": 4,
+            "min": 67,
+            "p50": 74,
+            "p95": 153,
+            "max": 153,
+            "mean": 92.25
+          },
+          "hideResizeMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideFitMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideHiddenEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "layout": {
+          "hidden": "1280x800@1",
+          "shown": "1000x700@1"
+        },
+        "initialRates": {
+          "seconds": 2,
+          "intervalHz": 57.91,
+          "chainHz": 43.93,
+          "rafHz": 0,
+          "maxIntervalGapMs": 50,
+          "maxChainGapMs": 52,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0,
+          "mediaPlayedPerSec": 1.02,
+          "decodedFps": 26.46,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        }
+      },
+      "hiddenWindowFit": {
+        "place": "hiddenWindow",
+        "fit": true,
+        "ok": true,
+        "reloaded": false,
+        "checks": {
+          "mediaStart": "video.play ok; audio running",
+          "sameDocument": true,
+          "navigationsDuringMoves": 0,
+          "loadsDuringMoves": 0,
+          "fieldKept": true,
+          "sessionStorageKept": true,
+          "scrollKept": true,
+          "scrollSeen": "1234",
+          "sseOpensPage": 1,
+          "sseOpensServer": 1,
+          "sseErrors": 0,
+          "sseGaps": 0,
+          "sseKept": true,
+          "layoutBackToAgentSize": true,
+          "mediaPlayedPerSec": 0.96,
+          "mediaPausedAtEnd": false,
+          "mediaPauseEvents": 0,
+          "mediaDecodedFps": 28.71,
+          "audioState": "running",
+          "mediaKept": true,
+          "processGone": "none"
+        },
+        "cycles": [
+          {
+            "toShown": {
+              "freshPictureMs": 87,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 19,
+              "firstRafMs": 19
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800",
+              "fitMs": 2,
+              "layoutFitted": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 84.55,
+              "chainHz": 64.58,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 25,
+              "maxRafGapMs": 20,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.96,
+              "decodedFps": 27.96,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 56.94,
+              "chainHz": 45.45,
+              "rafHz": 1.5,
+              "maxIntervalGapMs": 48,
+              "maxChainGapMs": 48,
+              "maxRafGapMs": 1018,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1.03,
+              "decodedFps": 28.97,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 52,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 12,
+              "firstRafMs": 12
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800",
+              "fitMs": 2,
+              "layoutFitted": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 81.23,
+              "chainHz": 60.59,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 24,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 28.63,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 61.38,
+              "chainHz": 47.41,
+              "rafHz": 1.5,
+              "maxIntervalGapMs": 50,
+              "maxChainGapMs": 50,
+              "maxRafGapMs": 1002,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0.5,
+              "roHz": 0.5,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 28.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 55,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 10,
+              "firstRafMs": 10
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800",
+              "fitMs": 3,
+              "layoutFitted": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 82.61,
+              "chainHz": 61.96,
+              "rafHz": 59.96,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 18,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.02,
+              "decodedFps": 29.31,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 53.89,
+              "chainHz": 45.41,
+              "rafHz": 1.5,
+              "maxIntervalGapMs": 49,
+              "maxChainGapMs": 49,
+              "maxRafGapMs": 1017,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 1.01,
+              "decodedFps": 28.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 36,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 8,
+              "firstRafMs": 8
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800",
+              "fitMs": 0,
+              "layoutFitted": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 87.1,
+              "chainHz": 64.49,
+              "rafHz": 60.51,
+              "maxIntervalGapMs": 19,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 1.99,
+              "roHz": 1.99,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 29.26,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 60.38,
+              "chainHz": 46.91,
+              "rafHz": 2,
+              "maxIntervalGapMs": 44,
+              "maxChainGapMs": 44,
+              "maxRafGapMs": 1002,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 0,
+              "roHz": 0,
+              "mediaPlayedPerSec": 0.88,
+              "decodedFps": 28.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          }
+        ],
+        "timing": {
+          "showResizeMs": {
+            "n": 4,
+            "min": 8,
+            "p50": 10,
+            "p95": 19,
+            "max": 19,
+            "mean": 12.25
+          },
+          "showFirstRafMs": {
+            "n": 4,
+            "min": 8,
+            "p50": 10,
+            "p95": 19,
+            "max": 19,
+            "mean": 12.25
+          },
+          "showVisibleEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "showFreshPictureMs": {
+            "n": 4,
+            "min": 36,
+            "p50": 52,
+            "p95": 87,
+            "max": 87,
+            "mean": 57.5
+          },
+          "hideResizeMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideFitMs": {
+            "n": 4,
+            "min": 0,
+            "p50": 2,
+            "p95": 3,
+            "max": 3,
+            "mean": 1.75
+          },
+          "hideHiddenEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "layout": {
+          "hidden": "1280x800@1",
+          "shown": "1000x700@1"
+        },
+        "initialRates": {
+          "seconds": 2,
+          "intervalHz": 61.41,
+          "chainHz": 46.93,
+          "rafHz": 0,
+          "maxIntervalGapMs": 46,
+          "maxChainGapMs": 46,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0,
+          "mediaPlayedPerSec": 0.91,
+          "decodedFps": 24.46,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        }
+      },
+      "invisibleWindow": {
+        "place": "invisibleWindow",
+        "fit": false,
+        "ok": true,
+        "reloaded": false,
+        "checks": {
+          "mediaStart": "video.play ok; audio running",
+          "sameDocument": true,
+          "navigationsDuringMoves": 0,
+          "loadsDuringMoves": 0,
+          "fieldKept": true,
+          "sessionStorageKept": true,
+          "scrollKept": true,
+          "scrollSeen": "1234",
+          "sseOpensPage": 1,
+          "sseOpensServer": 1,
+          "sseErrors": 0,
+          "sseGaps": 0,
+          "sseKept": true,
+          "layoutBackToAgentSize": true,
+          "mediaPlayedPerSec": 0.97,
+          "mediaPausedAtEnd": false,
+          "mediaPauseEvents": 0,
+          "mediaDecodedFps": 28.96,
+          "audioState": "running",
+          "mediaKept": true,
+          "processGone": "none"
+        },
+        "cycles": [
+          {
+            "toShown": {
+              "freshPictureMs": 90,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 18,
+              "firstRafMs": 4
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 68.62,
+              "chainHz": 53.3,
+              "rafHz": 50.63,
+              "maxIntervalGapMs": 184,
+              "maxChainGapMs": 189,
+              "maxRafGapMs": 187,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 28.65,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 90.91,
+              "chainHz": 65.93,
+              "rafHz": 59.94,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 22,
+              "maxRafGapMs": 25,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.01,
+              "decodedFps": 28.97,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 39,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 5,
+              "firstRafMs": 5
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 83.28,
+              "chainHz": 63.29,
+              "rafHz": 59.96,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 21,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 29.31,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 88.41,
+              "chainHz": 63.44,
+              "rafHz": 59.94,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 21,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.01,
+              "decodedFps": 28.97,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 41,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 6,
+              "firstRafMs": 6
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 85.22,
+              "chainHz": 61.92,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 23,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 20,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.07,
+              "decodedFps": 29.29,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 84.33,
+              "chainHz": 63.87,
+              "rafHz": 59.88,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.86,
+              "decodedFps": 28.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 60,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 17,
+              "firstRafMs": 2
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 84.55,
+              "chainHz": 63.91,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 23,
+              "maxChainGapMs": 24,
+              "maxRafGapMs": 18,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.81,
+              "decodedFps": 28.63,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 81.92,
+              "chainHz": 61.94,
+              "rafHz": 59.94,
+              "maxIntervalGapMs": 23,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.01,
+              "decodedFps": 29.47,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          }
+        ],
+        "timing": {
+          "showResizeMs": {
+            "n": 4,
+            "min": 5,
+            "p50": 6,
+            "p95": 18,
+            "max": 18,
+            "mean": 11.5
+          },
+          "showFirstRafMs": {
+            "n": 4,
+            "min": 2,
+            "p50": 4,
+            "p95": 6,
+            "max": 6,
+            "mean": 4.25
+          },
+          "showVisibleEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "showFreshPictureMs": {
+            "n": 4,
+            "min": 39,
+            "p50": 41,
+            "p95": 90,
+            "max": 90,
+            "mean": 57.5
+          },
+          "hideResizeMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideFitMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideHiddenEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "layout": {
+          "hidden": "1280x800@1",
+          "shown": "1000x700@1"
+        },
+        "initialRates": {
+          "seconds": 2,
+          "intervalHz": 83.83,
+          "chainHz": 64.37,
+          "rafHz": 59.88,
+          "maxIntervalGapMs": 19,
+          "maxChainGapMs": 23,
+          "maxRafGapMs": 27,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2,
+          "mediaPlayedPerSec": 1.01,
+          "decodedFps": 28.44,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        }
+      },
+      "tinyWindow": {
+        "place": "tinyWindow",
+        "fit": false,
+        "ok": true,
+        "reloaded": false,
+        "checks": {
+          "mediaStart": "video.play ok; audio running",
+          "sameDocument": true,
+          "navigationsDuringMoves": 0,
+          "loadsDuringMoves": 0,
+          "fieldKept": true,
+          "sessionStorageKept": true,
+          "scrollKept": true,
+          "scrollSeen": "1234",
+          "sseOpensPage": 1,
+          "sseOpensServer": 1,
+          "sseErrors": 0,
+          "sseGaps": 0,
+          "sseKept": true,
+          "layoutBackToAgentSize": true,
+          "mediaPlayedPerSec": 0.97,
+          "mediaPausedAtEnd": false,
+          "mediaPauseEvents": 0,
+          "mediaDecodedFps": 28.99,
+          "audioState": "running",
+          "mediaKept": true,
+          "processGone": "none"
+        },
+        "cycles": [
+          {
+            "toShown": {
+              "freshPictureMs": 54,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 6,
+              "firstRafMs": 6
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 84.61,
+              "chainHz": 63.29,
+              "rafHz": 60.63,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 24,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 28.65,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 82.83,
+              "chainHz": 61.88,
+              "rafHz": 59.88,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 22,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 28.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 59,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 23,
+              "firstRafMs": 7
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 87.94,
+              "chainHz": 64.62,
+              "rafHz": 59.96,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 22,
+              "maxRafGapMs": 20,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.98,
+              "decodedFps": 29.31,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 79.92,
+              "chainHz": 62.94,
+              "rafHz": 59.94,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 21,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.01,
+              "decodedFps": 28.97,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 54,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 5,
+              "firstRafMs": 6
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 84.55,
+              "chainHz": 63.25,
+              "rafHz": 59.92,
+              "maxIntervalGapMs": 19,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 20,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1.05,
+              "decodedFps": 29.29,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 85.33,
+              "chainHz": 62.38,
+              "rafHz": 59.88,
+              "maxIntervalGapMs": 20,
+              "maxChainGapMs": 22,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.87,
+              "decodedFps": 28.94,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          },
+          {
+            "toShown": {
+              "freshPictureMs": 45,
+              "pictureWidth": 1000,
+              "layout": "1000x700",
+              "resizeMs": 18,
+              "firstRafMs": 2
+            },
+            "toHidden": {
+              "layoutAfter": "1280x800"
+            },
+            "shownRates": {
+              "seconds": 1.5,
+              "intervalHz": 78.51,
+              "chainHz": 60.55,
+              "rafHz": 59.88,
+              "maxIntervalGapMs": 21,
+              "maxChainGapMs": 23,
+              "maxRafGapMs": 18,
+              "visibility": "visible",
+              "layout": "1000x700",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 0.81,
+              "decodedFps": 28.61,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            },
+            "hiddenRates": {
+              "seconds": 2,
+              "intervalHz": 80.96,
+              "chainHz": 60.47,
+              "rafHz": 59.97,
+              "maxIntervalGapMs": 22,
+              "maxChainGapMs": 22,
+              "maxRafGapMs": 19,
+              "visibility": "visible",
+              "layout": "1280x800",
+              "ioHz": 2,
+              "roHz": 2,
+              "mediaPlayedPerSec": 1,
+              "decodedFps": 29.49,
+              "paused": false,
+              "audioState": "running",
+              "audioTimePerSec": 1
+            }
+          }
+        ],
+        "timing": {
+          "showResizeMs": {
+            "n": 4,
+            "min": 5,
+            "p50": 6,
+            "p95": 23,
+            "max": 23,
+            "mean": 13
+          },
+          "showFirstRafMs": {
+            "n": 4,
+            "min": 2,
+            "p50": 6,
+            "p95": 7,
+            "max": 7,
+            "mean": 5.25
+          },
+          "showVisibleEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "showFreshPictureMs": {
+            "n": 4,
+            "min": 45,
+            "p50": 54,
+            "p95": 59,
+            "max": 59,
+            "mean": 53
+          },
+          "hideResizeMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideFitMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "hideHiddenEventMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "layout": {
+          "hidden": "1280x800@1",
+          "shown": "1000x700@1"
+        },
+        "initialRates": {
+          "seconds": 2,
+          "intervalHz": 75.42,
+          "chainHz": 60.94,
+          "rafHz": 59.94,
+          "maxIntervalGapMs": 23,
+          "maxChainGapMs": 23,
+          "maxRafGapMs": 19,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2,
+          "mediaPlayedPerSec": 1.03,
+          "decodedFps": 28.47,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        }
+      }
+    },
+    "throttle": [
+      {
+        "config": "shown (reference)",
+        "place": "shown",
+        "throttling": true,
+        "media": false,
+        "rates": {
+          "seconds": 5,
+          "intervalHz": 79.74,
+          "chainHz": 61.55,
+          "rafHz": 59.95,
+          "maxIntervalGapMs": 23,
+          "maxChainGapMs": 24,
+          "maxRafGapMs": 20,
+          "visibility": "visible",
+          "layout": "1000x700",
+          "ioHz": 2.2,
+          "roHz": 2.2
+        },
+        "rendererCpuPct": 5.93,
+        "allCpuPct": 16.24
+      },
+      {
+        "config": "detached, throttling on (default)",
+        "place": "detached",
+        "throttling": true,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 1,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 1003,
+          "maxChainGapMs": 1011,
+          "maxRafGapMs": 0,
+          "visibility": "hidden",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 0.15,
+        "allCpuPct": 0.69
+      },
+      {
+        "config": "detached, throttling off",
+        "place": "detached",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 100.1,
+          "chainHz": 74.33,
+          "rafHz": 0,
+          "maxIntervalGapMs": 19,
+          "maxChainGapMs": 22,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 4.28,
+        "allCpuPct": 11.66
+      },
+      {
+        "config": "never-shown window, throttling on (default)",
+        "place": "ownHiddenWindow",
+        "throttling": true,
+        "media": false,
+        "rates": {
+          "seconds": 5.02,
+          "intervalHz": 1.19,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 1004,
+          "maxChainGapMs": 1004,
+          "maxRafGapMs": 0,
+          "visibility": "hidden",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 0.16,
+        "allCpuPct": 0.75
+      },
+      {
+        "config": "never-shown window, throttling off",
+        "place": "ownHiddenWindow",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.2,
+          "intervalHz": 85.61,
+          "chainHz": 67.14,
+          "rafHz": 0,
+          "maxIntervalGapMs": 173,
+          "maxChainGapMs": 94,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 2.26,
+        "allCpuPct": 5.47
+      },
+      {
+        "config": "never-shown window, on, then setBackgroundThrottling(false)",
+        "place": "ownHiddenWindow",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 67.92,
+          "chainHz": 60.33,
+          "rafHz": 59.93,
+          "maxIntervalGapMs": 25,
+          "maxChainGapMs": 25,
+          "maxRafGapMs": 24,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 10.47,
+        "allCpuPct": 29.32
+      },
+      {
+        "config": "never-shown window, throttling off + frame pump",
+        "place": "ownHiddenWindow",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 97.06,
+          "chainHz": 69.1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 144,
+          "maxChainGapMs": 145,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 3.73,
+        "allCpuPct": 11.96,
+        "pumpFps": 0
+      },
+      {
+        "config": "detached, throttling off + frame pump",
+        "place": "detached",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 99.44,
+          "chainHz": 73.28,
+          "rafHz": 0,
+          "maxIntervalGapMs": 24,
+          "maxChainGapMs": 27,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 3.49,
+        "allCpuPct": 10.88,
+        "pumpFps": 0
+      },
+      {
+        "config": "invisible shown window, throttling off",
+        "place": "invisibleWindow",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 69.49,
+          "chainHz": 60.1,
+          "rafHz": 59.9,
+          "maxIntervalGapMs": 26,
+          "maxChainGapMs": 31,
+          "maxRafGapMs": 27,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 14.23,
+        "allCpuPct": 38.56
+      },
+      {
+        "config": "1x1 shown window, throttling off",
+        "place": "tinyWindow",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 73.53,
+          "chainHz": 59.94,
+          "rafHz": 59.94,
+          "maxIntervalGapMs": 29,
+          "maxChainGapMs": 29,
+          "maxRafGapMs": 30,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 10.9,
+        "allCpuPct": 30.93
+      },
+      {
+        "config": "1x1 shown window, covered by another window",
+        "place": "tinyWindow",
+        "throttling": false,
+        "media": false,
+        "cover": "cover 0,0 1024x768 over host 0,31 1x1",
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 70.46,
+          "chainHz": 60.08,
+          "rafHz": 59.88,
+          "maxIntervalGapMs": 26,
+          "maxChainGapMs": 28,
+          "maxRafGapMs": 23,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 6.52,
+        "allCpuPct": 17.74
+      },
+      {
+        "config": "1x1 shown window kept above a cover window (always on top)",
+        "place": "tinyWindow",
+        "throttling": false,
+        "media": false,
+        "cover": "cover 0,0 1024x768 over host 0,31 1x1",
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 68.93,
+          "chainHz": 57.34,
+          "rafHz": 59.14,
+          "maxIntervalGapMs": 67,
+          "maxChainGapMs": 68,
+          "maxRafGapMs": 67,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 7.2,
+        "allCpuPct": 19.6
+      },
+      {
+        "config": "invisible shown window, covered by another window",
+        "place": "invisibleWindow",
+        "throttling": false,
+        "media": false,
+        "cover": "cover 0,0 1280x831 over host 0,31 1280x800",
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 68.9,
+          "chainHz": 60.32,
+          "rafHz": 60.12,
+          "maxIntervalGapMs": 27,
+          "maxChainGapMs": 26,
+          "maxRafGapMs": 24,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 12.26,
+        "allCpuPct": 35.54
+      },
+      {
+        "config": "1x1 shown window, throttling on (control)",
+        "place": "tinyWindow",
+        "throttling": true,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 71.71,
+          "chainHz": 60.53,
+          "rafHz": 59.93,
+          "maxIntervalGapMs": 25,
+          "maxChainGapMs": 25,
+          "maxRafGapMs": 24,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 9.31,
+        "allCpuPct": 26.39
+      },
+      {
+        "config": "1x1 shown window, throttling on, covered by another window (control)",
+        "place": "tinyWindow",
+        "throttling": true,
+        "media": false,
+        "cover": "cover 0,0 1024x768 over host 0,31 1x1",
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 1,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 1005,
+          "maxChainGapMs": 1005,
+          "maxRafGapMs": 0,
+          "visibility": "hidden",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 0.1,
+        "allCpuPct": 0.58
+      },
+      {
+        "config": "invisible shown window, throttling on, covered by another window (control)",
+        "place": "invisibleWindow",
+        "throttling": true,
+        "media": false,
+        "cover": "cover 0,0 1280x831 over host 0,31 1280x800",
+        "rates": {
+          "seconds": 5,
+          "intervalHz": 1.4,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 1004,
+          "maxChainGapMs": 1003,
+          "maxRafGapMs": 0,
+          "visibility": "hidden",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        },
+        "rendererCpuPct": 0.12,
+        "allCpuPct": 0.7
+      },
+      {
+        "config": "osr window 30 fps, throttling off",
+        "place": "osr",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 40.14,
+          "chainHz": 33.35,
+          "rafHz": 14.38,
+          "maxIntervalGapMs": 85,
+          "maxChainGapMs": 86,
+          "maxRafGapMs": 180,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 2,
+          "roHz": 2
+        },
+        "rendererCpuPct": 3.49,
+        "allCpuPct": 17.07
+      },
+      {
+        "config": "osr view (no window) 30 fps, throttling off",
+        "place": "osrView",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 37.12,
+          "chainHz": 32.33,
+          "rafHz": 13.57,
+          "maxIntervalGapMs": 91,
+          "maxChainGapMs": 92,
+          "maxRafGapMs": 182,
+          "visibility": "visible",
+          "layout": "0x0",
+          "ioHz": 0,
+          "roHz": 2
+        },
+        "rendererCpuPct": 3.2,
+        "allCpuPct": 8.85
+      },
+      {
+        "config": "never-shown window, throttling on, playing media",
+        "place": "ownHiddenWindow",
+        "throttling": true,
+        "media": true,
+        "rates": {
+          "seconds": 5,
+          "intervalHz": 40.37,
+          "chainHz": 34.17,
+          "rafHz": 0,
+          "maxIntervalGapMs": 93,
+          "maxChainGapMs": 93,
+          "maxRafGapMs": 0,
+          "visibility": "hidden",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0,
+          "mediaPlayedPerSec": 0.9,
+          "decodedFps": 27.38,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        },
+        "rendererCpuPct": 3.5,
+        "allCpuPct": 7.39
+      },
+      {
+        "config": "never-shown window, throttling off, playing media",
+        "place": "ownHiddenWindow",
+        "throttling": false,
+        "media": true,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 39.15,
+          "chainHz": 30.76,
+          "rafHz": 0,
+          "maxIntervalGapMs": 91,
+          "maxChainGapMs": 93,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0,
+          "mediaPlayedPerSec": 0.9,
+          "decodedFps": 24.77,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        },
+        "rendererCpuPct": 5.3,
+        "allCpuPct": 10.88
+      },
+      {
+        "config": "detached, throttling off, playing media",
+        "place": "detached",
+        "throttling": false,
+        "media": true,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 33.37,
+          "chainHz": 26.17,
+          "rafHz": 0,
+          "maxIntervalGapMs": 440,
+          "maxChainGapMs": 509,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0,
+          "mediaPlayedPerSec": 0.89,
+          "decodedFps": 27.77,
+          "paused": false,
+          "audioState": "running",
+          "audioTimePerSec": 1
+        },
+        "rendererCpuPct": 4.79,
+        "allCpuPct": 9.9
+      },
+      {
+        "config": "one never-shown window: tab A, throttling off",
+        "place": "hiddenWindow",
+        "throttling": false,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 99.84,
+          "chainHz": 71.09,
+          "rafHz": 0,
+          "maxIntervalGapMs": 19,
+          "maxChainGapMs": 32,
+          "maxRafGapMs": 0,
+          "visibility": "visible",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        }
+      },
+      {
+        "config": "one never-shown window: tab B, throttling on",
+        "place": "hiddenWindow",
+        "throttling": true,
+        "media": false,
+        "rates": {
+          "seconds": 5.01,
+          "intervalHz": 1,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 1003,
+          "maxChainGapMs": 1006,
+          "maxRafGapMs": 0,
+          "visibility": "hidden",
+          "layout": "1280x800",
+          "ioHz": 0,
+          "roHz": 0
+        }
+      }
+    ],
+    "capture": [
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 20,
+          "p50": 24,
+          "p95": 36,
+          "max": 36,
+          "mean": 25.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 1,
+          "p50": 7,
+          "p95": 12,
+          "max": 12,
+          "mean": 6.5
+        },
+        "size": "1000x700",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 56.41,
+        "scaleMs": {
+          "n": 6,
+          "min": 11,
+          "p50": 12,
+          "p95": 19,
+          "max": 19,
+          "mean": 13.67
+        },
+        "geometry": "view 0,0 1000x700 in content 24,63 1000x645; page 1000x700 at 1x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 11,
+          "p50": 19,
+          "p95": 31,
+          "max": 31,
+          "mean": 21.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 2,
+          "p50": 5,
+          "p95": 18,
+          "max": 18,
+          "mean": 8.67
+        },
+        "size": "1000x700",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 46.34,
+        "scaleMs": {
+          "n": 6,
+          "min": 9,
+          "p50": 9,
+          "p95": 15,
+          "max": 15,
+          "mean": 11
+        },
+        "geometry": "view 0,0 1000x700 in content 24,63 1000x645; page 1000x700 at 1x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 75,
+          "p50": 80,
+          "p95": 93,
+          "max": 93,
+          "mean": 82.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -47,
+          "p50": -41,
+          "p95": -34,
+          "max": -34,
+          "mean": -40.17
+        },
+        "size": "1000x700",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 52.58,
+        "geometry": "view 0,0 1000x700 in content 24,63 1000x645; page 1000x700 at 1x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 12,
+          "p50": 21,
+          "p95": 37,
+          "max": 37,
+          "mean": 25.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 0,
+          "p50": 11,
+          "p95": 16,
+          "max": 16,
+          "mean": 9.67
+        },
+        "size": "1000x700",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 53.96,
+        "geometry": "view 0,0 1000x700 in content 24,63 1000x645; page 1000x700 at 1x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "cdpPng",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 173,
+          "p50": 196,
+          "p95": 206,
+          "max": 206,
+          "mean": 194.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -47,
+          "p50": -42,
+          "p95": -35,
+          "max": -35,
+          "mean": -41.17
+        },
+        "size": "1000x700",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 180.7,
+        "geometry": "view 0,0 1000x700 in content 24,63 1000x645; page 1000x700 at 1x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 9.9,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 6.03,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 3,
+        "ok": 1,
+        "decoded": 1,
+        "ms": {
+          "n": 1,
+          "min": 80,
+          "p50": 80,
+          "p95": 80,
+          "max": 80,
+          "mean": 80
+        },
+        "staleMs": {
+          "n": 1,
+          "min": -53,
+          "p50": -53,
+          "p95": -53,
+          "max": -53,
+          "mean": -53
+        },
+        "size": "1280x800",
+        "errors": [
+          "Page.captureScreenshot: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 169.07,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 2,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "frame subscription: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 183.4,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 0
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 12.87,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 12.31,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 104,
+          "p50": 113,
+          "p95": 130,
+          "max": 130,
+          "mean": 114.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -50,
+          "p50": -45,
+          "p95": -35,
+          "max": -35,
+          "mean": -44.17
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 132.06,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 19,
+          "p50": 25,
+          "p95": 37,
+          "max": 37,
+          "mean": 28.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 16,
+          "p50": 21,
+          "p95": 37,
+          "max": 37,
+          "mean": 24.17
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 59.15,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 16.41,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 16.33,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 68,
+          "p50": 89,
+          "p95": 119,
+          "max": 119,
+          "mean": 94.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -66,
+          "p50": -62,
+          "p95": -39,
+          "max": -39,
+          "mean": -52.33
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 119.08,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 13,
+          "p50": 19,
+          "p95": 38,
+          "max": 38,
+          "mean": 21.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 0,
+          "p50": 4,
+          "p95": 13,
+          "max": 13,
+          "mean": 6.33
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 46.85,
+        "geometry": "view 0,0 1280x800 in content 0,63 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 29.5
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 22,
+          "p50": 27,
+          "p95": 33,
+          "max": 33,
+          "mean": 28.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -18,
+          "p50": -11,
+          "p95": -7,
+          "max": -7,
+          "mean": -10.83
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 69.18,
+        "geometry": "view 0,0 1280x800 in content 0,31 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 19,
+          "p50": 19,
+          "p95": 38,
+          "max": 38,
+          "mean": 23
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -15,
+          "p50": -7,
+          "p95": 1,
+          "max": 1,
+          "mean": -6.5
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 41.52,
+        "geometry": "view 0,0 1280x800 in content 0,31 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 76,
+          "p50": 78,
+          "p95": 102,
+          "max": 102,
+          "mean": 85.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -72,
+          "p50": -48,
+          "p95": -37,
+          "max": -37,
+          "mean": -48
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 47.71,
+        "geometry": "view 0,0 1280x800 in content 0,31 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 21,
+          "p50": 27,
+          "p95": 36,
+          "max": 36,
+          "mean": 28.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 2,
+          "p50": 6,
+          "p95": 18,
+          "max": 18,
+          "mean": 8.33
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 41.31,
+        "geometry": "view 0,0 1280x800 in content 0,31 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30.5
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 11,
+          "p50": 21,
+          "p95": 38,
+          "max": 38,
+          "mean": 23.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -19,
+          "p50": -6,
+          "p95": 0,
+          "max": 0,
+          "mean": -7
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 66.37,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 24,
+          "p50": 26,
+          "p95": 40,
+          "max": 40,
+          "mean": 28.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -15,
+          "p50": -10,
+          "p95": 0,
+          "max": 0,
+          "mean": -7.17
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 76.61,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 77,
+          "p50": 81,
+          "p95": 99,
+          "max": 99,
+          "mean": 87.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -54,
+          "p50": -53,
+          "p95": -39,
+          "max": -39,
+          "mean": -48.83
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 106.35,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 16,
+          "p50": 29,
+          "p95": 36,
+          "max": 36,
+          "mean": 27.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -16,
+          "p50": -11,
+          "p95": 0,
+          "max": 0,
+          "mean": -8.67
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 77.3,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 19,
+          "p50": 25,
+          "p95": 31,
+          "max": 31,
+          "mean": 25.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -13,
+          "p50": -10,
+          "p95": 0,
+          "max": 0,
+          "mean": -8.67
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 74.1,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 22,
+          "p50": 27,
+          "p95": 34,
+          "max": 34,
+          "mean": 27.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -16,
+          "p50": -12,
+          "p95": -6,
+          "max": -6,
+          "mean": -11
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 76.7,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 56,
+          "p50": 60,
+          "p95": 95,
+          "max": 95,
+          "mean": 71.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -50,
+          "p50": -49,
+          "p95": -37,
+          "max": -37,
+          "mean": -45
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 62.8,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 8,
+          "p50": 18,
+          "p95": 30,
+          "max": 30,
+          "mean": 21.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -15,
+          "p50": -6,
+          "p95": 0,
+          "max": 0,
+          "mean": -5.67
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 36.69,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 17,
+          "p50": 26,
+          "p95": 50,
+          "max": 50,
+          "mean": 30.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 2,
+          "p50": 8,
+          "p95": 17,
+          "max": 17,
+          "mean": 9.5
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 90.34,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 21,
+          "p50": 23,
+          "p95": 35,
+          "max": 35,
+          "mean": 26.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 1,
+          "p50": 7,
+          "p95": 15,
+          "max": 15,
+          "mean": 8.83
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 75.21,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 95,
+          "p50": 103,
+          "p95": 116,
+          "max": 116,
+          "mean": 103.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -50,
+          "p50": -48,
+          "p95": -43,
+          "max": -43,
+          "mean": -47.33
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 126.81,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 15,
+          "p50": 27,
+          "p95": 41,
+          "max": 41,
+          "mean": 28
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 0,
+          "p50": 9,
+          "p95": 13,
+          "max": 13,
+          "mean": 7.83
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 77.44,
+        "geometry": "view 0,0 1280x800 in content 0,31 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "osrPaint",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 13,
+          "p50": 41,
+          "p95": 162,
+          "max": 162,
+          "mean": 71.5
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 29.15,
+        "geometry": "view - in content 0,-33 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 7,
+          "p50": 13,
+          "p95": 164,
+          "max": 164,
+          "mean": 59.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -143,
+          "p50": 12,
+          "p95": 116,
+          "max": 116,
+          "mean": 20.17
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 44.1,
+        "geometry": "view - in content 0,-33 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 181,
+          "p50": 361,
+          "p95": 458,
+          "max": 458,
+          "mean": 338.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -300,
+          "p50": -254,
+          "p95": -74,
+          "max": -74,
+          "mean": -203.17
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 97.01,
+        "geometry": "view - in content 0,-33 1280x800; page 1280x800 at 1x"
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "paint events",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 15
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "osrPaint",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "no paint event"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 557.03,
+        "geometry": "view 0,0 1280x800 in content -; page 0x0 at 1x"
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "empty image"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 10.47,
+        "geometry": "view 0,0 1280x800 in content -; page 0x0 at 1x"
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 2,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Page.captureScreenshot: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 523.11,
+        "geometry": "view 0,0 1280x800 in content -; page 0x0 at 1x"
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "paint events",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 0
+      }
+    ],
+    "cost": {
+      "idle": [
+        {
+          "tabs": 0,
+          "memBest": 157413952,
+          "memKind": "footprint",
+          "memRss": 381943808,
+          "cpuPct": 0.13,
+          "cpuByType": {
+            "Browser": 0.11,
+            "GPU": 0,
+            "Utility": 0.03
+          },
+          "procs": 4
+        },
+        {
+          "tabs": 1,
+          "memBest": 178847424,
+          "memKind": "footprint",
+          "memRss": 477806592,
+          "cpuPct": 0.7,
+          "cpuByType": {
+            "Browser": 0.13,
+            "GPU": 0.38,
+            "Utility": 0.02,
+            "Tab": 0.17
+          },
+          "procs": 5
+        },
+        {
+          "tabs": 2,
+          "memBest": 199347072,
+          "memKind": "footprint",
+          "memRss": 575651840,
+          "cpuPct": 0.97,
+          "cpuByType": {
+            "Browser": 0.11,
+            "GPU": 0.5,
+            "Utility": 0.02,
+            "Tab": 0.34
+          },
+          "procs": 6
+        },
+        {
+          "tabs": 4,
+          "memBest": 242836992,
+          "memKind": "footprint",
+          "memRss": 770785280,
+          "cpuPct": 2.32,
+          "cpuByType": {
+            "Browser": 0.27,
+            "GPU": 1.16,
+            "Utility": 0.08,
+            "Tab": 0.81
+          },
+          "procs": 8
+        },
+        {
+          "tabs": 8,
+          "memBest": 327997696,
+          "memKind": "footprint",
+          "memRss": 1162330112,
+          "cpuPct": 3.8,
+          "cpuByType": {
+            "Browser": 0.46,
+            "GPU": 1.86,
+            "Utility": 0.13,
+            "Tab": 1.34
+          },
+          "procs": 12
+        }
+      ],
+      "animated": [
+        {
+          "config": "animated, shown",
+          "cpuPct": 26.55,
+          "rendererPct": 9.27,
+          "gpuPct": 16.64,
+          "rafHz": 59.88
+        },
+        {
+          "config": "animated, never-shown window, throttling off",
+          "cpuPct": 12.01,
+          "rendererPct": 3.7,
+          "gpuPct": 7.73,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, never-shown window, throttling on",
+          "cpuPct": 0.9,
+          "rendererPct": 0.08,
+          "gpuPct": 0.47,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, never-shown window, throttling off + frame pump",
+          "cpuPct": 13.74,
+          "rendererPct": 3.86,
+          "gpuPct": 9.59,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, invisible shown window",
+          "cpuPct": 44.31,
+          "rendererPct": 14.24,
+          "gpuPct": 29.78,
+          "rafHz": 60.17
+        },
+        {
+          "config": "animated, 1x1 shown window",
+          "cpuPct": 21.84,
+          "rendererPct": 7.66,
+          "gpuPct": 13.95,
+          "rafHz": 59.91
+        },
+        {
+          "config": "animated, osr 30 fps",
+          "cpuPct": 25.24,
+          "rendererPct": 5.42,
+          "gpuPct": 13.68,
+          "rafHz": 15.95
+        }
+      ],
+      "partitions": {
+        "samePartitionMiB": 74.28,
+        "ownPartitionsMiB": 83.28
+      },
+      "perIdleTabMiB": 20.34,
+      "perIdleTabCpuPct": 0.46,
+      "host": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memBest": 183464896,
+            "memKind": "footprint",
+            "memRss": 410664960,
+            "cpuPct": 0.41,
+            "cpuByType": {
+              "Browser": 0.18,
+              "GPU": 0.05,
+              "Utility": 0.18
+            },
+            "procs": 4
+          },
+          {
+            "tabs": 1,
+            "memBest": 234405952,
+            "memKind": "footprint",
+            "memRss": 516341760,
+            "cpuPct": 3.56,
+            "cpuByType": {
+              "Browser": 0.55,
+              "GPU": 2.18,
+              "Utility": 0.08,
+              "Tab": 0.75
+            },
+            "procs": 5
+          },
+          {
+            "tabs": 4,
+            "memBest": 339109760,
+            "memKind": "footprint",
+            "memRss": 822575104,
+            "cpuPct": 8.69,
+            "cpuByType": {
+              "Browser": 0.39,
+              "GPU": 5.57,
+              "Utility": 0.04,
+              "Tab": 2.69
+            },
+            "procs": 8
+          },
+          {
+            "tabs": 8,
+            "memBest": 474995456,
+            "memKind": "footprint",
+            "memRss": 1236631552,
+            "cpuPct": 19.79,
+            "cpuByType": {
+              "Browser": 0.64,
+              "GPU": 12.35,
+              "Utility": 0.08,
+              "Tab": 6.73
+            },
+            "procs": 12
+          }
+        ],
+        "perTabMiB": 34.75,
+        "perTabCpuPct": 2.42
+      }
+    },
+    "stream": [
+      {
+        "road": "screencast",
+        "scenario": "anim",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 0,
+        "decodedPerSec": 0,
+        "latencyMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "interFrameMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "bytesPerSec": 0,
+        "kbitPerSec": 0,
+        "avgFrameBytes": 0,
+        "frameWidths": {},
+        "senderCpuPct": 12.66,
+        "viewerCpuPct": 0.01,
+        "errors": [],
+        "sourceRafHz": 0,
+        "extra": {
+          "droppedInMain": 0
+        }
+      },
+      {
+        "road": "capturePoll",
+        "scenario": "anim",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 0,
+        "decodedPerSec": 0,
+        "latencyMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "interFrameMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "bytesPerSec": 0,
+        "kbitPerSec": 0,
+        "avgFrameBytes": 0,
+        "frameWidths": {},
+        "senderCpuPct": 12.34,
+        "viewerCpuPct": 0,
+        "errors": [],
+        "sourceRafHz": 0,
+        "extra": {
+          "mainThreadJpegMsPerFrame": 0
+        }
+      },
+      {
+        "road": "webrtc-vp8",
+        "scenario": "anim",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 2.7,
+        "decodedPerSec": 2.7,
+        "latencyMs": {
+          "n": 27,
+          "min": 204,
+          "p50": 307,
+          "p95": 449,
+          "max": 464,
+          "mean": 320
+        },
+        "interFrameMs": {
+          "n": 26,
+          "min": 152,
+          "p50": 376,
+          "p95": 526,
+          "max": 575,
+          "mean": 369.15
+        },
+        "bytesPerSec": 57859.6,
+        "kbitPerSec": 462.88,
+        "avgFrameBytes": 21429.48,
+        "frameWidths": {
+          "1280": 27
+        },
+        "senderCpuPct": 57.25,
+        "viewerCpuPct": 3.62,
+        "errors": [],
+        "sourceRafHz": 59.96,
+        "extra": {
+          "viewer": {
+            "connection": "connected",
+            "ice": "connected",
+            "bytesReceived": 817508,
+            "framesDecoded": 38,
+            "framesReceived": 38,
+            "framesDropped": 0,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "jitterBufferDelay": 12.2,
+            "jitterBufferEmittedCount": 38,
+            "codec": "video/VP8"
+          },
+          "sender": {
+            "connection": "connected",
+            "availableOutgoingBitrate": 827885,
+            "bytesSent": 817508,
+            "framesEncoded": 38,
+            "framesSent": 38,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "encoderImplementation": "libvpx",
+            "powerEfficientEncoder": false,
+            "qualityLimitationReason": "none",
+            "targetBitrate": 394223,
+            "totalEncodeTime": 0.42
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://78:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "screenPixelRatio": 1,
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "connected": "connected"
+          }
+        }
+      },
+      {
+        "road": "webrtc-h264",
+        "scenario": "anim",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 13.9,
+        "decodedPerSec": 13.9,
+        "latencyMs": {
+          "n": 139,
+          "min": 94,
+          "p50": 128,
+          "p95": 164,
+          "max": 209,
+          "mean": 129.5
+        },
+        "interFrameMs": {
+          "n": 138,
+          "min": 11,
+          "p50": 69,
+          "p95": 118,
+          "max": 152,
+          "mean": 71.68
+        },
+        "bytesPerSec": 310216.5,
+        "kbitPerSec": 2481.73,
+        "avgFrameBytes": 22317.73,
+        "frameWidths": {
+          "1280": 139
+        },
+        "senderCpuPct": 78.11,
+        "viewerCpuPct": 13.5,
+        "errors": [],
+        "sourceRafHz": 59.96,
+        "extra": {
+          "viewer": {
+            "connection": "connected",
+            "ice": "connected",
+            "bytesReceived": 3943072,
+            "framesDecoded": 168,
+            "framesReceived": 170,
+            "framesDropped": 0,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "jitterBufferDelay": 11.89,
+            "jitterBufferEmittedCount": 168,
+            "codec": "video/H264"
+          },
+          "sender": {
+            "connection": "connected",
+            "availableOutgoingBitrate": 5349818,
+            "bytesSent": 3943072,
+            "framesEncoded": 170,
+            "framesSent": 170,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "encoderImplementation": "OpenH264",
+            "powerEfficientEncoder": false,
+            "qualityLimitationReason": "none",
+            "targetBitrate": 2485787,
+            "totalEncodeTime": 6.02
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://79:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "connected": "connected"
+          }
+        }
+      },
+      {
+        "road": "webcodecs-vp8",
+        "scenario": "anim",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 30.1,
+        "decodedPerSec": 30.1,
+        "latencyMs": {
+          "n": 301,
+          "min": 25,
+          "p50": 47,
+          "p95": 67,
+          "max": 82,
+          "mean": 47.72
+        },
+        "interFrameMs": {
+          "n": 300,
+          "min": 7,
+          "p50": 33,
+          "p95": 48,
+          "max": 68,
+          "mean": 33.36
+        },
+        "bytesPerSec": 282278.8,
+        "kbitPerSec": 2258.23,
+        "avgFrameBytes": 9378.03,
+        "frameWidths": {
+          "1280": 301
+        },
+        "senderCpuPct": 104.72,
+        "viewerCpuPct": 22.08,
+        "errors": [],
+        "sourceRafHz": 59.96,
+        "extra": {
+          "encoder": {
+            "encoded": 360,
+            "dropped": 0,
+            "keyFrames": 6,
+            "bytes": 3362895,
+            "errors": [],
+            "codec": "vp8",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://80:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "vp8"
+            }
+          }
+        }
+      },
+      {
+        "road": "webcodecs-h264",
+        "scenario": "anim",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 30.1,
+        "decodedPerSec": 30.1,
+        "latencyMs": {
+          "n": 301,
+          "min": 28,
+          "p50": 52,
+          "p95": 70,
+          "max": 107,
+          "mean": 52.04
+        },
+        "interFrameMs": {
+          "n": 300,
+          "min": 6,
+          "p50": 32,
+          "p95": 53,
+          "max": 69,
+          "mean": 33.31
+        },
+        "bytesPerSec": 284357.7,
+        "kbitPerSec": 2274.86,
+        "avgFrameBytes": 9447.1,
+        "frameWidths": {
+          "1280": 301
+        },
+        "senderCpuPct": 119.03,
+        "viewerCpuPct": 21.95,
+        "errors": [],
+        "sourceRafHz": 59.97,
+        "extra": {
+          "encoder": {
+            "encoded": 361,
+            "dropped": 0,
+            "keyFrames": 7,
+            "bytes": 3461375,
+            "errors": [],
+            "codec": "avc1.42E028",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://81:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "avc1.42E028"
+            }
+          }
+        }
+      },
+      {
+        "road": "screencast",
+        "scenario": "static",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 0,
+        "decodedPerSec": 0,
+        "latencyMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "interFrameMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "bytesPerSec": 0,
+        "kbitPerSec": 0,
+        "avgFrameBytes": 0,
+        "frameWidths": {},
+        "senderCpuPct": 0.95,
+        "viewerCpuPct": 0.15,
+        "errors": [],
+        "sourceRafHz": 0,
+        "extra": {
+          "droppedInMain": 0
+        }
+      },
+      {
+        "road": "capturePoll",
+        "scenario": "static",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 0,
+        "decodedPerSec": 0,
+        "latencyMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "interFrameMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "bytesPerSec": 0,
+        "kbitPerSec": 0,
+        "avgFrameBytes": 0,
+        "frameWidths": {},
+        "senderCpuPct": 1.74,
+        "viewerCpuPct": 0.04,
+        "errors": [],
+        "sourceRafHz": 0,
+        "extra": {
+          "mainThreadJpegMsPerFrame": 0
+        }
+      },
+      {
+        "road": "webrtc-vp8",
+        "scenario": "static",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 2.1,
+        "decodedPerSec": 2.1,
+        "latencyMs": {
+          "n": 21,
+          "min": 68,
+          "p50": 242,
+          "p95": 370,
+          "max": 417,
+          "mean": 226.14
+        },
+        "interFrameMs": {
+          "n": 20,
+          "min": 92,
+          "p50": 468,
+          "p95": 643,
+          "max": 692,
+          "mean": 469.9
+        },
+        "bytesPerSec": 12451.8,
+        "kbitPerSec": 99.61,
+        "avgFrameBytes": 5929.43,
+        "frameWidths": {
+          "1280": 21
+        },
+        "senderCpuPct": 11.22,
+        "viewerCpuPct": 2.53,
+        "errors": [],
+        "sourceRafHz": 42.49,
+        "extra": {
+          "viewer": {
+            "connection": "connected",
+            "ice": "connected",
+            "bytesReceived": 208637,
+            "framesDecoded": 30,
+            "framesReceived": 30,
+            "framesDropped": 0,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "jitterBufferDelay": 5.79,
+            "jitterBufferEmittedCount": 30,
+            "codec": "video/VP8"
+          },
+          "sender": {
+            "connection": "connected",
+            "availableOutgoingBitrate": 342226,
+            "bytesSent": 208637,
+            "framesEncoded": 30,
+            "framesSent": 30,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "encoderImplementation": "libvpx",
+            "powerEfficientEncoder": false,
+            "qualityLimitationReason": "none",
+            "targetBitrate": 271667,
+            "totalEncodeTime": 0.25
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://84:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "connected": "connected"
+          }
+        }
+      },
+      {
+        "road": "webrtc-h264",
+        "scenario": "static",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 1.1,
+        "decodedPerSec": 1.1,
+        "latencyMs": {
+          "n": 11,
+          "min": 32,
+          "p50": 97,
+          "p95": 1365,
+          "max": 1365,
+          "mean": 292.91
+        },
+        "interFrameMs": {
+          "n": 10,
+          "min": 565,
+          "p50": 900,
+          "p95": 1246,
+          "max": 1246,
+          "mean": 920.8
+        },
+        "bytesPerSec": 2826.8,
+        "kbitPerSec": 22.61,
+        "avgFrameBytes": 2569.82,
+        "frameWidths": {
+          "1280": 11
+        },
+        "senderCpuPct": 13.04,
+        "viewerCpuPct": 1.66,
+        "errors": [],
+        "sourceRafHz": 43.34,
+        "extra": {
+          "viewer": {
+            "connection": "connected",
+            "ice": "connected",
+            "bytesReceived": 121054,
+            "framesDecoded": 12,
+            "framesReceived": 12,
+            "framesDropped": 0,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "jitterBufferDelay": 3.58,
+            "jitterBufferEmittedCount": 12,
+            "codec": "video/H264"
+          },
+          "sender": {
+            "connection": "connected",
+            "availableOutgoingBitrate": 348771,
+            "bytesSent": 121054,
+            "framesEncoded": 12,
+            "framesSent": 12,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "encoderImplementation": "OpenH264",
+            "powerEfficientEncoder": false,
+            "qualityLimitationReason": "none",
+            "targetBitrate": 277500,
+            "totalEncodeTime": 0.31
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://85:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "connected": "connected"
+          }
+        }
+      },
+      {
+        "road": "webcodecs-vp8",
+        "scenario": "static",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 2,
+        "decodedPerSec": 2,
+        "latencyMs": {
+          "n": 20,
+          "min": 26,
+          "p50": 59,
+          "p95": 73,
+          "max": 80,
+          "mean": 55.1
+        },
+        "interFrameMs": {
+          "n": 19,
+          "min": 464,
+          "p50": 500,
+          "p95": 531,
+          "max": 531,
+          "mean": 499.89
+        },
+        "bytesPerSec": 12472.8,
+        "kbitPerSec": 99.78,
+        "avgFrameBytes": 6236.4,
+        "frameWidths": {
+          "1280": 20
+        },
+        "senderCpuPct": 10.75,
+        "viewerCpuPct": 1.55,
+        "errors": [],
+        "sourceRafHz": 39.76,
+        "extra": {
+          "encoder": {
+            "encoded": 24,
+            "dropped": 0,
+            "keyFrames": 1,
+            "bytes": 155750,
+            "errors": [],
+            "codec": "vp8",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://86:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "screenPixelRatio": 1,
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "vp8"
+            }
+          }
+        }
+      },
+      {
+        "road": "webcodecs-h264",
+        "scenario": "static",
+        "source": "hiddenWindow",
+        "seconds": 10,
+        "framesPerSec": 2.2,
+        "decodedPerSec": 2.2,
+        "latencyMs": {
+          "n": 22,
+          "min": 25,
+          "p50": 50,
+          "p95": 109,
+          "max": 121,
+          "mean": 53.68
+        },
+        "interFrameMs": {
+          "n": 21,
+          "min": 83,
+          "p50": 484,
+          "p95": 538,
+          "max": 540,
+          "mean": 453.9
+        },
+        "bytesPerSec": 1189.7,
+        "kbitPerSec": 9.52,
+        "avgFrameBytes": 540.77,
+        "frameWidths": {
+          "1280": 22
+        },
+        "senderCpuPct": 10.02,
+        "viewerCpuPct": 1.33,
+        "errors": [],
+        "sourceRafHz": 41.28,
+        "extra": {
+          "encoder": {
+            "encoded": 26,
+            "dropped": 0,
+            "keyFrames": 1,
+            "bytes": 88391,
+            "errors": [],
+            "codec": "avc1.42E028",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://87:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "screenPixelRatio": 1,
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "avc1.42E028"
+            }
+          }
+        }
+      },
+      {
+        "road": "screencast",
+        "scenario": "anim",
+        "source": "invisibleWindow",
+        "seconds": 10,
+        "framesPerSec": 60,
+        "decodedPerSec": 60,
+        "latencyMs": {
+          "n": 600,
+          "min": 26,
+          "p50": 39,
+          "p95": 52,
+          "max": 63,
+          "mean": 39.9
+        },
+        "interFrameMs": {
+          "n": 599,
+          "min": 4,
+          "p50": 14,
+          "p95": 33,
+          "max": 41,
+          "mean": 16.66
+        },
+        "bytesPerSec": 7283645.3,
+        "kbitPerSec": 58269.16,
+        "avgFrameBytes": 121394.09,
+        "frameWidths": {
+          "1280": 600
+        },
+        "senderCpuPct": 96.23,
+        "viewerCpuPct": 28.69,
+        "errors": [],
+        "sourceRafHz": 59.96,
+        "extra": {
+          "droppedInMain": 0
+        }
+      },
+      {
+        "road": "capturePoll",
+        "scenario": "anim",
+        "source": "invisibleWindow",
+        "seconds": 10,
+        "framesPerSec": 24,
+        "decodedPerSec": 24,
+        "latencyMs": {
+          "n": 240,
+          "min": 30,
+          "p50": 49,
+          "p95": 57,
+          "max": 65,
+          "mean": 47.96
+        },
+        "interFrameMs": {
+          "n": 239,
+          "min": 19,
+          "p50": 42,
+          "p95": 53,
+          "max": 60,
+          "mean": 41.53
+        },
+        "bytesPerSec": 2941580.6,
+        "kbitPerSec": 23532.64,
+        "avgFrameBytes": 122057.29,
+        "frameWidths": {
+          "1280": 240
+        },
+        "senderCpuPct": 69.26,
+        "viewerCpuPct": 14.85,
+        "errors": [],
+        "sourceRafHz": 59.98,
+        "extra": {
+          "mainThreadJpegMsPerFrame": 7.1
+        }
+      },
+      {
+        "road": "webcodecs-h264",
+        "scenario": "anim",
+        "source": "invisibleWindow",
+        "seconds": 10,
+        "framesPerSec": 30,
+        "decodedPerSec": 30,
+        "latencyMs": {
+          "n": 300,
+          "min": 29,
+          "p50": 61,
+          "p95": 79,
+          "max": 94,
+          "mean": 60.56
+        },
+        "interFrameMs": {
+          "n": 299,
+          "min": 5,
+          "p50": 34,
+          "p95": 51,
+          "max": 60,
+          "mean": 33.42
+        },
+        "bytesPerSec": 280740.3,
+        "kbitPerSec": 2245.92,
+        "avgFrameBytes": 9326.92,
+        "frameWidths": {
+          "1280": 300
+        },
+        "senderCpuPct": 114.4,
+        "viewerCpuPct": 17.97,
+        "errors": [],
+        "sourceRafHz": 59.86,
+        "extra": {
+          "encoder": {
+            "encoded": 362,
+            "dropped": 0,
+            "keyFrames": 7,
+            "bytes": 3469958,
+            "errors": [],
+            "codec": "avc1.42E028",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://90:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "avc1.42E028"
+            }
+          }
+        }
+      },
+      {
+        "road": "screencast",
+        "scenario": "anim",
+        "source": "tinyWindow",
+        "seconds": 10,
+        "framesPerSec": 60,
+        "decodedPerSec": 60,
+        "latencyMs": {
+          "n": 600,
+          "min": 26,
+          "p50": 37,
+          "p95": 49,
+          "max": 58,
+          "mean": 38.07
+        },
+        "interFrameMs": {
+          "n": 599,
+          "min": 3,
+          "p50": 14,
+          "p95": 34,
+          "max": 40,
+          "mean": 16.67
+        },
+        "bytesPerSec": 7310697.2,
+        "kbitPerSec": 58485.58,
+        "avgFrameBytes": 121642.22,
+        "frameWidths": {
+          "1280": 600
+        },
+        "senderCpuPct": 82.45,
+        "viewerCpuPct": 25.1,
+        "errors": [],
+        "sourceRafHz": 60.08,
+        "extra": {
+          "droppedInMain": 0
+        }
+      },
+      {
+        "road": "webcodecs-h264",
+        "scenario": "anim",
+        "source": "tinyWindow",
+        "seconds": 10,
+        "framesPerSec": 30,
+        "decodedPerSec": 30,
+        "latencyMs": {
+          "n": 300,
+          "min": 28,
+          "p50": 43,
+          "p95": 57,
+          "max": 65,
+          "mean": 43.91
+        },
+        "interFrameMs": {
+          "n": 299,
+          "min": 9,
+          "p50": 33,
+          "p95": 50,
+          "max": 59,
+          "mean": 33.32
+        },
+        "bytesPerSec": 278790.8,
+        "kbitPerSec": 2230.33,
+        "avgFrameBytes": 9293.03,
+        "frameWidths": {
+          "1280": 300
+        },
+        "senderCpuPct": 90.4,
+        "viewerCpuPct": 16.1,
+        "errors": [],
+        "sourceRafHz": 59.98,
+        "extra": {
+          "encoder": {
+            "encoded": 361,
+            "dropped": 0,
+            "keyFrames": 7,
+            "bytes": 3461268,
+            "errors": [],
+            "codec": "avc1.42E028",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://92:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "avc1.42E028"
+            }
+          }
+        }
+      },
+      {
+        "road": "screencast",
+        "scenario": "anim",
+        "source": "shown",
+        "seconds": 10,
+        "framesPerSec": 59.9,
+        "decodedPerSec": 59.9,
+        "latencyMs": {
+          "n": 599,
+          "min": 25,
+          "p50": 40,
+          "p95": 44,
+          "max": 62,
+          "mean": 38.81
+        },
+        "interFrameMs": {
+          "n": 598,
+          "min": 3,
+          "p50": 17,
+          "p95": 27,
+          "max": 38,
+          "mean": 16.67
+        },
+        "bytesPerSec": 6107478.8,
+        "kbitPerSec": 48859.83,
+        "avgFrameBytes": 101791.31,
+        "frameWidths": {
+          "1000": 599
+        },
+        "senderCpuPct": 63.41,
+        "viewerCpuPct": 18.89,
+        "errors": [],
+        "sourceRafHz": 59.98,
+        "extra": {
+          "droppedInMain": 0
+        }
+      },
+      {
+        "road": "webrtc-vp8",
+        "scenario": "anim",
+        "source": "shown",
+        "seconds": 10,
+        "framesPerSec": 3.2,
+        "decodedPerSec": 3.2,
+        "latencyMs": {
+          "n": 32,
+          "min": 168,
+          "p50": 253,
+          "p95": 433,
+          "max": 440,
+          "mean": 275.78
+        },
+        "interFrameMs": {
+          "n": 31,
+          "min": 93,
+          "p50": 286,
+          "p95": 442,
+          "max": 510,
+          "mean": 308.77
+        },
+        "bytesPerSec": 62560.4,
+        "kbitPerSec": 500.48,
+        "avgFrameBytes": 19550.13,
+        "frameWidths": {
+          "1280": 32
+        },
+        "senderCpuPct": 43,
+        "viewerCpuPct": 2.8,
+        "errors": [],
+        "sourceRafHz": 59.98,
+        "extra": {
+          "viewer": {
+            "connection": "connected",
+            "ice": "connected",
+            "bytesReceived": 854837,
+            "framesDecoded": 43,
+            "framesReceived": 43,
+            "framesDropped": 0,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "jitterBufferDelay": 12.13,
+            "jitterBufferEmittedCount": 43,
+            "codec": "video/VP8"
+          },
+          "sender": {
+            "connection": "connected",
+            "availableOutgoingBitrate": 925445,
+            "bytesSent": 854837,
+            "framesEncoded": 44,
+            "framesSent": 44,
+            "frameWidth": 1280,
+            "frameHeight": 800,
+            "encoderImplementation": "libvpx",
+            "powerEfficientEncoder": false,
+            "qualityLimitationReason": "none",
+            "targetBitrate": 516838,
+            "totalEncodeTime": 0.36
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://94:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "connected": "connected"
+          }
+        }
+      },
+      {
+        "road": "webcodecs-h264",
+        "scenario": "anim",
+        "source": "shown",
+        "seconds": 10,
+        "framesPerSec": 30.1,
+        "decodedPerSec": 30.1,
+        "latencyMs": {
+          "n": 301,
+          "min": 27,
+          "p50": 45,
+          "p95": 51,
+          "max": 62,
+          "mean": 43.34
+        },
+        "interFrameMs": {
+          "n": 300,
+          "min": 15,
+          "p50": 33,
+          "p95": 45,
+          "max": 55,
+          "mean": 33.3
+        },
+        "bytesPerSec": 265641.8,
+        "kbitPerSec": 2125.13,
+        "avgFrameBytes": 8825.31,
+        "frameWidths": {
+          "1280": 301
+        },
+        "senderCpuPct": 92.67,
+        "viewerCpuPct": 12.75,
+        "errors": [],
+        "sourceRafHz": 59.97,
+        "extra": {
+          "encoder": {
+            "encoded": 360,
+            "dropped": 0,
+            "keyFrames": 6,
+            "bytes": 3230890,
+            "errors": [],
+            "codec": "avc1.42E028",
+            "hardware": ""
+          },
+          "start": {
+            "capture": {
+              "settings": {
+                "aspectRatio": 1.6,
+                "deviceId": "web-contents-media-stream://95:1",
+                "frameRate": 30,
+                "height": 800,
+                "resizeMode": "crop-and-scale",
+                "width": 1280
+              },
+              "via": "getUserMedia(tab)"
+            },
+            "encoder": {
+              "width": 1280,
+              "height": 800,
+              "codec": "avc1.42E028"
+            }
+          }
+        }
+      }
+    ],
+    "wake": {
+      "cycles": [
+        {
+          "restRates": {
+            "seconds": 10.01,
+            "intervalHz": 1.1,
+            "chainHz": 1,
+            "rafHz": 0,
+            "maxIntervalGapMs": 1009,
+            "maxChainGapMs": 1016,
+            "maxRafGapMs": 0,
+            "visibility": "hidden",
+            "layout": "1280x800",
+            "ioHz": 0,
+            "roHz": 0
+          },
+          "firstRafMs": 29,
+          "freshPictureMs": 74,
+          "awakeRates": {
+            "seconds": 2.01,
+            "intervalHz": 72.25,
+            "chainHz": 60.29,
+            "rafHz": 59.79,
+            "maxIntervalGapMs": 1009,
+            "maxChainGapMs": 1016,
+            "maxRafGapMs": 27,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 1.99,
+            "roHz": 1.99
+          }
+        },
+        {
+          "restRates": {
+            "seconds": 10.01,
+            "intervalHz": 1.1,
+            "chainHz": 1,
+            "rafHz": 0,
+            "maxIntervalGapMs": 1012,
+            "maxChainGapMs": 1016,
+            "maxRafGapMs": 27,
+            "visibility": "hidden",
+            "layout": "1280x800",
+            "ioHz": 0,
+            "roHz": 0
+          },
+          "firstRafMs": 31,
+          "freshPictureMs": 60,
+          "awakeRates": {
+            "seconds": 2,
+            "intervalHz": 77.35,
+            "chainHz": 60.88,
+            "rafHz": 59.88,
+            "maxIntervalGapMs": 1012,
+            "maxChainGapMs": 1016,
+            "maxRafGapMs": 10052,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          }
+        },
+        {
+          "restRates": {
+            "seconds": 10.02,
+            "intervalHz": 1.1,
+            "chainHz": 1,
+            "rafHz": 0,
+            "maxIntervalGapMs": 1012,
+            "maxChainGapMs": 1016,
+            "maxRafGapMs": 10052,
+            "visibility": "hidden",
+            "layout": "1280x800",
+            "ioHz": 0,
+            "roHz": 0
+          },
+          "firstRafMs": 10,
+          "freshPictureMs": 137,
+          "awakeRates": {
+            "seconds": 2,
+            "intervalHz": 73.43,
+            "chainHz": 59.94,
+            "rafHz": 59.94,
+            "maxIntervalGapMs": 1012,
+            "maxChainGapMs": 1016,
+            "maxRafGapMs": 10052,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          }
+        },
+        {
+          "restRates": {
+            "seconds": 10.01,
+            "intervalHz": 1.2,
+            "chainHz": 1,
+            "rafHz": 0,
+            "maxIntervalGapMs": 1012,
+            "maxChainGapMs": 1017,
+            "maxRafGapMs": 10052,
+            "visibility": "hidden",
+            "layout": "1280x800",
+            "ioHz": 0,
+            "roHz": 0
+          },
+          "firstRafMs": 6,
+          "freshPictureMs": 53,
+          "awakeRates": {
+            "seconds": 2.01,
+            "intervalHz": 73.24,
+            "chainHz": 59.79,
+            "rafHz": 59.29,
+            "maxIntervalGapMs": 1012,
+            "maxChainGapMs": 1017,
+            "maxRafGapMs": 10052,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 1.99,
+            "roHz": 1.99
+          }
+        }
+      ],
+      "firstRafMs": {
+        "n": 4,
+        "min": 6,
+        "p50": 10,
+        "p95": 31,
+        "max": 31,
+        "mean": 19
+      },
+      "freshPictureMs": {
+        "n": 4,
+        "min": 53,
+        "p50": 60,
+        "p95": 137,
+        "max": 137,
+        "mean": 81
+      }
+    },
+    "shared": {
+      "tabs": [
+        {
+          "rates": {
+            "seconds": 4.01,
+            "intervalHz": 78.86,
+            "chainHz": 61.14,
+            "rafHz": 60.14,
+            "maxIntervalGapMs": 27,
+            "maxChainGapMs": 40,
+            "maxRafGapMs": 40,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2.25
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 17,
+              "p50": 17,
+              "p95": 36,
+              "max": 36,
+              "mean": 22
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 2,
+              "p50": 11,
+              "p95": 21,
+              "max": 21,
+              "mean": 11.75
+            },
+            "size": "1280x800"
+          }
+        },
+        {
+          "rates": {
+            "seconds": 4.53,
+            "intervalHz": 71.81,
+            "chainHz": 60.54,
+            "rafHz": 59.88,
+            "maxIntervalGapMs": 37,
+            "maxChainGapMs": 36,
+            "maxRafGapMs": 37,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 1.99,
+            "roHz": 1.99
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 11,
+              "p50": 11,
+              "p95": 25,
+              "max": 25,
+              "mean": 17.75
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 17,
+              "p50": 18,
+              "p95": 34,
+              "max": 34,
+              "mean": 25.5
+            },
+            "size": "1280x800"
+          }
+        },
+        {
+          "rates": {
+            "seconds": 5.02,
+            "intervalHz": 79.62,
+            "chainHz": 60.31,
+            "rafHz": 60.11,
+            "maxIntervalGapMs": 35,
+            "maxChainGapMs": 41,
+            "maxRafGapMs": 40,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 1.99,
+            "roHz": 1.99
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 14,
+              "p50": 21,
+              "p95": 38,
+              "max": 38,
+              "mean": 24.75
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 2,
+              "p50": 8,
+              "p95": 15,
+              "max": 15,
+              "mean": 9.5
+            },
+            "size": "1280x800"
+          }
+        },
+        {
+          "rates": {
+            "seconds": 5.55,
+            "intervalHz": 71.84,
+            "chainHz": 59.96,
+            "rafHz": 60.14,
+            "maxIntervalGapMs": 32,
+            "maxChainGapMs": 32,
+            "maxRafGapMs": 33,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2.16,
+            "roHz": 2.16
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 11,
+              "p50": 13,
+              "p95": 27,
+              "max": 27,
+              "mean": 17.5
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 16,
+              "p50": 28,
+              "p95": 35,
+              "max": 35,
+              "mean": 27.5
+            },
+            "size": "1280x800"
+          }
+        }
+      ],
+      "fitted": true
+    },
+    "hostcheck": {
+      "hostBounds": "100,131 1x1",
+      "belowBounds": "0,31 420x320",
+      "focusedAtStart": false,
+      "pageHasFocusAfterGrab": false,
+      "focusedAfterPageGrab": false,
+      "focusedWindowTitle": "S7 probe",
+      "clickThrough": "not testable here (macOS needs Accessibility for synthetic clicks; Wayland and no display have no global input)"
+    }
+  },
+  "errors": [],
+  "assertions": [
+    {
+      "name": "no reload when moving from detached",
+      "ok": true,
+      "detail": "{\"sameDocument\":true,\"fieldKept\":true,\"sseKept\":true}"
+    },
+    {
+      "name": "no reload when moving from hiddenWindow",
+      "ok": true,
+      "detail": "{\"sameDocument\":true,\"fieldKept\":true,\"sseKept\":true}"
+    },
+    {
+      "name": "no reload when moving from hiddenWindowFit",
+      "ok": true,
+      "detail": "{\"sameDocument\":true,\"fieldKept\":true,\"sseKept\":true}"
+    },
+    {
+      "name": "no reload when moving from invisibleWindow",
+      "ok": true,
+      "detail": "{\"sameDocument\":true,\"fieldKept\":true,\"sseKept\":true}"
+    },
+    {
+      "name": "no reload when moving from tinyWindow",
+      "ok": true,
+      "detail": "{\"sameDocument\":true,\"fieldKept\":true,\"sseKept\":true}"
+    },
+    {
+      "name": "the 1x1 host draws (rAF above 10 Hz)",
+      "ok": true,
+      "detail": "{\"rafHz\":59.94005994005994}"
+    },
+    {
+      "name": "a never-shown window draws nothing (rAF below 1 Hz)",
+      "ok": true,
+      "detail": "{\"rafHz\":0}"
+    },
+    {
+      "name": "capturePage works in the 1x1 host",
+      "ok": true,
+      "detail": "{\"ok\":6,\"tries\":6,\"errors\":[]}"
+    },
+    {
+      "name": "capturePage works in the 1x1 host with the agent's 1280x800 at 1x held",
+      "ok": true,
+      "detail": "{\"dsf\":1,\"ok\":6,\"tries\":6,\"size\":\"1280x800\",\"errors\":[]}"
+    },
+    {
+      "name": "the host never takes focus, even when its page asks",
+      "ok": true,
+      "detail": "{\"atStart\":false,\"afterGrab\":false,\"focusedWindow\":\"S7 probe\"}"
+    },
+    {
+      "name": "a resting tab draws within 2 s of moving into the host, every cycle",
+      "ok": true,
+      "detail": "{\"firstRafMs\":[29,31,10,6]}"
+    },
+    {
+      "name": "every tab in one shared host draws and is pictured",
+      "ok": true,
+      "detail": "{\"tabs\":[{\"rafHz\":60.144746693286756,\"ok\":4,\"tries\":4},{\"rafHz\":59.876270437472385,\"ok\":4,\"tries\":4},{\"rafHz\":60.111464968152866,\"ok\":4,\"tries\":4},{\"rafHz\":60.136838314728124,\"ok\":4,\"tries\":4}]}"
+    }
+  ]
+}

@@ -102,16 +102,25 @@ function isLocalhostName(host: string): boolean {
 
 /**
  * The environment proxy a pinned dial would go through, by its variable's name — or undefined. Bun's fetch, measured
- * (1.3): an `http:` URL obeys `HTTP_PROXY`/`http_proxy` and an `https:` one `HTTPS_PROXY`/`https_proxy`; `ALL_PROXY`
- * is ignored; there is no per-request way out (`proxy: ""`, `false` and `undefined` all still proxy). `NO_PROXY` (or
+ * (1.3.14 and 1.4.4): an `http:` URL obeys `HTTP_PROXY`/`http_proxy` and an `https:` one `HTTPS_PROXY`/`https_proxy`;
+ * since Bun 1.4, `ALL_PROXY`/`all_proxy` too, when the scheme's own is unset (1.3 ignored it; here it counts for both
+ * schemes), unless it names a SOCKS proxy (`socks4://`, `socks5://`, `socks5h://`…), which Bun 1.4 ignores and dials
+ * direct; an `ALL_PROXY` with no scheme is used as an HTTP one, so it counts. The pinned dial passes `proxy: false`,
+ * which keeps it direct on 1.4.4 (1.3.14 proxied it anyway; `proxy: ""` and `undefined` still proxy on both), so this
+ * check is the second guard on the pinned Bun and the only one on an older Bun. `NO_PROXY` (or
  * `no_proxy`; a comma list, spaces trimmed) keeps a dial direct for `*`, for the dialled host exactly — an IPv6 address
- * only in its bracketed `[addr]` spelling (`::1` alone still proxies) — and for `host:port` with the dial's own
- * explicit port. Nothing looser (a suffix, a CIDR, `localhost` for 127.0.0.1) is relied on: those count as proxied.
- * When both `NO_PROXY` and `no_proxy` are set only an entry in both is relied on. Nothing here changes the environment.
+ * in its bracketed `[addr]` spelling — and for `host:port` with the dial's own explicit port. Nothing looser is relied
+ * on: a suffix, `localhost` for 127.0.0.1, and what only Bun 1.4 keeps direct (a CIDR such as 127.0.0.0/8, an
+ * unbracketed `::1`) count as proxied, which refuses a read rather than let one through a proxy. When both `NO_PROXY`
+ * and `no_proxy` are set only an entry in both is relied on. Nothing here changes the environment.
  */
 export function proxyFor(address: string, url: URL, env: Record<string, string | undefined>): string | undefined {
-  const vars = url.protocol === "https:" ? ["HTTPS_PROXY", "https_proxy"] : ["HTTP_PROXY", "http_proxy"];
-  const set = vars.find((v) => (env[v] ?? "").trim() !== "");
+  const own = url.protocol === "https:" ? ["HTTPS_PROXY", "https_proxy"] : ["HTTP_PROXY", "http_proxy"];
+  const counts = (v: string): boolean => {
+    const value = (env[v] ?? "").trim();
+    return value !== "" && (own.includes(v) || !/^socks[0-9a-z]*:/i.test(value));
+  };
+  const set = [...own, "ALL_PROXY", "all_proxy"].find(counts);
   if (set === undefined) return undefined;
   const host = address.includes(":") ? `[${address.replace(/^\[|\]$/g, "").toLowerCase()}]` : address.toLowerCase();
   const list = (raw: string | undefined): string[] | undefined => {
