@@ -214,6 +214,26 @@ describe("the bot keeps control", () => {
     expect((await taskStop!.run({ id: "agent_nope" })).isError).toBe(true);
   });
 
+  test("TaskStop passes a task id that names none of Clover's agents on to the runtime's own TaskStop", async () => {
+    const w = make({ script: [[{ wait: true }]] });
+    const passed: string[] = [];
+    const stopRuntimeTask = async (taskId: string) => {
+      passed.push(taskId);
+      return { text: `stopped background task ${taskId}`, isError: false };
+    };
+    const [agent, taskStop] = agentToolDefs(w.manager, { bot: "alpha", session: "s_alpha", origin: "user" }, { backends: () => ["fake"], stopRuntimeTask });
+    expect(taskStop!.description).toContain("background commands");
+    expect(await taskStop!.run({ task_id: "bash_7" })).toEqual({ text: "stopped background task bash_7", isError: false });
+    expect(await taskStop!.run({ id: "monitor_2" })).toEqual({ text: "stopped background task monitor_2", isError: false });
+    // An agent of another bot is refused, never passed on; the bot's own agent stops as before.
+    const started = await agent!.run({ prompt: "Fix it.", backend: "fake", root: "home/Studio/project1", description: "Fix it" });
+    const id = /agent_[A-Za-z0-9_-]+/.exec(started.text)![0];
+    const [, otherStop] = agentToolDefs(w.manager, { bot: "beta", session: "s_beta", origin: "user" }, { stopRuntimeTask });
+    expect((await otherStop!.run({ id })).isError).toBe(true);
+    expect(await taskStop!.run({ id })).toEqual({ text: `Stopped ${id}.`, isError: false });
+    expect(passed).toEqual(["bash_7", "monitor_2"]);
+  });
+
   test("a message from the bot is the agent's next prompt, queued while a turn runs", async () => {
     const w = make({ script: [[{ wait: true }, { say: "first" }], [{ say: "second" }]] });
     const r = await w.delegate();
