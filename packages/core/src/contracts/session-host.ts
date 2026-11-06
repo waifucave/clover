@@ -153,8 +153,9 @@ export interface SessionDriver {
   interrupt(): Promise<void>;
   /** Ends the session: for an agent, ACP's cancel, then the end of its process group (§9.3). */
   stop(): Promise<void>;
-  /** Switches the model mid-session (item 90's picker, lane K's ask): an agent's or a coding session's. A driver
-   *  without it refuses `session.setModel`; a bot's model is its user layer, not this. */
+  /** Switches the model mid-session (item 90's picker, lane K's ask): an agent's or a coding session's. Lane D's
+   *  `session.setModel` calls it, refuses a session whose driver has none, and refuses a bot, whose model is its user
+   *  layer; the session's view takes the new `model` and `effort`. */
   setModel?(model: string, effort?: string): Promise<void>;
   /** Compacts the conversation on the host's word (§6.3, lane D's ask; lane A's runtime implements it): summarizes
    *  it, rebuilds the harness blocks (§6.1), and answers `compacted: false` when `signal` aborts first. The host
@@ -195,9 +196,6 @@ export interface SessionHost {
   deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition }>;
   /** The user's interrupt of this session's current step. */
   interrupt(id: string): Promise<void>;
-  /** `session.setModel`: through the driver's `setModel`, for an agent or a coding session; `refused` for one whose
-   *  driver has none, and for a bot (its model is its user layer). The view's `model` and `effort` follow. */
-  setModel(id: string, model: string, effort?: string): Promise<void>;
   /** `TaskStop`, or the session ending. */
   stop(id: string, reason?: string): Promise<void>;
   history(id: string, opts?: { afterSeq?: number; limit?: number }): SessionRecord[];
