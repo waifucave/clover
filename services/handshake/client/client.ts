@@ -14,6 +14,7 @@ import {
   PING,
   PONG,
   type RecordView,
+  type RecoveryUse,
   requestSigningString,
   type ServiceFrame,
   CLOSE,
@@ -111,7 +112,8 @@ export class HandshakeClient {
     return this.send("POST", "/v1/groups", this.json(body));
   }
 
-  joinGroup(group: string, body: { key: string; t: number; sig: string; by: string; bysig: string }): Promise<Record<string, unknown>> {
+  /** A join: the joiner's statement and one member's admit; `admits` are more admits, so the key can vote at once. */
+  joinGroup(group: string, body: { key: string; t: number; sig: string; by: string; bysig: string; admits?: Cosignature[] }): Promise<Record<string, unknown>> {
     return this.send("POST", `/v1/groups/${group}/members`, this.json(body));
   }
 
@@ -231,6 +233,15 @@ export interface GroupView {
   group: string;
   members: MemberView[];
   lease: LeaseView;
+  /** Whether the group has a recovery key. */
+  recovery: boolean;
+  recoveryUsed?: RecoveryUse;
+}
+
+/** Another key's vote over a statement (removeStatement, recoveryStatement, admitStatement). */
+export interface Cosignature {
+  by: string;
+  sig: string;
 }
 
 export class GroupScope extends SignedScope {
@@ -242,8 +253,26 @@ export class GroupScope extends SignedScope {
     return (await this.call("GET", this.base())) as unknown as GroupView;
   }
 
-  async remove(key: string): Promise<void> {
-    await this.call("DELETE", `${this.base()}/members/${key}`);
+  /**
+   * Removes `key`: this member alone for itself; for another, a quorum of voters (PROTOCOL.md, "Group recovery"). This
+   * member's own request is its vote; `cosigners` sign removeStatement(group, key, t, keep) with the same `t`.
+   */
+  async remove(key: string, options: { t?: number; keep?: string[]; cosigners?: Cosignature[] } = {}): Promise<void> {
+    const body =
+      options.cosigners || options.t !== undefined || options.keep
+        ? { ...(options.keep ? { keep: options.keep } : {}), ...(options.cosigners || options.t !== undefined ? { t: options.t ?? this.client.now(), removes: options.cosigners ?? [] } : {}) }
+        : undefined;
+    await this.call("DELETE", `${this.base()}/members/${key}`, body);
+  }
+
+  /** What removing `key` would roll back: the members that come back, and the keys that go unless kept. */
+  async rollback(key: string): Promise<{ restores: string[]; drops: string[] }> {
+    return (await this.call("GET", `${this.base()}/rollback/${key}`)) as unknown as { restores: string[]; drops: string[] };
+  }
+
+  /** Sets (or with null clears) the recovery key; `cosigners` sign recoveryStatement(group, key, t). */
+  async setRecovery(key: string | null, t: number, cosigners: Cosignature[] = []): Promise<{ recovery: boolean }> {
+    return (await this.call("PUT", `${this.base()}/recovery`, { key, t, sigs: cosigners })) as unknown as { recovery: boolean };
   }
 
   /** A lease operation; a refusal throws HandshakeError `held` with the current lease in `body.lease`. */

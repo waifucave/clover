@@ -180,7 +180,7 @@ The lease decides which computer is the main one (spec §6.4). For account-less 
   - Answers 201, or 200 if it's already a member. At most 32 members (409 `full`).
   - A removed key may rejoin only with statements signed after its removal (403 `revoked` otherwise), so an old join can't be replayed.
 - **Remove:** `DELETE /v1/groups/<group>/members/<key>` (signed by any member) → 204.
-  - A device may remove itself or another (a revocation). Any member removing any other is v1's rule, and a stolen device can abuse it: see "Group recovery" below, proposed for H-M2.
+  - A device may remove itself alone. Removing another takes a quorum of the voters: see "Group recovery" below.
   - Removing the holder ends their lease.
   - When the last member goes, the group is deleted (410 afterwards).
 - **Read:** `GET /v1/groups/<group>` (signed) answers `{"group", "members": [{"key", "joinedAt"}], "lease": {"holder": "<key>"|null, "epoch": 7, "expiresAt": …}}`.
@@ -201,38 +201,54 @@ The lease decides which computer is the main one (spec §6.4). For account-less 
   - The hello is `{"t":"hello","v":1,"scope":"group","lease":…}`.
   - Every change pushes `{"t":"lease","lease":…}` and every membership change `{"t":"members","members":[…]}`.
 
-## Group recovery (proposed for H-M2, with lane H; not built)
+## Group recovery
 
-**The problem.** In v1 any one member can remove every other member, admit keys of its own, and take the lease. A stolen device can therefore lock the user's other devices out of their group, and they can't come back, because rejoining needs a current member's admit. The thief gains no data this way: each device's local revoke cuts its links at once (§8.1). The harm is that the user's devices lose their shared lease, so recovery must give the group back to them.
+Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026). Without it, any one member could remove every other member, admit keys of its own and take the lease, so a stolen device could lock the user's other devices out of their group. The thief gains no data that way, since each device's local revoke cuts its links at once (§8.1); what recovery protects is the user's shared lease.
 
-**The proposal:**
+- **Voters.** The founder votes from the start.
+  - Any one member's admit lets a key in, a non-voter's too: a device paired through a recent one must get in.
+  - A new key votes at once when the voters among its admitters are a quorum of the group's voters. Otherwise it votes 72 hours after it joined.
+  - A group's recovery key, when it has one, is one more voter.
+- **Quorum:** q = ⌊v/2⌋ + 1 of v voters. 403 `no_quorum` (with `voters` and `needed`) when the votes fall short. 403 `not_voter` when a co-signer doesn't vote.
+- **Members** carry `votesFrom` (the vote starts at or before now) and `admittedBy`, in `GET /v1/groups/<group>`, the hello and `members` frames. Those also carry `recovery: true|false`.
+- **Join with more admitters:** `POST …/members` may add `"admits": [{"by","sig"}]`, more admit statements over the same key and `t`, so the key votes at once.
+- **Removing another member:** `DELETE /v1/groups/<group>/members/<key>`, signed by any member, with the body `{"t", "keep": [key…], "removes": [{"by","sig"}]}`.
+  - The requester's own signed request is its vote when it votes. Each co-signer signs the remove statement:
 
-1. **Voters.** A member votes once it has been in the group for 72 hours, or from the start if a quorum admitted it. The founder votes from the start. A thief's fresh keys don't vote, so it can't outvote the user with keys of its own.
-2. **A quorum for changes to others.** Admitting a key, or removing a member other than yourself, takes the signatures of q = ⌊v/2⌋ + 1 voters, where v counts the voters other than the target:
-   - **Admit:** the admit statement, from q members: `POST …/members` `{"key","t","sig","admits":[{"by","sig"}]}`.
-   - **Remove:** `clover-handshake-v1 remove\n<group>\n<key>\n<t>`, from q members: `DELETE …/members/<key>` `{"t","removes":[{"by","sig"}]}`.
-   - With one other voter, as in the usual two-device group, that voter alone is a quorum, which is v1's rule. Removing yourself needs only you.
-   - Co-signatures travel over the members' links, and each device asks its user first (lane H's card). A device never co-signs on its own, or the quorum means nothing.
-3. **Rollback.** When a quorum removes a member, the changes it signed in the 7 days before are undone, unless a quorum without it signs them again:
-   - the members it helped remove come back, with their old `joined`;
-   - the keys it helped admit are removed.
+    ```
+    clover-handshake-v1 remove
+    <group>
+    <key>
+    <t>
+    <the kept keys, sorted, joined by ","; empty when none>
+    ```
 
-   The lease's `epoch` still only rises. For this the group keeps each change for 7 days: its kind, target, signers and time.
-4. **The lease.** A member that doesn't vote yet can't take the lease over. Removing the holder ends their lease, as now.
-5. **Two voters.** With two voters the service can't tell the user's device from the thief's, and either may remove the other alone. Recovery there is a new group:
-   - the removed device founds a fresh group;
-   - the devices it is still paired with join it over their pair channels, where the thief has no part;
-   - lane H's registry follows the new group, and the old one is left behind.
-6. **With an account.** Once the user signs in, the account's device list replaces the group (ruling R17), and the account service's revocation is the authority.
+  - v counts the voters other than the target, and leaves out every key the target admitted in the last 7 days (and what those admitted). Those keys can't co-sign either (`not_voter`): otherwise a thief's keys, once they vote, would outvote the user.
+  - `t` is within 10 minutes and after the target joined (409 `stale`). A lone removal by a voter needs no body, which is the usual two-device case.
+  - **Removing yourself** needs only you, as before.
+- **Rollback.** When others remove a member, the changes it signed in the last 7 days are undone:
+  - The members it helped remove come back as they were (`joinedAt`, `votesFrom`), unless one is a member again or was removed since without it.
+  - The keys it helped admit go, and so do the keys those admitted, except the ones the removal's `keep` lists. The requester is never dropped by its own removal.
+  - So in its first week, a member can be removed by the keys it admitted only with the recovery code, or with voters it didn't admit. The founder of a two-device group without a code can't be removed by the other device until then.
+  - The lease's `epoch` still only rises.
+  - **The card:** `GET /v1/groups/<group>/rollback/<key>` (signed) answers `{"restores": [key…], "drops": [key…]}`, so the removal card lists what would go and the user can keep the keys they recognise.
+- **The recovery code** (the owner's decision, for two-device account-less groups; lane H's client shows it when a second account-less device joins):
+  - 128 random bits, shown as 26 Crockford base32 characters in groups of five (`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X`), read in any case, with 0/O and 1/I/L alike.
+  - Its key is Ed25519 from seed = HKDF-SHA256(ikm = the code's 16 bytes, salt = the group id's 16 bytes, info = `clover handshake v1 recovery`, 32 bytes). `client/recovery.ts` has the format, the parser and the signer.
+  - **Setting it:** `PUT /v1/groups/<group>/recovery`, signed by a member, `{"key": "<public key>"|null, "t", "sigs": [{"by","sig"}]}`, over
 
-**For lane H to settle:**
-- the 72 hours and the 7 days;
-- whether two-device users get an optional recovery code at founding, kept by the user as a third voter.
+    ```
+    clover-handshake-v1 recovery
+    <group>
+    <key, or empty to clear>
+    <t>
+    ```
 
-**The service's side, once agreed:**
-- members gain `votesFrom` and `admittedBy`, and the group gains a `changes` table kept for 7 days;
-- joins and removals take signature lists;
-- `GET /v1/groups/<group>` and the `members` frame show who votes.
+    by a quorum of all the voters, the current recovery key included. When the second device has just joined, the founder alone is that quorum. `t` must be newer than the last change (409 `stale`), and the key can't be a member's (409 `conflict`). The service keeps only the public key, never the code.
+  - **Using it:** the recovery key co-signs like a voter (`"by": "<its public key>"`). In a two-device group with a code, neither device alone can remove the other; the code and the surviving device can.
+  - **Each use** pushes `{"t":"recovery","change":"admit"|"remove"|"recovery","target","by","at"}` to every member's socket, so the surviving device shows its card. For 7 days the last use is also in the group's view and in each hello as `recoveryUsed`, for a member that was offline.
+- **The lease:** a member that doesn't vote yet can't take the lease over (403 `not_voter`). Acquire, renew and release are as before.
+- **With an account,** the account's device list replaces the group (ruling R17), and the account service's revocation is the authority.
 
 ## The account channel (devices with an account)
 
