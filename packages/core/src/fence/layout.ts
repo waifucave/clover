@@ -19,7 +19,8 @@
 //                          holds them
 //   dev-folders            wherever the user keeps them
 //
-// Waiting on kinds in B's contract (asked of B-M1), so not yet in `fencedSet()`: `PENDING_FENCED` below.
+// Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review), so not yet in
+// `fencedSet()`: `pendingFenced` below.
 import { posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FencedKind } from "../contracts/fence";
@@ -56,7 +57,13 @@ export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, str
 
 /** The items of the fenced set whose kinds B's contract doesn't have yet (spec §9.1; D-M2, L-M1, S2), by the kind
  *  asked for. `userData` is the app's own folder (E's), where the Clover Browser keeps its partitions. */
-export function pendingFenced(o: { home: string; cloverHome: string; os: Os; userData?: string }): Record<string, string[]> {
+export function pendingFenced(o: {
+  home: string; cloverHome: string; os: Os; userData?: string;
+  /** The install folders of the coding agents the user has OK'd to run unsandboxed (lane K, keyed to each program's
+   *  real path and hash): the resolved program's folder, and npm's global package folder for its package. Write-denied
+   *  to sessions and agents, so none can swap in a new copy of itself or of another agent. */
+  agentInstalls?: readonly string[];
+}): Record<string, string[]> {
   const p = pathFor(o.os);
   const u = (...parts: string[]) => p.join(o.home, ...parts);
   const loginStart: Record<Os, string[]> = {
@@ -72,5 +79,6 @@ export function pendingFenced(o: { home: string; cloverHome: string; os: Os; use
     usage: [p.join(o.cloverHome, "usage")],
     "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
     "login-start": loginStart[o.os],
+    "agent-installs": [...(o.agentInstalls ?? [])],
   };
 }

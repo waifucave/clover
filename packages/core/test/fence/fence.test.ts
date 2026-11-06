@@ -6,6 +6,7 @@ import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
+import { pendingFenced } from "../../src/fence/layout";
 import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
 
 // C-M2: the real fence. B's conformance suite runs against it with the suite's own fictional paths (no disk), then
@@ -115,5 +116,14 @@ describe("the real fence on a real disk", () => {
     expect(f.policy().blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES, "127.0.0.1:41001", "[::1]:41001"]);
     ports = [];
     expect(f.policy().blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES]); // read each time: the ports change with the browser
+  });
+
+  test("the pending kinds' paths: transcripts, usage, the browser's partitions, login-start places and OK'd agents' installs", () => {
+    const p = pendingFenced({ home: "/Users/me", cloverHome: "/Users/me/.clover", os: "macos", userData: "/Users/me/Library/Application Support/Clover",
+      agentInstalls: ["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"] });
+    expect(p.transcripts).toEqual(["/Users/me/.clover/transcripts"]);
+    expect(p["browser-profiles"]).toEqual(["/Users/me/Library/Application Support/Clover/Partitions"]);
+    expect(p["login-start"]).toContain("/Users/me/Library/LaunchAgents");
+    expect(p["agent-installs"]).toEqual(["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"]);
   });
 });
