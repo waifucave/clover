@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1652,6 +1652,15 @@ async function runSupervise(): Promise<void> {
   process.on("SIGINT", stopAll);
   const result = await superviseLoop({
     spawnDaemon(): DaemonRun {
+      // macOS: the daemon starts with responsibility disclaimed, so it is its own responsible process and a
+      // double fork of anything it starts still names it (the caller check, review B1).
+      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([bin, "daemon", "run"]) : null;
+      if (disclaimed) {
+        childExited = disclaimed.exited;
+        const stopIt = () => { try { process.kill(disclaimed.pid, "SIGTERM"); } catch { /* already gone */ } };
+        stopChild = stopIt;
+        return { exited: disclaimed.exited, stop: stopIt };
+      }
       const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       childExited = child.exited;
       const kill = () => { try { child.kill(); } catch { /* already gone */ } };

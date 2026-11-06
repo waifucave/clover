@@ -11,7 +11,10 @@
 //         always fenced (J-M1's review). On this computer's endpoint these three come only from the link
 //         sidecar's process, by pid (review S8)
 // A process the daemon started, however indirectly, is never the user (review B1): the probe's
-// `spawnedByDaemon`, and the pids the daemon registers here (`daemonProcesses`).
+// `spawnedByDaemon`, and the pids the daemon registers here (`SessionProcesses.shared`). "However
+// indirectly" means within the daemon's process tree (a double fork included). A process a fenced one
+// asks the OS to start (launchd, `open`, `systemd-run`, the Task Scheduler) is outside that tree; C-M2's
+// fence closes those routes to fenced processes.
 // and then, per request: the role's allow list (B's `allowedMethods`, CLOVER_ERR.ROLE_REFUSED), and a
 // `userOnly` method only for the user (CLOVER_ERR.NOT_THE_USER).
 import {

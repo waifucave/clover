@@ -3426,7 +3426,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
   // C-M1 (review B1): before anything is spawned, so every child stays the daemon's: Linux's subreaper, the
   // daemon's own job on Windows.
-  claimDaemonChildren();
+  const claimed = claimDaemonChildren();
+  if (process.platform === "win32" && !claimed.job) throw new Error("the daemon could not make its own job object, so it can't tell its children from the user");
+  if (process.platform === "linux" && !claimed.subreaper) console.error("[caller] PR_SET_CHILD_SUBREAPER refused: a double-forked child is told from the user by the floor alone");
   let embedded: { shutdown(budgetMs?: number): Promise<void> } | undefined;
   try { return await startDaemonInner(host => { embedded = host; }, opts); }
   catch (error) { void embedded?.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {}); throw error; }

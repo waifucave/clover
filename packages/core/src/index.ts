@@ -26,6 +26,7 @@ export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandbox
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { AgentJob } from "./platform/win-job";
+export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {
