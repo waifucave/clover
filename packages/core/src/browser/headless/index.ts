@@ -13,8 +13,8 @@ export { CdpError, PipeConnection, splitFrames, type BrowserProcess, type CdpCon
 export { DISABLED_FEATURES, browserEnv, headlessArgs, profileDir, profileName } from "./flags";
 export { imageSize } from "./image";
 export {
-  HEADLESS_PIN, InstallError, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, treeDigestOfArchive,
-  treeDigestOfDir, type HeadlessPin, type InstallOptions, type Installed, type PlatformPin,
+  CFT_BASE, HEADLESS_PIN, InstallError, pinFrom, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, treeDigestOfArchive,
+  treeDigestOfDir, type HeadlessShellPins, type HeadlessPin, type InstallOptions, type Installed, type PlatformPin,
 } from "./install";
 export { launchHeadlessShell, type LaunchSpec, type Launcher } from "./launch";
 export { quoteWindowsArg } from "./winpipe";

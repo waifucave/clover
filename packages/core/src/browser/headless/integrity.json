@@ -1,0 +1,25 @@
+{
+  "why": "The Chromium of the app's Electron (45.2.3 ships Chromium 156.0.8078.80, per releases.electronjs.org), which Chrome for Testing publishes exactly, so the browser where no app runs is the app's engine. The pin itself (the Electron version, the Chromium build, each archive's URL and SHA-256) is plugins/clover/plugins/browser/headless-shell.pins.json, in the controller's shape, which lane M's CI check follows; move it with each Electron upgrade, or ahead of Electron for a security fix. This file adds what that shape has no room for, for the same archives (matched by SHA-256): each one's bytes, and `tree`, the digest of the unpacked tree (install.ts's treeDigestOfArchive), which a reused install is checked against before each launch. Bytes and SHA-256 were computed from the downloads, not taken from the server, and match spike S7's.",
+  "platforms": {
+    "linux64": {
+      "sha256": "547dcd374e02961bf998f6046a267644f8502225c36bb78ca307dab32a0b3eb4",
+      "bytes": 126922702,
+      "tree": "4eeae8f604230abc1ad2aebf4c85b6d08d0b877dffad4579541952b18b94b925"
+    },
+    "linux-arm64": {
+      "sha256": "5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607",
+      "bytes": 126679292,
+      "tree": "9826477d085c98bde45f15cfd4ae9e938b9678b418e6547a614b4722c94951db"
+    },
+    "mac-arm64": {
+      "sha256": "ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac",
+      "bytes": 103982159,
+      "tree": "eff39ce05f7c9e8becb2bd8134dc173948c379ad5554f71e3dba80246d1cf163"
+    },
+    "win64": {
+      "sha256": "10a77466005e7f64e00f1a75fd1ea81f4a38a60093c65fea6895843b26e60a9a",
+      "bytes": 125772546,
+      "tree": "85625ccb936479e41c597724e5d966f350dac9e6f51dbb17bbf89fb7f5a299c0"
+    }
+  }
+}

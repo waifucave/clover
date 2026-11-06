@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  HEADLESS_PIN, InstallError, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, treeDigestOfArchive,
+  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, treeDigestOfArchive,
   type HeadlessPin,
 } from "../../src/browser/headless";
 
@@ -100,7 +100,7 @@ async function code(p: Promise<unknown>): Promise<string | undefined> {
 }
 
 describe("the pin", () => {
-  test("pins.json pins the headless shell for linux64, linux-arm64, mac-arm64 and win64, each with its bytes, SHA-256 and tree", () => {
+  test("the pin file pins the headless shell for linux64, linux-arm64, mac-arm64 and win64, each with its bytes, SHA-256 and tree", () => {
     expect(HEADLESS_PIN.artifact).toBe("chrome-headless-shell");
     expect(HEADLESS_PIN.version).toMatch(/^\d+\.0\.\d+\.\d+$/);
     expect(HEADLESS_PIN.why.length).toBeGreaterThan(20);
@@ -113,11 +113,29 @@ describe("the pin", () => {
     expect(archiveUrl(HEADLESS_PIN, "mac-arm64")).toBe(`https://storage.googleapis.com/chrome-for-testing-public/${HEADLESS_PIN.version}/mac-arm64/chrome-headless-shell-mac-arm64.zip`);
   });
 
+  test("the pin file is in the controller's shape, its milestone the Chromium's, and the installer takes every asset from it", () => {
+    const file = JSON.parse(readFileSync(join(import.meta.dir, "../../../../plugins/clover/plugins/browser/headless-shell.pins.json"), "utf8")) as HeadlessShellPins;
+    expect(Object.keys(file).sort()).toEqual(["assets", "chromium", "electron", "milestone"]);
+    expect(file.milestone).toBe(Number(file.chromium.split(".")[0]));
+    expect(file.chromium).toBe(HEADLESS_PIN.version);
+    for (const a of file.assets) {
+      expect(Object.keys(a).sort()).toEqual(["platform", "sha256", "url"]);
+      expect(HEADLESS_PIN.platforms[a.platform]).toMatchObject({ sha256: a.sha256, url: a.url });
+      expect(archiveUrl(HEADLESS_PIN, a.platform)).toBe(a.url);
+    }
+    // An asset whose SHA-256 the integrity file doesn't hold, or whose URL isn't Chrome for Testing's, isn't pinned.
+    const extra = { why: "x", platforms: { linux64: { sha256: "a".repeat(64), bytes: 1, tree: "b".repeat(64) } } };
+    expect(pinFrom({ ...file, assets: [{ platform: "linux64", url: file.assets[0]!.url, sha256: "c".repeat(64) }] }, extra).platforms).toEqual({});
+    expect(pinFrom({ ...file, assets: [{ platform: "linux64", url: "https://evil.test/x.zip", sha256: "a".repeat(64) }] }, extra).platforms).toEqual({});
+  });
+
   test("the pinned version is the Chromium of the app's Electron (the pin's own record of it)", () => {
     const electron = (JSON.parse(readFileSync(join(import.meta.dir, "../../../../apps/desktop/package.json"), "utf8")) as { devDependencies?: Record<string, string>; dependencies?: Record<string, string> });
     const version = electron.devDependencies?.electron ?? electron.dependencies?.electron;
     // Moving Electron means moving the pin (or saying in `why` why it's ahead): the pin names the Electron it follows.
     expect(HEADLESS_PIN.why).toContain(`${version} ships Chromium ${HEADLESS_PIN.version}`);
+    const file = JSON.parse(readFileSync(join(import.meta.dir, "../../../../plugins/clover/plugins/browser/headless-shell.pins.json"), "utf8")) as HeadlessShellPins;
+    expect(file.electron).toBe(version!);
   });
 
   test("Chrome for Testing's platform names", () => {

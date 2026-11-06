@@ -5,7 +5,7 @@
 //   sends one, must match what arrived);
 // * the unpacked tree must match the pin's digest of the whole tree (every file's SHA-256 and executable bit, every
 //   symlink's target), and a reused install is checked against that same pinned digest again before each launch, so
-//   no file of it can be swapped, added or removed between launches. The digest is pinned in `pins.json` beside the
+//   no file of it can be swapped, added or removed between launches. The digest is pinned in `integrity.json` beside the
 //   archive's hash, never read back from anything on disk.
 // Installs live under the folder the caller gives (the daemon passes `<home>/browser/`), never in `~/.cache` or the
 // user's own Chrome: `<dir>/cft/<version>-<platform>/`. An install is unpacked into a staging folder and renamed into
@@ -13,7 +13,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import pins from "./pins.json" with { type: "json" };
+import ruled from "../../../../../plugins/clover/plugins/browser/headless-shell.pins.json" with { type: "json" };
+import integrity from "./integrity.json" with { type: "json" };
 import { entryData, extractAll, listEntries } from "./unzip";
 
 /** One platform's archive, pinned: its size, its SHA-256, and the digest of the tree it unpacks to (`treeDigest`). */
@@ -21,6 +22,8 @@ export interface PlatformPin {
   bytes: number;
   sha256: string;
   tree: string;
+  /** The archive's URL (the pin file's); otherwise made from `base`. */
+  url?: string;
 }
 
 /** The pinned build: Chrome for Testing's `chrome-headless-shell`, one archive per platform. */
@@ -32,7 +35,32 @@ export interface HeadlessPin {
   platforms: Partial<Record<string, PlatformPin>>;
 }
 
-export const HEADLESS_PIN: HeadlessPin = pins as HeadlessPin;
+/** The production pin, in the controller's shape (`plugins/clover/plugins/browser/headless-shell.pins.json`): lane M's
+ *  CI check keeps its milestone on the Chromium of the app's Electron. */
+export interface HeadlessShellPins {
+  electron: string;
+  chromium: string;
+  milestone: number;
+  assets: { platform: string; url: string; sha256: string }[];
+}
+
+/** The pin as the installer uses it: each asset of the pin file, with the bytes and tree digest `integrity.json` holds
+ *  for that same archive (matched by SHA-256). An asset without both, or whose URL isn't Chrome for Testing's, isn't
+ *  pinned at all, so it is never installed (fail closed). Pure. */
+export function pinFrom(file: HeadlessShellPins, extra: { why: string; platforms: Partial<Record<string, { sha256: string; bytes: number; tree: string }>> }): HeadlessPin {
+  const platforms: Partial<Record<string, PlatformPin>> = {};
+  for (const a of file.assets) {
+    const more = extra.platforms[a.platform];
+    if (more === undefined || more.sha256 !== a.sha256 || !/^[0-9a-f]{64}$/.test(a.sha256)) continue;
+    if (!a.url.startsWith(`${CFT_BASE}/${file.chromium}/${a.platform}/`)) continue;
+    platforms[a.platform] = { bytes: more.bytes, sha256: a.sha256, tree: more.tree, url: a.url };
+  }
+  return { version: file.chromium, why: extra.why, base: CFT_BASE, artifact: "chrome-headless-shell", platforms };
+}
+
+export const CFT_BASE = "https://storage.googleapis.com/chrome-for-testing-public";
+
+export const HEADLESS_PIN: HeadlessPin = pinFrom(ruled as HeadlessShellPins, integrity);
 
 export type InstallErrorCode = "no_pin" | "download" | "size" | "sha256" | "md5" | "tree" | "unpack";
 
@@ -57,7 +85,7 @@ export function binaryIn(installDir: string, plat: string): string {
 }
 
 export function archiveUrl(pin: HeadlessPin, plat: string): string {
-  return `${pin.base}/${pin.version}/${plat}/${pin.artifact}-${plat}.zip`;
+  return pin.platforms[plat]?.url ?? `${pin.base}/${pin.version}/${plat}/${pin.artifact}-${plat}.zip`;
 }
 
 export function installDirFor(dir: string, pin: HeadlessPin, plat: string): string {

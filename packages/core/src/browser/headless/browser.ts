@@ -1,5 +1,5 @@
 // The Clover Browser where no app runs (spec §12.1, "[P] Where no app runs"; plan §4 L, M2): Chrome for Testing's
-// headless shell, pinned (`pins.json`), installed failing closed (`install.ts`), one process per profile, driven over
+// headless shell, pinned (`plugins/clover/plugins/browser/headless-shell.pins.json`, with `integrity.json`), installed failing closed (`install.ts`), one process per profile, driven over
 // the DevTools pipe. `HeadlessBrowser` is an `AppTabPort`, so the core's `BrowserService` drives it exactly as it
 // drives the app's Electron, and it reports back the same way (`changed`, `closed`, `cdp`, `stalled`).
 //
@@ -51,7 +51,7 @@ export interface HeadlessBrowserOptions {
   policyFor?(owner: TabOwner, lanBots: ReadonlySet<string>): AddressPolicy;
   /** Runs the OS's tools for the system's proxy setting (`proxy.ts`); default `Bun.spawn` (S7's Linux rule). */
   run?: RunCommand;
-  /** The pinned build (default `pins.json`). */
+  /** The pinned build (default `HEADLESS_PIN`, from the pin file). */
   pin?: HeadlessPin;
   /** For the install's download (default: `fetch`). */
   fetch?(url: string): Promise<Response>;
