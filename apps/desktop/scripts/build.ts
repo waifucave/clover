@@ -141,9 +141,21 @@ const childAlias: BunPlugin = {
   name: "clover-child",
   setup(b) {
     b.onResolve({ filter: /^@clover-child\// }, (args) => {
-      const child = byName.get(args.path.slice("@clover-child/".length));
+      // `@clover-child/<name>` is the child's client entry; `@clover-child/<name>/<path>` a file in its folder.
+      const [name, ...rest] = args.path.slice("@clover-child/".length).split("/");
+      const child = byName.get(name ?? "");
       if (child === undefined) throw new Error(`no child plugin named ${args.path} under plugins/clover`);
-      return { path: child.entry };
+      if (rest.length === 0) return { path: child.entry };
+      const base = join(child.dir, ...rest);
+      const file = [base, `${base}.ts`, `${base}.tsx`].find((f) => existsSync(f) && statSync(f).isFile());
+      if (file === undefined) throw new Error(`no file ${args.path}`);
+      return { path: file };
+    });
+    // Each part's own UI API stand-in (lane F's \`client/sdk.ts\`) is the app's runtime in the \`clover\` layer.
+    b.onResolve({ filter: /^\.\.?\/sdk(\.tsx?)?$/ }, (args) => {
+      const dir = dirname(args.importer);
+      if (!children.some((c) => dir.startsWith(join(c.dir, "client")))) return undefined;
+      return { path: join(root, "src", "layer", "clover", "sdk.ts") };
     });
   },
 };

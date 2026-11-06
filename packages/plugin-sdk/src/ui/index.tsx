@@ -346,10 +346,18 @@ function sameView(a: SpotView | undefined, b: SpotView): boolean {
 
 /** `<Spot name spotKey entry props>`'s props (lane B's `SpotElementProps`; `entry` shows one entry only, by its ref
  *  from `useSpotEntries`). */
-export type SpotProps = Omit<SpotElementProps, "key" | "spotKey" | "entry"> & { spotKey?: string; entry?: string };
+export type SpotProps = Omit<SpotElementProps, "key" | "spotKey" | "entry"> & {
+  spotKey?: string;
+  entry?: string;
+  /** Lane F's name for `entry`. */
+  only?: string;
+  /** What shows where nothing fills the spot (lane F's: a panel's placeholder). */
+  fallback?: ReactNode;
+};
 
 /** `<Spot name spotKey props>`: shows a spot this part declares (§5.5). */
-export function Spot({ name, spotKey, entry, props }: SpotProps) {
+export function Spot({ name, spotKey, entry: entryRef, only, props, fallback }: SpotProps) {
+  const entry = entryRef ?? only;
   const part = usePart();
   const hints = useContext(SpotHints);
   const r = rt();
@@ -378,7 +386,7 @@ export function Spot({ name, spotKey, entry, props }: SpotProps) {
     if (shown.current.length > 0) r.bridge.release(shown.current);
   }, [r]);
   if (view === undefined || view.hidden || view.items.length === 0) {
-    return <div data-clover-spot={name} data-clover-key={spotKey} data-clover-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} style={{ display: "contents" }} />;
+    return <div data-clover-spot={name} data-clover-key={spotKey} data-clover-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} style={{ display: "contents" }}>{view !== undefined && !view.hidden ? fallback : null}</div>;
   }
   return (
     <div data-clover-spot={name} data-clover-key={spotKey} data-clover-conflict={view.conflict ? "" : undefined} style={{ display: "contents" }}>
@@ -660,9 +668,20 @@ function terminalApi(mount: string, pluginId: string): NonNullable<PluginApi["te
   };
 }
 
-/** The plugin API in this layer: `plugin`, `t`, `terminal`, and `conversation`'s `list` and `get`, each on the part's
- *  own plugin's connection, where the daemon checks it as that plugin; the rest reaches layers with lane B's host side
- *  (B-M2). */
+/** A list the core keeps, and its changes: `watch` hears each `<type>` core event of its area, for one item. */
+function watcher<T>(mount: string, pluginId: string, area: string, type: string, field: string) {
+  return (listener: (item: T) => void): Unsubscribe => {
+    subscribe(mount, pluginId, area);
+    return onApiEvent(pluginId, (method, params) => {
+      const e = params as Record<string, unknown> | undefined;
+      if (method === "core.event" && e?.type === type && e[field] !== undefined) listener(e[field] as T);
+    });
+  };
+}
+
+/** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
+ *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, and `conversation`'s `list`, `get` and `answer`.
+ *  The rest reaches layers with lane B's host side (B-M2). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
@@ -674,7 +693,22 @@ export function usePluginApi(): PluginApi {
       conversation: {
         list: (filter?: { bot?: string; kinds?: string[] }) => call<{ sessions: unknown[] }>("session.list", filter ?? {}).then((r) => r.sessions),
         get: (session: string) => call<{ session: unknown }>("session.get", { id: session }).then((r) => r.session),
+        answer: (session: string, callId: string, answers: Record<string, string>) => call<unknown>("session.answer", { id: session, callId, answers }).then(() => undefined),
       } as unknown as PluginApi["conversation"],
+      bots: {
+        list: () => call<{ bots: unknown[] }>("bot.list", {}).then((r) => r.bots),
+        get: (bot: string) => call<{ bot: unknown }>("bot.get", { id: bot }).then((r) => r.bot),
+        watch: watcher(part.mount, part.entry.pluginId, "sessions", "bot_changed", "bot"),
+      } as unknown as PluginApi["bots"],
+      computers: {
+        list: () => call<{ computers: unknown[] }>("computer.list", {}).then((r) => r.computers),
+        get: (name: string) => call<{ computer: unknown }>("computer.get", { name }).then((r) => r.computer),
+        watch: watcher(part.mount, part.entry.pluginId, "computers", "computer_changed", "computer"),
+      } as unknown as PluginApi["computers"],
+      devices: {
+        list: () => call<{ devices: unknown[] }>("device.list", {}).then((r) => r.devices),
+        watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
+      } as unknown as PluginApi["devices"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       points: { list: unavailable("points") } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
@@ -845,6 +879,41 @@ export function useUserSend(): ((to: UserSendTarget, message: string | { text: s
     await rt().bridge.userSend(part.mount, to, m);
   }, [part.mount]);
   return allowed ? send : undefined;
+}
+
+/** The core client of the bundled `clover` tree's parts (lane F's `useCore`; not in lane B's declarations): any call
+ *  the `layer` role makes, on the part's own plugin's connection, and the core events it subscribed to. Undefined for
+ *  any other plugin's part. */
+export interface CoreClient {
+  call(method: string, params?: unknown): Promise<any>;
+  on(event: string, listener: (event: Record<string, unknown>) => void): Unsubscribe;
+}
+
+const EVENT_AREAS: Readonly<Record<string, string>> = {
+  ui_settings_changed: "app", card_pending: "approvals", card_resolved: "approvals", pairing_changed: "devices", device_changed: "devices",
+  session_changed: "sessions", bot_changed: "sessions", computer_changed: "computers", plugin_changed: "plugins",
+};
+
+export function useCore(): CoreClient | undefined {
+  const part = usePart();
+  const pluginId = part.entry.pluginId;
+  const tree = pluginId === "clover" || pluginId.startsWith("clover/");
+  return useMemo(() => (!tree ? undefined : {
+    call: (method: string, params?: unknown) => rt().bridge.api(part.mount, method, params ?? {}),
+    on: (event: string, listener: (event: Record<string, unknown>) => void) => {
+      const area = EVENT_AREAS[event];
+      if (area !== undefined) subscribe(part.mount, pluginId, area);
+      return onApiEvent(pluginId, (method, params) => {
+        const e = params as Record<string, unknown> | undefined;
+        if (method === "core.event" && e?.type === event) listener(e);
+      });
+    },
+  }), [tree, part.mount, pluginId]);
+}
+
+/** The entry this component renders as (lane F's `useEntry`). */
+export function useEntry(): EntryProps["entry"] | undefined {
+  return useContext(PartContext)?.entry;
 }
 
 /** The session this window shows (the `clover` layer's shell says so; the core refuses it from any other layer): a

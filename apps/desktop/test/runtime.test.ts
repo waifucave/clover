@@ -49,7 +49,7 @@ describe("the root and the shell", () => {
     expect(s.root).toMatchObject({ pluginId: "core", spot: "app.root", context: { material: "vibrancy", os: "macos", safeMode: false } });
     const { item, info } = mountShell(s);
     expect(item).toMatchObject({ kind: "frame", layer: "clover", ref: "clover/shell#app.root" });
-    expect(info).toMatchObject({ pluginId: "clover/shell", component: "Window", module: "/_clover/clover.js", css: ["/_clover/clover.css"] });
+    expect(info).toMatchObject({ pluginId: "clover/shell", component: "Shell", module: "/_clover/clover.js", css: ["/_clover/clover.css"] });
     expect(info.context.bots).toEqual([{ id: "alpha", name: "Alpha" }]);
   });
 
@@ -57,9 +57,9 @@ describe("the root and the shell", () => {
     const s = setup();
     const { shellFrame, info } = mountShell(s);
     const sidebar = s.rt.resolve(shellFrame, info.mount, "sidebar");
-    expect(sidebar.items).toMatchObject([{ kind: "inline", ref: "clover/sidebar#sidebar", component: "Sidebar" }]);
+    expect(sidebar.items).toMatchObject([{ kind: "inline", ref: "clover/sidebar#sidebar", component: "SidebarEntry" }]);
     const tab = s.rt.resolve(shellFrame, info.mount, "bot.tab", "alpha");
-    expect(tab.items).toMatchObject([{ kind: "inline", ref: "clover/shell#bot.tab", component: "BotTab", context: { bot: "alpha" } }]);
+    expect(tab.items).toMatchObject([{ kind: "inline", ref: "clover/shell#bot-tab", component: "DefaultBotTab", context: { bot: "alpha" } }]);
     const composer = s.rt.resolve(shellFrame, tab.items[0]!.mount, "composer");
     expect(composer.items).toMatchObject([{ kind: "inline", ref: "clover/composer#composer" }]);
   });
@@ -448,11 +448,10 @@ describe("safe mode and the registry", () => {
 
   test("the clover layer says what kind of session a part shows, for `when.session`", () => {
     const s = setup();
-    // F's code-only panels say so with `when.session` (lane B's catalog), as F-M2's manifests will.
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/panel-diff" ? p : { ...p, entries: p.entries.map((e) => ({ ...e, when: { session: ["coding"] } })) })));
+    // F's code-only panels say so with `when.session` (lane B's catalog).
     const shell = mountShell(s);
     const code = s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "coding" });
-    expect(code.items).toMatchObject([{ ref: "clover/panel-diff#panel" }]);
+    expect(code.items).toMatchObject([{ ref: "clover/panel-diff#diff" }]);
     expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "bot" }).items).toEqual([]);
   });
 });

@@ -588,6 +588,7 @@ export class UiRuntime {
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     return cell.shown.map((c) => ({
       ref: entryRef(c.entry),
+      id: c.entry.id,
       pluginId: c.plugin.id,
       pluginName: c.plugin.name ?? c.plugin.id,
       bundled: c.plugin.source === "bundled",

@@ -1,170 +1,29 @@
-// The `clover` layer's M1 bindings: lane F's M1 parts are plain React against mocked props (plan §4 F, M1), so until
-// F-M2 puts them on the runtime, these adapters take each entry's `EntryProps` and draw F's part with `<Spot>` where
-// it takes another part. They are the starting point F-M2 moves into its plugins; then this file goes.
-//
-// What the core doesn't hand layers yet (the plugin API's bots, conversations, sessions, settings: lanes B, D, F)
-// draws empty: the default shell renders whole, with Alpha's tab, an empty conversation and a live composer.
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Spot, SpotHints, useActiveSession, useLayerMessage, useMountContext, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
-import { BotTab as FBotTab, Window as FWindow } from "@clover-child/shell";
-import { Sidebar as FSidebar, type SidebarBot, type SidebarRoute } from "@clover-child/sidebar";
-import { ConversationView } from "@clover-child/conversation";
-import { Composer as FComposer } from "@clover-child/composer";
-import { PanelHost, PanelToggles, SessionView as FSessionView } from "@clover-child/panel";
-import { DiffPanel as FDiffPanel } from "@clover-child/panel-diff";
-import { FilesPanel as FFilesPanel } from "@clover-child/panel-files";
-import { TerminalPanel as FTerminalPanel } from "@clover-child/panel-terminal";
-import { SettingsModal as FSettingsModal } from "@clover-child/settings";
-import type { SettingsSection, SettingsValues } from "@clover-child/settings";
+// The `clover` layer's bindings: lane F's parts are entries of the UI API's shape (F-M2), bound as they are (index.ts);
+// only the shell gets a wrapper, for what the app's main process tells a window and F's shell doesn't hear yet: the
+// app's commands (Settings from ⌘, or the menu, a bot's tab or a session from a notification or `app.show`), and the
+// window's material behind its sidebar. A command starts the shell again at that place (asked of lane F: hear them
+// with `useLayerMessage` and keep the tab under Settings).
+import { useState } from "react";
+import { useLayerMessage, useMountContext, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { Shell as FShell, type ShellProps, type ShellStart } from "@clover-child/shell";
 
-type Props<P> = EntryProps<P>;
-const noop = () => undefined;
-
-interface BotRef {
-  id: string;
-  name: string;
-}
-
-/** `app.root`: the window frame, the sidebar, the open tab, the panel and the settings dialog. */
-export function Window(_: Props<Record<string, never>>) {
+export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
   const ctx = useMountContext();
-  const bots = ctx.bots ?? [];
-  const first = bots[0]?.id ?? "alpha";
-  const [route, setRoute] = useState<SidebarRoute>({ kind: "bot", botId: first });
-  const [open, setOpen] = useState<string[]>([]);
-  // Settings open, at a section and an item when a place asked for one (the island's Devices tab opens it at a device).
-  const [settings, setSettingsAt] = useState<false | { section?: string; item?: string }>(false);
-  const setSettings = useCallback((open: boolean) => setSettingsAt(open ? {} : false), []);
-  const bot: BotRef = useMemo(() => {
-    const id = route.kind === "bot" ? route.botId : first;
-    return bots.find((b) => b.id === id) ?? { id, name: id.charAt(0).toUpperCase() + id.slice(1) };
-  }, [route, bots, first]);
-  const session = `${bot.id}:main`;
-  // The window shows this session: a desktop notification for it waits while the app is in front.
-  useActiveSession(settings === false ? session : undefined);
-  const navigate = useCallback((r: SidebarRoute) => {
-    if (r.kind === "settings") setSettings(true);
-    else setRoute(r);
-  }, []);
+  const [at, setAt] = useState<{ n: number; start?: ShellStart }>({ n: 0 });
+  const go = (start: ShellStart) => setAt((s) => ({ n: s.n + 1, start }));
   useLayerMessage((m) => {
     if (m.type !== "command") return;
-    if (m.name === "open-settings") setSettingsAt({ ...(m.args?.section !== undefined ? { section: m.args.section } : {}), ...(m.args?.item !== undefined ? { item: m.args.item } : {}) });
-    if (m.name === "open-bot" && m.args?.bot !== undefined) {
-      setSettingsAt(false);
-      setRoute({ kind: "bot", botId: m.args.bot });
+    const args = m.args ?? {};
+    if (m.name === "open-settings") {
+      go({ route: { route: "settings", params: { ...(args.section !== undefined ? { section: args.section } : {}), ...(args.item !== undefined ? { item: args.item } : {}) } } });
     }
-    // A notification's session: a bot's main conversation is its tab (other sessions' routes are F-M2's).
-    const main = m.name === "open-session" ? /^([a-z0-9-]+):main$/.exec(m.args?.session ?? "") : null;
-    if (main !== null) {
-      setSettingsAt(false);
-      setRoute({ kind: "bot", botId: main[1]! });
+    if (m.name === "open-bot" && args.bot !== undefined) go({ route: { route: "bot", params: { bot: args.bot } } });
+    if (m.name === "open-session" && args.session !== undefined) {
+      // A bot's main conversation is its tab; any other session is an agent's or a coding session's.
+      const main = /^([a-z0-9-]+):main$/.exec(args.session);
+      go({ route: main !== null ? { route: "bot", params: { bot: main[1]! } } : { route: "agent", params: { session: args.session } } });
     }
   });
-  const toggle = useCallback((id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id].slice(-2))), []);
-  const views = open.map((id) => ({ id, title: id === "session" ? "Session" : id.charAt(0).toUpperCase() + id.slice(1), content: <Spot name="panel" spotKey={id} props={{ app: id, session, bot: bot.id }} /> }));
-  return (
-    <SpotHints.Provider value={{ session: "bot" }}>
-      <FWindow
-        sidebar={<Spot name="sidebar" props={{ route, onNavigate: navigate, onOpenSettings: () => setSettings(true) }} />}
-        title={bot.name}
-        toggles={<PanelToggles kind="bot" open={open} onToggle={toggle} />}
-        panel={views.length > 0 ? <PanelHost kind="bot" views={views} onClose={(id) => setOpen((o) => o.filter((x) => x !== id))} /> : undefined}
-        dialog={settings !== false ? <Spot name="main" spotKey="settings" props={{ route: "settings", params: settings, onClose: () => setSettings(false) }} /> : undefined}
-        onCloseDialog={() => setSettings(false)}
-        translucent={ctx.material !== "none"}
-      >
-        <Spot name="bot.tab" spotKey={bot.id} props={{ bot }} />
-      </FWindow>
-    </SpotHints.Provider>
-  );
-}
-
-/** `bot.tab` (asked of lane F for the shell's manifest): a bot's tab, its conversation over its composer. */
-export function BotTab({ props }: Props<{ bot: BotRef }>) {
-  const session = `${props.bot.id}:main`;
-  return (
-    <FBotTab
-      conversation={<Spot name="conversation" props={{ bot: props.bot, session }} />}
-      composer={<Spot name="composer" props={{ bot: props.bot, session }} />}
-    />
-  );
-}
-
-/** `sidebar`: the bots this computer knows; the code side waits for sessions (lane D). */
-export function Sidebar({ props }: Props<{ route?: SidebarRoute; onNavigate?: (r: SidebarRoute) => void; onOpenSettings?: () => void }>) {
-  const ctx = useMountContext();
-  const [side, setSide] = useState<"bots" | "code">("bots");
-  const bots: SidebarBot[] = (ctx.bots ?? []).map((b) => ({ id: b.id, name: b.name, state: "idle" }));
-  return (
-    <FSidebar
-      side={side}
-      onSideChange={setSide}
-      route={props.route ?? { kind: "bot", botId: bots[0]?.id ?? "alpha" }}
-      onNavigate={props.onNavigate ?? noop}
-      bots={bots}
-      account={{ name: "You", detail: "This computer" }}
-      onOpenSettings={props.onOpenSettings ?? noop}
-      safeMode={ctx.safeMode}
-    />
-  );
-}
-
-/** `conversation`: empty until the core's sessions reach layers (lane D). */
-export function Conversation({ props }: Props<{ bot: BotRef; session: string }>) {
-  return <ConversationView bot={props.bot} session={props.session} items={[]} />;
-}
-
-/** `composer`: a live field; sending waits for the core's sessions (lane D). */
-export function Composer({ props }: Props<{ bot: BotRef; session: string }>) {
-  const [value, setValue] = useState("");
-  return <FComposer botName={props.bot.name} value={value} onChange={setValue} onSend={() => setValue("")} />;
-}
-
-/** `panel` keyed `session`. */
-export function SessionView({ props: _ }: Props<{ app: string; session?: string }>) {
-  return <FSessionView kind="bot" />;
-}
-
-/** `panel` keyed `diff`, `files`, `terminal`: code sessions only (`when.session`), drawn empty. */
-export function DiffPanel(_: Props<{ app: string }>) {
-  return <FDiffPanel files={[]} layout="unified" />;
-}
-export function FilesPanel(_: Props<{ app: string }>) {
-  return <FFilesPanel root="" listing={{}} onOpen={noop} />;
-}
-export function TerminalPanel(_: Props<{ app: string }>) {
-  return <FTerminalPanel tabs={[]} active="" chunks={[]} />;
-}
-
-const VALUES: SettingsValues = {
-  account: { name: "You", main: "This computer" },
-  appearance: { theme: "system", textSize: "default" },
-  language: { id: "en", name: "English" },
-  notifications: { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
-  plugins: [],
-  themes: [{ id: "clover/base-theme#clover", name: "Clover" }],
-  theme: "clover/base-theme#clover",
-  levels: [],
-  levelOptions: [],
-  devices: [],
-};
-
-/** `main` keyed `settings`: shown as the window's dialog. */
-const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots", "usage"];
-
-/** `main` keyed `settings`: F's settings, opened at the section a place asked for (`params.section`). The item
- *  (`params.item`, a device) waits for F's settings to take one (asked of F). */
-export function SettingsModal({ props }: Props<{ onClose?: () => void; params?: { section?: string; item?: string } }>) {
-  const asked = props.params?.section;
-  const [section, setSection] = useState<SettingsSection>(SECTIONS.includes(asked as SettingsSection) ? (asked as SettingsSection) : "appearance");
-  useEffect(() => {
-    if (SECTIONS.includes(asked as SettingsSection)) setSection(asked as SettingsSection);
-  }, [asked]);
-  const [values, setValues] = useState(VALUES);
-  const change = (path: string, value: unknown): void => {
-    const [group, key] = path.split(".");
-    if (group === undefined || key === undefined) return;
-    setValues((v) => ({ ...v, [group]: { ...(v as unknown as Record<string, Record<string, unknown>>)[group], [key]: value } }));
-  };
-  return <FSettingsModal section={section} onSection={setSection} onClose={props.onClose ?? noop} values={values} onChange={change} onOpenLanguage={noop} />;
+  const shell: ShellProps = { ...props, translucent: ctx.material !== "none", ...(at.start !== undefined ? { start: at.start } : {}) };
+  return <FShell key={at.n} props={shell} tokens={tokens} entry={entry} />;
 }

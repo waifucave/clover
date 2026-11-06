@@ -59,7 +59,7 @@ function fakeBridge(views: Record<string, SpotView>) {
     activeSession: (mount, session) => calls.push({ op: "activeSession", args: [mount, session] }),
     entries: async (mount, spot, key) => {
       calls.push({ op: "entries", args: [mount, spot, key] });
-      return [{ ref: "clover/island#usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
+      return [{ ref: "clover/island#usage", id: "usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", id: "tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
     },
     api: async (mount, method, params) => {
       calls.push({ op: "api", args: [mount, method, params] });

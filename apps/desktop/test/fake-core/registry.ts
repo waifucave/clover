@@ -1,9 +1,6 @@
 // What the fake daemon's `plugin.ui` hands the app: the `clover` tree read from its manifests (found wherever lane M's
 // layout puts the children), Alpha as a bot with its tab's theme, and any extra plugin folders (the tests' third-party
 // fixtures). Lane B's registry (B-M1) makes the real one.
-//
-// One entry is added that F's manifests don't have yet: the shell's `bot.tab` entry (`BotTab`, declaring the tab's
-// spots), asked of lane F for F-M2.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 
@@ -58,18 +55,6 @@ export function cloverChildren(root = join(REPO, "plugins", "clover"), depth = 0
   return out;
 }
 
-const SHELL_BOT_TAB = {
-  spot: "bot.tab",
-  component: "BotTab",
-  declares: {
-    "bot.header": { shape: "single", props: {} },
-    "bot.stage": { shape: "single", props: {} },
-    "bot.side": { shape: "single", props: {} },
-    conversation: { shape: "single", props: {} },
-    composer: { shape: "single", props: {} },
-  },
-};
-
 export function cloverViews(): FakeView[] {
   return cloverChildren().map(({ name, dir, manifest }, i) => ({
     pluginId: `clover/${name}`,
@@ -77,7 +62,7 @@ export function cloverViews(): FakeView[] {
     layer: "clover",
     assetBase: dir,
     ...(manifest.client?.entry !== undefined ? { clientEntry: manifest.client.entry } : {}),
-    ui: [...(manifest.contributes?.ui ?? []), ...(name === "shell" ? [SHELL_BOT_TAB] : [])],
+    ui: manifest.contributes?.ui ?? [],
     themes: manifest.contributes?.themes ?? [],
     locales: [],
     bots: "all",

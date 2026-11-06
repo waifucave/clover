@@ -6,9 +6,12 @@
   // layout puts them; the build resolves the same names from their manifests.
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    // Bun's types only because the plugin SDK's root index (which some parts' types reach) declares its Tier-2 API
+    // with them; the layers' code never runs under Bun (test/main-no-bun.test.ts).
+    "types": ["node", "bun"],
     "jsx": "react-jsx",
     "paths": {
+      "@clover-child/shell/runtime/ui": ["../../plugins/clover/plugins/shell/runtime/ui.ts"],
       "@clover-child/*": ["../../plugins/clover/*/client/index.tsx", "../../plugins/clover/plugins/*/client/index.tsx"]
     }
   },

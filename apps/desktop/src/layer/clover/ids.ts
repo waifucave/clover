@@ -11,6 +11,12 @@ export const modules = [
   "clover/panel-terminal",
   "clover/settings",
   "clover/browser-view",
+  "clover/archive",
+  "clover/bot-editor",
+  "clover/plugin-index",
+  "clover/island",
+  "clover/pill",
+  "clover/vrm",
 ] as const;
 
 export type CloverChildId = (typeof modules)[number];

@@ -146,6 +146,17 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         return;
       }
       if (method === "terminal.write" || method === "terminal.resize" || method === "terminal.close") return reply({ ok: true });
+      // The bots the registry's bot plugins are, and no sessions, computers or devices yet.
+      const bots = (opts.ui ?? []).map((v) => v as { pluginId: string; isBot?: boolean; name?: string }).filter((v) => v.isBot === true)
+        .map((v) => ({ id: v.pluginId, name: v.name ?? v.pluginId, model: "fake/model", userLayer: [], state: "idle", computer: "Laptop", mainSession: `${v.pluginId}:main` }));
+      if (method === "bot.list") return reply({ bots });
+      if (method === "bot.get") {
+        const bot = bots.find((b) => b.id === params.id);
+        return bot === undefined ? fail(-32004, "no such bot") : reply({ bot });
+      }
+      if (method === "session.list") return reply({ sessions: [] });
+      if (method === "computer.list") return reply({ computers: [] });
+      if (method === "device.list") return reply({ devices: [] });
       return fail(-32003, `a layer doesn't call ${method} here`);
     }
     if (!authed.has(s)) return fail(-32001, "hello required first");

@@ -77,6 +77,8 @@ export type UserSendTarget = { bot: string } | { target: string } | { session: s
  *  plugin, by name too, whether it is the bundled tree's, its key and the spot's own fields. */
 export interface SpotEntryView {
   readonly ref: string;
+  /** The entry's own id (the ref's part after `#`). */
+  readonly id: string;
   readonly pluginId: string;
   readonly pluginName: string;
   readonly bundled: boolean;
