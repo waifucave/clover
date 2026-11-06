@@ -60,7 +60,7 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
     "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],
   // Bash's fence launcher on Windows, built from sandbox-runtime's source: its build and its notices' settings
-  srtwin: ["scripts/release/srt-win.ts", "packaging/windows/about.toml", "packaging/windows/about.hbs"],
+  srtwin: ["scripts/release/srt-win.ts", "packaging/windows/about.toml", "packaging/windows/about.hbs", "packaging/windows/sandbox-elevated.ps1"],
 };
 
 export const CI_AREA_NAMES = Object.keys(CI_AREAS) as CiArea[];

@@ -366,10 +366,13 @@ describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win
   test("from sandbox-runtime's pinned commit, statically linked, reproducibly, for both Windows architectures", async () => {
     const { SRT_WIN_SOURCE, buildEnv, cargoArgs, parseSrtWinArgs } = await import("./srt-win");
     expect(SRT_WIN_SOURCE).toMatchObject({ tag: "v0.0.81", commit: "c40cf14a65d025e3cd27f071f13a73c12b3b1f92", dir: "vendor/srt-win-src" });
-    const env = buildEnv({ PATH: "x" }, "C:\\src", "C:\\cargo");
-    expect(env.RUSTFLAGS).toContain("-C target-feature=+crt-static");
-    expect(env.RUSTFLAGS).toContain("/Brepro");
-    expect(env.RUSTFLAGS).toContain("--remap-path-prefix=C:\\src=/srt");
+    const env = buildEnv({ PATH: "x", RUSTFLAGS: "-C ignored" }, "C:\\Users\\Some One\\src", "C:\\cargo");
+    // One flag per 0x1f: a path with a space stays whole, and RUSTFLAGS is dropped (cargo would ignore it anyway).
+    const flags = env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f");
+    expect(flags).toContain("-C target-feature=+crt-static");
+    expect(flags).toContain("-C link-arg=/Brepro");
+    expect(flags).toContain("--remap-path-prefix=C:\\Users\\Some One\\src=/srt");
+    expect(env.RUSTFLAGS).toBeUndefined();
     expect(cargoArgs("arm64", "S")).toEqual(["cargo", "build", "--release", "--locked", "--manifest-path", join("S", "vendor/srt-win-src", "Cargo.toml"), "--target", "aarch64-pc-windows-msvc"]);
     expect(cargoArgs("x64", "S").join(" ")).not.toContain("--features");
     expect(parseSrtWinArgs(["--arch", "x64,arm64", "--print"])).toEqual({ arches: ["x64", "arm64"], print: true, dryRun: false });
@@ -396,39 +399,108 @@ describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win
 });
 
 describe("the launcher's pin: its Authenticode digest", () => {
-  // A minimal PE32+ image: the MZ header, the PE signature, a COFF header and an optional header with 16 data
-  // directories, then some section bytes; `signed` appends a certificate table and points the directory at it.
-  function pe(signed: Uint8Array | null, checksum = 0): Uint8Array {
-    const peAt = 0x80;
-    const optional = peAt + 24;
-    const directories = optional + 112;
-    const end = directories + 16 * 8;
-    const body = new Uint8Array(end + 64).fill(7, end);
-    const v = new DataView(body.buffer);
+  // A minimal PE32+ image: the MZ header, the PE signature, a COFF header with one section, an optional header with
+  // 16 data directories, the section table, then the .text section's raw data (0x200..0x400). `signed` appends a
+  // certificate table (8-byte aligned, zero-padded) and points the directory at it; `entry` overrides where it points.
+  const TEXT = 0x200;
+  function pe(signed: Uint8Array | null, opts: { checksum?: number; entry?: [number, number]; tail?: Uint8Array; raw?: number } = {}): Uint8Array {
+    const peAt = 0x80, optional = peAt + 24, optionalSize = 112 + 16 * 8, sectionTable = optional + optionalSize;
+    const raw = opts.raw ?? 0x200;
+    const image = new Uint8Array(TEXT + raw).fill(0x90, TEXT);
+    const v = new DataView(image.buffer);
     v.setUint16(0, 0x5a4d, true);
     v.setUint32(0x3c, peAt, true);
     v.setUint32(peAt, 0x00004550, true);
+    v.setUint16(peAt + 6, 1, true);
+    v.setUint16(peAt + 20, optionalSize, true);
     v.setUint16(optional, 0x20b, true);
-    v.setUint32(optional + 64, checksum, true);
-    v.setUint32(directories - 4, 16, true);
-    if (signed === null) return body;
-    const out = new Uint8Array(body.length + signed.length);
-    out.set(body);
-    out.set(signed, body.length);
+    v.setUint32(optional + 60, TEXT, true);
+    v.setUint32(optional + 64, opts.checksum ?? 0, true);
+    v.setUint32(optional + 108, 16, true);
+    v.setUint32(sectionTable + 16, raw, true);
+    v.setUint32(sectionTable + 20, TEXT, true);
+    const tail = opts.tail ?? new Uint8Array(0);
+    const unsigned = new Uint8Array(image.length + tail.length);
+    unsigned.set(image);
+    unsigned.set(tail, image.length);
+    if (signed === null) return unsigned;
+    const padded = Math.ceil(unsigned.length / 8) * 8;
+    const out = new Uint8Array(padded + signed.length);
+    out.set(unsigned);
+    out.set(signed, padded);
     const o = new DataView(out.buffer);
-    o.setUint32(directories + 32, body.length, true);
-    o.setUint32(directories + 36, signed.length, true);
+    const [at, size] = opts.entry ?? [padded, signed.length];
+    o.setUint32(optional + 112 + 32, at, true);
+    o.setUint32(optional + 112 + 36, size, true);
     return out;
   }
 
   test("is the same unsigned, signed, and signed again with another timestamp; it changes with the image", async () => {
     const { authenticodeDigest } = await import("./srt-win");
     const unsigned = authenticodeDigest(pe(null));
-    expect(authenticodeDigest(pe(new Uint8Array(40).fill(1), 0x1234))).toBe(unsigned);
-    expect(authenticodeDigest(pe(new Uint8Array(56).fill(2), 0x9999))).toBe(unsigned);
+    expect(authenticodeDigest(pe(new Uint8Array(40).fill(1), { checksum: 0x1234 }))).toBe(unsigned);
+    expect(authenticodeDigest(pe(new Uint8Array(56).fill(2), { checksum: 0x9999 }))).toBe(unsigned);
     const changed = pe(null);
-    changed[changed.length - 1] = 8;
+    changed[TEXT + 5] = 0xcc;
     expect(authenticodeDigest(changed)).not.toBe(unsigned);
     expect(() => authenticodeDigest(new Uint8Array(100))).toThrow(/no MZ header/);
+  });
+
+  test("an unaligned image hashes the same as its signed form, padded the way signtool pads it", async () => {
+    const { authenticodeDigest } = await import("./srt-win");
+    // The last section ends unaligned: signing pads it with zeros up to the boundary, and the digest is unchanged.
+    const unsigned = pe(null, { raw: 0x1fd });
+    expect(unsigned.length % 8).not.toBe(0);
+    expect(authenticodeDigest(pe(new Uint8Array(16).fill(3), { raw: 0x1fd }))).toBe(authenticodeDigest(unsigned));
+    // Data after the last section (an overlay) can't be told from padding, so a signed file with any is refused.
+    expect(() => authenticodeDigest(pe(new Uint8Array(16).fill(3), { tail: new Uint8Array([1, 2, 3]) }))).toThrow(/data between the image and the certificate table/);
+  });
+
+  test("refuses a certificate entry that could hide code: over .text, inside the headers, short of the end, unaligned", async () => {
+    const { authenticodeDigest } = await import("./srt-win");
+    const sig = new Uint8Array(32).fill(4);
+    expect(() => authenticodeDigest(pe(sig, { entry: [TEXT, 0x100] }))).toThrow(/starts inside the headers|overlaps a section's data|doesn't end at the end/);
+    const overText = pe(sig, { entry: [TEXT + 0x10, 0x400 - 0x10 + 32] });
+    expect(() => authenticodeDigest(overText)).toThrow(/overlaps a section's data/);
+    expect(() => authenticodeDigest(pe(sig, { entry: [0x40, 16] }))).toThrow(/inside the headers/);
+    expect(() => authenticodeDigest(pe(sig, { entry: [0x400, 16] }))).toThrow(/doesn't end at the end of the file/);
+    expect(() => authenticodeDigest(pe(sig, { entry: [0x404, 28] }))).toThrow(/isn't 8-byte aligned/);
+  });
+});
+
+describe("the Windows installer's elevated step", () => {
+  test("its script goes in compact, with the daemon's digest pinned, and the same PE rules as the release's", async () => {
+    const { sandboxScript, SANDBOX_SCRIPT_MAX } = await import("./build");
+    const src = read("packaging/windows/sandbox-elevated.ps1");
+    const b64 = sandboxScript(src, "d".repeat(64));
+    expect(b64.length).toBeLessThanOrEqual(SANDBOX_SCRIPT_MAX);
+    const code = Buffer.from(b64, "base64").toString("utf8");
+    expect(code).toContain(`$Pin = '${"d".repeat(64)}'`);
+    expect(code).not.toMatch(/^\s*#/m);
+    // Copied into the protected folder, checked there, and run only from there.
+    expect(code).toContain("Join-Path $env:ProgramFiles 'Clover Sandbox'");
+    expect(code.indexOf("Copy-Item -LiteralPath $Source -Destination $exe")).toBeLessThan(code.indexOf("(Get-CloverDigest $exe) -ne $Pin"));
+    expect(code).toContain("Start-Process -FilePath $exe -ArgumentList 'sandbox', $Action");
+    expect(code).not.toContain("-FilePath $Source");
+    // The certificate table's rules, as authenticodeDigest has them.
+    expect(code).toContain("$co -lt $headers -or $co -lt $end -or $co + $cs -ne $b.Length -or $co % 8 -ne 0");
+    expect(() => sandboxScript(src, "nope")).toThrow(/not a SHA-256/);
+    expect(() => sandboxScript(src.replace("__CLOVER_CORE_DIGEST__", "x"), "d".repeat(64))).toThrow(/placeholder once/);
+  });
+
+  test("the installer elevates only the encoded script, passes the path quoted, clears it, and stops the old daemon on an upgrade", () => {
+    const text = read("packaging/windows/installer.nsh");
+    expect(text).toContain('!include "${PROJECT_DIR}\\out\\sandbox.nsh"');
+    expect(text).toContain("-Verb RunAs");
+    expect(text).toContain("'-EncodedCommand'");
+    expect(text).toContain("$$env:CLOVERINSTALL_SANDBOX_SOURCE.Replace($$a, $$a + $$a)");
+    expect(text).toContain(`Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_SANDBOX_SOURCE", p 0)i`);
+    expect(text).not.toContain("CLOVER_CORE_EXE");
+    // No elevated run of anything in the install folder.
+    expect(text).not.toMatch(/Start-Process -FilePath \$\$env:CLOVERINSTALL/);
+    const check = text.slice(text.indexOf("!macro customCheckAppRunning"), text.indexOf("!macroend", text.indexOf("!macro customCheckAppRunning")));
+    expect(check).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" daemon stop'`);
+    expect(check.indexOf("daemon stop")).toBeLessThan(check.indexOf("_CHECK_APP_RUNNING"));
+    expect(check).toContain("${if} $0 == 1");
   });
 });

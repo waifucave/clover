@@ -86,12 +86,12 @@ describe("the installers' hooks", () => {
   test("the Windows installer sets Bash's sandbox up once, elevated, on a first install only, and removes it on a real uninstall", () => {
     const text = read("packaging/windows/installer.nsh");
     const code = codeLines(text, ";");
-    // The one elevated call: Windows' own prompt (runas), hidden, its exit code kept; the path through the environment.
+    // The one elevated call: Windows' own prompt (runas), hidden, its exit code kept, 1223 when declined; what runs
+    // elevated is the release build's encoded script (scripts/release/release.test.ts checks it), never the install folder.
     const macro = text.slice(text.indexOf("!macro cloverSandbox"), text.indexOf("!macroend", text.indexOf("!macro cloverSandbox")));
-    expect(macro).toContain(`Kernel32::SetEnvironmentVariable(t "CLOVER_CORE_EXE", t "$INSTDIR\\resources\\daemon\\clover-core.exe")`);
-    expect(macro).toContain(`Start-Process -FilePath $$env:CLOVER_CORE_EXE -ArgumentList '${SANDBOX_SUBCOMMAND}','\${ACTION}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode`);
+    expect(macro).toContain("-Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode");
     expect(macro).toContain(`catch { exit ${SANDBOX_EXIT.declined} }`);
-    expect(macro).not.toContain("$INSTDIR\\resources\\daemon\\clover-core.exe' ");
+    expect(macro).toContain("-Action ' + $$a + '${ACTION}'");
     const install = text.slice(text.indexOf("!macro customInstall"), text.indexOf("!macroend", text.indexOf("!macro customInstall")));
     expect(install).toContain("${ifNot} ${isUpdated}");
     expect(install).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" ${sandboxArgs("status").join(" ")}'`);

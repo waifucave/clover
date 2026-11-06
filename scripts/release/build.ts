@@ -87,6 +87,22 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
   return { os, channel, sign, dryRun };
 }
 
+/**
+ * The installer's elevated script as it goes into the installer: comments and blank lines dropped (NSIS strings are
+ * bounded), the daemon's Authenticode digest in place of the pin, UTF-8 in base64. Throws if the pin isn't there
+ * once, the digest isn't one, or the result is too long for the installer's command line.
+ */
+export function sandboxScript(source: string, coreDigest: string): string {
+  if (!/^[0-9a-f]{64}$/.test(coreDigest)) throw new Error("the daemon's digest is not a SHA-256");
+  if (source.split("__CLOVER_CORE_DIGEST__").length !== 2) throw new Error("sandbox-elevated.ps1 must hold the pin's placeholder once");
+  const code = source.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim() !== "" && !l.trimStart().startsWith("#")).join("\n");
+  const b64 = Buffer.from(code.replace("__CLOVER_CORE_DIGEST__", coreDigest), "utf8").toString("base64");
+  if (b64.length > SANDBOX_SCRIPT_MAX) throw new Error(`the elevated script is ${b64.length} characters in base64, over ${SANDBOX_SCRIPT_MAX}`);
+  return b64;
+}
+/** NSIS's strings hold 8192 characters; the command around the script takes the rest. */
+export const SANDBOX_SCRIPT_MAX = 6000;
+
 /** What --sign needs from the environment, or the names missing (never their values). */
 export function signingInputs(os: BuildOs, env: Record<string, string | undefined>): { missing: string[]; problems: string[] } {
   const need = os === "mac" ? ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"] : ["WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"];
@@ -245,6 +261,9 @@ export function main(argv: readonly string[], root: string): number {
       if (problems.length > 0) throw new Error(problems.join("; "));
       copyFileSync(srt, join(staged, "srt-win.exe"));
       copyFileSync(join(root, ...SRT_WIN_NOTICES.split("/")), join(staged, "srt-win.THIRD_PARTY_NOTICES.txt"));
+      // The installer's elevated step, with the daemon's digest pinned in it (packaging/windows/sandbox-elevated.ps1).
+      const ps = sandboxScript(readFileSync(join(root, "packaging", "windows", "sandbox-elevated.ps1"), "utf8"), authenticodeDigest(new Uint8Array(readFileSync(join(staged, "clover-core.exe")))));
+      writeFileSync(join(desktop, "out", "sandbox.nsh"), `!define CLOVER_SANDBOX_PS "${ps}"\n`);
     }
     for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
     if (a.sign && a.os === "mac") {

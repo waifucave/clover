@@ -12,7 +12,8 @@
 //      commit
 //   2. builds vendor/srt-win-src (`cargo build --release --locked --target <triple>`, the test hooks off), with a
 //      static CRT, and with the linker and paths set so the same source gives the same bytes on any machine
-//      (`/Brepro`, no PDB path, source paths remapped)
+//      (`/Brepro`, no PDB path, source paths remapped). The same bytes from two clean builds is proven on CI's one
+//      Windows runner image (ci.yml's srt-win job); another machine or image is not yet measured
 //   3. copies it to dist/srt-win/<arch>/srt-win.exe, prints its Authenticode digest, and fails unless it is the pinned one
 //      (`--print` only prints: for measuring a build before its pin is set)
 //   4. writes dist/srt-win/THIRD_PARTY_NOTICES.txt: sandbox-runtime's LICENSE and the licenses of the crates it
@@ -45,39 +46,60 @@ export function srtWinOutput(arch: SrtWinArch): string {
 export const SRT_WIN_NOTICES = "dist/srt-win/THIRD_PARTY_NOTICES.txt";
 
 /**
- * A PE file's Authenticode digest, SHA-256, in hex: the whole file but the three things a signature changes, read
- * in file order. Left out: the optional header's CheckSum (4 bytes), the certificate table's entry in the data
- * directory (8 bytes, index 4), and the certificate table itself (the attached signatures, which sit after the
- * image). It is the digest `signtool sign` signs over (for a file whose sections follow its headers in order, as a
- * linker writes them), so it is the same before and after signing, and across signings. Throws on a file that
- * isn't a PE image.
+ * A PE file's Authenticode digest, SHA-256, in hex: the image but the three things a signature changes, read in file
+ * order, and padded with zeros to a multiple of 8 bytes (as signtool pads before the signature), so it is the same
+ * before and after signing, and across signings. Left out: the optional header's CheckSum (4 bytes), the certificate
+ * table's entry in the data directory (8 bytes, index 4), and the certificate table itself.
+ *
+ * Fails closed (throws) on a file that isn't a well-formed PE, and on one whose certificate entry could hide code: a
+ * certificate table, when present, must start after the headers and at or after the end of the last section's raw
+ * data, end exactly at the end of the file, start 8-byte aligned, and have only zero padding before it. Core's
+ * launch-time check enforces the same rules (lane C's).
  */
 export function authenticodeDigest(bytes: Uint8Array): string {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const fail = (why: string): never => { throw new Error(`not a PE image: ${why}`); };
-  if (bytes.length < 0x40 || view.getUint16(0, true) !== 0x5a4d) fail("no MZ header");
-  const pe = view.getUint32(0x3c, true);
-  if (pe + 24 > bytes.length || view.getUint32(pe, true) !== 0x00004550) fail("no PE signature");
+  const u16 = (at: number): number => (at + 2 <= bytes.length ? view.getUint16(at, true) : fail("truncated"));
+  const u32 = (at: number): number => (at + 4 <= bytes.length ? view.getUint32(at, true) : fail("truncated"));
+  if (bytes.length < 0x40 || u16(0) !== 0x5a4d) fail("no MZ header");
+  const pe = u32(0x3c);
+  if (u32(pe) !== 0x00004550) fail("no PE signature");
+  const sections = u16(pe + 6);
+  const optionalSize = u16(pe + 20);
   const optional = pe + 24;
-  const magic = view.getUint16(optional, true);
+  const magic = u16(optional);
   if (magic !== 0x10b && magic !== 0x20b) fail(`optional header magic 0x${magic.toString(16)}`);
+  const sizeOfHeaders = u32(optional + 60);
   const checksum = optional + 64;
   const directories = optional + (magic === 0x20b ? 112 : 96);
-  const count = view.getUint32(directories - 4, true);
-  if (count < 5) fail("no certificate table entry");
+  if (u32(directories - 4) < 5) fail("no certificate table entry");
   const certEntry = directories + 4 * 8;
-  if (certEntry + 8 > bytes.length) fail("truncated data directories");
-  const certOffset = view.getUint32(certEntry, true);
-  const certSize = view.getUint32(certEntry + 4, true);
-  if (certSize !== 0 && (certOffset < certEntry + 8 || certOffset + certSize > bytes.length)) fail("the certificate table is outside the file");
+  if (certEntry + 8 > optional + optionalSize) fail("the data directories run past the optional header");
+  const certOffset = u32(certEntry);
+  const certSize = u32(certEntry + 4);
+  // Where the image ends: the end of the headers, or of the last section's raw data.
+  let imageEnd = sizeOfHeaders;
+  for (let i = 0; i < sections; i++) {
+    const at = optional + optionalSize + i * 40;
+    const raw = u32(at + 16);
+    const ptr = u32(at + 20);
+    if (raw > 0) imageEnd = Math.max(imageEnd, ptr + raw);
+  }
+  if (imageEnd > bytes.length) fail("its sections run past the end of the file");
+  let hashedEnd = bytes.length;
+  if (certSize !== 0) {
+    if (certOffset < sizeOfHeaders) fail("the certificate table starts inside the headers");
+    if (certOffset < imageEnd) fail("the certificate table overlaps a section's data");
+    if (certOffset + certSize !== bytes.length) fail("the certificate table doesn't end at the end of the file");
+    if (certOffset % 8 !== 0) fail("the certificate table isn't 8-byte aligned");
+    for (let i = imageEnd; i < certOffset; i++) if (bytes[i] !== 0) fail("there is data between the image and the certificate table");
+    hashedEnd = certOffset;
+  }
   const hash = createHash("sha256");
   hash.update(bytes.subarray(0, checksum));
   hash.update(bytes.subarray(checksum + 4, certEntry));
-  if (certSize === 0) hash.update(bytes.subarray(certEntry + 8));
-  else {
-    hash.update(bytes.subarray(certEntry + 8, certOffset));
-    hash.update(bytes.subarray(certOffset + certSize));
-  }
+  hash.update(bytes.subarray(certEntry + 8, hashedEnd));
+  if (hashedEnd % 8 !== 0) hash.update(new Uint8Array(8 - (hashedEnd % 8)));
   return hash.digest("hex");
 }
 
@@ -113,7 +135,9 @@ export function buildEnv(env: Record<string, string | undefined>, src: string, c
     `--remap-path-prefix=${src}=/srt`,
     `--remap-path-prefix=${cargoHome}=/cargo`,
   ];
-  return { ...env, RUSTFLAGS: flags.join(" "), CARGO_INCREMENTAL: "0" };
+  // CARGO_ENCODED_RUSTFLAGS (0x1f between flags): a path with a space (the owner's checkout has one) stays one flag.
+  const { RUSTFLAGS: _ignored, ...rest } = env;
+  return { ...rest, CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f"), CARGO_INCREMENTAL: "0" };
 }
 
 export function cargoArgs(arch: SrtWinArch, src: string): string[] {

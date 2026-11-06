@@ -443,6 +443,24 @@ jobs:
           grep authenticode-sha256 first.log
           grep -q "Apache License" dist/srt-win/THIRD_PARTY_NOTICES.txt
 
+      # The installer's elevated step checks a digest with its own PowerShell copy of authenticodeDigest
+      # (packaging/windows/sandbox-elevated.ps1): on real binaries, under the Windows PowerShell the installer runs,
+      # the two must agree.
+      - name: The installer's PowerShell digest agrees with the release's
+        shell: powershell
+        run: |
+          $src = Get-Content -Raw packaging/windows/sandbox-elevated.ps1
+          $fn = [regex]::Match($src, '(?s)function Get-CloverDigest.*?\r?\n}\r?\n').Value
+          if (-not $fn) { throw 'no Get-CloverDigest in sandbox-elevated.ps1' }
+          Invoke-Expression $fn
+          foreach ($arch in 'x64', 'arm64') {
+            $file = "dist/srt-win/$arch/srt-win.exe"
+            $ps = Get-CloverDigest (Resolve-Path $file).Path
+            $ts = (bun -e "import { authenticodeDigest } from './scripts/release/srt-win'; import { readFileSync } from 'node:fs'; console.log(authenticodeDigest(new Uint8Array(readFileSync('$file'))))").Trim()
+            Write-Output "$arch powershell $ps release $ts"
+            if (-not $ps -or $ps -ne $ts) { throw "the digests differ for $arch" }
+          }
+
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
   # boolean>`, fails core's tsc when a `SessionEvent` variant is added). `bun run typecheck` is every workspace

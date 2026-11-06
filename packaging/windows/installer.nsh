@@ -9,26 +9,51 @@
 ;
 ; Bash's sandbox principal on Windows (lane C, spec §9.1: a hidden local user, its WFP filters, set up once): the one
 ; elevated step, the controller's ruling. A first install (not an update) asks once, through Windows' own elevation
-; prompt, to run `clover-core sandbox setup`; an update never asks, and the principal stays across updates. If the
-; user declines, or setup fails, the install still finishes and Bash stays off until the app's "Set up Bash", which
-; runs the same command. A real uninstall runs `clover-core sandbox remove` the same way, after login start is
-; removed. `sandbox status` comes first on install, unelevated: 0 means the principal and its filters are there and
-; good (an earlier install), and nothing is asked; anything else runs setup (3, the launcher missing or not the
-; pinned one, makes setup exit 3 too and change nothing, which is logged).
-; The command takes no flags: the principal's name, its WFP sublayer and the profile rules are compiled into it.
-; Its exit codes: 0 done, 2 not elevated, 3 the launcher missing or not the pinned one, 1 anything else; 1223 here
-; means the user declined the prompt. The binary's path goes to PowerShell in the environment, never inside the
-; command text, so no character in the user's folder name can change the command.
+; prompt, to set it up; an update never asks, and the principal stays across updates. If the user declines (1223),
+; or setup fails, the install still finishes and Bash stays off until the app's "Set up Bash". A real uninstall
+; removes it the same way, after login start is removed. `sandbox status` comes first on install, unelevated: 0 means
+; the principal and its filters are there and good (an earlier install), and nothing is asked.
 ;
-; Open, before E-M1's Windows installer ships: an upgrade runs the old uninstaller with --updated, which skips this and
-; so leaves the old daemon running, its exe locked while the new files are written. Stopping it there must not turn
-; login start off (`disable` is the user's choice and stays), so it needs a stop without a disable from lane C.
+; Nothing is ever elevated from the install folder, which the user can write: the elevated step is
+; packaging/windows/sandbox-elevated.ps1, which copies clover-core.exe from here into %ProgramFiles%\Clover Sandbox\,
+; checks the copy's Authenticode digest against the pin the release build compiled in, and runs `sandbox setup` from
+; the copy (`remove` runs from the same copy). The script is no file: the release build puts its text, with the pin,
+; in sandbox.nsh (CLOVER_SANDBOX_PS, base64), and it goes to the elevated PowerShell as an encoded command, the
+; source path a quoted argument. The path reaches the unelevated PowerShell through CLOVERINSTALL_SANDBOX_SOURCE,
+; cleared right after, so no character in the user's folder name can change a command and the app never sees it.
+; Exit codes: clover-core's (0 done, 1 failed, 2 not elevated, 3 the launcher missing or not pinned), 4 the exe to
+; run is missing, 5 the copy is not the pinned one, 1223 the user declined.
+;
+; An upgrade stops the old daemon before its files are replaced: `clover-core daemon stop` (lane C's: unelevated,
+; no flags; it stops the daemon and waits until its pipe and lock are gone, leaving login start alone). Exit 1 means
+; it is still running, so its files can't be replaced: the install stops there, and a later update tries again. The
+; app itself is then closed by electron-builder's own check, which this hook runs after.
+
+!include "${PROJECT_DIR}\out\sandbox.nsh"
+!ifndef CLOVER_SANDBOX_PS
+  !error "sandbox.nsh defines no CLOVER_SANDBOX_PS: build the Windows installer with scripts/release/build.ts"
+!endif
 
 !macro cloverSandbox ACTION
-  System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVER_CORE_EXE", t "$INSTDIR\resources\daemon\clover-core.exe")i'
-  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $$p = Start-Process -FilePath $$env:CLOVER_CORE_EXE -ArgumentList 'sandbox','${ACTION}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode } catch { exit 1223 }"`
+  System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_SANDBOX_SOURCE", t "$INSTDIR\resources\daemon\clover-core.exe")i'
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${CLOVER_SANDBOX_PS}')); $$a = [string][char]39; $$q = $$env:CLOVERINSTALL_SANDBOX_SOURCE.Replace($$a, $$a + $$a); $$c = '& {' + $$s + '} -Action ' + $$a + '${ACTION}' + $$a + ' -Source ' + $$a + $$q + $$a; try { $$p = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($$c)) -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode } catch { exit 1223 }"`
   Pop $0
+  System::Call 'Kernel32::SetEnvironmentVariable(t "CLOVERINSTALL_SANDBOX_SOURCE", p 0)i'
   DetailPrint "Clover: sandbox ${ACTION} exited $0"
+!macroend
+
+!macro customCheckAppRunning
+  ${if} ${FileExists} "$INSTDIR\resources\daemon\clover-core.exe"
+    nsExec::ExecToLog '"$INSTDIR\resources\daemon\clover-core.exe" daemon stop'
+    Pop $0
+    ${if} $0 == 1
+      DetailPrint "Clover: the running daemon didn't stop; its files can't be replaced now"
+      SetErrorLevel 1
+      Quit
+    ${endIf}
+  ${endIf}
+  !insertmacro IS_POWERSHELL_AVAILABLE
+  !insertmacro _CHECK_APP_RUNNING
 !macroend
 
 !macro customInstall
