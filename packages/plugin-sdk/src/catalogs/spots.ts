@@ -157,19 +157,22 @@ const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/u;
 /** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review; lane
  *  G's island comparison): NFKC (width folded), invisible characters dropped (zero-width spaces and joiners, bidi
  *  marks, variation selectors), each letter's confusable skeleton (a Cyrillic "о" is "o"; small capitals and Cherokee
- *  letters too), accents dropped, capital I, 1 and l as one, "rn" as "m", case folded, and every run of anything but
- *  letters and digits dropped, so a missing or invisible space changes nothing ("Needsyou" is "Needs you"). Folding too
- *  much only reserves more. */
+ *  letters too), accents dropped, case folded, every run of anything but letters and digits dropped, so a missing or
+ *  invisible space changes nothing ("Needsyou" is "Needs you"), and then I, i, 1, | and l as one letter (Greek and
+ *  Cyrillic Ι, І and і with them), "rn" as "m", "vv" as "w" and "cl" as "d" (lane G's island folds the same, so the
+ *  two agree exactly: "Iris" is "iris" is "lris"). Folding too much only reserves more. */
 export function foldTitle(title: string): string {
   const visible = title.normalize("NFKC").replace(INVISIBLE, "");
   const skeleton = [...visible].map((ch) => {
     const c = CHEROKEE_SMALL.test(ch) ? ch.toUpperCase() : ch;
-    return c === "I" ? "l" : (CONFUSABLES[c] ?? LOOKALIKES[c] ?? c);
+    return CONFUSABLES[c] ?? LOOKALIKES[c] ?? c;
   }).join("");
   return skeleton.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "")
-    .replace(/[1|]/g, "l")
-    .replace(/rn/g, "m");
+    .replace(/[il1|]/g, "l")
+    .replace(/rn/g, "m")
+    .replace(/vv/g, "w")
+    .replace(/cl/g, "d");
 }
 
 /** Names only the bundled `clover` tree's plugins may have (lane G's ask): the app's own, beside the titles spots

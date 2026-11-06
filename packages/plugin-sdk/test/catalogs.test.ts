@@ -237,6 +237,15 @@ describe("points and spots", () => {
     for (const t of ["Needsyou", "Needs\u200Byou", "\u0274\u1D07\u1D07\u1D05\uA731 \u028F\u1D0F\u1D1C"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
     for (const t of ["CIover", "C1over", "Cl0ver", "\u13DFlover", "Clov\u0435\u0433"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
     expect(foldTitle("Rnoon")).toBe(foldTitle("moon"));
+    // Lane G's cases: I and i are one letter, with 1, l, | and the Greek and Cyrillic lookalikes, so a bot named
+    // "Iris" refuses a pill target "iris"; "vv" reads as "w" and "cl" as "d", as the island folds them.
+    for (const [a, b] of [["Iris", "iris"], ["Ivy", "ivy"], ["ILSE", "ilse"], ["Iris", "lris"], ["Iris", "1ris"], ["Iris", "|ris"],
+      ["Iris", "\u0399ris"], ["Iris", "\u0406ris"], ["iris", "\u0456ris"], ["iris", "\u03B9ris"], ["iris", "\u0131ris"], ["Iris", "\u0130ris"],
+      ["Wanda", "Vvanda"], ["wanda", "\u03BD\u03BDanda"], ["Dot", "Clot"], ["dot", "cIot"], ["mimi", "rnirni"]] as const) {
+      expect([a, b, foldTitle(a) === foldTitle(b)]).toEqual([a, b, true]);
+    }
+    expect(foldTitle("Iris")).toBe("lrls");
+    expect(foldTitle("Iris")).not.toBe(foldTitle("Irma"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
     expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
     expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");
