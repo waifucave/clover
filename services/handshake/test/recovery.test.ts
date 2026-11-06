@@ -35,8 +35,15 @@ async function refusal(p: Promise<unknown>): Promise<HandshakeError> {
   return err as HandshakeError;
 }
 
-/** A join admitted by `by`, and by `more` too. */
-async function admit(c: HandshakeClient, group: string, joiner: Signer, by: Signer, more: Signer[] = []): Promise<{ votesFrom: number }> {
+/** A join admitted by `by`, and by `more` too; `from` a group the key moves out of, at `requester`'s request. */
+async function admit(
+  c: HandshakeClient,
+  group: string,
+  joiner: Signer,
+  by: Signer,
+  more: Signer[] = [],
+  options: { from?: string; requester?: Signer } = {},
+): Promise<{ votesFrom: number }> {
   const t = Date.now();
   const statement = admitStatement(group, joiner.key, t);
   return (await c.joinGroup(group, {
@@ -46,6 +53,8 @@ async function admit(c: HandshakeClient, group: string, joiner: Signer, by: Sign
     by: by.key,
     bysig: await signText(by, statement),
     admits: await Promise.all(more.map(async (m) => ({ by: m.key, sig: await signText(m, statement) }))),
+    ...(options.from ? { from: options.from } : {}),
+    ...(options.requester ? { requester: { key: options.requester.key, sig: await signText(options.requester, statement) } } : {}),
   })) as unknown as { votesFrom: number };
 }
 
@@ -193,6 +202,51 @@ describe("removing others", () => {
     expect(await c.group(group, a).rollback(b.key)).toEqual({ restores: [], drops: [] });
     await c.group(group, a).remove(b.key);
     expect(await keysOf(c, group, a)).toEqual([a.key, x.key].sort());
+  });
+});
+
+describe("moving between the user's groups", () => {
+  test("a key that moves keeps its vote, or what is left of its wait, and leaves the old group in the same step", async () => {
+    const { group: old, founder: a, c } = await createdGroup();
+    const [k, waiting, b] = [await signer(), await signer(), await signer()];
+    await admit(c, old, b, a);
+    await admit(c, old, k, a, [b]);
+    const wait = (await admit(c, old, waiting, a)).votesFrom;
+    const { group: host, founder: h } = await createdGroup(c);
+    await admit(c, host, await signer(), h);
+    // At the host, one admitter isn't a quorum: an ordinary join would wait 72 hours.
+    expect((await admit(c, host, await signer(), h)).votesFrom).toBeGreaterThan(Date.now() + DAY);
+    expect((await admit(c, host, k, h, [], { from: old })).votesFrom).toBeLessThanOrEqual(Date.now());
+    expect((await admit(c, host, waiting, h, [], { from: old })).votesFrom).toBe(wait);
+    expect(await keysOf(c, old, a)).toEqual([a.key, b.key].sort());
+  });
+
+  test("a `from` the key isn't in is an ordinary join; the last member moving out ends the old group", async () => {
+    const { group: old, founder: solo, c } = await createdGroup();
+    const { group: host, founder: h } = await createdGroup(c);
+    await admit(c, host, await signer(), h);
+    const stranger = await signer();
+    expect((await admit(c, host, stranger, h, [], { from: old })).votesFrom).toBeGreaterThan(Date.now() + DAY);
+    expect(await keysOf(c, old, solo)).toEqual([solo.key]);
+    await admit(c, host, solo, h, [], { from: old });
+    expect((await refusal(c.group(old, solo).get())).status).toBe(410);
+    expect((await refusal(admit(c, host, await signer(), h, [], { from: "not-a-group" }))).status).toBe(400);
+  });
+
+  test("a key a member asked for is rolled back with that member, whoever signed its admit", async () => {
+    const { group, founder: a, c } = await createdGroup();
+    const [b, thief, x] = [await signer(), await signer(), await signer()];
+    await admit(c, group, b, a);
+    await admit(c, group, thief, a, [b]);
+    // a signs the admit, at the thief's request.
+    await admit(c, group, x, a, [], { requester: thief });
+    await vote(group, x.key);
+    expect(await c.group(group, a).rollback(thief.key)).toEqual({ restores: [], drops: [x.key] });
+    // x is left out of the vote on the thief, as a key the thief admitted.
+    const when = Date.now();
+    expect((await refusal(c.group(group, a).remove(thief.key, { t: when, cosigners: await removal(group, thief.key, when, [x]) }))).code).toBe("not_voter");
+    await c.group(group, a).remove(thief.key, { t: when, cosigners: await removal(group, thief.key, when, [b]) });
+    expect(await keysOf(c, group, a)).toEqual([a.key, b.key].sort());
   });
 });
 

@@ -113,7 +113,10 @@ export class HandshakeClient {
   }
 
   /** A join: the joiner's statement and one member's admit; `admits` are more admits, so the key can vote at once. */
-  joinGroup(group: string, body: { key: string; t: number; sig: string; by: string; bysig: string; admits?: Cosignature[] }): Promise<Record<string, unknown>> {
+  joinGroup(
+    group: string,
+    body: { key: string; t: number; sig: string; by: string; bysig: string; admits?: Cosignature[]; from?: string; requester?: { key: string; sig: string } },
+  ): Promise<Record<string, unknown>> {
     return this.send("POST", `/v1/groups/${group}/members`, this.json(body));
   }
 

@@ -178,7 +178,7 @@ async function createGroup(request: Request, env: Env): Promise<Response> {
 
 async function joinGroup(request: Request, env: Env, group: string): Promise<Response> {
   await limitRegistration(request, env);
-  const { key, t, sig, by, bysig, admits } = await readJson(request);
+  const { key, t, sig, by, bysig, admits, from, requester } = await readJson(request);
   const now = Date.now();
   if (typeof key !== "string" || !KEY_RE.test(key) || typeof by !== "string" || !KEY_RE.test(by) || key === by) return errorResponse(400, "bad_request");
   if (typeof sig !== "string" || !SIG_RE.test(sig) || typeof bysig !== "string" || !SIG_RE.test(bysig)) return errorResponse(400, "bad_signature_form");
@@ -189,8 +189,24 @@ async function joinGroup(request: Request, env: Env, group: string): Promise<Res
   ]);
   if (!okJoin || !okAdmit) return errorResponse(401, "unauthorized");
   // More admitters, so the new key can vote at once (PROTOCOL.md, "Group recovery").
-  const cosigners = await cosigned(admits, admitStatement(group, key, t));
-  return reply(await stubFor(env, "group", group).joinGroup(key, by, t, now, cosigners));
+  const statement = admitStatement(group, key, t);
+  const cosigners = await cosigned(admits, statement);
+  // The member that asked for the key: a signer of the change for its rollback, never a vote.
+  const [requested] = requester === undefined ? [] : await cosigned([{ by: (requester as { key?: unknown } | null)?.key, sig: (requester as { sig?: unknown } | null)?.sig }], statement);
+  // A key moving from another group of the user's keeps its vote there, and leaves it once the join is in.
+  let moving: string | undefined;
+  let votesFrom: number | undefined;
+  if (from !== undefined) {
+    if (typeof from !== "string" || !SCOPE_ID_RE.test(from) || from === group) return errorResponse(400, "bad_request");
+    const held = await stubFor(env, "group", from).voteOf(key, now);
+    if (held !== null) [moving, votesFrom] = [from, held];
+  }
+  const result: Reply = await stubFor(env, "group", group).joinGroup(key, by, t, now, cosigners, {
+    ...(requested !== undefined ? { requester: requested } : {}),
+    ...(votesFrom !== undefined ? { votesFrom } : {}),
+  });
+  if (moving && (result.status === 200 || result.status === 201)) await stubFor(env, "group", moving).moveOut(key, now);
+  return reply(result);
 }
 
 // ---- argument checks ----

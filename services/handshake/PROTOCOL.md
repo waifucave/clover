@@ -212,6 +212,12 @@ Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026
 - **Quorum:** q = ⌊v/2⌋ + 1 of v voters. 403 `no_quorum` (with `voters` and `needed`) when the votes fall short. 403 `not_voter` when a co-signer doesn't vote.
 - **Members** carry `votesFrom` (the vote starts at or before now) and `admittedBy`, in `GET /v1/groups/<group>`, the hello and `members` frames. Those also carry `recovery: true|false`.
 - **Join with more admitters:** `POST …/members` may add `"admits": [{"by","sig"}]`, more admit statements over the same key and `t`, so the key votes at once.
+- **A member's request:** the join may carry `"requester": {"key","sig"}`, the admit statement signed by the member that asked for the key. The requester counts among the change's signers, so the key is rolled back with it and left out of the vote on it, even when another member signed the admit. It never counts as a vote.
+- **Moving from another of the user's groups:** the join may carry `"from": "<old group id>"`. Merges happen only inside a confirmed pairing, and the host's group survives. When the key is a member of `from`:
+  - its `votesFrom` is the earlier of the usual rule and its `votesFrom` there. A voter there votes here at once; one still waiting keeps what is left of its wait;
+  - it leaves `from` once the join is in: removed there as its own removal, with no rollback, its lease ended if it held it, the group ended if it was the last member, and a `members` frame sent.
+
+  A `from` the key isn't a member of is an ordinary join. The client may still remove itself from the old group afterwards; a 404 or 410 there is fine.
 - **Removing another member:** `DELETE /v1/groups/<group>/members/<key>`, signed by any member, with the body `{"t", "keep": [key…], "removes": [{"by","sig"}]}`.
   - The requester's own signed request is its vote when it votes. Each co-signer signs the remove statement:
 

@@ -191,7 +191,7 @@ export class HandshakeDO extends DurableObject<Env> {
    * co-signers, all at `t`. One member's admit lets the key in; it votes at once when the admitters who vote are a
    * quorum of the group's voters, and after LIMITS.recovery.voteDelayMs otherwise.
    */
-  async joinGroup(key: string, by: string, t: number, now: number, cosigners: string[] = []): Promise<Reply> {
+  async joinGroup(key: string, by: string, t: number, now: number, cosigners: string[] = [], options: { requester?: string; votesFrom?: number } = {}): Promise<Reply> {
     if (this.kind() !== "group") return fail(404, "not_found");
     if (this.ended()) return fail(410, "ended");
     if (!this.isMember(by)) return fail(403, "not_member");
@@ -203,7 +203,11 @@ export class HandshakeDO extends DurableObject<Env> {
     const voters = this.voters(now);
     const signers = [...new Set([by, ...cosigners])].filter((k) => this.isMember(k) || k === this.recoveryKey());
     const counted = signers.filter((k) => voters.has(k));
-    const votesFrom = counted.length >= quorum(voters.size) ? now : now + LIMITS.recovery.voteDelayMs;
+    // A key moving from another of the user's groups keeps the vote it had there, or what is left of its wait.
+    const usual = counted.length >= quorum(voters.size) ? now : now + LIMITS.recovery.voteDelayMs;
+    const votesFrom = options.votesFrom !== undefined ? Math.min(usual, Math.max(options.votesFrom, 0)) : usual;
+    // The member that asked for the key signs the change too, for its rollback; it doesn't vote by it.
+    if (options.requester !== undefined && this.isMember(options.requester)) signers.push(options.requester);
     this.sql.exec("INSERT INTO members (key, joined, last_t, votes_from, admitted_by) VALUES (?, ?, 0, ?, ?)", key, now, votesFrom, by);
     this.sql.exec("DELETE FROM removed WHERE key = ?", key);
     this.logChange("admit", key, signers, undefined, now);
@@ -464,6 +468,22 @@ export class HandshakeDO extends DurableObject<Env> {
       this.sql.exec("DELETE FROM removed WHERE key = ?", back.key);
     }
     this.recoveryUsed("remove", key, c.member, counted, now);
+    if (this.members().length === 0) return await this.endScope();
+    this.broadcastMembers();
+    return { status: 204 };
+  }
+
+  /** A group member's `votesFrom`, for a key moving to another group of the user's; null when it isn't a member. */
+  async voteOf(key: string, now: number): Promise<number | null> {
+    if (this.kind() !== "group" || this.ended()) return null;
+    const row = this.memberRow(key);
+    return row ? Math.min(row.votes_from, now + LIMITS.recovery.voteDelayMs) : null;
+  }
+
+  /** A key that joined another group of the user's leaves this one: as its own removal, with no rollback. */
+  async moveOut(key: string, now: number): Promise<Reply> {
+    if (this.kind() !== "group" || this.ended() || !this.isMember(key)) return fail(404, "not_found");
+    this.dropMember(key, now);
     if (this.members().length === 0) return await this.endScope();
     this.broadcastMembers();
     return { status: 204 };
