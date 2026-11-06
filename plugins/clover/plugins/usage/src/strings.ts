@@ -1,77 +1,49 @@
-// The usage plugin's words, in English: the keys a translation pack (`locales`) overrides, read through `t` until
-// lane E's `useT()` reaches components.
+// The usage plugin's words. The English table is `locales/en.json` (locale format 1, spec §5.5 "Translations"), which the manifest
+// declares, so the app has it to fall back to and a language pack can translate every key. `t` asks the translator the
+// app installs (`setTranslator`: lane E's `useT()` in a part, the plugin API's `t` in a host half) and falls back to
+// English for a key it doesn't know. Keys start with `clover.`; strings use `{name}` placeholders, and a key may hold
+// plural forms, chosen by `count`.
 
-type Entry = string | { one?: string; other: string };
+import en from "../locales/en.json" with { type: "json" };
 
-const EN: Record<string, Entry> = {
-  "clover.usage.title": "Usage",
-  "clover.usage.plans": "Plans",
-  "clover.usage.today": "Today",
-  "clover.usage.none": "No usage yet",
-  "clover.usage.noPlans": "No plans read yet",
-  "clover.usage.noneToday": "Nothing used today",
-  "clover.usage.source.clover": "Clover",
-  "clover.usage.source.codex": "Codex",
-  "clover.usage.source.claude-code": "Claude Code",
-  "clover.usage.source.opencode": "OpenCode",
-  "clover.usage.source.antigravity": "Antigravity",
-  "clover.usage.window.hours": { other: "{count}-hour" },
-  "clover.usage.window.daily": "Daily",
-  "clover.usage.window.weekly": "Weekly",
-  "clover.usage.window.monthly": "Monthly",
-  "clover.usage.used": "{percent}% used",
-  "clover.usage.limitReached": "Limit reached",
-  "clover.usage.resets": "Resets {when}",
-  "clover.usage.read": "Read {ago}",
-  "clover.usage.inMinutes": { one: "in 1 min", other: "in {count} min" },
-  "clover.usage.inHours": { one: "in 1 h", other: "in {count} h" },
-  "clover.usage.inHoursMinutes": "in {hours} h {minutes} min",
-  "clover.usage.inDays": { one: "in 1 day", other: "in {count} days" },
-  "clover.usage.justNow": "just now",
-  "clover.usage.minutesAgo": { one: "1 min ago", other: "{count} min ago" },
-  "clover.usage.hoursAgo": { one: "1 h ago", other: "{count} h ago" },
-  "clover.usage.daysAgo": { one: "1 day ago", other: "{count} days ago" },
-  "clover.usage.tokens": "{count} tokens",
-  "clover.usage.unpriced": "not priced",
-  "clover.usage.partlyPriced": "Some of it is not priced: the cost is at least this",
-  "clover.usage.noBot": "No bot",
-  "clover.usage.noSession": "No session",
-  "clover.usage.unknown": "Unknown",
-  "clover.usage.other": { one: "1 other", other: "{count} others" },
-  "clover.usage.range.day": "24 hours",
-  "clover.usage.range.week": "7 days",
-  "clover.usage.range.month": "30 days",
-  "clover.usage.range.all": "All time",
-  "clover.usage.metric.cost": "Cost",
-  "clover.usage.metric.tokens": "Tokens",
-  "clover.usage.by.source": "Source",
-  "clover.usage.by.model": "Model",
-  "clover.usage.by.bot": "Bot",
-  "clover.usage.by.computer": "Computer",
-  "clover.usage.by.session": "Session",
-  "clover.usage.byLabel": "Group by",
-  "clover.usage.rangeLabel": "Period",
-  "clover.usage.metricLabel": "Show",
-  "clover.usage.perDay.cost": "Cost per day",
-  "clover.usage.perDay.tokens": "Tokens per day",
-  "clover.usage.dayTip": "{date}: {amount}",
-  "clover.usage.column.name": "Name",
-  "clover.usage.column.input": "Input",
-  "clover.usage.column.output": "Output",
-  "clover.usage.column.cost": "Cost",
-  "clover.usage.column.share": "Share",
-  "clover.usage.totalIn": "{count} in",
-  "clover.usage.totalOut": "{count} out",
-  "clover.usage.openSettings": "Details",
-  "clover.usage.loading": "Reading usage…",
-  "clover.usage.failed": "Usage could not be read",
-};
+type Entry = string | { readonly zero?: string; readonly one?: string; readonly two?: string; readonly few?: string; readonly many?: string; readonly other: string };
 
-export function t(key: string, vars: Record<string, string | number> = {}): string {
+/** The app's translator for this plugin's keys, in the user's language: a key it has no string for reads as itself. */
+export type Translator = (key: string, params?: Record<string, string | number>) => string;
+
+/** The English table, as `locales/en.json` holds it. */
+export const EN: Readonly<Record<string, Entry>> = en.strings;
+
+let installed: Translator | null = null;
+
+/** Installs the app's translator (null: English only). Calling it again with the same one changes nothing. */
+export function setTranslator(translator: Translator | null): void {
+  installed = translator;
+}
+
+const englishPlurals = new Intl.PluralRules("en");
+
+/** A key's English string, its placeholders filled and its plural form chosen by `count`. */
+export function english(key: string, vars: Record<string, string | number> = {}): string {
   const entry = EN[key];
   if (entry === undefined) return key;
-  const text = typeof entry === "string" ? entry : vars.count === 1 && entry.one !== undefined ? entry.one : entry.other;
+  let text: string;
+  if (typeof entry === "string") text = entry;
+  else {
+    const n = typeof vars.count === "number" ? vars.count : Number(vars.count);
+    const form = Number.isFinite(n) ? englishPlurals.select(n) : "other";
+    text = entry[form] ?? entry.other;
+  }
   return text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`));
 }
 
+export function t(key: string, vars: Record<string, string | number> = {}): string {
+  if (installed) {
+    const text = installed(key, vars);
+    if (text !== key) return text;
+  }
+  return english(key, vars);
+}
+
+/** The table, for the gallery and the tests. */
 export const USAGE_STRINGS: Readonly<Record<string, Entry>> = EN;

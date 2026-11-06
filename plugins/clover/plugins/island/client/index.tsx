@@ -39,3 +39,6 @@ export { nameSkeleton, readsAs, shownName } from "../src/model/names";
 export { hoverScale, isOver, grownFromTop } from "../src/model/hover";
 export * from "../src/model/placement";
 export * from "../src/model/devices";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

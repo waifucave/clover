@@ -7,3 +7,6 @@ export { UsageView, type UsageViewProps } from "../src/ui/UsageView";
 export { ensureUsageStyles, USAGE_CSS } from "../src/ui/styles";
 export { memoryUsage, type MemoryUsage } from "../src/fake";
 export * from "../src/model/usage";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

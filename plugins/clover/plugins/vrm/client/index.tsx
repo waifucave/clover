@@ -10,3 +10,6 @@ export { visemeWeights, MouthSmoother, VISEMES, SHUT, SILENCE_RMS, FULL_RMS, typ
 export { rmsOf, spectralCentroidOf, FFT_SIZE } from "../src/lipsync/features";
 export { Blinker, blinkCurve, BLINK } from "../src/motion/blink";
 export { idlePose, IDLE, type Pose, type BoneName } from "../src/motion/idle";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

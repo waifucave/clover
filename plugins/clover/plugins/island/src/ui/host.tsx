@@ -5,6 +5,7 @@
 // Each field says what it stands for in lane B's contracts (`packages/plugin-sdk/src/api/*.ts` on `lane/b-m0`).
 
 import { createContext, useContext, useMemo, type ReactElement } from "react";
+import { setTranslator, type Translator } from "../strings";
 import type { IslandCard, QuestionCard } from "../model/cards";
 import type { SurfaceEnvironment } from "../model/placement";
 import { DevicesTab, type DevicesSource } from "./DevicesTab";
@@ -32,12 +33,18 @@ export interface IslandHost {
   openDevices?: (device?: string) => void;
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   reducedMotion?: boolean;
+  /** The app's translator for this plugin's keys (lane E's `useT()`): the words in the user's language, English for a
+   *  key it lacks. Absent, English. */
+  t?: Translator;
 }
 
 export const IslandHostContext = createContext<IslandHost | null>(null);
 
+/** The host, with its translator installed for the island's words before anything below renders. */
 export function useIslandHost(): IslandHost | null {
-  return useContext(IslandHostContext);
+  const host = useContext(IslandHostContext);
+  setTranslator(host?.t ?? null);
+  return host;
 }
 
 /** What lane B's `EntryProps` hands every entry: its spot's props, the part's tokens, and which entry it is. */

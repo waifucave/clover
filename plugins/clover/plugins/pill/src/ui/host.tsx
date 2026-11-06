@@ -5,6 +5,7 @@
 import { createContext, useContext, useMemo, useState, type ReactElement } from "react";
 import { chooseTarget, pillTargets, storageMemory, userSendTarget, type PillBot, type PillTargetEntry, type ResolvedTarget, type TargetMemory, type TargetRef, type UserSendTarget } from "../model/targets";
 import { DispatchPill, type DispatchPillProps } from "./DispatchPill";
+import { setTranslator, type Translator } from "../strings";
 
 /** What the pill shows about one target's turn: the running state, its cards, its agents (lane D's sessions). */
 export type TargetTurn = Omit<DispatchPillProps, "target" | "targets" | "onTarget" | "onSend">;
@@ -27,6 +28,9 @@ export interface PillHost {
   send(to: UserSendTarget, message: string): Promise<void>;
   /** The turn the pill shows for a target. */
   turn?(target: TargetRef): TargetTurn;
+  /** The app's translator for this plugin's keys (lane E's `useT()`): the words in the user's language, English for a
+   *  key it lacks. Absent, English. */
+  t?: Translator;
 }
 
 export const PillHostContext = createContext<PillHost | null>(null);
@@ -41,6 +45,7 @@ export interface PillEntryProps<P> {
 /** The `app.surface` entry: the Dispatch pill, messaging the target picked last. */
 export function PillApp(_: PillEntryProps<{ surface: string }>): ReactElement | null {
   const host = useContext(PillHostContext);
+  setTranslator(host?.t ?? null);
   const memory = useMemo(() => host?.memory ?? storageMemory(), [host?.memory]);
   const targets = useMemo(() => pillTargets(host?.bots ?? [], host?.targets ?? []), [host?.bots, host?.targets]);
   const [picked, setPicked] = useState<string | null>(() => memory.get());

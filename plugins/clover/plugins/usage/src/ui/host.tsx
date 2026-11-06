@@ -5,6 +5,7 @@ import { createContext, useContext, type ReactElement } from "react";
 import type { UsageApi } from "../model/usage";
 import { UsageTab } from "./UsageTab";
 import { UsageView } from "./UsageView";
+import { setTranslator, type Translator } from "../strings";
 
 export interface UsageHost {
   /** `usage.read` (lane B's `UsageApi`). */
@@ -12,6 +13,16 @@ export interface UsageHost {
   now?: () => number;
   /** Opens the Usage section of Settings (the shell's route; a question for lane E). */
   openDetails?: () => void;
+  /** The app's translator for this plugin's keys (lane E's `useT()`): the words in the user's language, English for a
+   *  key it lacks. Absent, English. */
+  t?: Translator;
+}
+
+/** The host, with its translator installed for the usage plugin's words. */
+function useUsageHost(): UsageHost | null {
+  const host = useContext(UsageHostContext);
+  setTranslator(host?.t ?? null);
+  return host;
 }
 
 export const UsageHostContext = createContext<UsageHost | null>(null);
@@ -25,14 +36,14 @@ export interface UsageEntryProps<P> {
 
 /** The `island.tab` entry: Usage. */
 export function UsageTabEntry(_: UsageEntryProps<{ expanded: boolean }>): ReactElement | null {
-  const host = useContext(UsageHostContext);
+  const host = useUsageHost();
   if (!host) return null;
   return <UsageTab api={host.usage} now={host.now} onOpenDetails={host.openDetails} />;
 }
 
 /** The `settings.section` entry: Usage. */
 export function UsageSection(_: UsageEntryProps<Record<string, never>>): ReactElement | null {
-  const host = useContext(UsageHostContext);
+  const host = useUsageHost();
   if (!host) return null;
   return <UsageView api={host.usage} now={host.now} />;
 }

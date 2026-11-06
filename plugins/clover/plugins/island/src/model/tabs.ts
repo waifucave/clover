@@ -1,7 +1,7 @@
 // Which tab the open island shows (the Swift reference's `IslandTabState`). In Clover the island's tabs are entries of
 // the `island.tab` point it declares (spec §5.4); Needs you ships as its own default guest. Pure.
 
-import { t } from "../strings";
+import { english, t } from "../strings";
 import { readsAs, shownName } from "./names";
 
 export interface IslandTab {
@@ -9,7 +9,13 @@ export interface IslandTab {
   title: string;
 }
 
-export const NEEDS_YOU: IslandTab = { id: "needs-you", title: t("clover.island.needsYou") };
+/** Needs you: its title in the user's language, read each time (the language can change while the island runs). */
+export const NEEDS_YOU: IslandTab = {
+  id: "needs-you",
+  get title() {
+    return t("clover.island.needsYou");
+  },
+};
 
 /** The plugin the island and its own children belong to: their tabs are the island's own. */
 export const OWN_PLUGIN = "clover";
@@ -31,18 +37,19 @@ export interface GuestTab extends IslandTab {
 
 /** Names no other plugin's tab may carry, as its title or as its plugin's name beside it: Needs you is the island's
  *  own, and Clover is the app's. */
-const RESERVED_TITLES = [NEEDS_YOU.title];
-const RESERVED_PLUGIN_NAMES = [NEEDS_YOU.title, "Clover"];
+/** In English and in the user's language: a tab can't take either. */
+const reservedTitles = () => [english("clover.island.needsYou"), NEEDS_YOU.title];
+const reservedPluginNames = () => [...reservedTitles(), "Clover"];
 
 /** Needs you is the island's alone: no entry may take its id or its title, as a reader sees them (`readsAs`: case,
  *  width, accents, invisible characters and lookalike letters folded). */
 export function isReservedTab(tab: IslandTab): boolean {
-  return readsAs(tab.id, NEEDS_YOU.id) || RESERVED_TITLES.some((r) => readsAs(tab.title, r));
+  return readsAs(tab.id, NEEDS_YOU.id) || reservedTitles().some((r) => readsAs(tab.title, r));
 }
 
 /** A plugin name the island won't put beside a tab: it would read as Needs you's or as the app's own. */
 export function isReservedPluginName(name: string): boolean {
-  return RESERVED_PLUGIN_NAMES.some((r) => readsAs(name, r));
+  return reservedPluginNames().some((r) => readsAs(name, r));
 }
 
 /**
