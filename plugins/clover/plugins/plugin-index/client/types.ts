@@ -26,7 +26,7 @@ export interface IndexSource {
 }
 
 /** Where an install got to: asked for (its OK waits on a card), installed, or failed. */
-export type InstallState = "asking" | "waiting" | "installed" | "failed";
+export type InstallState = "asking" | "waiting" | "failed";
 
 export interface PluginIndexProps {
   query: string;

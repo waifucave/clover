@@ -16,7 +16,6 @@
     "clover.pluginIndex.installName": "Install {name}",
     "clover.pluginIndex.state.asking": "Asking…",
     "clover.pluginIndex.state.waiting": "Waiting for your OK",
-    "clover.pluginIndex.state.installed": "Installed",
     "clover.pluginIndex.state.failed": "Couldn't install",
     "clover.pluginIndex.installedVersion": "Installed {v}",
     "clover.pluginIndex.update": "{v} available",

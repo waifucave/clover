@@ -45,9 +45,6 @@ export const S = {
     get waiting() {
       return t("clover.pluginIndex.state.waiting");
     },
-    get installed() {
-      return t("clover.pluginIndex.state.installed");
-    },
     get failed() {
       return t("clover.pluginIndex.state.failed");
     },

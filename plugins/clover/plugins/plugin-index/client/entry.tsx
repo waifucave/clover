@@ -82,7 +82,9 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     if (!core) return;
     setInstalls((s) => ({ ...s, [r.id]: "asking" }));
     core.call("plugin.install", { source: { from: "index", id: r.id, index: r.index } }).then(
-      (done) => setInstalls((s) => ({ ...s, [r.id]: done.state === "found" ? "waiting" : "installed" })),
+      // Only an install the core refused is a failure. Every other answer waits: the row says Installed only once the
+      // index reports the plugin as installed (after its OK), never from the click's own answer (review N8).
+      (done) => setInstalls((s) => ({ ...s, [r.id]: done.state === "refused" || done.state === "invalid" || done.state === "blocked" ? "failed" : "waiting" })),
       () => setInstalls((s) => ({ ...s, [r.id]: "failed" })),
     );
   };

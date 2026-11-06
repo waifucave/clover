@@ -9,7 +9,7 @@ import { ENTRIES, INDEXES, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
-async function mount(params: { spot?: string; key?: string } = {}, installState: "found" | "running" = "found") {
+async function mount(params: { spot?: string; key?: string } = {}, installState: "found" | "running" | "refused" = "found") {
   const core = fakeCore({
     "plugin.index.list": () => ({ indexes: INDEXES }),
     "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || plain(e.name).toLowerCase().includes(query.toLowerCase())) }),
@@ -86,6 +86,18 @@ describe("the plugin index", () => {
     expect(within(rows()[1]!).getByRole("status").textContent).toBe("Waiting for your OK");
     expect(screen.queryByText("Installed")).toBeNull();
     expect(core.calls.filter((c) => c.method === "plugin.install")).toHaveLength(1);
+  });
+
+  test("whatever the install answers, the row never says Installed from it; a refused one failed (N8)", async () => {
+    await mount({}, "running");
+    fireEvent.click(screen.getByRole("button", { name: "Install Weather routine" }));
+    await act(() => settle());
+    expect(within(rows()[1]!).getByRole("status").textContent).toBe("Waiting for your OK");
+    cleanup();
+    await mount({}, "refused");
+    fireEvent.click(screen.getByRole("button", { name: "Install Weather routine" }));
+    await act(() => settle());
+    expect(within(rows()[1]!).getByRole("status").textContent).toBe("Couldn't install");
   });
 
   test("an adult plugin passes the 18+ gate first, then installs and waits for its OK like any other", async () => {
