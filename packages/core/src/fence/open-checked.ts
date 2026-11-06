@@ -2,8 +2,9 @@
 // and the open, so a caller that reads or writes a file for a bot, an agent or a plugin (B's file tools, memory sync,
 // transcripts under `bots/`) opens it here instead:
 //   1. the fence judges the path as given;
-//   2. it is opened without following a link at its last component (O_NOFOLLOW on macOS and Linux), never truncated
-//      or created through a link: a write opens the file as it is, and creates it only exclusively (O_EXCL);
+//   2. it is opened without following a link at its last component (O_NOFOLLOW on macOS and Linux), never
+//      truncated, and never created through a link: a write opens the file as it is, and creates it atomically only
+//      when asked (`exclusive`: `O_CREAT|O_EXCL`, so a planted name fails with EEXIST instead of being reused);
 //   3. the opened file's real path is read back from the handle (macOS `proc_pidfdinfo`'s vnode path, Linux
 //      `/proc/self/fd`, Windows `GetFinalPathNameByHandleW` on a handle shown to be the same file) and judged again;
 //   4. only then is it truncated, if asked, and handed back. Refused at 2 or 3: closed, and a file it just created
@@ -73,15 +74,20 @@ export function fdRealPath(fd: number, platform: NodeJS.Platform = process.platf
 export interface OpenChecked {
   /** Open for writing (else reading). */
   readonly write?: boolean;
-  /** Create the file when it isn't there (exclusively). */
+  /** Create the file when it isn't there (exclusively only with `exclusive`: without it, a file that appears
+   *  between the open and the create is opened as it is). */
   readonly create?: boolean;
+  /** Fail when the file is already there (`O_CREAT|O_EXCL`): for temp files nothing may reuse the name. Implies
+   *  `create`, at mode `0o600`. */
+  readonly exclusive?: boolean;
   /** Empty it once it's known to be the file that was judged. */
   readonly truncate?: boolean;
   readonly append?: boolean;
 }
 
 /** Opens `path` for `fence` (a `Fence` or a `forCaller` view) as above; the caller closes the descriptor. Throws
- *  `FenceRefused`, or the open's own error (ENOENT, ELOOP for a link at the last component). */
+ *  `FenceRefused`, or the open's own error (ENOENT, ELOOP for a link at the last component, EEXIST for `exclusive`
+ *  when the file is already there). */
 export function openChecked(fence: Judge, path: string, o: OpenChecked = {}): number {
   const op: FenceOp = o.write ? { op: "write", path } : { op: "read", path };
   const first = fence.check(op);
@@ -90,11 +96,16 @@ export function openChecked(fence: Judge, path: string, o: OpenChecked = {}): nu
   const base = (o.write ? (o.append ? constants.O_WRONLY | constants.O_APPEND : constants.O_RDWR) : constants.O_RDONLY) | nofollow;
   let fd: number;
   let created = false;
-  try { fd = openSync(path, base); }
-  catch (e) {
-    if (!(o.write && o.create && (e as NodeJS.ErrnoException).code === "ENOENT")) throw e;
-    fd = openSync(path, base | constants.O_CREAT | constants.O_EXCL, 0o644);
+  if (o.exclusive) {
+    fd = openSync(path, base | constants.O_CREAT | constants.O_EXCL, 0o600);
     created = true;
+  } else {
+    try { fd = openSync(path, base); }
+    catch (e) {
+      if (!(o.write && o.create && (e as NodeJS.ErrnoException).code === "ENOENT")) throw e;
+      fd = openSync(path, base | constants.O_CREAT | constants.O_EXCL, 0o644);
+      created = true;
+    }
   }
   const real = fdRealPath(fd, process.platform, path);
   const second: FenceVerdict = real === null

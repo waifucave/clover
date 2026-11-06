@@ -151,7 +151,10 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           join(clover, "scratch", "luna"), join(clover, "scratch", "alpha"),
           join(clover, "routines", "luna"), join(clover, "routines", "alpha"),
           join(clover, "plugin-data", "tarot"), join(clover, "plugin-data", "luna"), ownOutputs,
-          join(home, "Library", "LaunchAgents")];
+          join(home, "Library", "LaunchAgents"),
+          join(home, ".ssh"), join(home, "bin"), join(home, ".local", "bin"),
+          join(home, ".config", "git"), join(home, ".config", "fish", "conf.d"),
+          join(home, ".config", "environment.d"), join(home, ".config", "plasma-workspace", "env")];
         for (const d of dirs) mkdirSync(d, { recursive: true });
         const files: Record<string, string> = {
           [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
@@ -198,6 +201,16 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           { shell: `echo x > '${join(ownPluginData, "new.json")}'`, op: "write", path: join(ownPluginData, "new.json") },
           { shell: `echo x > '${join(clover, "plugin-data", "luna", "new.json")}'`, op: "write", path: join(clover, "plugin-data", "luna", "new.json") },
           { shell: `echo x > '${join(home, ".zshrc")}'`, op: "write", path: join(home, ".zshrc") },
+          { shell: `echo x > '${join(home, ".bash_logout")}'`, op: "write", path: join(home, ".bash_logout") },
+          { shell: `echo x > '${join(home, ".zlogout")}'`, op: "write", path: join(home, ".zlogout") },
+          { shell: `echo x > '${join(home, ".gitconfig")}'`, op: "write", path: join(home, ".gitconfig") },
+          { shell: `echo x > '${join(home, ".config", "git", "config")}'`, op: "write", path: join(home, ".config", "git", "config") },
+          { shell: `echo x > '${join(home, ".ssh", "config")}'`, op: "write", path: join(home, ".ssh", "config") },
+          { shell: `echo x > '${join(home, "bin", "evil")}'`, op: "write", path: join(home, "bin", "evil") },
+          { shell: `echo x > '${join(home, ".local", "bin", "evil")}'`, op: "write", path: join(home, ".local", "bin", "evil") },
+          { shell: `echo x > '${join(home, ".config", "fish", "conf.d", "evil.fish")}'`, op: "write", path: join(home, ".config", "fish", "conf.d", "evil.fish") },
+          { shell: `echo x > '${join(home, ".config", "environment.d", "evil.conf")}'`, op: "write", path: join(home, ".config", "environment.d", "evil.conf") },
+          { shell: `echo x > '${join(home, ".config", "plasma-workspace", "env", "evil.sh")}'`, op: "write", path: join(home, ".config", "plasma-workspace", "env", "evil.sh") },
           { shell: `echo x > '${join(home, "Library", "LaunchAgents", "evil.plist")}'`, op: "write", path: join(home, "Library", "LaunchAgents", "evil.plist") },
         ];
         const script = P.map((pr, i) => `{ ${pr.shell}; } >/dev/null 2>&1; echo "${i}:$?";`).join("\n");
@@ -330,19 +343,44 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       mkdirSync(join(w.home, "Library", "LaunchAgents"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, "Library", "LaunchAgents", "evil.plist")}'`))).toBe(false);
       expect(existsSync(join(w.home, "Library", "LaunchAgents", "evil.plist"))).toBe(false);
-      for (const f of [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"]) {
+      for (const f of [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login", ".bash_logout", ".zlogout", ".logout", ".gitconfig"]) {
         expect(ok(await w.run(`echo x > '${join(w.home, f)}'`))).toBe(false);
       }
       expect(existsSync(join(w.home, ".zshrc"))).toBe(false);
+      // SSH and git config, PATH-ahead folders, fish and the login items storage: none of it is planted.
+      mkdirSync(join(w.home, ".ssh"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, ".ssh", "config")}'`))).toBe(false);
+      mkdirSync(join(w.home, ".config", "git"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, ".config", "git", "config")}'`))).toBe(false);
+      for (const d of [join(w.home, "bin"), join(w.home, ".local", "bin")] ) {
+        mkdirSync(d, { recursive: true });
+        expect(ok(await w.run(`echo x > '${join(d, "evil")}'`))).toBe(false);
+        expect(existsSync(join(d, "evil"))).toBe(false);
+      }
+      mkdirSync(join(w.home, ".config", "fish", "conf.d"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, ".config", "fish", "conf.d", "evil.fish")}'`))).toBe(false);
+      mkdirSync(join(w.home, ".config", "environment.d"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, ".config", "environment.d", "evil.conf")}'`))).toBe(false);
     } else {
       // The systemd user unit, an autostart entry, and the shell startup files: a bot's session plants none.
       expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "clover-core.service")}'`))).toBe(false);
       mkdirSync(join(w.home, ".config", "autostart"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, ".config", "autostart", "evil.desktop")}'`))).toBe(false);
-      for (const f of [".bashrc", ".bash_profile", ".zshrc", ".zprofile"]) {
+      mkdirSync(join(w.home, ".config", "autostart-scripts"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, ".config", "autostart-scripts", "evil.sh")}'`))).toBe(false);
+      for (const d of [join(w.home, ".config", "plasma-workspace", "env"), join(w.home, ".config", "plasma-workspace", "shutdown")]) {
+        mkdirSync(d, { recursive: true });
+        expect(ok(await w.run(`echo x > '${join(d, "evil.sh")}'`))).toBe(false);
+        expect(existsSync(join(d, "evil.sh"))).toBe(false);
+      }
+      for (const f of [".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".bash_logout", ".pam_environment", ".xprofile"]) {
         expect(ok(await w.run(`echo x > '${join(w.home, f)}'`))).toBe(false);
       }
       expect(existsSync(join(w.home, ".bashrc"))).toBe(false);
+      for (const d of [join(w.home, "bin"), join(w.home, ".local", "bin"), join(w.home, ".ssh")] ) {
+        mkdirSync(d, { recursive: true });
+        expect(ok(await w.run(`echo x > '${join(d, d.endsWith(".ssh") ? "config" : "evil")}'`))).toBe(false);
+      }
     }
     // A fenced file that isn't there yet can't be made either.
     expect(ok(await w.run(`echo '{}' > '${join(w.clover, "trust.json")}'`))).toBe(false);

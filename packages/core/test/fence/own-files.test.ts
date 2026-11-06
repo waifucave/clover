@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { CloverFence } from "../../src/fence/fence";
-import { readOwnFile, refuseLinksIn, writeOwnFile } from "../../src/fence/own-files";
+import { readOwnFile, refuseLinksIn, sweepOwnTempFiles, writeOwnFile } from "../../src/fence/own-files";
 import { FenceRefused } from "../../src/fence/open-checked";
 
 const bot = (b: string | undefined, sessionId: string, sessionKind: "bot" | "side-thread" | "agent" | "coding" = "bot"): Caller =>
@@ -67,5 +67,25 @@ describe("the core's own files in a caller's own folders", () => {
       expect(() => refuseLinksIn(b("luna", "memory"))).toThrow(FenceRefused);
     } finally { rmSync(b("luna", "memory", "peek.md")); }
     expect(refuseLinksIn(b("luna", "memory"))).toBeUndefined();
+  });
+
+  test("sweepOwnTempFiles removes only leftover temp files, never following links", () => {
+    const mem = b("luna", "memory");
+    mkdirSync(join(mem, "sub"), { recursive: true });
+    writeFileSync(join(mem, "leave.tmp-0123456789abcdef"), "half-written");
+    writeFileSync(join(mem, "sub", "leave.tmp-fedcba9876543210"), "half-written");
+    writeFileSync(join(mem, "MEMORY.md"), "luna's");
+    writeFileSync(join(mem, "note.tmp-xyz"), "not a temp file");
+    writeFileSync(join(mem, "note.tmp-0123456789abcde"), "too short");
+    symlinkSync(join(mem, "MEMORY.md"), join(mem, "skip.tmp-aaaaaaaaaaaaaaaa"));
+    writeFileSync(b("sol", "memory", "leave.tmp-bbbbbbbbbbbbbbbb"), "another bot's");
+    sweepOwnTempFiles(luna);
+    expect(existsSync(join(mem, "leave.tmp-0123456789abcdef"))).toBe(false);
+    expect(existsSync(join(mem, "sub", "leave.tmp-fedcba9876543210"))).toBe(false);
+    expect(readFileSync(join(mem, "MEMORY.md"), "utf8")).toBe("luna's");
+    expect(existsSync(join(mem, "note.tmp-xyz"))).toBe(true);
+    expect(existsSync(join(mem, "note.tmp-0123456789abcde"))).toBe(true);
+    expect(existsSync(join(mem, "skip.tmp-aaaaaaaaaaaaaaaa"))).toBe(true); // the link stays, and its target
+    expect(existsSync(b("sol", "memory", "leave.tmp-bbbbbbbbbbbbbbbb"))).toBe(true); // another bot's folders aren't swept
   });
 });
