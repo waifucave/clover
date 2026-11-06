@@ -1,7 +1,33 @@
 // C0 (review S1): loading core installs Clover's process-wide provider identity (`runtime-sdk/process-identity.ts`).
 export { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
-export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
+export { startDaemon, stopOnSignals, CORE_VERSION, type RunningDaemon } from "./daemon";
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
+export {
+  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs,
+  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
+  systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
+  superviseLoop, backoffMs,
+  type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState, type Runner, type DaemonStartResult, type CleanStopResult, type CleanStopDeps,
+  type SuperviseDeps, type SuperviseResult, type DaemonRun,
+} from "./platform/login";
+export {
+  DaemonPair, appRestartPlan, resolveAppLauncher, appStarter, startDaemonPairSide, PAIR_DEFAULTS,
+  mintAppToken, removeAppToken, writeAppStart, appTokenPath, appStartPath, APP_TOKEN_FILE, APP_START_FILE, proveDaemon, checkDaemonProof,
+  type DaemonPairDeps, type DaemonPairOptions, type DaemonPairStatus, type AppLauncher, type AppStartOutcome,
+  type AppExitReason, type PairStopReason, type AppStart, type RunFileDeps, type DaemonPairSide, type DaemonPairSideInput,
+} from "./platform/pair";
+export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
+export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
+export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
+export { cloverCall } from "./ipc/clover-client";
+export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
+export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
+export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
+export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
+export { AgentJob } from "./platform/win-job";
+export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
+export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {
   LEGACY_LAUNCHD_LABEL, LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV,

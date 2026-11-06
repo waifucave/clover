@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { CloverProfile } from "./profile";
 import { SDK_PERSISTENT_ENTRIES, sdkHomeFor } from "./agent/paths";
 import { assertNotOtherInstallHome } from "./other-installs";
+import { resolveEndpoint } from "./platform/transport";
 
 export interface CloverDirs {
   home: string;
@@ -89,7 +90,9 @@ export function bootstrapCloverDir(home: string = resolveCloverHome()): CloverDi
     sessionsDir: join(home, "sessions"),
     runDir: join(home, "run"),
     logsDir: join(home, "logs"),
-    socketPath: join(home, "run", "core.sock"),
+    // The IPC endpoint per OS (spec §3.1): a Unix socket file on macOS/Linux, a named pipe on
+    // Windows. On macOS/Linux this is byte-identical to the previous `<run>/core.sock`.
+    socketPath: resolveEndpoint(join(home, "run")).path,
     lockPath: join(home, "run", "core.lock"),
     settingsPath,
     runtimesDir: join(home, "runtimes"),
