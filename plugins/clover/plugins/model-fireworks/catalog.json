@@ -1,0 +1,1024 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/fireworks/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://fireworks.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.fireworks.ai/inference/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "fireworks/deepseek-v4-flash",
+      "providerId": "fireworks",
+      "upstreamId": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#deepseek-v4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#deepseek-v4-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/deepseek-v4-flash (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/deepseek-v4-flash (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#deepseek-v4-flash",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29): \"provides access to the model's reasoning process through the `reasoning_content` field\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "fireworks/deepseek-v4-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1040000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/deepseek-v4-flash (read 2026-09-27): \"Context Length 1040k tokens\" — stated as \"1040k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "fireworks/deepseek-v4-pro",
+      "providerId": "fireworks",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#deepseek-v4-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#deepseek-v4-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/deepseek-v4-pro (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/deepseek-v4-pro (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#deepseek-v4-pro",
+          "observedAt": "2026-09-05T00:00:00Z",
+          "confidence": "inferred"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29): \"provides access to the model's reasoning process through the `reasoning_content` field\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "fireworks/deepseek-v4-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1040000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/deepseek-v4-pro (read 2026-09-27): \"Context Length 1040k tokens\" — stated as \"1040k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "fireworks/glm-5p1",
+      "providerId": "fireworks",
+      "upstreamId": "glm-5p1",
+      "displayName": "GLM 5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#glm-5p1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#glm-5p1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p1 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p1 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 202000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p1 (read 2026-09-27): \"Context Length 202k tokens\" — stated as \"202k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/zai-org/GLM-5.1 (read 2026-09-27): \"{%- if op.index0 > ns.last_user_index and not (enable_thinking is defined and not enable_thinking) %} ... reasoning_content\" — maker page (chat template) documents a boolean enable_thinking toggle, thinking enabled by default, not a graded effort scale; Fireworks' own page states no reasoning parameter",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29): \"provides access to the model's reasoning process through the `reasoning_content` field\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "fireworks/glm-5p1"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "glm-5p1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "fireworks/glm-5p3",
+      "providerId": "fireworks",
+      "upstreamId": "glm-5p3",
+      "displayName": "GLM 5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1040000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p3 (read 2026-09-27): \"Context Length 1040k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p3 (read 2026-09-27): \"Support image input Not supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p3 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/glm-5p3 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.fireworks.ai/serverless/pricing (read 2026-09-27): \"GLM 5.3 | $1.40 / $0.26 / $4.40 | $1.75 / $0.325 / $5.50\" — USD 1.4 input / 4.4 output / 0.26 cached input per 1M tokens; tiers: Priority tier: $1.75/$0.325/$5.50; a separate glm-5p3-flash id is priced at $0.15/$0.03/$0.50 (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5p3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "fireworks/gpt-oss-120b",
+      "providerId": "fireworks",
+      "upstreamId": "gpt-oss-120b",
+      "displayName": "OpenAI gpt-oss-120b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-120b — current Fireworks model page (retrieved 2026-09-19). It declares image input is not supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-120b — current Fireworks model page (retrieved 2026-09-19). It declares Function Calling support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-120b — current Fireworks model page (retrieved 2026-09-19). It declares Function Calling support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-120b — current Fireworks model page (retrieved 2026-09-19). It declares this context length.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-120b — current Fireworks model page (retrieved 2026-09-19). It declares Harmony-format structured outputs.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.6,
+          "cacheReadPerMTokUsd": 0.015
+        },
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-120b — current Fireworks model page (retrieved 2026-09-19). It declares these Standard serverless input/cached-input/output rates per 1M tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/openai/gpt-oss-120b (read 2026-09-27): \"You can adjust the reasoning level that suits your task across three levels: Low: Fast responses for general dialogue. Medium: Balanced speed and detail. High: Deep and detailed analysis. ... reasoning_effort: A string that describes the reasoning effort, defaults to \"medium\".\" — the request field is reasoning_effort (chat template also accepts a \"Reasoning: high\" system-prompt override) — the maker's effort values ['Low', 'Medium', 'High'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29): \"provides access to the model's reasoning process through the `reasoning_content` field\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "fireworks/gpt-oss-120b"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "fireworks/gpt-oss-20b",
+      "providerId": "fireworks",
+      "upstreamId": "gpt-oss-20b",
+      "displayName": "OpenAI gpt-oss-20b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#gpt-oss-20b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#gpt-oss-20b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-20b (read 2026-09-27): \"Function Calling Not supported\" — explicitly NOT supported on this page, unlike the 120b sibling",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-20b (read 2026-09-27): \"Function Calling Not supported\" — explicitly NOT supported on this page, unlike the 120b sibling",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 131000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/gpt-oss-20b (read 2026-09-27): \"Context Length 131k tokens\" — stated as \"131k tokens\"; sibling 120b's own row already has the exact 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/openai/gpt-oss-20b (read 2026-09-27): \"You can adjust the reasoning level that suits your task across three levels: Low ... Medium ... High ... reasoning_effort: A string that describes the reasoning effort, defaults to \"medium\".\" — Fireworks' own page also says (provider, own text) \"supports configurable reasoning depth for agentic applications\" — the maker's effort values ['Low', 'Medium', 'High'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29): \"provides access to the model's reasoning process through the `reasoning_content` field\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "fireworks/gpt-oss-20b"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.fireworks.ai/guides/reasoning (read 2026-10-29), \"Interleaved thinking\": \"you MUST include the `reasoning_content` from previous assistant turns in subsequent requests\"; \"If a model does not support interleaved thinking, it simply ignores the extra reasoning context so this pattern is safe to use broadly.\" No error is documented: \"If you construct the assistant message manually ... but omit the `reasoning_content` field, the model will not have access to its previous reasoning process.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "gpt-oss-20b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "fireworks/kimi-k2p5",
+      "providerId": "fireworks",
+      "upstreamId": "kimi-k2p5",
+      "displayName": "Kimi K2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#kimi-k2p5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#kimi-k2p5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p5 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p5 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p5 (read 2026-09-27): \"Context Length 262k tokens\" — stated as \"262k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2p5",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "fireworks/kimi-k2p6",
+      "providerId": "fireworks",
+      "upstreamId": "kimi-k2p6",
+      "displayName": "Kimi K2.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p6 — current Fireworks model page (retrieved 2026-09-19). It declares image input support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#kimi-k2p6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p6 — current Fireworks model page (retrieved 2026-09-19). It declares Function Calling support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p6 — current Fireworks model page (retrieved 2026-09-19). It declares Function Calling support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p6 — current Fireworks model page (retrieved 2026-09-19). It declares this context length.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.95,
+          "outputPerMTokUsd": 4,
+          "cacheReadPerMTokUsd": 0.16
+        },
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k2p6 — current Fireworks model page (retrieved 2026-09-19). It declares these Standard serverless input/cached-input/output rates per 1M tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2p6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "fireworks/kimi-k3",
+      "providerId": "fireworks",
+      "upstreamId": "kimi-k3",
+      "displayName": "Kimi K3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1040000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k3 (read 2026-09-27): \"Context Length 1040k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k3 (read 2026-09-27): \"Support image input Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k3 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/kimi-k3 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.fireworks.ai/serverless/pricing (read 2026-09-27): \"Kimi K3 | $3.00 / $0.30 / $15.00 | $3.75 / $0.375 / $18.75\" — USD 3.0 input / 15.0 output / 0.3 cached input per 1M tokens; tiers: Priority tier: $3.75/$0.375/$18.75; a separate \"Kimi K3 Fast\" variant is priced at $4.50/$0.45/$22.50 standard, no priority tier (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "fireworks/minimax-m2p5",
+      "providerId": "fireworks",
+      "upstreamId": "minimax-m2p5",
+      "displayName": "MiniMax M2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#minimax-m2p5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#minimax-m2p5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p5 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p5 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 196000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p5 (read 2026-09-27): \"Context Length 196k tokens\" — stated as \"196k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m2p5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "fireworks/minimax-m2p7",
+      "providerId": "fireworks",
+      "upstreamId": "minimax-m2p7",
+      "displayName": "MiniMax M2.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p7 — current Fireworks model page (retrieved 2026-09-19). It declares image input is not supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#minimax-m2p7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p7 — current Fireworks model page (retrieved 2026-09-19). It declares Function Calling support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p7 — current Fireworks model page (retrieved 2026-09-19). It declares Function Calling support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 196608,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p7 — current Fireworks model page (retrieved 2026-09-19). It declares this context length.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.059
+        },
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m2p7 — current Fireworks model page (retrieved 2026-09-19). It declares these Standard serverless input/cached-input/output rates per 1M tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m2p7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "fireworks/minimax-m3",
+      "providerId": "fireworks",
+      "upstreamId": "minimax-m3",
+      "displayName": "MiniMax M3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 512000,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m3 (read 2026-09-27): \"Context Length 512k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m3 (read 2026-09-27): \"Support image input Not supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m3 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/minimax-m3 (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 1.2,
+          "cacheReadPerMTokUsd": 0.06
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.fireworks.ai/serverless/pricing (read 2026-09-27): \"MiniMax M3 | $0.30 / $0.06 / $1.20 | $0.45 / $0.09 / $1.80\" — USD 0.3 input / 1.2 output / 0.06 cached input per 1M tokens; tiers: Priority tier: $0.45/$0.09/$1.80 (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "fireworks/qwen3p6-plus",
+      "providerId": "fireworks",
+      "upstreamId": "qwen3p6-plus",
+      "displayName": "Qwen3.6 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#qwen3p6-plus",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/fireworks/index.ts#qwen3p6-plus — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/qwen3p6-plus (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/qwen3p6-plus (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3p6-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "fireworks/qwen3p8-max",
+      "providerId": "fireworks",
+      "upstreamId": "qwen3p8-max",
+      "displayName": "Qwen 3.8 Max",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/qwen3p8-max (read 2026-09-27): \"Support image input Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/qwen3p8-max (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://fireworks.ai/models/fireworks/qwen3p8-max (read 2026-09-27): \"Function Calling Supported\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.fireworks.ai/serverless/pricing (read 2026-09-27): \"Qwen 3.8 Max | $2.00 / $0.25 / $6.00 | $3.00 / $0.375 / $9.00\" — USD 2.0 input / 6.0 output / 0.25 cached input per 1M tokens; tiers: Priority tier: $3.00/$0.375/$9.00 (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3p8-max",
+      "modelFamily": "qwen"
+    }
+  ]
+}

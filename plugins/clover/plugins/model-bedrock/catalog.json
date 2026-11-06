@@ -1,0 +1,881 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "bedrock-converse"
+    ],
+    "authKinds": [
+      "cloud-credential-chain"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "provider-native",
+    "liveCatalogAuthority": "partial",
+    "adapterId": "winter.bedrock-converse",
+    "family": "bedrock",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/bedrock/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "native cloud (R6-16): hand-rolled SigV4 and AWS event-stream decoding need their own signing/streaming proof; credentials are env + shared-credentials-file only this phase (no IMDS/STS)"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "cloud-credential",
+      "citation": "https://aws.amazon.com/bedrock — the vendor's own product page as OmniRoute's product catalog records it at 5458026. The credential is the OPERATOR'S OWN AWS account, signed with SigV4, which is why the basis is cloud-credential rather than api-key. EVIDENCE TIER: pinned-upstream — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "bedrock/amazon.nova-lite-v1:0",
+      "providerId": "bedrock",
+      "upstreamId": "amazon.nova-lite-v1:0",
+      "displayName": "Amazon Nova Lite",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 300000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — Amazon Nova Lite context window 300000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 5000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — Amazon Nova Lite per-model card maximum output 5000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — per-model Input Modalities table marks Text, Image, Video supported; PDF is not listed as a separate modality",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/userguide/what-is-nova.html — Amazon Nova Lite text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — Amazon Nova Lite bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — Amazon Nova Lite bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — Amazon Nova Lite bedrock-runtime card lists structured outputs as Not Supported; prompt-only JSON is not schema-constrained output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html — Amazon Nova Lite card lists explicit prompt caching supported, up to 4 checkpoints, 5-minute TTL, 20K-token Nova cap",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html (read 2026-09-27): \"Context window: 300K tokens ... Max output tokens: 5K ... Knowledge cutoff: Oct 2024\" — the card's Model Details list (Model lifecycle/Context window/Max output tokens/Knowledge cutoff) has no Reasoning line at all, unlike sibling Nova Premier's card which explicitly states \"Reasoning: Supported\" in the same list position",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "amazon.nova-lite",
+      "modelFamily": "nova"
+    },
+    {
+      "key": "bedrock/amazon.nova-micro-v1:0",
+      "providerId": "bedrock",
+      "upstreamId": "amazon.nova-micro-v1:0",
+      "displayName": "Amazon Nova Micro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html — Amazon Nova Micro context window 128000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 5000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html — Amazon Nova Micro per-model card maximum output 5000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/userguide/what-is-nova.html — Amazon Nova Micro supports text inputs; PDF is mapped from document support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/userguide/what-is-nova.html — Amazon Nova Micro text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html — Amazon Nova Micro bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html — Amazon Nova Micro bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html — Amazon Nova Micro bedrock-runtime card lists structured outputs as Not Supported; prompt-only JSON is not schema-constrained output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html — Amazon Nova Micro card lists explicit prompt caching supported, up to 4 checkpoints, 5-minute TTL, 20K-token Nova cap",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html (read 2026-09-27): \"Context window: 128K tokens ... Max output tokens: 5K ... Knowledge cutoff: Oct 2024\" — no Reasoning line on the card, same pattern as Nova Lite",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "amazon.nova-micro",
+      "modelFamily": "nova"
+    },
+    {
+      "key": "bedrock/amazon.nova-premier-v1:0",
+      "providerId": "bedrock",
+      "upstreamId": "amazon.nova-premier-v1:0",
+      "displayName": "Amazon Nova Premier",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Amazon Nova Premier context window 1000000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 25000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Amazon Nova Premier per-model card maximum output 25000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — per-model Input Modalities table marks Text, Image, Video supported; PDF is not listed as a separate modality",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/userguide/what-is-nova.html — Amazon Nova Premier text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Amazon Nova Premier bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Amazon Nova Premier bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Amazon Nova Premier bedrock-runtime card lists structured outputs as Not Supported; prompt-only JSON is not schema-constrained output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Amazon Nova Premier card lists explicit prompt caching supported, up to 4 checkpoints, 5-minute TTL, 20K-token Nova cap",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html — Nova Premier model card explicitly lists Reasoning: Supported",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T11:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "canonicalModelId": "amazon.nova-premier",
+      "modelFamily": "nova"
+    },
+    {
+      "key": "bedrock/amazon.nova-pro-v1:0",
+      "providerId": "bedrock",
+      "upstreamId": "amazon.nova-pro-v1:0",
+      "displayName": "Amazon Nova Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 300000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — Amazon Nova Pro context window 300000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 5000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — Amazon Nova Pro per-model card maximum output 5000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — per-model Input Modalities table marks Text, Image, Video supported; PDF is not listed as a separate modality",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/userguide/what-is-nova.html — Amazon Nova Pro text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — Amazon Nova Pro bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — Amazon Nova Pro bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — Amazon Nova Pro bedrock-runtime card lists structured outputs as Not Supported; prompt-only JSON is not schema-constrained output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html — Amazon Nova Pro card lists explicit prompt caching supported, up to 4 checkpoints, 5-minute TTL, 20K-token Nova cap",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-pro.html (read 2026-09-27): \"Context window: 300K tokens ... Max output tokens: 5K ... Knowledge cutoff: Oct 2024\" — no Reasoning line on the card, same pattern as Nova Lite",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "amazon.nova-pro",
+      "modelFamily": "nova"
+    },
+    {
+      "key": "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "providerId": "bedrock",
+      "upstreamId": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "displayName": "Claude 3.5 Sonnet v2 (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "canonicalModelId": "claude-3.5-sonnet-20241022",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bedrock/anthropic.claude-haiku-4-5",
+      "providerId": "bedrock",
+      "upstreamId": "anthropic.claude-haiku-4-5",
+      "displayName": "Claude Haiku 4.5 (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-haiku-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-haiku-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-haiku-4-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-haiku-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-haiku-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html (read 2026-09-27): \"Max output tokens: 64K\" — stated as \"64K\" directly on AWS's own Bedrock model card",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-haiku-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bedrock/anthropic.claude-opus-4-6",
+      "providerId": "bedrock",
+      "upstreamId": "anthropic.claude-opus-4-6",
+      "displayName": "Claude Opus 4.6 (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-6.html (read 2026-09-27): \"Max output tokens: 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bedrock/anthropic.claude-opus-4-7",
+      "providerId": "bedrock",
+      "upstreamId": "anthropic.claude-opus-4-7",
+      "displayName": "Claude Opus 4.7 (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-opus-4-7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html (read 2026-09-27): \"Max output tokens: 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.7",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bedrock/anthropic.claude-sonnet-4-5",
+      "providerId": "bedrock",
+      "upstreamId": "anthropic.claude-sonnet-4-5",
+      "displayName": "Claude Sonnet 4.5 (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html (read 2026-09-27): \"Max output tokens: 64K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bedrock/anthropic.claude-sonnet-4-6",
+      "providerId": "bedrock",
+      "upstreamId": "anthropic.claude-sonnet-4-6",
+      "displayName": "Claude Sonnet 4.6 (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#anthropic.claude-sonnet-4-6",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-6.html (read 2026-09-27): \"Max output tokens: 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "bedrock/openai.gpt-oss-120b-1:0",
+      "providerId": "bedrock",
+      "upstreamId": "openai.gpt-oss-120b-1:0",
+      "displayName": "GPT-OSS 120B (Bedrock)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-oss-120b.html (read 2026-09-27): \"Context window: 128K tokens\" — existing catalog value is 200000; AWS's own model card for openai.gpt-oss-120b-1:0 states the context window is 128K tokens, not 200K (CORRECTS the upstream-extracted 200000, which carried no vendor statement: open-sse/config/providers/registry/bedrock/index.ts#openai.gpt-oss-120b-1:0)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#openai.gpt-oss-120b-1:0",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#openai.gpt-oss-120b-1:0 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#openai.gpt-oss-120b-1:0",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/bedrock/index.ts#openai.gpt-oss-120b-1:0",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 16000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-oss-120b.html (read 2026-09-27): \"Max output tokens: 16K\" — stated as \"16K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "bedrock/us.amazon.nova-2-lite-v1:0",
+      "providerId": "bedrock",
+      "upstreamId": "us.amazon.nova-2-lite-v1:0",
+      "displayName": "Amazon Nova 2 Lite (US Geo)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html — Amazon Nova 2 Lite (US Geo) context window 1000000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/nova2-userguide/what-is-nova-2.html — Nova 2 model family can generate up to 65,536 tokens; model card rounds this to 64K",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html — per-model Input Modalities table marks Text, Image, Video supported; PDF is not listed as a separate modality",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/nova/latest/nova2-userguide/what-is-nova-2.html — Amazon Nova 2 Lite (US Geo) text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html — Amazon Nova 2 Lite (US Geo) bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html — Amazon Nova 2 Lite (US Geo) bedrock-runtime card lists client-side tool calling",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "structuredOutput": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html — Amazon Nova 2 Lite (US Geo) bedrock-runtime card lists structured outputs as Not Supported; prompt-only JSON is not schema-constrained output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html — Amazon Nova 2 Lite (US Geo) card lists explicit prompt caching supported, up to 4 checkpoints, 5-minute TTL, 20K-token Nova cap",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T11:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.aws.amazon.com/nova/latest/nova2-userguide/extended-thinking.html — Nova 2 Lite extended thinking available and disabled by default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T11:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "amazon.nova-2-lite",
+      "modelFamily": "nova"
+    }
+  ]
+}

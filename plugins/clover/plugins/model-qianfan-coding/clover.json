@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Baidu Qianfan Coding Plan (OpenAI dialect)",
+  "description": "Baidu Qianfan Coding Plan (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qianfan-coding",
+        "name": "Baidu Qianfan Coding Plan (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Baidu Qianfan Coding Plan (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Baidu Qianfan Coding Plan (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://qianfan.baidubce.com/v2/coding"
+        }
+      }
+    ]
+  }
+}

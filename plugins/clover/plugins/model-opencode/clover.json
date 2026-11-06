@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "OpenCode Zen",
+  "description": "OpenCode Zen's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "opencode",
+        "name": "OpenCode Zen",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OpenCode Zen API key. Clover keeps it in your credential store and adds it to OpenCode Zen's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://opencode.ai/zen/v1"
+        }
+      }
+    ]
+  }
+}

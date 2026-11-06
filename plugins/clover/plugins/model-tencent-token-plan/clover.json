@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Tencent Cloud Token Plan (OpenAI dialect)",
+  "description": "Tencent Cloud Token Plan (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "tencent-token-plan",
+        "name": "Tencent Cloud Token Plan (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Tencent Cloud Token Plan (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Tencent Cloud Token Plan (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.lkeap.cloud.tencent.com/plan/v3"
+        }
+      }
+    ]
+  }
+}

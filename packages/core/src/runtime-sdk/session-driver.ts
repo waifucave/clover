@@ -38,7 +38,8 @@ import { classifyPermissionMode } from "@waifucave/clover-agent-sdk/messaging";
 import type { PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
 import type { EffortLevel, McpServerConfig, Options, PermissionResult, ProviderConnectionConfig } from "@waifucave/clover-agent-sdk";
 import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
-import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { activeCatalog } from "./model-plugins/catalog-source";
+import { installedModelPlugins } from "./model-plugins/index";
 import { isSelectionRefusal, type RuntimeDirectoryEntry, type RuntimeSelection, type SelectionAlternative } from "./host";
 import type { SecretStore } from "../auth/secret-store";
 import type { ApprovalBroker } from "../agent/approvals";
@@ -746,7 +747,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
   });
 
   const catalogVersion = (): string => {
-    try { return loadCatalog().catalogVersion; } catch { return "unstated"; }
+    try { return activeCatalog().catalogVersion; } catch { return "unstated"; }
   };
 
   const legForNew = (mode: SessionMode): SessionLeg => legForNewSession(mode, deps.settings() ?? undefined);
@@ -1303,6 +1304,11 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       const allowlist = sessionCredentialAllowlist(options, configuredMcp, slotProviders);
       options.onCredentialResolve = hostCredentials.resolverFor(allowlist);
       options.onMcpOAuthRefresh = hostCredentials.mcpRefresherFor(allowlist);
+      // A-M2 (spec §3.3): every provider is a model plugin. With the computer's model plugins installed, the session
+      // reads their catalog and registers only the generic adapters and the code plugins' adapters, which this
+      // process serves through the plugin host; no provider the SDK ships is the session's otherwise.
+      const modelProviders = installedModelPlugins()?.sessionOption({ caller: { kind: "core" }, session: sessionId });
+      if (modelProviders !== undefined) options.modelProviders = modelProviders;
       // WS-27: URL-mode elicitation. Form mode (and anything else that is not URL mode) is declined
       // deterministically inside the handler, as is every request in a dispatch child.
       if (onElicitation !== undefined) options.onElicitation = onElicitation;
@@ -1648,7 +1654,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     // the same tag's own prefix.
     const selection = providerFor(effectiveTag, deps.home);
     const providerId = decided?.providerId ?? splitTag(effectiveTag).providerId;
-    const providerAuthKinds = loadCatalog().providers.find((p) => p.id === providerId)?.authKinds ?? [];
+    const providerAuthKinds = activeCatalog().providers.find((p) => p.id === providerId)?.authKinds ?? [];
     const authFamily: RuntimeSelection["authFamily"] = providerAuthKinds.includes("api-key") ? "api-key" : "custom";
     try {
       records.create({

@@ -13,6 +13,7 @@
     "entry": "client/index.tsx"
   },
   "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
     "ui": [
       {
         "spot": "app.surface",

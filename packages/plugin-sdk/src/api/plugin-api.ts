@@ -14,7 +14,7 @@
 // plugin host doesn't pass on.
 import {
   type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type DeviceView, type FileStat, type HostProcess,
-  type HoldTarget, type HoldView, type MemoryEntry, type PlanReading, type RoutineRunView, type RoutineView,
+  type HoldTarget, type HoldView, type InstallSource, type MemoryEntry, type PlanReading, type PluginState, type RoutineRunView, type RoutineView,
   type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
   topPluginIdOf,
 } from "@waifucave/clover-protocol";
@@ -37,6 +37,8 @@ export interface CallOptions {
 
 /** Who called and for what, handed to every command, tool and point handler (§5.4 "The caller"). */
 export interface HandlerContext {
+  /** Whom the call is for, as the core recorded it when it made the call (R7): for a tool call or a hook, the session
+   *  that made it; never anything the plugin or the model wrote (no `_meta` caller). */
   readonly caller: Caller;
   /** The session the call is for, when it is for one (a tool call's, a hook's). */
   readonly session?: string;
@@ -46,9 +48,24 @@ export interface HandlerContext {
   readonly signal: AbortSignal;
   /** When the call runs out of time, in the shared clock's milliseconds. */
   readonly deadline: number;
+  /** The plugin API bound to this call (R7): what the plugin calls through it while serving a tool call acts as that
+   *  call's session, so the core's own checks (a tab's owner, a hold, the fence) apply to the session, not to the
+   *  plugin. The plugin host carries the call's id with each such call and the core binds the caller from its own
+   *  record of the call. In a `host` MCP server, which gets no context, the host runs each `tools/call` inside its
+   *  call, so `api` calls awaited from that handler act the same way; a call from work started outside it (a timer, a
+   *  `start` task) acts as the plugin. */
   readonly api: PluginApi;
   /** A streamed call's input, when the caller streams one (a voice's microphone audio). */
   readonly input?: AsyncIterable<unknown>;
+}
+
+/** How a plugin-API call fails: it rejects with an error whose `code` is the contract's (`held`, `not_yours`,
+ *  `point_stale`, `stalled`, `fenced`, `refused`, `not_found`…, as the core's `ContractError` codes) and whose
+ *  `detail`, when there is one, holds no secret. On the wire it is the JSON-RPC error's `data.code` and `data.detail`
+ *  (L's question). */
+export interface PluginApiError extends Error {
+  readonly code: string;
+  readonly detail?: Readonly<Record<string, unknown>>;
 }
 
 /** A handler: any export of `host.entry` that a manifest names (§5.3 "Every handler, adapter, custom sign-in and
@@ -69,9 +86,32 @@ export type HandlerExport = Handler<any, any> | HandlerObject;
  *  entry's `runsOn` says), `notify` when something happens that the user hasn't seen and `clear` when they catch up.
  *  Provisional for lanes D and I. */
 export interface NotifierHandler {
-  notify(update: NotifierUpdate, ctx: HandlerContext): void | Promise<void>;
+  notify(update: NotifierUpdate, ctx: NotifierContext): void | Promise<void>;
   /** The user caught up: everything is seen. */
-  clear(args: undefined, ctx: HandlerContext): void | Promise<void>;
+  clear(args: undefined, ctx: NotifierContext): void | Promise<void>;
+}
+
+/** A notifier's context. `desktop` is the local app's notifications on the computer the notifier runs on (lane G's
+ *  ask: a `runsOn: "each"` notifier reaches its own computer's app), present only for the bundled `clover` tree's
+ *  notifiers and only while this computer's app is connected; the core sends them as `app.notify`. */
+export interface NotifierContext extends HandlerContext {
+  readonly desktop?: DesktopNotifications;
+}
+
+export interface DesktopNotifications {
+  /** Shows or replaces the banner with this id. `shown: false` when the app showed nothing, because it is in front
+   *  showing that session already. */
+  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean }): Promise<{ shown: boolean }>;
+  /** Closes one banner, or every banner this notifier showed. */
+  close(id?: string): Promise<void>;
+}
+
+/** A `pill.target` entry's handler (lane G's ask): the user's own words, sent from the Dispatch pill to this entry.
+ *  The pill sends only from a real key press or click (`useUserSend`). The words are the user's to this plugin; what
+ *  the plugin does with them is its own, and a turn it starts with them is the plugin's (`conversation.send`), never
+ *  the user's. */
+export interface PillTargetHandler {
+  send(args: { text: string; device?: string }, ctx: HandlerContext): void | Promise<void>;
 }
 
 /** What the core tells a notifier. It never holds a message's, a card's, a question's or a tool's text, a file or a
@@ -90,6 +130,12 @@ export interface NotifierUpdate {
   /** When it happened, on the shared clock. */
   at: number;
   notification?: { title: string; body?: string };
+  /** Who the update is from, always (#179's review): `clover` (name "Clover") for the core's own (a message, a card, a
+   *  question, a routine's result, an agent finishing, its own notices), or the plugin that called `notify.send`, by id
+   *  and name (lane G's ask). `thirdParty` is true for a plugin outside the bundled `clover` tree: a notifier shows its
+   *  notification marked as a plugin's ("Home, a plugin: …"), never as Clover's or a bot's, so no plugin named like a
+   *  bot ("Luna") speaks as one. */
+  sender: { pluginId: string; name: string; thirdParty: boolean };
 }
 
 /** A `webhook.ingress` entry's handler (§7): an object of handlers the webhook trigger calls through `points.call`
@@ -419,10 +465,13 @@ export interface ComputersApi {
   get(name: string): Promise<ComputerView>;
   watch(listener: (computer: ComputerView) => void): Unsubscribe;
   holds(computer: string): Promise<{ holds: HoldView[]; userWorking: boolean }>;
-  takeHold(computer: string, target: HoldTarget, opts?: { session?: string }): Promise<{ held: true; hold: HoldView } | { held: false; reason: "held-by-other" | "user-working" | "computer-offline"; by?: string }>;
+  /** A hold for the session whose tool call the plugin is serving (R7): the core takes the session from the call it
+   *  bound, never from the plugin (#179's review, S1). Outside a tool call the hold is the plugin's own. */
+  takeHold(computer: string, target: HoldTarget): Promise<{ held: true; hold: HoldView } | { held: false; reason: "held-by-other" | "user-working" | "computer-offline"; by?: string }>;
   releaseHold(holdId: string): Promise<void>;
   setUserWorking(computer: string, on: boolean, target?: HoldTarget): Promise<void>;
-  setActionRunning(computer: string, running: boolean, opts?: { session?: string }): Promise<void>;
+  /** For the bound session too, as `takeHold` is. */
+  setActionRunning(computer: string, running: boolean): Promise<void>;
   cloverWindows(computer: string): Promise<CloverWindow[]>;
 }
 
@@ -450,7 +499,10 @@ export interface FilesApi {
   remove(path: string, opts?: { recursive?: boolean }): Promise<void>;
   move(from: string, to: string): Promise<void>;
   glob(pattern: string, opts: { cwd: string; limit?: number }): Promise<{ paths: string[]; truncated: boolean }>;
-  grep(pattern: string, opts: { cwd: string; glob?: string; limit?: number }): Promise<{ matches: { path: string; line: number; text: string }[]; truncated: boolean }>;
+  grep(pattern: string, opts: { cwd: string; glob?: string; ignoreCase?: boolean; limit?: number }): Promise<{ matches: { path: string; line: number; text: string }[]; truncated: boolean }>;
+  /** Changes under a folder (lane J's ask, for a code session's Files panel): the tree paths that changed, coalesced,
+   *  or `resync` when the holder's watch dropped and the folder must be listed again. The unsubscribe ends it. */
+  watch(path: string, listener: (event: { type: "changed"; paths: string[] } | { type: "resync" }) => void): Promise<Unsubscribe>;
 }
 
 /** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for the component that draws
@@ -460,6 +512,12 @@ export interface FilesApi {
  *  `input` takes the `keydown` or `paste` event itself; a trusted key press becomes its bytes, and a trusted paste goes
  *  through the paste door, which takes the clipboard's text, brackets it when the program turned bracketed paste on,
  *  and asks the user before one of more than one line goes. An untrusted or made-up event sends nothing. */
+/** `plugins.install`, bundled-only (the plugin index browser): what it installs lands found, with its sealed OK card, and
+ *  never runs before the user's OK (F-M2's review, S1). Components only. */
+export interface PluginsApi {
+  install(source: InstallSource): Promise<{ id: string; state: PluginState; card?: string }>;
+}
+
 export interface TerminalApi {
   /** In a folder of the tree on that computer (its home folder by default); `session` shows it in that panel. */
   open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
@@ -478,17 +536,31 @@ export interface TerminalInputEvent {
 }
 
 /** `browser`: the Clover Browser's API (§12.1); DevTools calls pass only allowlisted domains. */
+/** A plugin's calls carry the plugin as their caller, or, while it serves a tool call, that call's session (R7).
+ *
+ *  Whose tabs a call may open (#179's review, S1): acting as itself, a plugin opens tabs only in its own partition
+ *  (`owner: { kind: "plugin", pluginId }` with its own id); serving a tool call, only for that session or the session's
+ *  own bot; and the person's own partition (`user`) only for a session the user gave its card (ruling R10). Anything
+ *  else is refused.
+ *
+ *  On a tab the user holds, a session's calls and a plugin's own code are refused (`held`). Only a layer's command that
+ *  the app saw come from the user's own click or key in that layer passes, so a view's back button works while held
+ *  (L's question). A layer's calls carry `{ kind: "plugin", pluginId }`, never the user. `computer` is a computer's
+ *  name, as `api.plugin.computer` gives this one. */
 export interface BrowserApi {
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
-  open(opts: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView>;
+  /** Opens a tab headless, or shown at once in the view `show` names (L's question). */
+  open(opts: { owner: TabOwner; url?: string; computer?: string; show?: { view: string; viewport: Viewport } }): Promise<TabView>;
   close(tab: string): Promise<void>;
   navigate(tab: string, url: string): Promise<TabView>;
   show(tab: string, view: string, viewport: Viewport): Promise<TabView>;
   hide(tab: string): Promise<TabView>;
   screenshot(tab: string, opts?: { format?: "png" | "jpeg" | "webp"; quality?: number }): Promise<Screenshot>;
+  /** Resolves with the DevTools method's own result, unwrapped. */
   cdp<R = unknown>(tab: string, method: string, params?: Record<string, unknown>, opts?: { viewport?: Viewport }): Promise<R>;
   onCdpEvent(tab: string, listener: (method: string, params: unknown) => void): Unsubscribe;
-  watch(listener: (tab: TabView) => void): Unsubscribe;
+  /** A tab's changes, and its close, as the core's `BrowserChange` (L's question). */
+  watch(listener: (change: { type: "changed"; tab: TabView } | { type: "closed"; id: string; computer: string; by: "user" | "page" | "crash" | "api" }) => void): Unsubscribe;
 }
 
 export interface UsageApi {
@@ -554,6 +626,8 @@ export interface PluginApi {
   readonly browser?: BrowserApi;
   /** Components only. */
   readonly terminal?: TerminalApi;
+  /** Components only, of the bundled `clover` tree. */
+  readonly plugins?: PluginsApi;
   readonly usage?: UsageApi;
   readonly logs?: LogsApi;
   readonly notify?: NotifyApi;

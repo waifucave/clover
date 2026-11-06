@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Cline",
+  "description": "Cline's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "cline",
+        "name": "Cline",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Cline API key. Clover keeps it in your credential store and adds it to Cline's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.cline.bot/api/v1"
+        }
+      }
+    ]
+  }
+}

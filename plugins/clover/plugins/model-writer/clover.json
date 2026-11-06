@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Writer",
+  "description": "Writer's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "writer",
+        "name": "Writer",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Writer API key. Clover keeps it in your credential store and adds it to Writer's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.writer.com/v1"
+        }
+      }
+    ]
+  }
+}

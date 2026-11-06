@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // clover.waifucave.com: the web companion's page (spec §8.4). The Worker serves the built page (dist/, from
+  // `bun run build`) with its security headers, and /config.json with the handshake's address.
+  //
+  // The top level is the local profile; env.production is what the first deploy at the live gates would use.
+  // Nothing here has been deployed.
+  "name": "clover-web-local",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true },
+  "vars": {
+    "HANDSHAKE_ORIGIN": "http://127.0.0.1:8787",
+    "ALLOWED_HANDSHAKES": ""
+  },
+  "env": {
+    "production": {
+      "name": "clover-web",
+      "workers_dev": false,
+      "observability": { "enabled": false },
+      "routes": [{ "pattern": "clover.waifucave.com", "custom_domain": true }],
+      "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true },
+      "vars": {
+        "HANDSHAKE_ORIGIN": "https://handshake.waifucave.com",
+        "ALLOWED_HANDSHAKES": ""
+      }
+    }
+  }
+}

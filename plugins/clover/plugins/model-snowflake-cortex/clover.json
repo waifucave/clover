@@ -1,0 +1,33 @@
+{
+  "manifest": 1,
+  "name": "Snowflake Cortex REST API (OpenAI dialect)",
+  "description": "Snowflake Cortex REST API (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "settings": {
+    "accountIdentifier": {
+      "type": "string",
+      "title": "accountIdentifier",
+      "description": "Your Snowflake Cortex REST API (OpenAI dialect) accountIdentifier, as its endpoint names it (https://<account-identifier>.snowflakecomputing.com/api/v2/cortex/v1).",
+      "required": true
+    }
+  },
+  "contributes": {
+    "models": [
+      {
+        "provider": "snowflake-cortex",
+        "name": "Snowflake Cortex REST API (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Snowflake Cortex REST API (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Snowflake Cortex REST API (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://${setting:accountIdentifier}.snowflakecomputing.com/api/v2/cortex/v1"
+        }
+      }
+    ]
+  }
+}

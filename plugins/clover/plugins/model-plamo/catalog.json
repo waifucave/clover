@@ -1,0 +1,110 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/plamo/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://plamo.preferredai.jp/api — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.platform.preferredai.jp/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "plamo/plamo-3.0-prime",
+      "providerId": "plamo",
+      "upstreamId": "plamo-3.0-prime",
+      "displayName": "PLaMo 3.0 Prime",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/plamo/index.ts#plamo-3.0-prime",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "maxOutputTokens": {
+        "value": 20000,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/plamo/index.ts#plamo-3.0-prime",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/plamo/index.ts#plamo-3.0-prime",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/plamo/index.ts#plamo-3.0-prime — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.plamo.preferredai.jp/en/api (read 2026-09-27): \"API reference defines ChatCompletionToolsObject, ChatCompletionToolsFunctionObject, ChatCompletionToolChoiceObject, ChatCompletionToolChoiceFunctionObject, ChatMessageToolCallsObject schemas for the /v1/chat/completions endpoint plamo-3.0-prime is served on.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.plamo.preferredai.jp/en/api (read 2026-09-27): \"API reference defines ChatCompletionToolsObject, ChatCompletionToolsFunctionObject, ChatCompletionToolChoiceObject, ChatCompletionToolChoiceFunctionObject, ChatMessageToolCallsObject schemas for the /v1/chat/completions endpoint plamo-3.0-prime is served on.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.plamo.preferredai.jp/en/api (read 2026-09-27): \"effort | none or medium | no | none | Allows selection of reasoning intensity. Supported options are none (no reasoning) or medium (standard amount of reasoning). Takes precedence over reasoning_effort.\" — Models table on the same page: \"plamo-3.0-prime | Context Length 262,144 tokens | Maximum Output Tokens 20,000 tokens | Reasoning Capability: Yes\" -- matches the catalog's existing HAS contextWindow=262144/maxOutputTokens=20000 exactly, no contradiction. — effort values ['none', 'medium'] ride `reasoning.effort`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "plamo-3.0-prime",
+      "modelFamily": "other"
+    }
+  ]
+}

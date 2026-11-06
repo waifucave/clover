@@ -27,6 +27,7 @@ function methodDoc(m: MethodSpec) {
     ...(m.userOnly ? { userOnly: true } : {}),
     ...(m.change !== undefined ? { change: m.change } : {}),
     params: schemaOf(m.params, "input"),
+    ...(m.peerParams !== undefined ? { peerParams: schemaOf(m.peerParams, "input") } : {}),
     result: schemaOf(m.result, "output"),
   };
 }

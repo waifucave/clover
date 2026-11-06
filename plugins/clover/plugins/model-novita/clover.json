@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Novita AI",
+  "description": "Novita AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "novita",
+        "name": "Novita AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Novita AI API key. Clover keeps it in your credential store and adds it to Novita AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.novita.ai/openai/v1"
+        }
+      }
+    ]
+  }
+}

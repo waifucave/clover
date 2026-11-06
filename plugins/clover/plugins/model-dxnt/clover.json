@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "DXNT",
+  "description": "DXNT's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "dxnt",
+        "name": "DXNT",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your DXNT API key. Clover keeps it in your credential store and adds it to DXNT's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://www.dxnt.com/v1"
+        }
+      }
+    ]
+  }
+}

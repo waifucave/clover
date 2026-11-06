@@ -1,0 +1,1491 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.bigmodel.cn/cn/guide/start/model-overview and https://docs.bigmodel.cn/cn/guide/start/pricing — Zhipu BigModel (China) model overview and pricing, retrieved 2026-09-25: OpenAI-compatible Chat at `https://open.bigmodel.cn/api/paas/v4` with a BigModel API key; CNY per-token billing.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "zhipu/glm-4.5-air",
+      "providerId": "zhipu",
+      "upstreamId": "glm-4.5-air",
+      "displayName": "GLM-4.5-AIR (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.5-air table context 128K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 96000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.5-air table maximum output 96K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-4.5-air",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-4.5-air has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — thinking.type=disabled switches chain-of-thought off; reasoning_effort is only for GLM-5.2+, so no graded level",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-4.5-air"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.298,
+          "cacheReadPerMTokUsd": 0.02384
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-4.5-air CN base tier CNY/MTok: input 0.8, output 2, cache hit 0.16; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4.5-air",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-4.6",
+      "providerId": "zhipu",
+      "upstreamId": "glm-4.6",
+      "displayName": "GLM-4.6 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.6 table context 200K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.6 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-4.6",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-4.6 has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — thinking.type=disabled switches chain-of-thought off; reasoning_effort is only for GLM-5.2+, so no graded level",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-4.6"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4.6",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-4.7",
+      "providerId": "zhipu",
+      "upstreamId": "glm-4.7",
+      "displayName": "GLM-4.7 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.7 table context 200K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.7 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-4.7",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-4.7 has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — GLM-4.7 forced thinking; reasoning_effort available only for GLM-5.2+, so no effort levels documented",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-4.7"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.298,
+          "outputPerMTokUsd": 1.192,
+          "cacheReadPerMTokUsd": 0.0596
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-4.7 CN base tier CNY/MTok: input 2, output 8, cache hit 0.4; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-4.7-flash",
+      "providerId": "zhipu",
+      "upstreamId": "glm-4.7-flash",
+      "displayName": "GLM-4.7-FLASH (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.7-flash table context 200K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.7-flash table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-4.7-flash",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — GLM-4.7 forced thinking; reasoning_effort available only for GLM-5.2+, so no effort levels documented",
+          "confidence": "inferred",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-4.7-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0,
+          "outputPerMTokUsd": 0,
+          "cacheReadPerMTokUsd": 0
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — Zhipu BigModel (China) price page lists GLM-4.7-Flash as free (免费) for input and output (retrieved 2026-09-25); recorded as an explicit zero list price, not an unknown one.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4.7-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-4.7-flashx",
+      "providerId": "zhipu",
+      "upstreamId": "glm-4.7-flashx",
+      "displayName": "GLM-4.7-FLASHX (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.7-flashx table context 200K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-4.7-flashx table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-4.7-flashx",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-4.7-flashx has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — GLM-4.7 forced thinking; reasoning_effort available only for GLM-5.2+, so no effort levels documented",
+          "confidence": "inferred",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-4.7-flashx"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0745,
+          "outputPerMTokUsd": 0.447,
+          "cacheReadPerMTokUsd": 0.0149
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-4.7-flashx CN base tier CNY/MTok: input 0.5, output 3, cache hit 0.1; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-4.7-flashx",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5",
+      "displayName": "GLM-5 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5 table context 200K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-5",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-5 has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — thinking.type=disabled switches chain-of-thought off; reasoning_effort is only for GLM-5.2+, so no graded level",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.596,
+          "outputPerMTokUsd": 2.682,
+          "cacheReadPerMTokUsd": 0.149
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-5 CN base tier CNY/MTok: input 4, output 18, cache hit 1; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5-turbo",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5-turbo",
+      "displayName": "GLM 5 Turbo (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — GLM-5-Turbo table context 200K tokens; decimal K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — GLM-5-Turbo table max output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — GLM-5-Turbo is in the CN text-model table.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — GLM-5-Turbo is in the CN text-model table.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/models/text/glm-5-turbo (read 2026-09-27): \"Function Calling ——精准调用，不掉链子 ... 强大的工具调用能力，支持多种外部工具集成\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/models/text/glm-5-turbo (read 2026-09-27): \"Function Calling ——精准调用，不掉链子 ... 强大的工具调用能力，支持多种外部工具集成\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.745,
+          "outputPerMTokUsd": 3.278,
+          "cacheReadPerMTokUsd": 0.1788
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — GLM-5-Turbo CN [0,32K) input tier CNY 5/22/1.2 per MTok input/output/cache read; >=32K is 7/26/1.8. USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.bigmodel.cn/cn/guide/models/text/glm-5-turbo (read 2026-09-27): \"thinking = { \"type\": \"enabled\" } # 启用深度思考模式\" — only \"enabled\" appears in this page's code sample (no \"disabled\" example found on this specific page, unlike the z.ai GLM pages which show both values explicitly) — effort values ['enabled'] ride `thinking`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5-turbo"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "glm-5-turbo",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5.1",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5.1",
+      "displayName": "GLM-5.1 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.1 table context 200K tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.1 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — text chat input documented for glm-5.1",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/api-reference/llm/chat-completion — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-5.1 has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — thinking.type=disabled switches chain-of-thought off; reasoning_effort is only for GLM-5.2+, so no graded level",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5.1"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 3.576,
+          "cacheReadPerMTokUsd": 0.1937
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-5.1 CN base tier CNY/MTok: input 6, output 24, cache hit 1.3; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5.2",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5.2",
+      "displayName": "GLM-5.2 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.2 table context 1M tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.2 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.2 — text chat input documented for glm-5.2",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.2 — chat completion returns text content",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.2 — chat completion `tools` supports function calls; applied to listed text model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.2 — chat completion tools accept function definitions",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — glm-5.2 has Cached Input price",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param — 5.2 accepts max/xhigh/high/medium/low/minimal/none; none and minimal skip thinking; xhigh maps max, low/medium map high",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "max",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5.2"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.192,
+          "outputPerMTokUsd": 4.172,
+          "cacheReadPerMTokUsd": 0.298
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-5.2 CN base tier CNY/MTok: input 8, output 28, cache hit 2; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5.3",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5.3",
+      "displayName": "GLM-5.3 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3 table context 1M tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3 table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — text chat input documented for glm-5.3",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — chat completion returns text content",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — forced thinking, reasoning_effort low/high/max (default max), cannot disable",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "max",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5.3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.192,
+          "outputPerMTokUsd": 4.172,
+          "cacheReadPerMTokUsd": 0.298
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-5.3 CN base tier CNY/MTok: input 8, output 28, cache hit 2; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5.3-flash",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5.3-flash",
+      "displayName": "GLM-5.3-FLASH (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3-flash table context 1M tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3-flash table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Flash/FlashX Input Modality Video/Image/Text/File; page explicitly cites PDF documents; PDF is normalized from File",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Output Modality Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — forced thinking, reasoning_effort low/high/max (default max), cannot disable",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "max",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5.3-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.4172,
+          "cacheReadPerMTokUsd": 0.03427
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-5.3-flash CN base tier CNY/MTok: input 0.8, output 2.8, cache hit 0.23; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zhipu/glm-5.3-flashx",
+      "providerId": "zhipu",
+      "upstreamId": "glm-5.3-flashx",
+      "displayName": "GLM-5.3-FLASHX (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3-flashx table context 1M tokens; decimal K/M interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/model-overview — glm-5.3-flashx table maximum output 128K tokens; binary K interpretation.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Flash/FlashX Input Modality Video/Image/Text/File; page explicitly cites PDF documents; PDF is normalized from File",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Output Modality Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — forced thinking, reasoning_effort low/high/max (default max), cannot disable",
+          "confidence": "inferred",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "max",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking (read 2026-10-29): the assistant message carries a sibling `reasoning_content` string (raw); streaming deltas carry `delta.reasoning_content`; BigModel mirror https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): Preserved Thinking \"is enabled by default on the Coding Plan endpoint and disabled by default on the standard API endpoint\"; https://docs.z.ai/api-reference/llm/chat-completion: `thinking.clear_thinking` \"Default value is True\" -- `true` drops prior turns' `reasoning_content`. The adapter sends no `clear_thinking`, so on this standard endpoint only the current tool loop's reasoning is used; earlier turns' is accepted and dropped.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "zhipu/glm-5.3-flashx"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.z.ai/guides/capabilities/thinking-mode (read 2026-10-29): \"We support interleaved thinking by default ... When using interleaved thinking with tools, thinking blocks should be explicitly preserved and returned together with the tool results.\" No error is documented for omission; https://docs.z.ai/api-reference/llm/chat-completion: \"Missing, truncated, rewritten, or reordered blocks may degrade performance or prevent the feature from taking effect\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.298,
+          "outputPerMTokUsd": 1.043,
+          "cacheReadPerMTokUsd": 0.08493
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.bigmodel.cn/cn/guide/start/pricing — glm-5.3-flashx CN base tier CNY/MTok: input 2, output 7, cache hit 0.57; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data). GLM-5.1/5-Turbo/5, GLM-4.7/4.5-Air have higher long-input tiers; see page.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3-flashx",
+      "modelFamily": "glm"
+    }
+  ]
+}

@@ -232,5 +232,7 @@ export function uiFor(react: ReactLike): Ui {
 }
 
 /** The stand-in is lane B's `UiApi` (checked here), with `<Spot>` taking `spotKey` for B's `key` and the extras the
- *  parts need (see `SpotElementProps`), plus `useCore`, `useEntry`, `useSpotEntries` and a provider for hosts. */
-export const asUiApi = (ui: Ui): Omit<UiApi, "Spot"> & { Spot(props: SpotElementProps): ReactNode } => ui;
+ *  parts need (see `SpotElementProps`), plus `useCore`, `useEntry`, `useSpotEntries` and a provider for hosts. Its
+ *  `useSpotEntries` takes the spot's props and says when there is a conflict, ahead of lane E's (E-M2), so it isn't
+ *  checked against B's declaration (`{ entries, subscribe }`) until then. */
+export const asUiApi = (ui: Ui): Omit<UiApi, "Spot" | "useSpotEntries"> & { Spot(props: SpotElementProps): ReactNode } => ui;

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Meta Llama API",
+  "description": "Meta Llama API's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "meta-llama",
+        "name": "Meta Llama API",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Meta Llama API API key. Clover keeps it in your credential store and adds it to Meta Llama API's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.llama.com/compat/v1"
+        }
+      }
+    ]
+  }
+}

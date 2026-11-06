@@ -1,0 +1,163 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "audit OQ-6: no Zen terms of service or acceptable-use page was located, and no vendor statement that Zen keys may be used from clients other than the `opencode` CLI — the docs show standard AI-SDK usage, which implies it, but implication is not documentation",
+        "free-tier models carry a data-collection caveat (\"During its free period, collected data may be used to improve the model\"; NVIDIA-backed free endpoints log usage under NVIDIA's own trial terms) that a host must surface",
+        "`space-bunny-free` (a stealth model, free for a limited time): Zen's docs say its provider follows a zero-retention policy and does not use request data for training (https://opencode.ai/docs/zen/, read 2026-09-27) -- a VENDOR CLAIM this application has not verified, about a model whose maker is undisclosed"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "audit:§2.2 `opencode` / §5.2 — OpenCode Zen docs (opencode.ai/docs/zen/, retrieved 2026-09-06): base `https://opencode.ai/zen/v1/` with `/responses`, `/messages`, `/chat/completions` and `/models/[model-id]`; key issued on signing up for Zen; pay-as-you-go per 1M tokens, several models temporarily free.",
+      "tier": "audit"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "opencode/big-pickle",
+      "providerId": "opencode",
+      "upstreamId": "big-pickle",
+      "displayName": "Big Pickle (OpenCode Zen)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/opencode/index.ts#big-pickle at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/docs/zen/ (read 2026-09-27) — OpenCode Zen is the model gateway of the OpenCode CODING AGENT, and this page lists `big-pickle` for use in that agent, which cannot work without tool use. The same ruling as a vendor's Claude Code guide: tool-use evidence for this endpoint, held at `inferred` below a field-level spec. Zen's docs state no tool field for the id itself.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/docs/zen/ (read 2026-09-27) — OpenCode Zen is the model gateway of the OpenCode CODING AGENT, and this page lists `big-pickle` for use in that agent, which cannot work without tool use. The same ruling as a vendor's Claude Code guide: tool-use evidence for this endpoint, held at `inferred` below a field-level spec. Zen's docs state no tool field for the id itself.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "open-sse/config/providers/registry/opencode/index.ts#big-pickle at v3.8.50 (5458026c) — `supportsReasoning: true`",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0,
+          "outputPerMTokUsd": 0,
+          "cacheReadPerMTokUsd": 0
+        },
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/docs/zen/ — Zen's own pricing table (per 1M tokens, read 2026-09-27): \"Big Pickle | Free | Free | Free | -\" (input / output / cached read / cached write). \"Big Pickle is a stealth model that's free on OpenCode for a limited time\" -- the zero price is dated, and during its free period collected data may be used to improve the model (the provider row's risk reasons carry that caveat).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "big-pickle",
+      "modelFamily": "other"
+    },
+    {
+      "key": "opencode/space-bunny-free",
+      "providerId": "opencode",
+      "upstreamId": "space-bunny-free",
+      "displayName": "Space Bunny (OpenCode Zen)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: Zen's model table (https://opencode.ai/docs/zen/, read 2026-09-27) states no modality for this id, so `text` is Winter's floor for a chat registry, NOT a vendor statement.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: Zen's model table (https://opencode.ai/docs/zen/, read 2026-09-27) states no modality for this id, so `text` is Winter's floor for a chat registry, NOT a vendor statement.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/docs/zen/ (read 2026-09-27) — OpenCode Zen is the model gateway of the OpenCode CODING AGENT, and this page lists `space-bunny-free` for use in that agent, which cannot work without tool use. The same ruling as a vendor's Claude Code guide: tool-use evidence for this endpoint, held at `inferred` below a field-level spec. Zen's docs state no tool field for the id itself.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/docs/zen/ (read 2026-09-27) — OpenCode Zen is the model gateway of the OpenCode CODING AGENT, and this page lists `space-bunny-free` for use in that agent, which cannot work without tool use. The same ruling as a vendor's Claude Code guide: tool-use evidence for this endpoint, held at `inferred` below a field-level spec. Zen's docs state no tool field for the id itself.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0,
+          "outputPerMTokUsd": 0,
+          "cacheReadPerMTokUsd": 0
+        },
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/docs/zen/ — Zen's pricing table lists Space Bunny as Free for input, output and cached read, observed 2026-09-27. Free for a LIMITED TIME with no end date published: re-check before relying on it; no cache-write rate is published.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "space-bunny-free",
+      "modelFamily": "other"
+    }
+  ]
+}

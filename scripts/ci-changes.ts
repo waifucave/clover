@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 
 export type CiArea =
   | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify" | "tree";
+  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify" | "tree" | "link";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
@@ -31,15 +31,16 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
   // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
-  // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon they carry
-  // (the job installs the deb and runs its `clover`)
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/"],
+  // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
+  // link sidecar they carry (the job installs the deb and runs its `clover`)
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/", "native/link/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
   extension: ["extensions/"],
-  // lane A's model plugins: the core's catalog and generator check reads them
-  core: [...CORE, "plugins/clover/plugins/model-*/**/*"],
+  // lane A's model plugins: the core's catalog and generator check reads them; the core's account tests import the
+  // services' shared account-token check and the harness's sign-in stub
+  core: [...CORE, "plugins/clover/plugins/model-*/**/*", "services/shared/", "packages/test-harness/src/signin-stub.ts"],
   cli: [...CORE, "packages/cli/"],
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
   scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
@@ -53,6 +54,9 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // lane B's conformance suites for them
   tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
     "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
+  // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and the
+  // devices and identity the link's handshake and pairing use
+  link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/"],
 };
 
 export const CI_AREA_NAMES = Object.keys(CI_AREAS) as CiArea[];

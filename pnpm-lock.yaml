@@ -94,20 +94,20 @@ importers:
   packages/core:
     dependencies:
       '@waifucave/clover-agent-runtime':
-        specifier: 0.0.63
-        version: 0.0.63
+        specifier: 0.0.65
+        version: 0.0.65
       '@waifucave/clover-agent-sdk':
-        specifier: 0.0.63
-        version: 0.0.63
+        specifier: 0.0.65
+        version: 0.0.65
       '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../protocol
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.63
-        version: 0.0.63
+        specifier: 0.0.65
+        version: 0.0.65
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.63
-        version: 0.0.63
+        specifier: 0.0.65
+        version: 0.0.65
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2
@@ -116,8 +116,14 @@ importers:
         version: 4.6.7
     devDependencies:
       '@waifucave/clover-provider-conformance':
-        specifier: 0.0.63
-        version: 0.0.63
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-service-shared':
+        specifier: workspace:*
+        version: link:../../services/shared
+      '@waifucave/clover-test-harness':
+        specifier: workspace:*
+        version: link:../test-harness
     optionalDependencies:
       '@yanlinglabs/winter-agent-sdk-darwin-arm64':
         specifier: 0.0.55
@@ -317,6 +323,31 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/companion-web:
+    dependencies:
+      '@waifucave/clover-service-handshake':
+        specifier: workspace:*
+        version: link:../../../../services/handshake
+      '@waifucave/clover-service-web':
+        specifier: workspace:*
+        version: link:../../../../services/web
+      node-datachannel:
+        specifier: 0.33.6
+        version: 0.33.6
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/composer:
     dependencies:
       lucide-react:
@@ -475,6 +506,102 @@ importers:
       react-dom:
         specifier: 19.3.1
         version: 19.3.1(react@19.3.1)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/model-azure-openai:
+    dependencies:
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.65
+        version: 0.0.65
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/model-bedrock:
+    dependencies:
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.65
+        version: 0.0.65
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/model-codex-oauth:
+    dependencies:
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.65
+        version: 0.0.65
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/model-google:
+    dependencies:
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.65
+        version: 0.0.65
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/model-vertex:
+    dependencies:
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.65
+        version: 0.0.65
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/model-xai-oauth:
+    dependencies:
+      '@waifucave/clover-provider-catalog':
+        specifier: 0.0.65
+        version: 0.0.65
+      '@waifucave/clover-provider-runtime':
+        specifier: 0.0.65
+        version: 0.0.65
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -707,6 +834,18 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/relay-cloudflare:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/settings:
     dependencies:
       lucide-react:
@@ -892,6 +1031,36 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  services/accounts:
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 1.4.8
+        version: 1.4.8(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)(vitest@4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@types/node':
+        specifier: 25.9.3
+        version: 25.9.3
+      '@waifucave/clover-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@waifucave/clover-test-harness':
+        specifier: workspace:*
+        version: link:../../packages/test-harness
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
   services/forwarder:
     devDependencies:
       '@cloudflare/vitest-plugin':
@@ -900,6 +1069,30 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261023.1
         version: 5.20261023.1
+      '@types/node':
+        specifier: 25.9.3
+        version: 25.9.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/handshake:
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 1.4.8
+        version: 1.4.8(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)(vitest@4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
       '@types/node':
         specifier: 25.9.3
         version: 25.9.3
@@ -939,6 +1132,54 @@ importers:
       vitest:
         specifier: 4.1.12
         version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/relay:
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 1.4.8
+        version: 1.4.8(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)(vitest@4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/node':
+        specifier: 25.9.3
+        version: 25.9.3
+      '@waifucave/clover-plugin-relay-cloudflare':
+        specifier: workspace:*
+        version: link:../../plugins/clover/plugins/relay-cloudflare
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@25.9.3)(happy-dom@21.0.4)(vite@8.3.6(@types/node@25.9.3)(esbuild@0.28.2)(jiti@2.7.0))
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/shared: {}
+
+  services/web:
+    dependencies:
+      '@waifucave/clover-service-handshake':
+        specifier: workspace:*
+        version: link:../handshake
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20261023.1
+        version: 5.20261023.1
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      node-datachannel:
+        specifier: 0.33.6
+        version: 0.33.6
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
       wrangler:
         specifier: 4.153.0
         version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
@@ -1468,6 +1709,55 @@ packages:
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
 
+  '@node-datachannel/android-arm64@0.33.6':
+    resolution: {integrity: sha512-UzSnd1vSN//3pqyvuufbaIQemvRfIHn/7DAy7wjoYk9tzkJp4SMk1FrNhkhmev89SH/h7yTac6PlGxGe5oHcKw==}
+    cpu: [arm64]
+    os: [android]
+
+  '@node-datachannel/darwin-arm64@0.33.6':
+    resolution: {integrity: sha512-vE2fN6D0BJJ3yZo5guJo2j1q7JeQbl+VyIs6vbkjEp654tQtTo3y7a4l3xB0bwDD27TOlkOlaSLJQRj6ZXqQdQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@node-datachannel/darwin-x64@0.33.6':
+    resolution: {integrity: sha512-EtRB2THMR11XMzbNhMEwaZtipaUxFz+PgeVx7hE+er6Ai1Fzzv7XexrMWDG11ahdpEZ8fAxlxuyELs33/WH1Cg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@node-datachannel/linux-arm64-gnu@0.33.6':
+    resolution: {integrity: sha512-phMRjx8NEfW70i768LCQDEF2C6Q2vtYsS4DPXv/zbb2cJClaU5fjKFQfQ1XBCNIi1ClfpSd3Cl/rn/7SS+paTQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-arm64-musl@0.33.6':
+    resolution: {integrity: sha512-T9bqllJ9YkpgqgRFEfsPpfgfMDXdA7CIiJ4c1XXGPLSeqVFgDbf/WCewkE7q4xA+tKRLoOOtc2XgMGwVnlxXVQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/linux-x64-gnu@0.33.6':
+    resolution: {integrity: sha512-NUTbne64++ZxwEJ9uppAAmYnFAfJAggf7gboioPdhr13P17GTQRCUgmipYrh1V0D4333x6NCBZyQaNv0n4WmpQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-x64-musl@0.33.6':
+    resolution: {integrity: sha512-dlWP4ycOJrTAl9UvxGofq0zwPhl6iAr1b0ZcBUgDfb2CXmbcJWCvg6OsJ6u8BVSV41eNXALmaRpU0wttas/f1g==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/win32-arm64-msvc@0.33.6':
+    resolution: {integrity: sha512-ttly7XRUrSOcOOGJvtm9gh2beAPUNOBOUc3Hk82LfMHHP7jJMkXNDns/ML+UVGommAcNyPhoZkRH62O7tSVQYw==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@node-datachannel/win32-x64-msvc@0.33.6':
+    resolution: {integrity: sha512-N5GW6XH11Iuu+kyHLTiCMcCHdwWwpKqvtYril0LzQm6xBgmGQN3JXxFmgi4g4usw1nLy6WhBWADjbhSXJiiEMA==}
+    cpu: [x64]
+    os: [win32]
+
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
 
@@ -1924,34 +2214,34 @@ packages:
   '@vitest/utils@4.1.12':
     resolution: {integrity: sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==}
 
-  '@waifucave/clover-agent-runtime@0.0.63':
-    resolution: {integrity: sha512-y46S1zMP6NttnzndXZquhiE2C/LOILKIN9UMa0F1WhK2UJuO1XSYuzvmnxHrzeDlubp58pPWxA0AFX13jMo/tg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.63/fb503dcdef12b8dbef5a6ac3628131808a144c2b}
+  '@waifucave/clover-agent-runtime@0.0.65':
+    resolution: {integrity: sha512-NLDrvOx5haWO0fWCeupELtS4BonjD8GwO61TirV4MjZmXTZ03HlTKI07hnU/Xo0wIzZuYGg+qR6y2NSPJrs5cA==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.65/949b811299bddb862f95b3e692d9eff3f3d2cdce}
     engines: {bun: '>=1.3'}
 
-  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.63':
-    resolution: {integrity: sha512-PcxCE71ehsgkwW2PrxoTMIupenXHa+BcK0ai8RkwIDdQctezzKgzCX5ua0DLFnPVsd5tnvWMBiTdQ0jnwyfSbQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.63/22b2118609bddfddc9e3f1a558080b01b93cbe80}
+  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.65':
+    resolution: {integrity: sha512-BQnZSdMgt3EoGcwrsbjqwrUesAc6/7y3c/vDOFn6B7Ga6XGukUr4uRlvfYoGLM1tZrOQgPDQ0qPivPo7aBq+cw==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.65/2174572bf28bd1593390926ebba9e78526794eff}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@waifucave/clover-agent-sdk@0.0.63':
-    resolution: {integrity: sha512-znAdbSfjeSpm0hzjKlMYrKK4vPCAWI3om1Jb9lAztXQNndteYA/bn4OOMQ2gf8+7UTJgiRvVuQNwVpQBv7WvTg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.63/bf1407ba9ecaeaa7372b6fa41b2c44d37c59b6f0}
+  '@waifucave/clover-agent-sdk@0.0.65':
+    resolution: {integrity: sha512-tEbdVvVQ2wHDf7Q8y5HDBPb/Dg3hEdmn9IKYoclPVSDWH7aR2lB5DkEU/zFSOHZHJFWelAYS281ZSKX8+N4Agw==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.65/5562bbeee182386abfc711f232695308b0129f62}
     engines: {node: '>=18'}
 
-  '@waifucave/clover-provider-catalog@0.0.63':
-    resolution: {integrity: sha512-TbPEiAOnIndCY2L/AGerD0xTMEzGGP9notUvZQ4I80xIsAFvWPib/jLxUjXE4ojyumgXUG+2OvH/s1lJdCN5Cg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.63/6f6b48faa7126564a0f9ab69967a084fea425e33}
+  '@waifucave/clover-provider-catalog@0.0.65':
+    resolution: {integrity: sha512-NhilSuQtpdcOQVUcdy1z6TRmpqHfPJEj0wFGGP/XUA5yDUEEcSgOBpoZ8gVUiecZXv3vDgdfuHeo1uJnOj/61Q==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.65/60c33666d7d10c2ffa69ce92dd3422c20b562100}
     engines: {node: '>=18'}
 
-  '@waifucave/clover-provider-conformance@0.0.63':
-    resolution: {integrity: sha512-VvxXDU/TRy/krgaOI4ByrBYw2VQSckpGRI5GK9lgdkYveCV0EflzEYM5wgBFbxQhXlK7EcyGCRJv6+/EuvECBg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.63/d6d98d984305deb7c602084d23552f0d37fec81c}
+  '@waifucave/clover-provider-conformance@0.0.65':
+    resolution: {integrity: sha512-IKlB0RizI58tGrvCqe7Xr3uMHKkuyoqc1jq01TVqg8miTQzx9D77VyPZg4xrU9G817IlQyPiV9i1+KBmNADsVg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.65/66db4d8bf7eb0cf0dc6de98c214ac3351ad2b5e8}
     engines: {bun: '>=1.2'}
 
-  '@waifucave/clover-provider-runtime@0.0.63':
-    resolution: {integrity: sha512-pHQ9z9C6HH03CjKe/8vPuXZWjG/LEkuFftVLIfRap/uQr6gGXiHwh/4Rbqs36ZiG78ju+O4thS2szJaM1WEPVQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.63/65f27b1186c81e85c4ad35782ad67299f59fa58c}
+  '@waifucave/clover-provider-runtime@0.0.65':
+    resolution: {integrity: sha512-aiAHKc8rAsjfwiXDCw/ZwHvwsvKvUf8adiBamKxqMoPvAX9vJK95RZP9sXOxr+DI+DD5PK3WrOM4lC47IpJh8g==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.65/662333fc397bf6eef4abaf816180c5e9df85a795}
     engines: {node: '>=18'}
 
-  '@waifucave/clover-web@0.0.63':
-    resolution: {integrity: sha512-l565tKc0yteGXUOHSkczpBC0JiMhWl3Four6/tvanNteao+K8DDEJfLqvxpZ8cy2OloMpgEfFfVlPOWy+kIzuA==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.63/938dfb7aed5f442c6445a22bc9580510914ae7de}
+  '@waifucave/clover-web@0.0.65':
+    resolution: {integrity: sha512-+aUyI/6w+GVv8OU+1/XGShDIGYANMfDr1z20/eE9BKN6V+y6p1gQx6sO/ZRbY2cEphXHfqo6sZufjbFqjmBorQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.65/7af770904249f1c0f4642fdc593b762c23096378}
     engines: {bun: '>=1.3', node: '>=20'}
 
   '@waifucave/mochi2d@0.13.0':
@@ -3115,6 +3405,10 @@ packages:
 
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
+
+  node-datachannel@0.33.6:
+    resolution: {integrity: sha512-n7RzImzysrOVFx/lXfkQQ4fL0wsuPXBFc8KM69V29iyIor/UX7Ej+edzNGWJm+3mApZG9nkLi7FsGAZhQCDA4w==}
+    engines: {node: '>=18.20.0'}
 
   node-gyp@12.4.0:
     resolution: {integrity: sha512-OMcPNvqTCFUnNaBlmdgq+lfNqY7gTiSmNRDjY3uAXRyudeKZEZxu3CLtjMQrx4zZxCX2b/mpNqTtwuCJgXhHkw==}
@@ -4295,6 +4589,33 @@ snapshots:
 
   '@noble/hashes@1.8.0': {}
 
+  '@node-datachannel/android-arm64@0.33.6':
+    optional: true
+
+  '@node-datachannel/darwin-arm64@0.33.6':
+    optional: true
+
+  '@node-datachannel/darwin-x64@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-arm64-gnu@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-arm64-musl@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-x64-gnu@0.33.6':
+    optional: true
+
+  '@node-datachannel/linux-x64-musl@0.33.6':
+    optional: true
+
+  '@node-datachannel/win32-arm64-msvc@0.33.6':
+    optional: true
+
+  '@node-datachannel/win32-x64-msvc@0.33.6':
+    optional: true
+
   '@oxc-project/types@0.156.0': {}
 
   '@peculiar/asn1-schema@2.11.1':
@@ -4700,37 +5021,37 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@waifucave/clover-agent-runtime@0.0.63':
+  '@waifucave/clover-agent-runtime@0.0.65':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@waifucave/clover-agent-sdk': 0.0.63
-      '@waifucave/clover-provider-catalog': 0.0.63
-      '@waifucave/clover-provider-runtime': 0.0.63
-      '@waifucave/clover-web': 0.0.63
+      '@waifucave/clover-agent-sdk': 0.0.65
+      '@waifucave/clover-provider-catalog': 0.0.65
+      '@waifucave/clover-provider-runtime': 0.0.65
+      '@waifucave/clover-web': 0.0.65
       ajv: 8.20.0
       ignore: 7.0.5
 
-  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.63':
+  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.65':
     optional: true
 
-  '@waifucave/clover-agent-sdk@0.0.63':
+  '@waifucave/clover-agent-sdk@0.0.65':
     dependencies:
-      '@waifucave/clover-provider-catalog': 0.0.63
+      '@waifucave/clover-provider-catalog': 0.0.65
     optionalDependencies:
-      '@waifucave/clover-agent-sdk-darwin-arm64': 0.0.63
+      '@waifucave/clover-agent-sdk-darwin-arm64': 0.0.65
 
-  '@waifucave/clover-provider-catalog@0.0.63': {}
+  '@waifucave/clover-provider-catalog@0.0.65': {}
 
-  '@waifucave/clover-provider-conformance@0.0.63':
+  '@waifucave/clover-provider-conformance@0.0.65':
     dependencies:
-      '@waifucave/clover-provider-catalog': 0.0.63
-      '@waifucave/clover-provider-runtime': 0.0.63
+      '@waifucave/clover-provider-catalog': 0.0.65
+      '@waifucave/clover-provider-runtime': 0.0.65
 
-  '@waifucave/clover-provider-runtime@0.0.63':
+  '@waifucave/clover-provider-runtime@0.0.65':
     dependencies:
-      '@waifucave/clover-provider-catalog': 0.0.63
+      '@waifucave/clover-provider-catalog': 0.0.65
 
-  '@waifucave/clover-web@0.0.63': {}
+  '@waifucave/clover-web@0.0.65': {}
 
   '@waifucave/mochi2d@0.13.0(pixi.js@8.22.0)(playwright@1.64.1)':
     dependencies:
@@ -6202,6 +6523,20 @@ snapshots:
   node-api-version@0.2.1:
     dependencies:
       semver: 7.8.6
+
+  node-datachannel@0.33.6:
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@node-datachannel/android-arm64': 0.33.6
+      '@node-datachannel/darwin-arm64': 0.33.6
+      '@node-datachannel/darwin-x64': 0.33.6
+      '@node-datachannel/linux-arm64-gnu': 0.33.6
+      '@node-datachannel/linux-arm64-musl': 0.33.6
+      '@node-datachannel/linux-x64-gnu': 0.33.6
+      '@node-datachannel/linux-x64-musl': 0.33.6
+      '@node-datachannel/win32-arm64-msvc': 0.33.6
+      '@node-datachannel/win32-x64-msvc': 0.33.6
 
   node-gyp@12.4.0:
     dependencies:

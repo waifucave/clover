@@ -1,0 +1,100 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.sea-lion.ai/guides/inferencing/api/ — the vendor's own documentation, retrieved 2026-09-06: the inferencing guide documents base `https://api.sea-lion.ai/v1` with `Authorization: Bearer YOUR_API_KEY`.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "sealion/aisingapore/Qwen-SEA-LION-v4.5-27B-IT",
+      "providerId": "sealion",
+      "upstreamId": "aisingapore/Qwen-SEA-LION-v4.5-27B-IT",
+      "displayName": "aisingapore/Qwen-SEA-LION-v4.5-27B-IT",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.sea-lion.ai/guides/inferencing/api/ — the model is listed as a chat model; no vision/audio/video capability is stated",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.sea-lion.ai/models/sea-lion-v4.5/qwen-sea-lion-v4.5 (read 2026-09-27): \"Full 'Tool Calling example' section shows tools=[...] passed to tokenizer.apply_chat_template with function/parameters schema, plus a complete agentic tool-use loop example.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.sea-lion.ai/models/sea-lion-v4.5/qwen-sea-lion-v4.5 (read 2026-09-27): \"Full 'Tool Calling example' section shows tools=[...] passed to tokenizer.apply_chat_template with function/parameters schema, plus a complete agentic tool-use loop example.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://docs.sea-lion.ai/models/sea-lion-v4.5/qwen-sea-lion-v4.5 (read 2026-09-27): \"Context Window (262K): Reduce if facing OOM errors but keep >=128K to preserve full reasoning capabilities. / Context length: 262k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.sea-lion.ai/models/sea-lion-v4.5/qwen-sea-lion-v4.5 (read 2026-09-27): \"Thinking Preservation: Retains historical reasoning context to streamline iterative development and reduce compute overhead. (code examples use enable_thinking=False to hard-disable CoT thinking blocks)\" — enable_thinking is a boolean flag, not a named effort scale; no stated default.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "aisingapore/qwen-sea-lion-v4.5-27b-it",
+      "modelFamily": "other"
+    }
+  ]
+}

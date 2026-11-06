@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "llamafile (local)",
+  "description": "llamafile (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "llamafile",
+        "name": "llamafile (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:8080/v1"
+        }
+      }
+    ]
+  }
+}

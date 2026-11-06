@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Modal",
+  "description": "Modal's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "modal",
+        "name": "Modal",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Modal API key. Clover keeps it in your credential store and adds it to Modal's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.modal.ai/v1"
+        }
+      }
+    ]
+  }
+}

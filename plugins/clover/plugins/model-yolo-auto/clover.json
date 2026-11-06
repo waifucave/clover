@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Yolo-Auto",
+  "description": "Yolo-Auto's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "yolo-auto",
+        "name": "Yolo-Auto",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Yolo-Auto API key. Clover keeps it in your credential store and adds it to Yolo-Auto's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://yolo-auto.com/v1"
+        }
+      }
+    ]
+  }
+}

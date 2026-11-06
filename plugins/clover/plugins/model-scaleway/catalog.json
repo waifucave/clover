@@ -1,0 +1,461 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/scaleway/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://www.scaleway.com/en/docs/ai-data/generative-apis/ — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.scaleway.ai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "scaleway/deepseek-v3-0324",
+      "providerId": "scaleway",
+      "upstreamId": "deepseek-v3-0324",
+      "displayName": "DeepSeek V3 (🆓 EU)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#deepseek-v3-0324",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#deepseek-v3-0324 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#deepseek-v3-0324",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#deepseek-v3-0324",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v3-0324",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "scaleway/gpt-oss-120b",
+      "providerId": "scaleway",
+      "upstreamId": "gpt-oss-120b",
+      "displayName": "GPT-OSS 120B (🆓 EU)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#gpt-oss-120b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#gpt-oss-120b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Currently, this model should be used through the Responses API, because the Chat Completions API does not yet support tool-calling for this model.\" — the attribute table itself says \"Supports function calling: Yes\", but Scaleway's own prose explicitly excludes this from the Chat Completions API (the endpoint Winter's adapter=winter.openai-chat-completions uses); only the separate Responses API gets it. Recommend catalog owner review whether th...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Currently, this model should be used through the Responses API, because the Chat Completions API does not yet support tool-calling for this model.\" — the attribute table itself says \"Supports function calling: Yes\", but Scaleway's own prose explicitly excludes this from the Chat Completions API (the endpoint Winter's adapter=winter.openai-chat-completions uses); only the separate Responses API gets it. Recommend catalog owner review whether th...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"gpt-oss-120b | Yes | Text | 128k\" — stated as \"128k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Maximum output (tokens) - Serverless: 32k\" — stated as \"32k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supported reasoning efforts: low, medium, high\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1719,
+          "outputPerMTokUsd": 0.6876
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/pricing/model-as-a-service/ (read 2026-09-27): \"gpt-oss-120b | Chat | €0.15 / million tokens | €0.60 / million tokens\" — EUR 0.15 input / 0.6 output per 1M tokens; USD = EUR × 1.1460 (ECB reference rate 2026-09-18, the rate this catalog's EUR-derived rows already cite: https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "scaleway/llama-3.1-70b-instruct",
+      "providerId": "scaleway",
+      "upstreamId": "llama-3.1-70b-instruct",
+      "displayName": "Llama 3.1 70B (🆓 EU)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#llama-3.1-70b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#llama-3.1-70b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"llama-3.1-70b-instruct | EOL | Text | 128k\" — model is EOL, see retirements",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Released in July 2024, Llama 3.1 by Meta is an iteration of the open-access Llama family.\" — documented as a plain instruct model; no thinking/reasoning parameter mentioned anywhere on the page",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-70b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "scaleway/llama-3.1-8b-instruct",
+      "providerId": "scaleway",
+      "upstreamId": "llama-3.1-8b-instruct",
+      "displayName": "Llama 3.1 8B (🆓 EU)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#llama-3.1-8b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"llama-3.1-8b-instruct | EOL | Text | 128k\" — model is EOL, see retirements",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Released in July 2024, Llama 3.1 by Meta is an iteration of the open-access Llama family.\" — plain instruct model, no thinking/reasoning parameter documented",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.1-8b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "scaleway/mistral-small-3.2-24b-instruct-2506",
+      "providerId": "scaleway",
+      "upstreamId": "mistral-small-3.2-24b-instruct-2506",
+      "displayName": "Mistral Small 3.2 (🆓 EU)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"mistral-small-3.2-24b-instruct-2506 | Yes | Text, Vision | 128k ... Supported image formats: PNG, JPEG, WEBP, and non-animated GIFs\" — existing catalog value is inputModalities=['text'] only; Scaleway's own supported-models table lists this model's modality as 'Text, Vision' with documented supported image formats",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#mistral-small-3.2-24b-instruct-2506 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"mistral-small-3.2-24b-instruct-2506 | Yes | Text, Vision | 128k\" — stated as \"128k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Maximum output (tokens) - Serverless: 32k\" — stated as \"32k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Mistral-small-3.2-24b-instruct-2506 is an improved version of Mistral-small-3.1, which performs better on tool-calling.\" — plain instruct model, no reasoning/thinking parameter documented",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1719,
+          "outputPerMTokUsd": 0.4011
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/pricing/model-as-a-service/ (read 2026-09-27): \"mistral-small-3.2-24b-instruct-2506 | Chat and Vision | €0.15 / million tokens | €0.35 / million tokens\" — EUR 0.15 input / 0.35 output per 1M tokens; USD = EUR × 1.1460 (ECB reference rate 2026-09-18, the rate this catalog's EUR-derived rows already cite: https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "mistral-small-3.2-24b-instruct-2506",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "scaleway/qwen3-235b-a22b-instruct-2507",
+      "providerId": "scaleway",
+      "upstreamId": "qwen3-235b-a22b-instruct-2507",
+      "displayName": "Qwen3 235B A22B (1M free tok 🆓)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#qwen3-235b-a22b-instruct-2507",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/scaleway/index.ts#qwen3-235b-a22b-instruct-2507 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Supports function calling: Yes\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 250000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"qwen3-235b-a22b-instruct-2507 | Yes | Text | 250k\" — stated as \"250k\" (row name has a free-tier emoji in the catalog but Scaleway's own table gives this figure regardless of tier)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16000,
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Maximum output (tokens) - Serverless: 16k\" — stated as \"16k\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (read 2026-09-27): \"Released in July 2025, Qwen 3 235B A22B is an open-weight model, competitive in multiple benchmarks\" — this is the plain instruct variant (a separate qwen3-235b-a22b-thinking-2507 exists on Scaleway for the thinking variant); no reasoning parameter documented for this id",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.8595,
+          "outputPerMTokUsd": 2.5785
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.scaleway.com/en/pricing/model-as-a-service/ (read 2026-09-27): \"qwen3-235b-a22b-instruct-2507 | Chat | €0.75 / million tokens | €2.25 / million tokens\" — EUR 0.75 input / 2.25 output per 1M tokens; USD = EUR × 1.1460 (ECB reference rate 2026-09-18, the rate this catalog's EUR-derived rows already cite: https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3-235b-a22b-instruct-2507",
+      "modelFamily": "qwen"
+    }
+  ]
+}

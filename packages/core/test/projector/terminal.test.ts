@@ -173,6 +173,22 @@ describe("projector: turn_completed usage (the contextTokens contract)", () => {
     expect(out[0]!.contextTokens).toBeUndefined();
   });
 
+  test("A-M2 (D's S5): the runtime's own `context_tokens` (the LAST request's whole prompt) is contextTokens, whatever the round count", () => {
+    const { projector } = makeProjector();
+    accept(projector, init());
+    accept(projector, assistantToolUse("t1", "Read", {}));
+    accept(projector, toolResult("t1", "contents"));
+    accept(projector, assistantText("summary"));
+    const out = accept(projector, result({ modelUsage: modelUsage(3300, 37), context_tokens: 1900 })) as TC[];
+    expect(out[0]).toMatchObject({ inputTokens: 3300, outputTokens: 37, contextTokens: 1900 });
+    // Not a positive whole number: ignored, and the fallback (exact only for one round) decides.
+    const again = makeProjector().projector;
+    accept(again, init());
+    accept(again, assistantText("one round"));
+    const one = accept(again, result({ modelUsage: modelUsage(1200, 40), context_tokens: "lots" })) as TC[];
+    expect(one[0]).toMatchObject({ contextTokens: 1200 });
+  });
+
   test("an UNPRICED row (P8b-30): required fields report 0, OPTIONAL contextTokens is OMITTED, logged ONCE", () => {
     // The measured case for every clover-test double, and real for any row Clover cannot price.
     // `turn_completed`'s schema makes inputTokens/outputTokens required and contextTokens optional,

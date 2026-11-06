@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Z.AI GLM Coding Plan (OpenAI dialect)",
+  "description": "Z.AI GLM Coding Plan (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zai-coding",
+        "name": "Z.AI GLM Coding Plan (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Z.AI GLM Coding Plan (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Z.AI GLM Coding Plan (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4"
+        }
+      }
+    ]
+  }
+}

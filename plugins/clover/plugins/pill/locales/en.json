@@ -1,0 +1,39 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.pill.name": "Dispatch pill",
+    "clover.pill.label": "Message {name}",
+    "clover.pill.placeholder": "Message {name}",
+    "clover.pill.working": "{name} is working",
+    "clover.pill.send": "Send",
+    "clover.pill.stop": "Stop",
+    "clover.pill.stopping": "Stopping…",
+    "clover.pill.voice": "Voice",
+    "clover.pill.more": "More",
+    "clover.pill.fullScreen": "Full screen",
+    "clover.pill.openInApp": "Open {name} in Clover",
+    "clover.pill.clearDraft": "Clear draft",
+    "clover.pill.target": "Choose who to message",
+    "clover.pill.targets": "Message someone else",
+    "clover.pill.asks": "{name} asks",
+    "clover.pill.aQuestion": "A question for you",
+    "clover.pill.chooseAny": "Choose any",
+    "clover.pill.typeAnswer": "Type an answer",
+    "clover.pill.somethingElse": "Something else",
+    "clover.pill.next": "Next",
+    "clover.pill.back": "Back",
+    "clover.pill.sending": "Sending…",
+    "clover.pill.childStop": "Stop {name}",
+    "clover.pill.childOpen": "Open {name}",
+    "clover.pill.childMore": {
+      "one": "1 more agent",
+      "other": "{count} more agents"
+    },
+    "clover.pill.untitled": "Agent",
+    "clover.pill.leavePreview": "Back to the message box",
+    "clover.pill.turn": "Turn {position}",
+    "clover.pill.notSent": "That answer didn't go through. Try again.",
+    "clover.pill.update": "An update from your bot"
+  }
+}

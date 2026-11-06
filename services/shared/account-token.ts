@@ -33,7 +33,8 @@ const MAX_TOKEN_LENGTH = 8192;
 type Alg = "ES256" | "EdDSA";
 interface VerifyKey {
   alg: Alg;
-  key: Promise<CryptoKey>;
+  /** Null when the JWKS entry doesn't import (a malformed key): tokens under its kid are refused. */
+  key: Promise<CryptoKey | null>;
 }
 
 const keySets = new Map<string, Map<string, VerifyKey>>();
@@ -49,10 +50,10 @@ function loadKeys(jwks: string): Map<string, VerifyKey> {
     if (typeof kid !== "string" || kid.length === 0) continue;
     if (raw.kty === "EC" && raw.crv === "P-256" && typeof raw.x === "string" && typeof raw.y === "string") {
       const jwk: JsonWebKey = { kty: "EC", crv: "P-256", x: raw.x, y: raw.y };
-      keys.set(kid, { alg: "ES256", key: crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]) });
+      keys.set(kid, { alg: "ES256", key: crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]).catch(() => null) });
     } else if (raw.kty === "OKP" && raw.crv === "Ed25519" && typeof raw.x === "string") {
       const jwk: JsonWebKey = { kty: "OKP", crv: "Ed25519", x: raw.x };
-      keys.set(kid, { alg: "EdDSA", key: crypto.subtle.importKey("jwk", jwk, { name: "Ed25519" }, false, ["verify"]) });
+      keys.set(kid, { alg: "EdDSA", key: crypto.subtle.importKey("jwk", jwk, { name: "Ed25519" }, false, ["verify"]).catch(() => null) });
     }
   }
   keySets.set(jwks, keys);
@@ -90,10 +91,12 @@ export async function verifyAccountToken(token: string, config: AccountTokenConf
     return null;
   }
   const signed = utf8(`${headerPart}.${claimsPart}`);
+  const verifyKey = await key.key;
+  if (!verifyKey || signature.length !== 64) return null;
   const ok =
     key.alg === "ES256"
-      ? signature.length === 64 && (await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, await key.key, signature, signed))
-      : signature.length === 64 && (await crypto.subtle.verify({ name: "Ed25519" }, await key.key, signature, signed));
+      ? await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifyKey, signature, signed)
+      : await crypto.subtle.verify({ name: "Ed25519" }, verifyKey, signature, signed);
   if (!ok) return null;
 
   const now = config.now ?? Math.floor(Date.now() / 1000);

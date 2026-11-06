@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Meta Model API (Anthropic dialect)",
+  "description": "Meta Model API (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "meta-anthropic",
+        "name": "Meta Model API (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Meta Model API (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Meta Model API (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.meta.ai"
+        }
+      }
+    ]
+  }
+}

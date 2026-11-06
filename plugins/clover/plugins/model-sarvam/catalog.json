@@ -1,0 +1,191 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/sarvam/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.sarvam.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.sarvam.ai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "sarvam/sarvam-105b",
+      "providerId": "sarvam",
+      "upstreamId": "sarvam-105b",
+      "displayName": "Sarvam 105B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/sarvam/index.ts#sarvam-105b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/sarvam/index.ts#sarvam-105b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/sarvam/index.ts#sarvam-105b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-105b (read 2026-09-27): \"Agentic Capabilities: ... Optimized for tool use, long-horizon reasoning, and environment interaction in real-world workflows.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-105b (read 2026-09-27): \"Agentic Capabilities: ... Optimized for tool use, long-horizon reasoning, and environment interaction in real-world workflows.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-105b (read 2026-09-27): \"max_tokens | Starter 4096 / Pro 16384 / Business 128000\" — Plan-tiered, not a single model ceiling: 4096 is the Starter-plan cap; Pro=16384, Business=128000 (the model's technical ceiling is presumably >=128000, matching its context window).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-105b (read 2026-09-27): \"Thinking mode is on by default | Reasoning (reasoning_effort, default low) is enabled by default, and reasoning tokens count toward completion tokens...\" — CONFLICT: the shared API reference (chat-completions-v1) states reasoning_effort is \"enum, optional, nullable, default: medium ... Allowed values: low, high, max\" -- a different default (medium) than this model's own known-limitations text (low). Reporting efforts verbatim from the API reference ...",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "low",
+        "continuation": "none"
+      },
+      "canonicalModelId": "sarvam-105b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "sarvam/sarvam-30b",
+      "providerId": "sarvam",
+      "upstreamId": "sarvam-30b",
+      "displayName": "Sarvam 30B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 65536,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/sarvam/index.ts#sarvam-30b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/sarvam/index.ts#sarvam-30b",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/sarvam/index.ts#sarvam-30b — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-30b (read 2026-09-27): \"Agentic Capabilities: Native tool calling with strong performance on BrowseComp (35.5) and Tau2 (45.7) for web-search-driven tasks, planning, retrieval, and multi-step task execution.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-30b (read 2026-09-27): \"Agentic Capabilities: Native tool calling with strong performance on BrowseComp (35.5) and Tau2 (45.7) for web-search-driven tasks, planning, retrieval, and multi-step task execution.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-30b (read 2026-09-27): \"max_tokens | Starter 4096 / Pro 8192 / Business 64000\" — Plan-tiered, not a single model ceiling: 4096 is the Starter-plan cap; Pro=8192, Business=64000 (matching its 64K context window). Page retained for reference only (model deprecated -- see retirements).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.sarvam.ai/api/getting-started/models/sarvam-30b (read 2026-09-27): \"Reasoning & Coding: Achieves 97.0 on Math500... / Known Limitations: Reasoning (reasoning_effort, default low) is enabled by default...\" — Same reasoning_effort/low pattern and same medium-vs-low default conflict as sarvam-105b (see that row's note).",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "low",
+        "continuation": "none"
+      },
+      "canonicalModelId": "sarvam-30b",
+      "modelFamily": "other"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.llm.kiwi/ — the vendor's own documentation, retrieved 2026-09-06: the docs home documents base `https://api.llm.kiwi/v1` with `Authorization: Bearer YOUR_API_KEY` (keys prefixed `sk_kiwi_`).",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

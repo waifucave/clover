@@ -1,0 +1,36 @@
+{
+  "manifest": 1,
+  "name": "Azure OpenAI",
+  "description": "Azure OpenAI's models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "network:*.openai.azure.com",
+    "network:*.cognitiveservices.azure.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "azure-openai",
+        "name": "Azure OpenAI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Azure OpenAI API key. Clover keeps it in your credential store and adds it to Azure OpenAI's requests itself; this plugin never sees it.",
+            "placement": {
+              "header": "api-key"
+            }
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}
