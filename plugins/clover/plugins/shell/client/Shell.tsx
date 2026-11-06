@@ -38,8 +38,8 @@ export interface ShellStart {
   panels?: string[];
   /** A bot's coding agent open in the panel. */
   agent?: string;
-  /** One of the tab's outputs open in the panel (a tree path). */
-  output?: string;
+  /** One of the tab's outputs open in the panel: its tree path, in its session's outputs folder. */
+  output?: { path: string; folder: string };
   /** The command palette open. */
   palette?: boolean;
 }
@@ -178,10 +178,10 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     if (!open.includes("agent")) setOpen(toggleView(open, "agent"));
   };
   // One of the tab's outputs, opened from its column into the right panel (`panel` keyed `output`).
-  const [outputs, setOutputs] = useState<Record<string, string | undefined>>(() => (startTab && props.start?.output ? { [tabKey(startTab)]: props.start.output } : {}));
+  const [outputs, setOutputs] = useState<Record<string, { path: string; folder: string } | undefined>>(() => (startTab && props.start?.output ? { [tabKey(startTab)]: props.start.output } : {}));
   const output = outputs[key];
-  const openOutput = (path: string) => {
-    setOutputs((o) => ({ ...o, [key]: path }));
+  const openOutput = (path: string, folder: string) => {
+    setOutputs((o) => ({ ...o, [key]: { path, folder } }));
     if (!open.includes("output")) setOpen(toggleView(open, "output"));
   };
 
@@ -205,7 +205,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // A bot's tab says whose it is (`bot`, its id: the browser shows that bot's tabs, a code session the person's own).
   const panelProps = (id: string): Record<string, unknown> =>
     id === "output"
-      ? { app: id, session: tabSession, sessionKind: kind, path: output }
+      ? { app: id, session: tabSession, sessionKind: kind, ...(output ? { path: output.path, folder: output.folder } : {}) }
       : id === "agent" && agentSession
       ? { app: id, session: agentSession.id, sessionKind: agentSession.kind, ...(botRef ? { bot: botRef.id } : {}) }
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
@@ -214,7 +214,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         .filter((id) => id !== "session")
         .map((id) => ({
           id,
-          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : id === "output" ? (output?.split("/").pop() ?? S.output) : (S.views[id] ?? id),
+          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : id === "output" ? (output?.path.split("/").pop() ?? S.output) : (S.views[id] ?? id),
           content: (header: HTMLElement | null, usedLast: boolean) => (
             <Spot
               name="panel"

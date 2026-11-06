@@ -9,6 +9,8 @@ import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
+const FOLDER = "home/Studio/.clover/outputs/s_alpha";
+
 function show(path: string, links: string[] = []) {
   const reads: string[] = [];
   const api = fakeApi({
@@ -28,7 +30,7 @@ function show(path: string, links: string[] = []) {
   document.body.append(header);
   render(
     <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
-      <OutputEntry props={{ path, header }} />
+      <OutputEntry props={{ path, folder: FOLDER, header }} />
     </UiRuntimeProvider>,
   );
   return { reads, header };

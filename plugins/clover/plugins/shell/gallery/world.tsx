@@ -156,6 +156,9 @@ export const BOTS: BotView[] = [
 
 const session = (id: string, extra: Partial<SessionView>): SessionView => ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: NOW - 3_600_000, updatedAt: NOW - 600_000, ...extra });
 
+/** The core's word for where a session's outputs live (`SessionView.outputs`, asked of lanes B and D). */
+const withOutputs = (s: SessionView): SessionView => ({ ...s, outputs: `home/${s.computer}/.clover/outputs/${s.id}` }) as SessionView;
+
 export const SESSIONS: SessionView[] = [
   session("s_alpha", { kind: "bot", bot: "alpha", model: "openai/gpt-6", effort: "medium" }),
   session("s_luna", { kind: "bot", bot: "luna", needsYou: { cards: 1, questions: 1 } }),
@@ -169,7 +172,7 @@ export const SESSIONS: SessionView[] = [
   session("session-docs", { kind: "coding", backend: "Claude Code", title: "README for the plugin index", root: ROOT }),
   session("session-spread", { kind: "coding", backend: "Codex", computer: "Laptop", title: "Three-card spread layout", root: "home/Laptop/code/tarot-panel" }),
   session("session-icons", { kind: "coding", backend: "Codex", computer: "Laptop", title: "Card icons at every size", root: "home/Laptop/code/tarot-panel", status: "failed" }),
-];
+].map(withOutputs);
 
 const COMPUTERS: ComputerView[] = [
   computerView("Studio", { device: "dev_studio", level: "ask-risky", link: "self", isMain: true, agents: ["codex"] }),

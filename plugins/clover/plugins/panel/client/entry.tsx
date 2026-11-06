@@ -40,16 +40,20 @@ interface Loaded {
   connectors?: { total: number; needSignIn: number };
 }
 
-/** Where a session's outputs live: its own `outputs/<session>` folder in the Clover home on its computer, read through the
- *  tree as the user's own surface (the controller's ruling for F-M3). */
-export const outputsFolder = (s: { id: string; computer: string }) => `home/${s.computer}/.clover/outputs/${s.id}`;
+/** Where a session's outputs live, as the core says (`SessionView.outputs`, the tree path of its own `outputs/<session>`
+ *  folder; asked of lanes B and D): neither the spec nor the tree names that path, so the part never makes one up. A
+ *  session the core gives none to shows no outputs. */
+export const outputsFolder = (s: object): string | undefined => {
+  const path = (s as { outputs?: unknown }).outputs;
+  return typeof path === "string" && path !== "" ? path : undefined;
+};
 
 const PAGE = /\.(html?|md|markdown)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
 const SHOWN = 4;
 
 /** A session's outputs, newest first, kept current while the folder changes. */
-function useOutputs(api: PluginApi, session: Session | undefined): { items: { id: string; name: string; kind: "page" | "file" | "image" | "link" }[] } | undefined {
+function useOutputs(api: PluginApi, session: Session | undefined): { items: { id: string; name: string; kind: "page" | "file" | "image" | "link" }[]; folder: string } | undefined {
   const [items, setItems] = useState<{ id: string; name: string; kind: "page" | "file" | "image" | "link" }[] | undefined>(undefined);
   const files = api.files;
   const folder = session ? outputsFolder(session) : undefined;
@@ -82,15 +86,15 @@ function useOutputs(api: PluginApi, session: Session | undefined): { items: { id
       stop?.();
     };
   }, [files, folder]);
-  return items ? { items } : undefined;
+  return items && folder ? { items, folder } : undefined;
 }
 
 /** The outputs section's props: the newest few, Show more for the rest, each opening in the right panel. */
-function outputsProps(outputs: ReturnType<typeof useOutputs>, all: boolean, showAll: () => void, onOpen: ((path: string) => void) | undefined): Partial<SessionViewProps> {
+function outputsProps(outputs: ReturnType<typeof useOutputs>, all: boolean, showAll: () => void, onOpen: ((path: string, folder: string) => void) | undefined): Partial<SessionViewProps> {
   if (!outputs || outputs.items.length === 0) return {};
   const items = all ? outputs.items : outputs.items.slice(0, SHOWN);
   const more = outputs.items.length - items.length;
-  return { outputs: { items, onOpen: (id: string) => onOpen?.(id), ...(more > 0 ? { more, onShowMore: showAll } : {}) } };
+  return { outputs: { items, onOpen: (id: string) => onOpen?.(id, outputs.folder), ...(more > 0 ? { more, onShowMore: showAll } : {}) } };
 }
 
 function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | undefined, withChanges: boolean): Loaded {
@@ -134,7 +138,7 @@ export interface ColumnProps {
   openAgent?: string;
   onOpenAgent?: (session: string) => void;
   /** Opens one of the session's outputs (a tree path) in the right panel. */
-  onOpenOutput?: (path: string) => void;
+  onOpenOutput?: (path: string, folder: string) => void;
   /** Where `main` goes: the shell's (a question for B, as for the sidebar). */
   navigate?: (route: { route: string; params: Record<string, string> }) => void;
 }
