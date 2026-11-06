@@ -180,7 +180,7 @@ The lease decides which computer is the main one (spec §6.4). For account-less 
   - Answers 201, or 200 if it's already a member. At most 32 members (409 `full`).
   - A removed key may rejoin only with statements signed after its removal (403 `revoked` otherwise), so an old join can't be replayed.
 - **Remove:** `DELETE /v1/groups/<group>/members/<key>` (signed by any member) → 204.
-  - A device may remove itself or another (a revocation).
+  - A device may remove itself or another (a revocation). Any member removing any other is v1's rule, and a stolen device can abuse it: see "Group recovery" below, proposed for H-M2.
   - Removing the holder ends their lease.
   - When the last member goes, the group is deleted (410 afterwards).
 - **Read:** `GET /v1/groups/<group>` (signed) answers `{"group", "members": [{"key", "joinedAt"}], "lease": {"holder": "<key>"|null, "epoch": 7, "expiresAt": …}}`.
@@ -200,6 +200,39 @@ The lease decides which computer is the main one (spec §6.4). For account-less 
 - **The socket:** `POST /v1/groups/<group>/tickets` (signed), then the WebSocket as for pairs.
   - The hello is `{"t":"hello","v":1,"scope":"group","lease":…}`.
   - Every change pushes `{"t":"lease","lease":…}` and every membership change `{"t":"members","members":[…]}`.
+
+## Group recovery (proposed for H-M2, with lane H; not built)
+
+**The problem.** In v1 any one member can remove every other member, admit keys of its own, and take the lease. A stolen device can therefore lock the user's other devices out of their group, and they can't come back, because rejoining needs a current member's admit. The thief gains no data this way: each device's local revoke cuts its links at once (§8.1). The harm is that the user's devices lose their shared lease, so recovery must give the group back to them.
+
+**The proposal:**
+
+1. **Voters.** A member votes once it has been in the group for 72 hours, or from the start if a quorum admitted it. The founder votes from the start. A thief's fresh keys don't vote, so it can't outvote the user with keys of its own.
+2. **A quorum for changes to others.** Admitting a key, or removing a member other than yourself, takes the signatures of q = ⌊v/2⌋ + 1 voters, where v counts the voters other than the target:
+   - **Admit:** the admit statement, from q members: `POST …/members` `{"key","t","sig","admits":[{"by","sig"}]}`.
+   - **Remove:** `clover-handshake-v1 remove\n<group>\n<key>\n<t>`, from q members: `DELETE …/members/<key>` `{"t","removes":[{"by","sig"}]}`.
+   - With one other voter, as in the usual two-device group, that voter alone is a quorum, which is v1's rule. Removing yourself needs only you.
+   - Co-signatures travel over the members' links, and each device asks its user first (lane H's card). A device never co-signs on its own, or the quorum means nothing.
+3. **Rollback.** When a quorum removes a member, the changes it signed in the 7 days before are undone, unless a quorum without it signs them again:
+   - the members it helped remove come back, with their old `joined`;
+   - the keys it helped admit are removed.
+
+   The lease's `epoch` still only rises. For this the group keeps each change for 7 days: its kind, target, signers and time.
+4. **The lease.** A member that doesn't vote yet can't take the lease over. Removing the holder ends their lease, as now.
+5. **Two voters.** With two voters the service can't tell the user's device from the thief's, and either may remove the other alone. Recovery there is a new group:
+   - the removed device founds a fresh group;
+   - the devices it is still paired with join it over their pair channels, where the thief has no part;
+   - lane H's registry follows the new group, and the old one is left behind.
+6. **With an account.** Once the user signs in, the account's device list replaces the group (ruling R17), and the account service's revocation is the authority.
+
+**For lane H to settle:**
+- the 72 hours and the 7 days;
+- whether two-device users get an optional recovery code at founding, kept by the user as a third voter.
+
+**The service's side, once agreed:**
+- members gain `votesFrom` and `admittedBy`, and the group gains a `changes` table kept for 7 days;
+- joins and removals take signature lists;
+- `GET /v1/groups/<group>` and the `members` frame show who votes.
 
 ## The account channel (devices with an account)
 
