@@ -20,6 +20,9 @@ extensions/              Winter for Chrome, until opensky
 spikes/<spike>           the spike lanes' experiments, one folder each
 examples/<example>       example plugins for the plugin SDK
 scripts/                 repo tools, including scripts/heavy (the heavy-job limiter, plan §8)
+packaging/               the installers' parts (lane M): the Linux scripts and AppArmor profile, the Homebrew cask, winget's
+                         manifests, the Windows installer's include, and installer-hooks.ts, which says what each does with
+                         the daemon's login start
 docs/                    the spec, the plan, these conventions, and research reports
 ```
 

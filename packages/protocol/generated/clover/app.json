@@ -222,6 +222,10 @@
                   "section": {
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "item": {
+                    "type": "string",
+                    "maxLength": 256
                   }
                 },
                 "required": [
@@ -251,6 +255,33 @@
         "required": [
           "what"
         ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.ping": {
+      "doc": "The pair's heartbeat (ruling R9): the app answers at once from its main process; a daemon that hears nothing for a while restarts it in safe mode (lane C).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -836,6 +867,121 @@
         "additionalProperties": false
       }
     },
+    "pill.send": {
+      "doc": "The user's own words from the Dispatch pill: to a bot or a session as the user's message, or to a `pill.target` entry's handler.",
+      "owner": "G",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "to": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "bot"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
+                  }
+                },
+                "required": [
+                  "target"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "images": {
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mediaType": {
+                  "type": "string",
+                  "enum": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp"
+                  ]
+                },
+                "data": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000000
+                }
+              },
+              "required": [
+                "mediaType",
+                "data"
+              ]
+            }
+          },
+          "clientMessageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "to",
+          "text",
+          "clientMessageId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "notify.send": {
       "doc": "A plugin sends the user a notification through the `notifiers` (§10).",
       "owner": "G",
@@ -917,7 +1063,7 @@
       }
     },
     "app.notify": {
-      "doc": "A desktop notification, which the app shows for the bundled desktop notifier.",
+      "doc": "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
       "owner": "G",
       "direction": "from-daemon",
       "roles": [
@@ -945,12 +1091,47 @@
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "urgent": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title"
         ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shown"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.notify.close": {
+      "doc": "Closes one desktop notification, or every one the notifier showed.",
+      "owner": "G",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

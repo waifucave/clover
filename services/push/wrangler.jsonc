@@ -41,11 +41,14 @@
       "workers_dev": false,
       "observability": { "enabled": false },
       "routes": [{ "pattern": "push.waifucave.com", "custom_domain": true }],
+      // The account service's keys go through this binding: a Worker can't fetch another Worker's route on its own
+      // zone. ACCOUNT_JWKS_URL is the path asked for, and the fallback.
+      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "clover-accounts" }],
       "vars": {
-        // Set at the live gates: lane H's account service, the APNs key's ids, the iOS app's bundle id and the
-        // VAPID public key (the private halves are secrets).
+        // waifucave's account service (services/accounts): its issuer and its keys' URL. Set at the live gates:
+        // the APNs key's ids, the iOS app's bundle id and the VAPID public key (the private halves are secrets).
         "ACCOUNT_ISSUER": "https://waifucave.com/auth",
-        "ACCOUNT_JWKS": "{\"keys\":[]}",
+        "ACCOUNT_JWKS_URL": "https://waifucave.com/auth/.well-known/jwks.json",
         "PUSH_AUDIENCE": "push.waifucave.com",
         "APNS_KEY_ID": "",
         "APNS_TEAM_ID": "",

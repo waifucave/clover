@@ -1,0 +1,35 @@
+{
+  "manifest": 1,
+  "name": "Google Gemini API",
+  "description": "Google Gemini API's models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "network:generativelanguage.googleapis.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "google",
+        "name": "Google Gemini API",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Google AI Studio API key. Clover keeps it in your credential store and adds it to Google AI Studio's requests itself; this plugin never sees it.",
+            "placement": {
+              "header": "x-goog-api-key"
+            }
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

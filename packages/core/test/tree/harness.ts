@@ -32,7 +32,8 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
     if (rel === "") return "/";
     return rel.startsWith("..") ? p : `/${rel.split(sep).join("/")}`;
   };
-  const ledger = opts.ledger ?? new MemoryAnswerLedger();
+  // One ledger for every holder here; the suite's R15 case, which needs one per holder, waits for J-M2.
+  const ledger = opts.ledgers?.[Object.keys(opts.computers)[0] ?? ""] ?? new MemoryAnswerLedger();
   const answers = { devices: opts.devices ?? NO_DEVICES, ledger, render: opts.render ?? (() => undefined) };
   const computers = new Map<string, TreeComputer>();
   const holders = new Map<string, LocalHolder>();
@@ -98,5 +99,6 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
     glob: (pattern, o) => tree.glob(pattern, o),
     grep: (pattern, o) => tree.grep(pattern, o),
     computersFor: (paths) => tree.computersFor(paths),
+    watch: (path, o, fn) => tree.watch(path, o, fn),
   };
 }

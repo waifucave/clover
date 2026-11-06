@@ -20,6 +20,7 @@
 //  - cowork-storage-security.md: "Unknown formats refuse."
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { utf16 } from "@waifucave/clover-protocol";
 import type { RuntimeStateDb } from "../runtime-state/db";
 import { durableCoworkTransaction } from "./durable-transaction";
 import { canonicalJson, lifecycleFail, lifecycleId, sha256Hex, assertAtRest, readWorkspaceFacts, type CoworkLifecycleAuthority, type LifecycleAction, type WorkspaceFacts } from "./storage-lifecycle";
@@ -46,7 +47,7 @@ export const CoworkExportManifest = z.object({
   plaintextImages: z.literal(true),
   homeId: Id,
   workspace: z.object({ workspaceId: Id, ownership: z.enum(["standalone", "project"]) }).strict(),
-  generation: z.object({ exportId: Id, number: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), preparedAt: z.string().max(40) }).strict(),
+  generation: z.object({ exportId: Id, number: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), preparedAt: utf16(40) }).strict(),
   images: z.object({ baseImageDigest: Digest, runtimeImageDigest: Digest }).strict(),
   volumes: z.array(Volume).length(2),
 }).strict().refine(m => m.volumes.map(v => v.purpose).sort().join() === "data,environment" && m.volumes.every(v => v.relativePath === FILES[v.purpose]), { message: "volumes" });

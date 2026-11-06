@@ -5,6 +5,7 @@
   "engines": { "clover": "^1.0.0" },
   "client": { "entry": "client/index.tsx" },
   "contributes": {
+    "locales": [{ "lang": "en", "file": "locales/en.json" }],
     "ui": [{ "spot": "avatar", "id": "vrm", "key": "vrm", "component": "VrmAvatar" }]
   }
 }

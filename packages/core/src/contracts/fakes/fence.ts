@@ -1,9 +1,9 @@
 // FakeFence: the fenced set laid out under a Clover home, POSIX paths, prefix semantics. The layout is the fake's;
 // lane C owns the real one, and a test can override any item.
 import type { Os } from "@waifucave/clover-protocol";
-import { isInside, Listeners, normalizePosix, type Unsubscribe } from "../common";
+import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, isInsideFolded, judge, READ_DENIED_KINDS,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -71,22 +71,22 @@ export class FakeFence implements Fence {
   }
 
   check(op: FenceOp): FenceVerdict {
-    return judge(this.fencedSet(), op);
+    return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome });
   }
 
   touches(paths: readonly string[]): FencedPath | null {
     for (const path of paths) {
       for (const item of this.fencedSet()) {
-        if (isInside(path, item.path) || isInside(item.path, path)) return item;
+        if (isInsideFolded(path, item.path, this.os) || isInsideFolded(item.path, path, this.os)) return item;
       }
     }
     return null;
   }
 
   checkAgentRoot(root: string): FenceVerdict {
-    if (isInside(this.#cloverHome, root)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    if (isInsideFolded(this.#cloverHome, root, this.os)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     for (const dev of this.#layout["dev-folders"] ?? this.#devFolders) {
-      if (isInside(dev, root) || isInside(root, dev)) return { allowed: false, reason: "dev-folders", path: normalizePosix(dev) };
+      if (isInsideFolded(dev, root, this.os) || isInsideFolded(root, dev, this.os)) return { allowed: false, reason: "dev-folders", path: normalizePosix(dev) };
     }
     return { allowed: true };
   }

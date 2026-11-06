@@ -1,0 +1,67 @@
+name: link
+
+# The link sidecar (native/link, lane H): builds clover-link on every OS Clover ships and runs the core's link tests
+# over it on loopback (packages/core/src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB stream, a revoke,
+# and a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind 127.0.0.1.
+# Lane M folds this into ci.yml's `changes` and `gate` when it takes the native builds over.
+
+on:
+  # Pull requests only, so a branch with an open PR doesn't run it twice for each push.
+  pull_request:
+    branches: [main]
+    paths:
+      - native/link/**
+      - packages/core/src/links/**
+      - packages/core/src/devices/**
+      - packages/core/src/identity/**
+      - .github/workflows/link.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# `packages: read`: the install takes the `@waifucave` packages from GitHub Packages, as ci.yml's does; only the
+# install step is given the token.
+permissions:
+  contents: read
+  packages: read
+
+env:
+  RUST_TOOLCHAIN: 1.99.1
+  CARGO_TERM_COLOR: never
+
+jobs:
+  sidecar:
+    name: clover-link · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned above
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link -> target
+      - name: build clover-link
+        run: cargo build --release --locked --manifest-path native/link/Cargo.toml
+      - name: install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: the link tests over the sidecar
+        working-directory: packages/core
+        env:
+          CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: bun test --timeout 60000 src/links

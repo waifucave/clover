@@ -7,7 +7,7 @@
 // WS-23: this file also built the retired official leg's advisor — a daemon-side `ReviewerResolver`
 // the router handed that leg's standing advisor tool, with its own OpenAI and Anthropic reviewer
 // providers. That half is gone with the leg; the family table is what remains.
-import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { activeCatalog } from "./model-plugins/catalog-source";
 import { facingNameToTag, splitTag, type ModelTag } from "./model-tag";
 
 /** Which of Clover's three D30-relevant families a catalog-recognised model belongs to. `"other"` is
@@ -22,7 +22,7 @@ export type AdvisorFamily = "openai" | "claude" | "other";
  *  because that function's declared return type omits `modelFamily`; the row objects are identical
  *  either way, so this can never drift into a second answer for the same model. */
 export function familyOfModel(model: string): AdvisorFamily {
-  const catalog = loadCatalog();
+  const catalog = activeCatalog();
   const row = catalog.models.find((m) => m.key === model || m.upstreamId === model || m.canonicalModelId === model || m.aliases.includes(model));
   if (row === undefined) return "other";
   if (row.modelFamily === "gpt") return "openai";
@@ -39,7 +39,7 @@ export function familyOfModel(model: string): AdvisorFamily {
  *  guaranteed to match a real row (the catalog's normaliser can rewrite an id between a row's
  *  `key` and its `canonicalModelId`). */
 function firstSlotNameOfFamily(familyId: "gpt" | "claude"): string | undefined {
-  return loadCatalog().families.find((f) => f.id === familyId)?.slots[0]?.name;
+  return activeCatalog().families.find((f) => f.id === familyId)?.slots[0]?.name;
 }
 
 /**

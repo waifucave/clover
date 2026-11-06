@@ -37,6 +37,7 @@ import { createWinterRuntimeSdk, type WinterRuntimeSdk } from "../../src/runtime
 import { coldResumeRunHomeFor, createCloverSessionDrivers, modeOf, refusalMayBeCredentialShaped, type CloverLegDeps } from "../../src/runtime-sdk/session-driver";
 import { updateSdkSettings } from "../../src/sdk-files";
 import { evictSessionsForCredential } from "../../src/runtime-sdk/credentials";
+import { installModelPlugins, type ModelPlugins } from "../../src/runtime-sdk/model-plugins/index";
 import { unconsumedUserMessages } from "../../src/runtime-sdk/clover-session";
 import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 import { backfillNativeSessions, openRuntimeStateDb, ProjectionCheckpoints, RuntimeSessionRecords } from "../../src/runtime-state";
@@ -1156,6 +1157,31 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
         await session.end();
       }
     } finally { t.close(); }
+  });
+
+  // A-M2 (spec §3.3): with the computer's model plugins installed, every incarnation's Options carry their
+  // `modelProviders` (the catalog file and the adapters this process serves), asked for that session; without them,
+  // none, and the session runs on the SDK's compiled catalog, which the bundled plugins are generated from.
+  test("optionsFor attaches the installed model plugins' option for the session, and nothing without them", async () => {
+    const settings = { provider: { model: "openai/gpt-5.6-sol" }, runtimes: { winterLeg: { chat: true, dispatch: false, code: false }, winterIdleTimeoutSec: 10 } } as unknown as Settings;
+    const t = table({ settings: () => settings });
+    const asked: { session?: string }[] = [];
+    const option = { catalog: { path: join(t.home, "run", "models", "catalog-x.json"), sha256: "0".repeat(64) } };
+    try {
+      const plain = await t.drivers.create(t.store.createSession("mp-none", { mode: "chat" }));
+      expect(t.q().options.modelProviders).toBeUndefined();
+      await plain.end();
+      installModelPlugins({ catalog: undefined, sessionOption: (o: { session?: string }) => (asked.push(o), option) } as unknown as ModelPlugins);
+      const sid = t.store.createSession("mp-on", { mode: "chat" });
+      const session = await t.drivers.create(sid);
+      expect(t.q().options.modelProviders).toEqual(option);
+      // Asked once, for this session (its Clover id, which the plugin host's calls then act for, R7).
+      expect(asked.map((a) => a.session)).toEqual([sid]);
+      await session.end();
+    } finally {
+      installModelPlugins(undefined);
+      t.close();
+    }
   });
 
   // WS-27: every incarnation carries the URL-mode elicitation handler; a card lands in the session's

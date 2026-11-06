@@ -1,3 +1,4 @@
+import { noteSpawned } from "../../auth/clover-caller";
 import { spawn, type ChildProcess } from "node:child_process";
 
 // Minimal LSP stdio client: JSON-RPC over child-process stdio, Content-Length framed (LSP's
@@ -241,6 +242,7 @@ export class LspClient {
     const timeoutMs = this.cfg.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS;
     const child = spawn(this.cfg.command, this.cfg.args ?? [], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
+    noteSpawned(child.pid, child); // C-M1: never the user (the caller check)
     child.on("error", (e) => this.die(new LspServerExitedError(this.withStderr(`lsp server failed to start: ${e.message}`))));
     child.on("exit", (code, signal) => this.die(new LspServerExitedError(this.withStderr(`lsp server exited (code=${code} signal=${signal})`))));
     // A write or end() to a server that already died raises EPIPE on stdin; without a listener that is

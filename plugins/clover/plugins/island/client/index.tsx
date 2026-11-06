@@ -1,7 +1,10 @@
 // The island's client entry (spec §10): what the manifest's `ui` entry names, and the parts other
 // surfaces of the island family reuse.
 
+export { IslandApp, DevicesTabEntry, IslandHostContext, useIslandHost, type IslandHost, type IslandEntryProps } from "../src/ui/host";
 export { Island, BROWSER_TIMERS, type IslandProps, type IslandTabEntry, type IslandTimers } from "../src/ui/Island";
+export { IslandSurface, type IslandSurfaceProps, type SurfaceHostApi } from "../src/ui/IslandSurface";
+export { DevicesTab, DevicesList, type DevicesSource } from "../src/ui/DevicesTab";
 export { Strip, stripLabel, type StripProps } from "../src/ui/Strip";
 export { LiquidCard, Melt, restingFluid, HOVER_EASING, type LiquidCardProps } from "../src/ui/Liquid";
 export { WaitingPill, type WaitingPillProps } from "../src/ui/WaitingPill";
@@ -31,5 +34,11 @@ export * from "../src/model/geometry";
 export { IslandQueue } from "../src/model/queue";
 export { fluidFrame, fluidSeconds, FLUID, type FluidFrame } from "../src/model/fluid";
 export { morphFrame, edgeShapePath, MORPH, type MorphFrame } from "../src/model/morph";
-export { NEEDS_YOU, tabState, swipe, select, selectedTab, showsDots, type IslandTab, type TabState } from "../src/model/tabs";
+export { NEEDS_YOU, OWN_PLUGIN, isOwnPlugin, guestTabs, isReservedTab, isReservedPluginName, tabState, swipe, select, selectedTab, showsDots, type IslandTab, type GuestTab, type TabState } from "../src/model/tabs";
+export { nameSkeleton, readsAs, shownName } from "../src/model/names";
 export { hoverScale, isOver, grownFromTop } from "../src/model/hover";
+export * from "../src/model/placement";
+export * from "../src/model/devices";
+
+// The words: the app installs its translator (lane E's `useT()`) for parts with no host context, such as an avatar.
+export { setTranslator, t, type Translator } from "../src/strings";

@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Baidu (ERNIE)",
+  "description": "Baidu (ERNIE)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "baidu",
+        "name": "Baidu (ERNIE)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Baidu (ERNIE) API key. Clover keeps it in your credential store and adds it to Baidu (ERNIE)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://qianfan.baidubce.com/v2"
+        }
+      }
+    ]
+  }
+}

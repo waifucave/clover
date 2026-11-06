@@ -1,0 +1,36 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it",
+        "the vendor's terms permit prompt/response LOGGING and publication of anonymized research data — a host must surface that before any session touches this provider (upstream's own `apiHint` says the same)"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://freeinference.org — the vendor's own documentation, retrieved 2026-09-06: the site's own documentation names `https://freeinference.org/v1/chat/completions`.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

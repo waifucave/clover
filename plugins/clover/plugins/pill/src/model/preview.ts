@@ -17,7 +17,10 @@ export interface TurnPreview {
 }
 
 /** The prompt line of a turn the user did not start: the bot reporting on its own. */
-export const UPDATE_LABEL = t("clover.pill.update");
+/** What a turn with no words of the user's shows: read each time, in the user's language. */
+export function updateLabel(): string {
+  return t("clover.pill.update");
+}
 export const PROMPT_LIMIT = 90;
 
 export function shortened(text: string, limit: number): string {
@@ -32,7 +35,7 @@ export function turnPreview(exchanges: readonly Exchange[], index: number, reply
   const prompt = shortened(exchange.prompt, PROMPT_LIMIT);
   const reply = replyText(exchange.reply);
   return {
-    prompt: prompt.length === 0 ? UPDATE_LABEL : prompt,
+    prompt: prompt.length === 0 ? updateLabel() : prompt,
     reply: reply.length === 0 ? (exchange.aborted ? "stopped" : "no reply yet") : reply,
     position: `${index + 1}/${exchanges.length}`,
   };

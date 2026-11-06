@@ -33,6 +33,7 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** Not in §5.4's table: lane F's request for the terminal panel. The bundled `clover` tree only (the controller's
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
   { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },
+  { name: "plugins.install", lets: "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK", ok: "installs plugins for you to OK", warns: false, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },

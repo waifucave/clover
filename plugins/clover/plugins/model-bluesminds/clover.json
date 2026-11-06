@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "BluesMinds",
+  "description": "BluesMinds's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "bluesminds",
+        "name": "BluesMinds",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your BluesMinds API key. Clover keeps it in your credential store and adds it to BluesMinds's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.bluesminds.com/v1"
+        }
+      }
+    ]
+  }
+}

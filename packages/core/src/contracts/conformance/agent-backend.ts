@@ -4,17 +4,35 @@
 // the S5 rows its quirks play (refusals, replays, open tool
 // calls on cancel, usage, persisting choices), sign-in, and permission answers through the ApprovalBroker.
 import { describe, expect, test } from "bun:test";
-import { acpOutcomeFor } from "../approval-broker";
-import type { AgentEvent, AgentStartSpec } from "../agent-backend";
+import { acpOutcomeFor, type AgentPermissionOption } from "../approval-broker";
+import type { AgentBackend, AgentEvent, AgentPermissionAnswer, AgentSession, AgentStartSpec } from "../agent-backend";
 import { isContractError } from "../common";
 import { type FakeAgentBackend, S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS, type AgentStep } from "../fakes/agent-backend";
 import { FakeApprovalBroker } from "../fakes/approval-broker";
 import { FakeClock, flush } from "../fakes/clock";
 import { FakeFence } from "../fakes/fence";
 
-/** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
- *  as public members, so a real implementation's harness can provide them. */
-export type AgentBackendHarness = Pick<FakeAgentBackend, keyof FakeAgentBackend>;
+/** One session as the suite drives it: the contract, and what a harness records of it. An interface of its own (lane
+ *  K's ask), so a real harness needn't build the fake's classes. */
+export interface AgentSessionHarness extends AgentSession {
+  readonly spec: AgentStartSpec;
+  /** Every answer the host gave, by tool call. */
+  readonly answers: readonly { toolCallId: string; answer: AgentPermissionAnswer; kind?: AgentPermissionOption["kind"] }[];
+  /** The config each `setConfig` set. */
+  readonly config: { readonly model?: string; readonly effort?: string };
+  /** How many replayed events a reattach dropped. */
+  readonly droppedReplay: number;
+  readonly reattachedWith?: "resume" | "load";
+  /** Lets a scripted `wait` step go on. */
+  proceed(): void;
+}
+
+/** What the suite drives: the contract and the harness's drivers (what a test does to the world around it). */
+export interface AgentBackendHarness extends AgentBackend {
+  readonly sessions: readonly AgentSessionHarness[];
+  /** The user's own selection in the agent's settings, which a persisting choice overwrites (S5 edit 11). */
+  readonly userSelection: { readonly model?: string };
+}
 /** Builds the implementation under test from the options the fake takes. */
 export type AgentBackendFactory = (...args: ConstructorParameters<typeof FakeAgentBackend>) => AgentBackendHarness;
 

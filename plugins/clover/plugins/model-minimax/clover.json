@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "MiniMax (OpenAI dialect)",
+  "description": "MiniMax (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "minimax",
+        "name": "MiniMax (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your MiniMax (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to MiniMax (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.minimax.io/v1"
+        }
+      }
+    ]
+  }
+}

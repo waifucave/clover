@@ -392,6 +392,7 @@ export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
 export const FRAME_VARIABLES: readonly { readonly name: string; readonly doc: string }[] = [
   { name: "frame.inset.top", doc: "The title bar's height: what `main`'s content keeps clear of at its top." },
   { name: "frame.window.controls", doc: "The room the window's own controls take at the title bar's start (80px on macOS by default; lane E sets it from `titlebar-area-x`)." },
+  { name: "frame.window.controls.end", doc: "The room the caption buttons take at the title bar's end on Windows and Linux (0 on macOS; lane E measures it from `navigator.windowControlsOverlay`)." },
 ];
 
 /** Electron's `systemPreferences.getAccentColor()` (`RRGGBBAA`) as a token value (`#RRGGBB`), or undefined when it

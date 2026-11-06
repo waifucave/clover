@@ -59,9 +59,9 @@ function Section({
 }
 
 export function SessionView(props: SessionViewProps) {
-  const { kind = "code", agents, context, outputs } = props;
-  // A bot's tab is slim: whatever the host passes, it never shows a folder's things.
-  const code = kind === "code";
+  const { kind = "coding", agents, context, outputs } = props;
+  // A bot's tab and a side thread are slim: whatever the host passes, they never show a folder's things.
+  const code = kind === "coding" || kind === "agent";
   const environment = code ? props.environment : undefined;
   const connectors = code ? props.connectors : undefined;
   const changes = code ? props.changes : undefined;

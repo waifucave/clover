@@ -1,3 +1,4 @@
+import { noteSpawned } from "../auth/clover-caller";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
  * plan Task 1). Spawns `sh -c <command>` with the event JSON on stdin, races the exit against a
@@ -120,6 +121,7 @@ export class HookRunner {
         stdout: "pipe",
         stderr: "pipe",
       });
+      noteSpawned(proc.pid, proc.exited); // C-M1: never the user (the caller check)
     } catch (err) {
       // Spawn itself threw (e.g. `cwd` doesn't exist, `sh` missing) — never propagate, report it
       // the same shape as any other hook failure.

@@ -1,0 +1,1086 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-responses"
+    ],
+    "authKinds": [
+      "oauth-approved"
+    ],
+    "defaultEndpoints": {
+      "api": "https://chatgpt.com/backend-api/codex"
+    },
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.codex-oauth",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "approved",
+      "reasons": [
+        "carried over per D11 with `originator: \"winter\"` — deliberately non-first-party (WS-01 §3); that identification must never be reverted to a first-party value"
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "oauth-documented",
+      "citation": "audit:§1 — the third-party-access audit's codex reference model: a vendor's public product OAuth client used with an HONEST originator (`originator: \"winter\"`, D11 / WS-01 §3), which is the shape D21 admits.",
+      "tier": "audit"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "codex-oauth/gpt-5.6-luna",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-5.6-luna",
+      "displayName": "GPT-5.6-Luna (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: input_modalities are text and image.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-11T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-11T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: this model lists low, medium, high, xhigh, and max as model reasoning levels. The cache also labels Ultra as client-side automatic task delegation, not a provider wire effort, so Ultra is deliberately excluded from the model effort vocabulary.",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed. Same evidence as `openai/o4-mini` — the same field on the same wire shape — which is exactly why the DOMAIN still is not shared (§2.5). A `readableState: \"summary\"` claim with no way to REQUEST the summary is a capability nobody can use, so the two travel together.",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-5.6-luna"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model, which is what Norma's shipped Codex adapter does verbatim off `response.completed` — and §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test.",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:30:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "codex-rs models-manager/models.json (cloned 25270df, 2026-09-26): supports_search_tool is true on every bundled model; core/src/tools/spec_plan.rs:653-666 turns on the client tool_search (tools/src/tool_search.rs:84-110, core/src/tools/handlers/tool_search_spec.rs:98) when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex."
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-luna (read 2026-09-27): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.6-luna",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-5.6-sol",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-5.6-sol",
+      "displayName": "GPT-5.6-Sol (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: input_modalities are text and image.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: this model lists low, medium, high, xhigh, and max as model reasoning levels. The cache also labels Ultra as client-side automatic task delegation, not a provider wire effort, so Ultra is deliberately excluded from the model effort vocabulary.",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "low",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed. Same evidence as `openai/o4-mini` — the same field on the same wire shape — which is exactly why the DOMAIN still is not shared (§2.5). A `readableState: \"summary\"` claim with no way to REQUEST the summary is a capability nobody can use, so the two travel together.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-5.6-sol"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model, which is what Norma's shipped Codex adapter does verbatim off `response.completed` — and §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:30:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "codex-rs models-manager/models.json (cloned 25270df, 2026-09-26): supports_search_tool is true on every bundled model; core/src/tools/spec_plan.rs:653-666 turns on the client tool_search (tools/src/tool_search.rs:84-110, core/src/tools/handlers/tool_search_spec.rs:98) when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex."
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-sol (read 2026-09-27): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.6-sol",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-5.6-terra",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-5.6-terra",
+      "displayName": "GPT-5.6-Terra (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: input_modalities are text and image.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-11T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-11T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: this model lists low, medium, high, xhigh, and max as model reasoning levels. The cache also labels Ultra as client-side automatic task delegation, not a provider wire effort, so Ultra is deliberately excluded from the model effort vocabulary.",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed. Same evidence as `openai/o4-mini` — the same field on the same wire shape — which is exactly why the DOMAIN still is not shared (§2.5). A `readableState: \"summary\"` claim with no way to REQUEST the summary is a capability nobody can use, so the two travel together.",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-5.6-terra"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model, which is what Norma's shipped Codex adapter does verbatim off `response.completed` — and §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test.",
+          "confidence": "declared",
+          "observedAt": "2026-09-11T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:30:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "codex-rs models-manager/models.json (cloned 25270df, 2026-09-26): supports_search_tool is true on every bundled model; core/src/tools/spec_plan.rs:653-666 turns on the client tool_search (tools/src/tool_search.rs:84-110, core/src/tools/handlers/tool_search_spec.rs:98) when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex."
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-5.6-terra (read 2026-09-27): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.6-terra",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-6-astra",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-6-astra",
+      "displayName": "GPT-6-Astra (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: input_modalities are text and image.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "Norma codex-config.ts / responses-sse.ts — the codex backend speaks the Responses tool protocol for every slug it serves",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "same basis as toolCalling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "Current server-delivered Codex model catalogue cached at ~/.codex/models_cache.json, read 2026-09-19: this model lists low, medium, high, xhigh, and max as model reasoning levels. The cache also labels Ultra as client-side automatic task delegation, not a provider wire effort, so Ultra is deliberately excluded from the model effort vocabulary.",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "low",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-6-astra"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model. §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:30:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "codex-rs models-manager/models.json (cloned 25270df, 2026-09-26): supports_search_tool is true on every bundled model; core/src/tools/spec_plan.rs:653-666 turns on the client tool_search (tools/src/tool_search.rs:84-110, core/src/tools/handlers/tool_search_spec.rs:98) when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex."
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-6-astra (read 2026-09-27): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-6-astra",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-6-luna",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-6-luna",
+      "displayName": "GPT-6-Luna (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-luna input_modalities=text, image.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:18:08Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-luna tool_mode=code_mode_only; Codex tool calls are native but code-mode scoped.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:18:08Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-luna tool_mode=code_mode_only; native tool use inferred from Codex execution surface.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:18:08Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-luna supported_reasoning_levels=low, medium, high, xhigh, max.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:18:08Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-6-luna"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model. §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:30:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "codex-rs models-manager/models.json (cloned 25270df, 2026-09-26): supports_search_tool is true on every bundled model; core/src/tools/spec_plan.rs:653-666 turns on the client tool_search (tools/src/tool_search.rs:84-110, core/src/tools/handlers/tool_search_spec.rs:98) when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex."
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-6-luna (read 2026-09-27): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-6-luna",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-6-sol",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-6-sol",
+      "displayName": "GPT-6-Sol (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-sol input_modalities=text, image.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:18:08Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-sol tool_mode=code_mode_only; Codex tool calls are native but code-mode scoped.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:18:08Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-sol tool_mode=code_mode_only; native tool use inferred from Codex execution surface.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:18:08Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-09-25T10:16:24.468875Z: gpt-6-sol supported_reasoning_levels=low, medium, high, xhigh, max.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:18:08Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-6-sol"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model. §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T19:30:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "declared",
+        "observedAt": "2026-09-26T00:00:00Z",
+        "sourceRef": "codex-rs models-manager/models.json (cloned 25270df, 2026-09-26): supports_search_tool is true on every bundled model; core/src/tools/spec_plan.rs:653-666 turns on the client tool_search (tools/src/tool_search.rs:84-110, core/src/tools/handlers/tool_search_spec.rs:98) when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex."
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-6-sol (read 2026-09-27): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-6-sol",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-6.1-sol",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-6.1-sol",
+      "displayName": "GPT-6.1-Sol (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "live-discovery",
+        "sourceRef": "Current server-delivered Codex model catalogue (~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z): max_context_window 872,000 for this model. codex-rs (openai/codex a6baf88) defines that field as the \"Maximum context window allowed for config overrides\" (protocol/src/openai_models.rs), and models-manager/src/model_info.rs clamps a configured model_context_window to it (context_window.min(max_context_window)) -- so the backend serves a conversation up to 872,000 tokens when the client opts in, as a Codex user does with model_context_window in config.toml. The catalogue's context_window 272,000 is Codex's DEFAULT, the point its own client compacts at, not what the backend accepts. The value is delivered per account; an account served less is still caught by the runtime's reactive compaction on context_length_exceeded. Measured, not only declared: the operator's own Codex rollouts (~/.codex/sessions, read 2026-10-07) record completed responses whose request input exceeded 272,000 tokens on gpt-6-luna (2,324 requests, max 820,037), gpt-6-astra (1,143, max 667,000), gpt-6.1-sol (364, max 586,810) and gpt-5.6-sol (45, max 330,401), at model_context_window 828,400 (95% of 872,000).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T10:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z: gpt-6.1-sol input_modalities=text, image.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T08:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z: gpt-6.1-sol tool_mode=code_mode_only; Codex tool calls are native but code-mode scoped.",
+        "confidence": "inferred",
+        "observedAt": "2026-10-07T08:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "live-discovery",
+        "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z: gpt-6.1-sol tool_mode=code_mode_only; native tool use inferred from Codex execution surface.",
+        "confidence": "inferred",
+        "observedAt": "2026-10-07T08:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "live-discovery",
+          "sourceRef": "https://learn.chatgpt.com/docs/models — Codex model availability; local server-delivered ~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z: gpt-6.1-sol supported_reasoning_levels=low, medium, high, xhigh, max (+ ultra, a client-side mode, excluded); default_reasoning_level=low.",
+          "confidence": "declared",
+          "observedAt": "2026-10-07T08:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "low",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-6.1-sol"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model. §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "codex-rs models-manager/models.json (openai/codex a6baf88, 2026-10-07) and the ~/.codex/models_cache.json, fetched_at 2026-10-07T07:59:47.410248Z: gpt-6.1-sol supports_search_tool=true; core/src/tools/spec_plan.rs turns on the client tool_search when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-6.1-sol (read 2026-10-07): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "codex-rs models-manager/models.json (openai/codex a6baf88, 2026-10-07): gpt-6.1-sol supports_parallel_tool_calls=true (true on every bundled model) — the vendor's own client sends parallel tool calls to this backend.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "canonicalModelId": "gpt-6.1-sol",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "codex-oauth/gpt-6.1-terra",
+      "providerId": "codex-oauth",
+      "upstreamId": "gpt-6.1-terra",
+      "displayName": "GPT-6.1 Terra (Codex)",
+      "aliases": [],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 872000,
+        "source": "upstream-static",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra max_context_window 872,000 — codex-rs defines that field as the \"Maximum context window allowed for config overrides\" and clamps a configured model_context_window to it, so the backend serves up to 872,000 when the client opts in (the convention codex-oauth/gpt-6.1-sol records with its own measured rollouts). The catalogue's context_window 500,000 is Codex's DEFAULT compaction point for this model, not the backend ceiling. Codex's public page: \"GPT-6.1 Terra requires Codex CLI 0.159.0 or later\" (https://developers.openai.com/codex/models).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://developers.openai.com/api/docs/models/gpt-6.1-terra (read 2026-10-29): \"128,000 max output tokens\" — OpenAI's own model page; Codex serves the same underlying model",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra input_modalities text, image.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra tool_mode code_mode_only; Codex tool calls are native but code-mode scoped.",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra tool_mode code_mode_only; native tool use inferred from the Codex execution surface.",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra supported_reasoning_levels low, medium, high, xhigh, max (+ ultra, \"Maximum reasoning with automatic task delegation\", a client-side mode, excluded); default_reasoning_level low.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "low",
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "codex-oauth/gpt-6.1-terra"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model. §2.5 for the narrowness: two endpoints can both use `/v1/responses` while issuing UNRELATED encrypted payloads, so this backend shares NO domain with `openai/*` despite the shared HTTP shape. WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs — Codex (the vendor's own client for this backend) sets prompt_cache_key on every Responses request, to the session id (or source:parent_thread_id for internal sessions); https://developers.openai.com/api/docs/guides/prompt-caching documents the field."
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra supports_search_tool=true; core/src/tools/spec_plan.rs turns on the client tool_search when the provider's namespace capability is on (default true) -- the vendor's own client sends it to chatgpt.com/backend-api/codex.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "upstream-static",
+        "sourceRef": "https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json (openai/codex 126a0ee, 2026-10-26, \"Add GPT-6.1 Terra to model catalogs\"; read 2026-10-29): gpt-6.1-terra supports_parallel_tool_calls=true — the vendor's own client sends parallel tool calls to this backend.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "canonicalModelId": "gpt-6.1-terra",
+      "modelFamily": "gpt"
+    }
+  ]
+}

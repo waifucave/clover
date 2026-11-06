@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Poolside",
+  "description": "Poolside's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "poolside",
+        "name": "Poolside",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Poolside API key. Clover keeps it in your credential store and adds it to Poolside's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://inference.poolside.ai/v1"
+        }
+      }
+    ]
+  }
+}

@@ -113,6 +113,7 @@ export class FakeSessionHost implements SessionHost {
     if (s.running) await this.#interruptStep(s);
   }
 
+
   async stop(id: string, reason = "stopped"): Promise<void> {
     const s = this.#sessions.get(id);
     if (!s || s.view.status === "stopped" || s.view.status === "failed") return;
@@ -268,10 +269,15 @@ export class FakeSessionDriver implements SessionDriver {
   readonly turns: { input: TurnInput; origin: TurnOrigin; folded: TurnInput[] }[] = [];
   interrupts = 0;
   stopped = false;
+  /** Every model it was switched to. */
+  readonly models: { model: string; effort?: string }[] = [];
+  readonly setModel?: (model: string, effort?: string) => Promise<void>;
   #current?: { resolve: (end: TurnEnd) => void; ctl: TurnControl };
 
-  constructor(opts: { canFold?: boolean } = {}) {
+  /** `setsModel: false` for a driver that can't switch models. */
+  constructor(opts: { canFold?: boolean; setsModel?: boolean } = {}) {
     this.canFold = opts.canFold ?? true;
+    if (opts.setsModel !== false) this.setModel = async (model, effort) => void this.models.push(effort === undefined ? { model } : { model, effort });
   }
 
   get running(): boolean {

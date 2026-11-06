@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "MiniMax (Anthropic dialect)",
+  "description": "MiniMax (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "minimax-anthropic",
+        "name": "MiniMax (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your MiniMax (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to MiniMax (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.minimax.io/anthropic"
+        }
+      }
+    ]
+  }
+}

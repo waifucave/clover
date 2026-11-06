@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { PermissionResult } from "@waifucave/clover-agent-sdk";
-import { QUESTION_PLACEHOLDER_MAX, type NewSessionEvent, type Question } from "@waifucave/clover-protocol";
+import { QUESTION_PLACEHOLDER_MAX, utf16, type NewSessionEvent, type Question } from "@waifucave/clover-protocol";
 import type { QuestionBroker } from "../agent/questions";
 import { NO_PARK_TIMEOUT_MS, type BridgeLogger } from "./bridge-common";
 
@@ -37,7 +37,8 @@ export const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 export const AskUserQuestionInput = z.object({
   questions: z.array(z.object({
     question: z.string().min(1),
-    header: z.string().min(1).max(12),
+    // In UTF-16 units under any zod (`utf16`), the strictest count: a header this takes is one the executor takes.
+    header: utf16(12, 1),
     options: z.array(z.object({
       label: z.string().min(1),
       description: z.string().optional(),
