@@ -32,7 +32,8 @@ interface Member { joinedAt: number; votesFrom: number | null; admittedBy: strin
 interface Change { kind: "admit" | "remove"; target: string; signers: string[]; at: number; member?: Member }
 interface Group {
   members: Map<string, Member>; removed: Map<string, number>; last: Map<string, number>; lease: LeaseRecord; changes: Change[];
-  /** The lease's last holder, who alone may take it back without a vote (lane I's rule, lane/i-lease-voter). */
+  /** The lease's last holder, who alone may take it back without a vote while it stays a member (lane I's rule,
+   *  lane/i-lease-voter); cleared when it leaves, by any removal or a move out. */
   lastHolder?: string;
 }
 interface Sock { send(text: string): void; close(code: number, reason: string): void }
@@ -96,6 +97,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
         g.members.delete(c.target);
         g.removed.set(c.target, now());
         if (g.lease.holder === c.target) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
+        if (g.lastHolder === c.target) g.lastHolder = undefined;
         rollBack(g, c.target, keeps, seen);
       } else if (c.kind === "remove" && c.member && !g.members.has(c.target)) {
         g.members.set(c.target, c.member);
@@ -438,6 +440,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
             fromGroup.members.delete(newKey);
             fromGroup.removed.set(newKey, now());
             if (fromGroup.lease.holder === newKey) fromGroup.lease = { holder: null, epoch: fromGroup.lease.epoch, expiresAt: null };
+            if (fromGroup.lastHolder === newKey) fromGroup.lastHolder = undefined;
             if (fromGroup.members.size === 0) groups.delete(b.from as string);
             else for (const k of fromGroup.members.keys()) push(`group:${b.from as string}`, k, { t: "members", members: memberList(fromGroup) });
           }
@@ -501,6 +504,8 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           g.members.delete(gone);
           g.removed.set(gone, now());
           if (g.lease.holder === gone) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
+          // A key that leaves loses its last-holder mark (lane I's 1d4caa6e0): let back in, it needs a vote to take it.
+          if (g.lastHolder === gone) g.lastHolder = undefined;
           if (gone !== who) {
             g.changes.push({ kind: "remove", target: gone, signers, at: now(), member });
             rollBack(g, gone, new Set([...keeps, who]));

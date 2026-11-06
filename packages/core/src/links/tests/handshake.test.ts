@@ -172,8 +172,26 @@ describe("who may hold a group's lease (lane I's lane/i-lease-voter, H-M2's chec
     const again = await client.lease(group, a, { op: "acquire", epoch: held.epoch });
     expect(again.holder).toBe(k(a));
     await client.lease(group, a, { op: "release", epoch: again.epoch });
-    expect((await client.lease(group, b, { op: "acquire", epoch: again.epoch })).holder).toBe(k(b));
+    const bHeld = await client.lease(group, b, { op: "acquire", epoch: again.epoch });
+    expect(bHeld.holder).toBe(k(b));
     expect(status(await client.lease(group, c, { op: "takeover", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+
+    // A holder that leaves loses its last-holder mark (lane I's 1d4caa6e0). d comes in on both voters' admits, so a
+    // and d vote; b removes itself while it holds the lease, then comes back on a's admit alone, as a non-voter: its
+    // old lease isn't its to take back.
+    const d = generateEd25519();
+    t = client.now();
+    expect(await client.joinGroup(group, {
+      key: k(d), t, sig: toBase64Url(d.sign(joinStatement(group, k(d), t))),
+      admits: [a, b].map((x) => ({ by: k(x), sig: toBase64Url(x.sign(admitStatement(group, k(d), t))) })),
+    })).toBe(true);
+    await client.removeGroupMember(group, b, k(b));
+    expect(hs.groups.get(group)?.lease.holder).toBe(null);
+    await Bun.sleep(5);
+    t = client.now();
+    expect(await client.joinGroup(group, { key: k(b), t, sig: toBase64Url(b.sign(joinStatement(group, k(b), t))), by: k(a), bysig: toBase64Url(a.sign(admitStatement(group, k(b), t))) })).toBe(true);
+    expect(status(await client.lease(group, b, { op: "acquire", epoch: bHeld.epoch }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+    expect((await client.lease(group, d, { op: "acquire", epoch: bHeld.epoch })).holder).toBe(k(d));
   });
 });
 
