@@ -495,6 +495,7 @@ describe("the backends' rows", () => {
     const lines: Record<string, string> = {
       cursor: "2026.10.22-27dcf5f", antigravity: "1.4.12", grok: "grok 1.0.70 (f50904eaee6c) [stable]", gemini: "0.46.0",
       "claude-code": "0.100.0", codex: "2.5.0", deepseek: "dsh 0.1.2",
+      devin: "devin 3000.11.234 (92c83011d113)",
     };
     for (const [id, q] of Object.entries(QUIRKS)) {
       for (const os of ["macos", "linux", "windows"] as const) expect(q.launch.command[os]?.length ?? 0).toBeGreaterThan(0);

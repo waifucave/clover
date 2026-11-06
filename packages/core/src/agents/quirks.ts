@@ -166,6 +166,24 @@ export const DEEPSEEK_QUIRKS: AgentQuirks = {
   auth: { methods: [], requiredError: { code: -32000 } },
 };
 
+/** Devin's CLI 3000.11 (Cognition's, Homebrew cask `devin-cli`), native (`devin acp`), from its `--help` and
+ *  docs.devin.ai's command reference: it signs in with `devin auth login` or reads `WINDSURF_API_KEY`, and its
+ *  permission mode comes from `DEVIN_PERMISSION_MODE` or its config, so Clover sets `normal`, the mode that asks.
+ *  Native Windows runs it without its sandbox (its docs: the sandbox needs WSL 2). */
+export const DEVIN_QUIRKS: AgentQuirks = {
+  ...UNMEASURED,
+  launch: {
+    command: { macos: ["devin", "acp"], linux: ["devin", "acp"], windows: ["devin.exe", "acp"] },
+    identity: { versionArgs: ["--version"], versionPattern: "^devin (\\d+\\.\\d+\\.\\d+) \\([0-9a-f]+\\)", signer: "83Z2LHX6XW" },
+    envAllow: ["WINDSURF_API_KEY"], envSet: { DEVIN_PERMISSION_MODE: "normal" }, versions: ">=3000.11.0 <3001.0.0",
+  },
+  mcp: { transports: ["stdio"], storesPlainText: false, passesEnvironment: false, instructionsReachPrompt: "unknown", systemPromptChannel: null, tellsConversationId: false },
+  sessions: { load: { supported: false, replays: false }, resume: { supported: false, replays: false }, replayKeepsToolCallIds: true, listFiltersHonestly: false, close: false },
+  permissions: { optionKinds: ["allow_once", "reject_once"], neverAsks: [], mcpNames: null },
+  config: { modelOption: "model", effortOption: null, effortInModel: false, choicePersists: false },
+  auth: { methods: [], requiredError: { code: -32000 } },
+};
+
 /** The table, by backend id (an `agentBackends` entry's id). */
 export const QUIRKS: Readonly<Record<string, AgentQuirks>> = {
   cursor: CURSOR_QUIRKS,
@@ -175,6 +193,7 @@ export const QUIRKS: Readonly<Record<string, AgentQuirks>> = {
   grok: GROK_QUIRKS,
   gemini: GEMINI_QUIRKS,
   deepseek: DEEPSEEK_QUIRKS,
+  devin: DEVIN_QUIRKS,
 };
 
 /** Where each row comes from: measured by spike S5, or read from docs, `--help` and code (S5 §3) and still to be
@@ -187,6 +206,7 @@ export const QUIRK_SOURCES: Readonly<Record<string, "measured (S5)" | "docs and 
   grok: "docs and code (S5 §3)",
   gemini: "docs and code (S5 §3)",
   deepseek: "docs and code (S5 §3)",
+  devin: "docs and code (S5 §3)",
 };
 
 /** The read-only mode of each agent that acts without asking (`unasked-actions`), by backend id: the config option
