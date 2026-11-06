@@ -80,7 +80,7 @@ function hooksOver(entries: Contribution[], handle: (req: InvokeRequest) => unkn
       entries: ((point: string) => (point === "hooks" ? entries : [])) as never,
       get: ((id: string) => ({ id, manifest: scope?.[id] === undefined ? {} : { scope: scope[id] } })) as never,
     },
-    host: { invoke: async (req) => { calls.push(req); return handle(req); } },
+    host: { invoke: (async (req: InvokeRequest) => { calls.push(req); return handle(req); }) as never },
     onSkipped: (s) => skipped.push(s),
   });
   return { hooks, calls, skipped };
