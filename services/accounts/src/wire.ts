@@ -6,8 +6,8 @@ import { utf8 } from "../../shared/encoding";
 export const registerStatement = (account: string, device: string, t: number): Uint8Array =>
   utf8(["clover-account-v1 register", account, device, String(t)].join("\n"));
 
-export const mintStatement = (audience: string, device: string, t: number): Uint8Array =>
-  utf8(["clover-account-v1 mint", audience, device, String(t)].join("\n"));
+export const mintStatement = (account: string, audience: string, device: string, t: number): Uint8Array =>
+  utf8(["clover-account-v1 mint", account, audience, device, String(t)].join("\n"));
 
 /** The device kinds and systems of the protocol's `DeviceKind` and `Os` (packages/protocol). */
 export const DEVICE_KINDS = ["desktop", "server", "cloud", "phone", "browser"] as const;

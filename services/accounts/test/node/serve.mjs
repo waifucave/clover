@@ -2,7 +2,7 @@
 // real sockets: this service's own (e2e.test.ts) and the core's sign-in tests (lane H), against a sign-in stack such
 // as lane M's stub.
 //
-// Input:  ACCOUNTS_E2E (environment, JSON): { authUrl, anonKey, signingJwks, tokenTtl?, devMint? }, made by the test
+// Input:  ACCOUNTS_E2E (environment, JSON): { authUrl, anonKey, signingJwks, tokenTtl? }, made by the test
 //         in memory for this run. Nothing is written to disk but wrangler's own local state folder.
 // Output: one JSON line {"url": "..."} once listening. When stdin closes, the server stops.
 
@@ -22,7 +22,7 @@ function worker(origin) {
       AUTH_URL: config.authUrl ?? "",
       AUTH_ANON_KEY: config.anonKey ?? "",
       TOKEN_TTL: String(config.tokenTtl ?? 300),
-      DEV_MINT: config.devMint ? "1" : "",
+      DEV_MINT: "",
       EPHEMERAL_KEYS: "",
     },
     secrets: { SIGNING_JWKS: config.signingJwks },

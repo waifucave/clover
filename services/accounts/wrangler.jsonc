@@ -22,7 +22,6 @@
     "AUTH_URL": "",
     "AUTH_ANON_KEY": "",
     "AUDIENCES": "hooks.waifucave.com,push.waifucave.com,handshake.waifucave.com",
-    "WEB_ORIGINS": "http://127.0.0.1:8790",
     "EPHEMERAL_KEYS": "1",
     "DEV_MINT": "1"
   },
@@ -54,8 +53,7 @@
         // Set at the live gates: waifucave's Supabase project and its public anon key.
         "AUTH_URL": "",
         "AUTH_ANON_KEY": "",
-        "AUDIENCES": "hooks.waifucave.com,push.waifucave.com,handshake.waifucave.com",
-        "WEB_ORIGINS": "https://clover.waifucave.com"
+        "AUDIENCES": "hooks.waifucave.com,push.waifucave.com,handshake.waifucave.com"
       },
       "durable_objects": {
         "bindings": [

@@ -27,8 +27,15 @@ describe("the local profile's mint", () => {
 
   test("refuses malformed mint requests", async () => {
     expect((await call("POST", "/dev/token", { via: local, body: { account: "a", device: "has space", aud: "x" } })).status).toBe(400);
-    expect((await call("POST", "/dev/token", { via: local, body: { account: "a", device: "d", aud: "x", ttl: 90_000 } })).status).toBe(400);
+    expect((await call("POST", "/dev/token", { via: local, body: { account: "a", device: "d", aud: "x", ttl: 301 } })).status).toBe(400);
     expect((await call("GET", "/nothing", { via: local })).status).toBe(404);
+  });
+
+  test("is closed beside real keys: with SIGNING_JWKS set, even in the local profile", async () => {
+    // The test environment has SIGNING_JWKS, EPHEMERAL_KEYS and DEV_MINT all set.
+    expect((await call("POST", "/dev/token", { body: { account: "a", device: "d", aud: "handshake.waifucave.com" } })).status).toBe(404);
+    const noMemoryKeys = withEnv({ SIGNING_JWKS: undefined, EPHEMERAL_KEYS: undefined });
+    expect((await call("POST", "/dev/token", { via: noMemoryKeys, body: { account: "a", device: "d", aud: "handshake.waifucave.com" } })).status).toBe(404);
   });
 
   test("is closed without DEV_MINT", async () => {

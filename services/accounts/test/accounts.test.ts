@@ -9,7 +9,7 @@ import { fromB64u } from "../../shared/encoding";
 import { clearJwksCache, verifyAccountTokenFrom } from "../../shared/jwks";
 import { StepLimiter } from "../../shared/testing/step-limiter";
 import type { AccountDO } from "../src/account-do";
-import { LIMITS, registerStatement } from "../src/wire";
+import { LIMITS, mintStatement, registerStatement } from "../src/wire";
 import {
   AUDIENCE,
   call,
@@ -284,6 +284,9 @@ describe("tokens", () => {
     // The forged one spent nothing: t + 2 still works.
     expect((await mintFor(session, device, { t: t + 2 })).status).toBe(200);
 
+    // A statement for another account doesn't mint here.
+    const elsewhere = await mintFor(session, device, { t: t + 3, account: "someone-else" });
+    expect([elsewhere.status, await elsewhere.json()]).toEqual([403, { error: "bad_signature" }]);
     const stranger = await mintFor(session, await newDevice());
     expect([stranger.status, await stranger.json()]).toEqual([403, { error: "not_member" }]);
     const unknown = await mintFor(session, device, { aud: "elsewhere.example" });
@@ -363,21 +366,13 @@ describe("paths and origins", () => {
       expect((await call(method, path, { session, via: withEnv({ DEV_MINT: undefined }) })).status).toBe(404);
     }
   });
-
-  test("CORS for the web companion's origin alone", async () => {
-    const preflight = await worker(
-      new Request(`${ORIGIN}/v1/devices`, { method: "OPTIONS", headers: { origin: "https://clover.test", "access-control-request-method": "DELETE" } }),
-    );
-    expect(preflight.status).toBe(204);
-    expect(preflight.headers.get("access-control-allow-origin")).toBe("https://clover.test");
-    expect(preflight.headers.get("access-control-allow-methods")).toContain("DELETE");
-    const other = await worker(new Request(`${ORIGIN}/.well-known/jwks.json`, { headers: { origin: "https://elsewhere.test" } }));
-    expect(other.headers.get("access-control-allow-origin")).toBeNull();
-  });
 });
 
 describe("the statements", () => {
   test("are lane H's, byte for byte", () => {
     expect(new TextDecoder().decode(registerStatement("acct", "dev", 1793000000123))).toBe("clover-account-v1 register\nacct\ndev\n1793000000123");
+    expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe(
+      "clover-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123",
+    );
   });
 });

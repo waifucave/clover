@@ -23,7 +23,6 @@
     "APNS_PRODUCTION_ORIGIN": "https://api.push.apple.com",
     "APNS_SANDBOX_ORIGIN": "https://api.sandbox.push.apple.com",
     "VAPID_SUBJECT": "mailto:push@waifucave.invalid",
-    "WEB_ORIGINS": "http://127.0.0.1:8790",
     "VAPID_PUBLIC_KEY": "",
     "WEBPUSH_HOSTS": "fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.notify.windows.com",
     "MAX_TARGETS": "20"
@@ -42,6 +41,9 @@
       "workers_dev": false,
       "observability": { "enabled": false },
       "routes": [{ "pattern": "push.waifucave.com", "custom_domain": true }],
+      // The account service's keys go through this binding: a Worker can't fetch another Worker's route on its own
+      // zone. ACCOUNT_JWKS_URL is the path asked for, and the fallback.
+      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "clover-accounts" }],
       "vars": {
         // waifucave's account service (services/accounts): its issuer and its keys' URL. Set at the live gates:
         // the APNs key's ids, the iOS app's bundle id and the VAPID public key (the private halves are secrets).
@@ -54,7 +56,6 @@
         "APNS_PRODUCTION_ORIGIN": "https://api.push.apple.com",
         "APNS_SANDBOX_ORIGIN": "https://api.sandbox.push.apple.com",
         "VAPID_SUBJECT": "mailto:push@waifucave.com",
-        "WEB_ORIGINS": "https://clover.waifucave.com",
         "VAPID_PUBLIC_KEY": "",
         "WEBPUSH_HOSTS": "fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.notify.windows.com",
         "MAX_TARGETS": "20"

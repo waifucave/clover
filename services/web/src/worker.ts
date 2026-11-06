@@ -33,6 +33,8 @@ function security(env: Env): Record<string, string> {
       "frame-ancestors 'none'",
     ].join("; "),
     "referrer-policy": "no-referrer",
+    // Once seen over https, the browser never loads the page over plain http (a year; local http ignores it).
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
     "x-content-type-options": "nosniff",
     "cross-origin-opener-policy": "same-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",

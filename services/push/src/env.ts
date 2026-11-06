@@ -14,6 +14,8 @@ export interface Env {
   /** The account service's keys: inline, or at a URL fetched and cached (shared/jwks.ts), which wins when set. */
   ACCOUNT_JWKS?: string;
   ACCOUNT_JWKS_URL?: string;
+  /** Production: a service binding to the account service, for its JWKS (shared/jwks.ts). */
+  ACCOUNT_SERVICE?: Fetcher;
   /** The `aud` an account token must carry for this service. */
   PUSH_AUDIENCE: string;
 
@@ -32,9 +34,6 @@ export interface Env {
   VAPID_PRIVATE_KEY: string;
   /** Push services a browser subscription may point at, comma-separated; "*." covers subdomains. */
   WEBPUSH_HOSTS: string;
-
-  /** Origins whose pages may call this service from a browser, comma-separated (the web companion's). */
-  WEB_ORIGINS?: string;
 
   MAX_TARGETS?: string;
   /** How long one request to APNs or a Web Push service may take, in ms (10 s by default). */

@@ -15,7 +15,6 @@ import { bearerToken } from "../../shared/account-token";
 import { verifyAccountTokenFrom } from "../../shared/jwks";
 import { b64u, fromB64u, sha256, utf8 } from "../../shared/encoding";
 import { errorResponse, json, readJsonObject } from "../../shared/http";
-import { originsFrom, preflight, withCors } from "../../shared/web";
 import { APNS_TOKEN_RE } from "./apns";
 import type { Caller, PushDO, Target } from "./push-do";
 import type { Env } from "./env";
@@ -27,10 +26,7 @@ const TARGET_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    // The web companion registers its browser's Web Push subscription from its own origin (CORS for it alone).
-    const origins = originsFrom(env.WEB_ORIGINS);
-    if (request.method === "OPTIONS") return preflight(request, origins, "GET, PUT, POST, DELETE");
-    return withCors(await serve(request, env), request, origins);
+    return serve(request, env);
   },
 } satisfies ExportedHandler<Env>;
 

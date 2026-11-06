@@ -4,7 +4,7 @@
 // for the other. The signing key is made here, in memory, for this run.
 
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, rmdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export interface AccountServiceHarness {
@@ -22,8 +22,6 @@ export interface AccountServiceOptions {
   anonKey: string;
   /** Seconds a token lives, at most 300. */
   tokenTtlSeconds?: number;
-  /** Also open POST /dev/token, the mint without a sign-in. */
-  devMint?: boolean;
 }
 
 const serviceDir = join(dirname(import.meta.path), "../..");
@@ -51,7 +49,6 @@ export async function startAccountService(options: AccountServiceOptions): Promi
         anonKey: options.anonKey,
         signingJwks,
         tokenTtl: options.tokenTtlSeconds ?? 300,
-        devMint: options.devMint ?? false,
       }),
     },
     stdin: "pipe",
@@ -74,6 +71,18 @@ export async function startAccountService(options: AccountServiceOptions): Promi
       await child.stdin.end();
       const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => null)]);
       if (exited === null) child.kill();
+      removeEmptyStateFolders(serviceDir);
     },
   };
+}
+
+/** Wrangler's runtime leaves an empty .wrangler/tmp behind; nothing else is in it, so it goes once the run is over. */
+export function removeEmptyStateFolders(dir: string): void {
+  for (const folder of [join(dir, ".wrangler/tmp"), join(dir, ".wrangler")]) {
+    try {
+      rmdirSync(folder);
+    } catch {
+      // Not there, or not empty: left as it is.
+    }
+  }
 }

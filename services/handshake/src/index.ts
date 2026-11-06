@@ -346,14 +346,18 @@ async function signedCall(request: Request, env: Env, url: URL, scope: "pair" | 
   return finish(env, call, await stubFor(env, scope, id).call(call));
 }
 
-/** A call's answer; a ticket call's is turned into the ticket here, since only the Worker holds the secret. */
-async function finish(env: Env, call: Call, result: Reply): Promise<Response> {
+/**
+ * A call's answer; a ticket call's is turned into the ticket here, since only the Worker holds the secret. An account
+ * socket's ticket carries the token's end (`until`), so the socket doesn't outlive it.
+ */
+async function finish(env: Env, call: Call, result: Reply, until?: number): Promise<Response> {
   if (call.op !== "ticket" || result.status !== 200) return reply(result);
   const { ticket, claims } = await mintTicket(env.TICKET_SECRET, {
     scope: call.scope,
     id: call.id,
     member: call.member,
     expiresAt: Date.now() + LIMITS.ticketTtlMs,
+    ...(until !== undefined ? { until } : {}),
   });
   const ws = env.HANDSHAKE_ORIGIN.replace(/^http/, "ws");
   return json({ url: `${ws}/v1/socket?ticket=${ticket}`, expiresAt: claims.expiresAt });
@@ -398,7 +402,7 @@ async function accountCall(request: Request, env: Env, rest: string[]): Promise<
   if (!(await env.API_RATE.limit({ key: `account:${identity.account}|${identity.device}` })).success) rateLimited();
   const { op, args } = accountOp(request.method, rest, await readJson(request));
   const call: Call = { scope: "account", id: identity.account, member: identity.device, op, ...(args ? { args } : {}) };
-  return finish(env, call, await stubFor(env, "account", identity.account).call(call));
+  return finish(env, call, await stubFor(env, "account", identity.account).call(call), identity.expiresAt * 1000);
 }
 
 // ---- rendezvous: a short pairing code's slot ----
@@ -458,5 +462,6 @@ async function socket(request: Request, env: Env, url: URL): Promise<Response> {
   headers.set("x-handshake-member", claims.member);
   headers.set("x-handshake-nonce", claims.nonce);
   headers.set("x-handshake-expires", String(claims.expiresAt));
+  if (claims.until !== undefined) headers.set("x-handshake-until", String(claims.until));
   return stubFor(env, claims.scope, claims.id).fetch(new Request("https://handshake.internal/socket", { method: "GET", headers }));
 }
