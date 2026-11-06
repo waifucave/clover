@@ -22,7 +22,7 @@ import {
   signText,
 } from "../client";
 import type { HandshakeDO } from "../src/handshake-do";
-import { createdGroup, rawSocket, signer } from "./helpers";
+import { client, createdGroup, rawSocket, signer } from "./helpers";
 
 const DAY = 24 * 3600_000;
 
@@ -42,14 +42,14 @@ async function admit(
   joiner: Signer,
   by: Signer,
   more: Signer[] = [],
-  options: { from?: string; requester?: Signer } = {},
+  options: { from?: string; requester?: Signer; unsignedFrom?: boolean } = {},
 ): Promise<{ votesFrom: number }> {
   const t = Date.now();
   const statement = admitStatement(group, joiner.key, t);
   return (await c.joinGroup(group, {
     key: joiner.key,
     t,
-    sig: await signText(joiner, joinStatement(group, joiner.key, t)),
+    sig: await signText(joiner, joinStatement(group, joiner.key, t, options.unsignedFrom ? undefined : options.from)),
     by: by.key,
     bysig: await signText(by, statement),
     admits: await Promise.all(more.map(async (m) => ({ by: m.key, sig: await signText(m, statement) }))),
@@ -64,7 +64,7 @@ const removal = async (group: string, target: string, t: number, signers: Signer
 const recoveryVotes = async (group: string, key: string | null, t: number, signers: Signer[]): Promise<Cosignature[]> =>
   Promise.all(signers.map(async (s) => ({ by: s.key, sig: await signText(s, recoveryStatement(group, key, t)) })));
 
-/** As if 72 hours and more had passed for these members: they vote now. */
+/** As if 7 days and more had passed for these members: they vote now. */
 async function vote(group: string, ...keys: string[]): Promise<void> {
   await runInDurableObject(env.HANDSHAKE.getByName(`group:${group}`), async (_o: HandshakeDO, state) => {
     for (const key of keys) state.storage.sql.exec("UPDATE members SET votes_from = 0 WHERE key = ?", key);
@@ -81,7 +81,7 @@ async function age(group: string, days: number): Promise<void> {
 const keysOf = async (c: HandshakeClient, group: string, as: Signer) => (await c.group(group, as).get()).members.map((m) => m.key).sort();
 
 describe("votes", () => {
-  test("the founder votes at once; a key admitted by a quorum of voters votes at once, by fewer after 72 hours", async () => {
+  test("the founder votes at once; a key admitted by a quorum of voters votes at once, by fewer after 7 days", async () => {
     const { group, founder: a, c } = await createdGroup();
     const [b, cc, d] = [await signer(), await signer(), await signer()];
     const now = Date.now();
@@ -94,6 +94,22 @@ describe("votes", () => {
     expect(members.find((m) => m.key === a.key)).toMatchObject({ votesFrom: expect.any(Number) });
     expect(members.find((m) => m.key === a.key)!.admittedBy).toBeUndefined();
     expect(members.find((m) => m.key === cc.key)).toMatchObject({ admittedBy: a.key, votesFrom: later });
+  });
+
+  test("a key admitted without a quorum votes only after the full 7-day rollback window, and can't co-sign before", async () => {
+    expect(LIMITS.recovery.voteDelayMs).toBe(LIMITS.recovery.rollbackMs);
+    const { group, founder: a, c } = await createdGroup();
+    const [b, late, target] = [await signer(), await signer(), await signer()];
+    await admit(c, group, b, a);
+    await vote(group, b.key);
+    await admit(c, group, target, a, [b]);
+    const before = Date.now();
+    expect((await admit(c, group, late, b)).votesFrom).toBeGreaterThanOrEqual(before + LIMITS.recovery.rollbackMs);
+    // Four days on, past the old 72 hours, it is still no vote: not as a co-signer, and not as a requester.
+    await age(group, 4);
+    const when = Date.now();
+    expect((await refusal(c.group(group, a).remove(target.key, { t: when, cosigners: await removal(group, target.key, when, [late]) }))).code).toBe("not_voter");
+    expect((await refusal(c.group(group, late).remove(target.key, { t: when }))).code).toBe("no_quorum");
   });
 
   test("a non-voter's admit lets a key in, but doesn't count toward the quorum", async () => {
@@ -206,25 +222,82 @@ describe("removing others", () => {
 });
 
 describe("moving between the user's groups", () => {
-  test("a key that moves keeps its vote, or what is left of its wait, and leaves the old group in the same step", async () => {
+  test("a vote never moves with a key: it votes at the host only as any new key does, and leaves the old group", async () => {
     const { group: old, founder: a, c } = await createdGroup();
-    const [k, waiting, b] = [await signer(), await signer(), await signer()];
+    const [k, b] = [await signer(), await signer()];
     await admit(c, old, b, a);
     await admit(c, old, k, a, [b]);
-    const wait = (await admit(c, old, waiting, a)).votesFrom;
-    const { group: host, founder: h } = await createdGroup(c);
-    await admit(c, host, await signer(), h);
-    // At the host, one admitter isn't a quorum: an ordinary join would wait 72 hours.
-    expect((await admit(c, host, await signer(), h)).votesFrom).toBeGreaterThan(Date.now() + DAY);
-    expect((await admit(c, host, k, h, [], { from: old })).votesFrom).toBeLessThanOrEqual(Date.now());
-    expect((await admit(c, host, waiting, h, [], { from: old })).votesFrom).toBe(wait);
+    // Each group's joins from an address of its own, under the registration limit.
+    const { group: host, founder: h, c: hc } = await createdGroup(client());
+    const v = await signer();
+    await admit(hc, host, v, h);
+    await vote(host, v.key);
+    // k votes in its old group, but at the host one admitter of two voters isn't a quorum: it waits the 7 days.
+    expect((await admit(hc, host, k, h, [], { from: old })).votesFrom).toBeGreaterThanOrEqual(Date.now() + 6 * DAY);
     expect(await keysOf(c, old, a)).toEqual([a.key, b.key].sort());
+    // With the host's quorum (both of its voters' cards) a merged key votes at once.
+    const [k2] = [await signer()];
+    await admit(c, old, k2, a, [b]);
+    expect((await admit(hc, host, k2, h, [v], { from: old })).votesFrom).toBeLessThanOrEqual(Date.now());
+    // A one-voter host is that quorum by itself.
+    const { group: single, founder: s1, c: sc } = await createdGroup(client());
+    const k3 = await signer();
+    await admit(c, old, k3, a, [b]);
+    expect((await admit(sc, single, k3, s1, [], { from: old })).votesFrom).toBeLessThanOrEqual(Date.now());
+  });
+
+  test("a thief's own group lends it no votes: its keys can't remove the founder or replace the recovery code", async () => {
+    const { group, founder: a, c } = await createdGroup();
+    const b = await signer();
+    await admit(c, group, b, a);
+    await vote(group, b.key);
+    const code = await recoverySigner(newRecoveryCode(), group);
+    const setAt = Date.now();
+    await c.group(group, a).setRecovery(code.key, setAt, await recoveryVotes(group, code.key, setAt, [b]));
+    // The thief holds b. It founds a group of its own, where its keys vote at once, and b lets them in here.
+    const { group: theirs, founder: thief } = await createdGroup(c);
+    const [t1, t2] = [await signer(), await signer()];
+    await admit(c, theirs, t1, thief);
+    await admit(c, theirs, t2, thief, [t1]);
+    for (const key of [thief, t1, t2]) {
+      expect((await admit(c, group, key, b, [], { from: theirs })).votesFrom).toBeGreaterThanOrEqual(Date.now() + 6 * DAY);
+    }
+    // Removing the founder: b alone, with the thief's keys co-signing (not voters), or without them (no quorum).
+    let when = Date.now();
+    expect((await refusal(c.group(group, b).remove(a.key, { t: when, cosigners: await removal(group, a.key, when, [t1, t2, thief]) }))).code).toBe("not_voter");
+    when = Date.now();
+    expect((await refusal(c.group(group, b).remove(a.key, { t: when }))).code).toBe("no_quorum");
+    // Replacing the recovery code's vote with a key of the thief's.
+    const theirCode = await recoverySigner(newRecoveryCode(), group);
+    const at = setAt + 1;
+    expect((await refusal(c.group(group, b).setRecovery(theirCode.key, at, await recoveryVotes(group, theirCode.key, at, [t1, t2, thief])))).code).toMatch(/^(no_quorum|not_voter)$/);
+    expect((await refusal(c.group(group, b).setRecovery(theirCode.key, at))).code).toBe("no_quorum");
+    expect((await c.group(group, a).get()).members.map((m) => m.key)).toContain(a.key);
+  });
+
+  test("`from` is the joining key's own: unsigned it is refused, and a join that adds nothing moves nothing", async () => {
+    const { group: old, founder: a, c } = await createdGroup();
+    const k = await signer();
+    await admit(c, old, k, a);
+    const { group: host, founder: h } = await createdGroup(c);
+    // A `from` the key didn't sign (anyone could add it to move a key out of its group) is refused.
+    expect((await refusal(admit(c, host, k, h, [], { from: old, unsignedFrom: true }))).status).toBe(401);
+    expect(await keysOf(c, old, a)).toEqual([a.key, k.key].sort());
+    // A statement for one `from` doesn't serve another.
+    await admit(c, host, k, h, [], { from: old });
+    expect(await keysOf(c, old, a)).toEqual([a.key]);
+    // k is back in old; a join to the host it is already in changes nothing there, so it moves nothing either.
+    await admit(c, old, k, a);
+    await admit(c, host, k, h, [], { from: old });
+    expect(await keysOf(c, old, a)).toEqual([a.key, k.key].sort());
   });
 
   test("a `from` the key isn't in is an ordinary join; the last member moving out ends the old group", async () => {
     const { group: old, founder: solo, c } = await createdGroup();
     const { group: host, founder: h } = await createdGroup(c);
-    await admit(c, host, await signer(), h);
+    const v = await signer();
+    await admit(c, host, v, h);
+    await vote(host, v.key);
     const stranger = await signer();
     expect((await admit(c, host, stranger, h, [], { from: old })).votesFrom).toBeGreaterThan(Date.now() + DAY);
     expect(await keysOf(c, old, solo)).toEqual([solo.key]);

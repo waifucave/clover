@@ -183,8 +183,9 @@ async function joinGroup(request: Request, env: Env, group: string): Promise<Res
   if (typeof key !== "string" || !KEY_RE.test(key) || typeof by !== "string" || !KEY_RE.test(by) || key === by) return errorResponse(400, "bad_request");
   if (typeof sig !== "string" || !SIG_RE.test(sig) || typeof bysig !== "string" || !SIG_RE.test(bysig)) return errorResponse(400, "bad_signature_form");
   if (!withinStatementWindow(t, now)) return errorResponse(401, "unauthorized");
+  if (from !== undefined && (typeof from !== "string" || !SCOPE_ID_RE.test(from) || from === group)) return errorResponse(400, "bad_request");
   const [okJoin, okAdmit] = await Promise.all([
-    verifySignature(key, sig, joinStatement(group, key, t)),
+    verifySignature(key, sig, joinStatement(group, key, t, from as string | undefined)),
     verifySignature(by, bysig, admitStatement(group, key, t)),
   ]);
   if (!okJoin || !okAdmit) return errorResponse(401, "unauthorized");
@@ -193,19 +194,12 @@ async function joinGroup(request: Request, env: Env, group: string): Promise<Res
   const cosigners = await cosigned(admits, statement);
   // The member that asked for the key: a signer of the change for its rollback, never a vote.
   const [requested] = requester === undefined ? [] : await cosigned([{ by: (requester as { key?: unknown } | null)?.key, sig: (requester as { sig?: unknown } | null)?.sig }], statement);
-  // A key moving from another group of the user's keeps its vote there, and leaves it once the join is in.
-  let moving: string | undefined;
-  let votesFrom: number | undefined;
-  if (from !== undefined) {
-    if (typeof from !== "string" || !SCOPE_ID_RE.test(from) || from === group) return errorResponse(400, "bad_request");
-    const held = await stubFor(env, "group", from).voteOf(key, now);
-    if (held !== null) [moving, votesFrom] = [from, held];
-  }
+  // A vote never carries across groups: the key votes here as any new key does (at once only when this group's
+  // voters admit it with a quorum). `from` only moves it out of the old group, once the join has really added it.
   const result: Reply = await stubFor(env, "group", group).joinGroup(key, by, t, now, cosigners, {
     ...(requested !== undefined ? { requester: requested } : {}),
-    ...(votesFrom !== undefined ? { votesFrom } : {}),
   });
-  if (moving && (result.status === 200 || result.status === 201)) await stubFor(env, "group", moving).moveOut(key, now);
+  if (typeof from === "string" && result.status === 201) await stubFor(env, "group", from).moveOut(key, now);
   return reply(result);
 }
 

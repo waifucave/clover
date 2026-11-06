@@ -56,7 +56,9 @@ export const LIMITS = {
   accountSocketMaxMs: 6 * 60_000,
   lease: { minTtl: 10, maxTtl: 300, defaultTtl: 60 },
   /** Group recovery: how long an admitted member waits for its vote, and how far back a rollback reaches. */
-  recovery: { voteDelayMs: 72 * 3600_000, rollbackMs: 7 * 24 * 3600_000 },
+  // A key admitted without a quorum votes only once the rollback window has passed, so no key a thief could have
+  // added unchecked ever votes while its admitter's changes can still be undone.
+  recovery: { voteDelayMs: 7 * 24 * 3600_000, rollbackMs: 7 * 24 * 3600_000 },
   /** A short code's slot: seconds it may live (a pairing lasts 10 minutes), and its sealed box's decoded bytes. */
   rendezvous: { maxTtl: 600, maxBox: 4096 },
 } as const;
@@ -148,8 +150,12 @@ export function groupStatement(group: string, key: string, t: number): string {
   return [`${PREFIX} group`, group, key, String(t)].join("\n");
 }
 
-export function joinStatement(group: string, key: string, t: number): string {
-  return [`${PREFIX} join`, group, key, String(t)].join("\n");
+/** The joining key's own statement. A join that moves the key out of another group names that group in a fifth
+ *  line, so only the key itself can ask for the move. */
+export function joinStatement(group: string, key: string, t: number, from?: string): string {
+  const lines = [`${PREFIX} join`, group, key, String(t)];
+  if (from !== undefined) lines.push(from);
+  return lines.join("\n");
 }
 
 export function admitStatement(group: string, key: string, t: number): string {

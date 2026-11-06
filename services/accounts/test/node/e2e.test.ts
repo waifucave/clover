@@ -20,7 +20,10 @@ const coreContracts = join(dirname(fileURLToPath(import.meta.resolve("@waifucave
 const laneB = (await import(join(coreContracts, "device-registry.ts"))) as { deviceIdFor(publicKey: Uint8Array): Promise<string> };
 const laneH = (await import(join(coreContracts, "../identity/account.ts"))) as {
   registerStatement(account: string, d: { id: string; publicKey: string; boxKey: string; name: string; kind: string; os?: string }, t: number): Uint8Array;
+  mintStatement: ((account: string, audience: string, device: string, t: number) => Uint8Array) | ((audience: string, device: string, t: number) => Uint8Array);
 };
+/** Lane H's mint names the account from H-M2 (ba83cab8a) on; main's core before it doesn't. */
+const laneHMintNamesAccount = laneH.mintStatement.length === 4;
 
 function device() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -149,6 +152,19 @@ describe("the registration statement", () => {
     for (const d of [base, { ...base, kind: "desktop", os: "macos" }]) {
       for (const t of [0, 23, 24, 255, 65_536, 1_793_000_000_123]) {
         expect(Buffer.from(registerStatement("acct-1", d, t)).toString("hex")).toBe(Buffer.from(laneH.registerStatement("acct-1", d, t)).toString("hex"));
+      }
+    }
+  });
+});
+
+describe("the mint statement", () => {
+  // Runs once lane H's H-M2 is on main; until then main's core signs the older mint without the account, which this
+  // service refuses (the mint names the account, as agreed with H).
+  test.skipIf(!laneHMintNamesAccount)("is lane H's, byte for byte", () => {
+    const h = laneH.mintStatement as (account: string, audience: string, device: string, t: number) => Uint8Array;
+    for (const aud of ["push.waifucave.com", "handshake.waifucave.com", "hooks.waifucave.com"]) {
+      for (const t of [0, 1_793_000_000_123]) {
+        expect(Buffer.from(mintStatement("acct-1", aud, "a".repeat(32), t)).toString("hex")).toBe(Buffer.from(h("acct-1", aud, "a".repeat(32), t)).toString("hex"));
       }
     }
   });

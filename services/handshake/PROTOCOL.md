@@ -50,7 +50,7 @@ Registration requests carry statements signed with Ed25519. Each statement is UT
 | :- | :- | :- |
 | Pair | `clover-handshake-v1 pair`, `<pair>`, `<key A>`, `<key B>`, `<t>` | both A and B, the same text |
 | Group | `clover-handshake-v1 group`, `<group>`, `<key>`, `<t>` | the founding member |
-| Join | `clover-handshake-v1 join`, `<group>`, `<new key>`, `<t>` | the joining device |
+| Join | `clover-handshake-v1 join`, `<group>`, `<new key>`, `<t>`, and `<from>` when the join moves the key out of another group | the joining device |
 | Admit | `clover-handshake-v1 admit`, `<group>`, `<new key>`, `<t>` | a current member |
 
 The keys in a pair statement are in the order the request lists them. `<t>` is written in decimal.
@@ -207,15 +207,16 @@ Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026
 
 - **Voters.** The founder votes from the start.
   - Any one member's admit lets a key in, a non-voter's too: a device paired through a recent one must get in.
-  - A new key votes at once when the voters among its admitters are a quorum of the group's voters. Otherwise it votes 72 hours after it joined.
+  - A new key votes at once when the voters among its admitters are a quorum of the group's voters. Otherwise it votes 7 days after it joined, once the rollback window has passed: a key let in without a quorum never votes, or co-signs, while its admitter's changes can still be undone.
   - A group's recovery key, when it has one, is one more voter.
 - **Quorum:** q = ⌊v/2⌋ + 1 of v voters. 403 `no_quorum` (with `voters` and `needed`) when the votes fall short. 403 `not_voter` when a co-signer doesn't vote.
 - **Members** carry `votesFrom` (the vote starts at or before now) and `admittedBy`, in `GET /v1/groups/<group>`, the hello and `members` frames. Those also carry `recovery: true|false`.
 - **Join with more admitters:** `POST …/members` may add `"admits": [{"by","sig"}]`, more admit statements over the same key and `t`, so the key votes at once.
 - **A member's request:** the join may carry `"requester": {"key","sig"}`, the admit statement signed by the member that asked for the key. The requester counts among the change's signers, so the key is rolled back with it and left out of the vote on it, even when another member signed the admit. It never counts as a vote.
-- **Moving from another of the user's groups:** the join may carry `"from": "<old group id>"`. Merges happen only inside a confirmed pairing, and the host's group survives. When the key is a member of `from`:
-  - its `votesFrom` is the earlier of the usual rule and its `votesFrom` there. A voter there votes here at once; one still waiting keeps what is left of its wait;
-  - it leaves `from` once the join is in: removed there as its own removal, with no rollback, its lease ended if it held it, the group ended if it was the last member, and a `members` frame sent.
+- **Moving from another of the user's groups:** the join may carry `"from": "<old group id>"`. Merges happen only inside a confirmed pairing, and the host's group survives.
+  - The joining key signs `from` as the fifth line of its join statement, so no one else can ask for the move (401 otherwise).
+  - **A vote never carries across groups.** The key votes in the host's group as any new key does: at once only when the host's voters admit it as a quorum, co-signed by their cards (a one-voter host is that quorum alone), and otherwise after 7 days. A thief's own group lends it nothing.
+  - When the join adds the key (201), it leaves `from`: removed there as its own removal, with no rollback, its lease ended if it held it, the group ended if it was the last member, and a `members` frame sent. A join that adds nothing (the key was a member already) moves nothing.
 
   A `from` the key isn't a member of is an ordinary join. The client may still remove itself from the old group afterwards; a 404 or 410 there is fine.
 - **Removing another member:** `DELETE /v1/groups/<group>/members/<key>`, signed by any member, with the body `{"t", "keep": [key…], "removes": [{"by","sig"}]}`.
@@ -229,7 +230,7 @@ Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026
     <the kept keys, sorted, joined by ","; empty when none>
     ```
 
-  - v counts the voters other than the target, and leaves out every key the target admitted in the last 7 days (and what those admitted). Those keys can't co-sign either (`not_voter`): otherwise a thief's keys, once they vote, would outvote the user.
+  - v counts the voters other than the target, and leaves out every key the target admitted in the last 7 days (and what those admitted), and every key admitted in the last 7 days without a quorum (not a voter yet). Those keys can't co-sign either (`not_voter`): otherwise a thief's keys, once they vote, would outvote the user.
   - `t` is within 10 minutes and after the target joined (409 `stale`). A lone removal by a voter needs no body, which is the usual two-device case.
   - **Removing yourself** needs only you, as before.
 - **Rollback.** When others remove a member, the changes it signed in the last 7 days are undone:
