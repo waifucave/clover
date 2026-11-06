@@ -26,9 +26,6 @@ import { readdirSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FencedKind } from "../contracts/fence";
-import { userLayersDir } from "../bots/paths";
-import { botSegment, transcriptsDir } from "../sessions/ids";
-import { foldName } from "./fold";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
 
@@ -48,7 +45,7 @@ export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, str
     "connector-permissions": [h("connectors")],
     trust: [h("trust"), h("trust.json")],
     "device-list": [h("devices")],
-    "user-layers": [os === "windows" ? h("user-layers") : userLayersDir(cloverHome)],
+    "user-layers": [h("user-layers")], // `userLayersDir(home)`, joined in this OS's form
     "credential-store": [h("credentials")],
     "plugin-oks": [h("plugins-state", "oks")],
     "installed-plugins": [h("plugins-state", "installed.json")],
@@ -84,44 +81,16 @@ export function pendingFenced(o: {
       u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"), u(".bashrc"), u(".bash_profile"), u(".profile"), u(".minttyrc")],
   };
   return {
-    transcripts: [o.os === "windows" ? p.join(o.cloverHome, "transcripts") : transcriptsDir(o.cloverHome)],
+    transcripts: [p.join(o.cloverHome, "transcripts")], // `transcriptsDir(home)`, joined in this OS's form
     usage: [p.join(o.cloverHome, "usage")],
     "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
     "login-start": loginStart[o.os],
     "agent-installs": [...(o.agentInstalls ?? [])],
     plugins: [p.join(o.cloverHome, "plugins")],
+    // Windows: the per-user Git for Windows, whose bash runs hooks (#205's S4): a fenced caller can't plant one there.
+    "hook-shell": o.os === "windows" ? [u("AppData", "Local", "Programs", "Git")] : [],
     "sessions-runtime": [p.join(o.cloverHome, "sessions-runtime")],
   };
-}
-
-/** Who is asking, for bots' memory (the owner's decision): a bot's own sessions (its main conversation and side
- *  threads), or anyone else (other bots' sessions, coding sessions the user drives, ACP or delegated agents, that
- *  bot's own agents included). */
-export type MemoryCaller = { readonly kind: "bot-session"; readonly bot: string } | { readonly kind: "other" };
-
-/** The `bot-memory` items for one caller, for B's per-caller view (`Fence.forCaller`). A bot writes its memory with
- *  ordinary Write and Edit in `<home>/bots/<bot>/memory/` (the tree's `home/memory`, synced): its own sessions read and
- *  write it; everyone else is denied both. The rest of each `<home>/bots/<bot>/` (its agents' transcripts, which the
- *  core writes) stays write-denied to all, reads allowed. `folders` are the folder names under `<home>/bots/` now
- *  (`botFolders`); `entries` the names in one of them (default: read from the disk). */
-export function botMemoryFenced(o: {
-  cloverHome: string; os: Os; caller: MemoryCaller; folders: readonly string[];
-  entries?: (folder: string) => readonly string[];
-}): { kind: "bot-memory"; path: string; deny: "write" | "read-write" }[] {
-  const p = pathFor(o.os, o.cloverHome);
-  const own = o.caller.kind === "bot-session" ? botSegment(o.caller.bot) : null;
-  const entries = o.entries ?? ((f: string) => { try { return readdirSync(join(o.cloverHome, "bots", f)); } catch { return []; } });
-  const out: { kind: "bot-memory"; path: string; deny: "write" | "read-write" }[] = [];
-  for (const f of o.folders) {
-    const root = p.join(o.cloverHome, "bots", f);
-    if (f === own) {
-      for (const e of entries(f)) if (foldName(e) !== "memory") out.push({ kind: "bot-memory", path: p.join(root, e), deny: "write" });
-    } else {
-      out.push({ kind: "bot-memory", path: p.join(root, "memory"), deny: "read-write" });
-      out.push({ kind: "bot-memory", path: root, deny: "write" });
-    }
-  }
-  return out;
 }
 
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */

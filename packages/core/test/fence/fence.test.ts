@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
-import { botFolders, botMemoryFenced, pendingFenced } from "../../src/fence/layout";
+import { botFolders, pendingFenced } from "../../src/fence/layout";
+import { makeBotFolders } from "../../src/fence/per-caller";
 import { FENCED_SPAWN_NOT_YET } from "../../src/fence/spawn";
 import { judge, type FencedPath, type FenceOp } from "../../src/contracts/fence";
 import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
@@ -132,35 +133,105 @@ describe("the real fence on a real disk", () => {
     expect(p["login-start"]).toContain("/Users/me/Library/LaunchAgents");
     expect(p["agent-installs"]).toEqual(["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"]);
     expect(p.plugins).toEqual(["/Users/me/.clover/plugins"]);
+    expect(p["hook-shell"]).toEqual([]);
+    expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" })["hook-shell"]).toEqual(["C:\\Users\\me\\AppData\\Local\\Programs\\Git"]);
     expect(p["sessions-runtime"]).toEqual(["/Users/me/.clover/sessions-runtime"]);
     expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" }).plugins).toEqual(["C:\\Users\\me\\.clover\\plugins"]);
   });
 
-  test("bots' memory (the owner's decision): a bot's own sessions read and write its memory; everyone else neither", () => {
-    const { clover } = make();
-    for (const f of ["luna", "pack--alpha"]) { mkdirSync(join(clover, "bots", f, "memory"), { recursive: true }); mkdirSync(join(clover, "bots", f, "agents"), { recursive: true }); }
-    const folders = botFolders(clover).sort();
-    expect(folders).toEqual(["luna", "pack--alpha"]);
+  test("bots' memory by pattern (the owner's decision): only the bot's own sessions, for any bot, listed or not", () => {
+    const { home, clover, fence } = make();
+    mkdirSync(join(clover, "bots", "luna", "memory"), { recursive: true });
     const b = (...parts: string[]) => join(clover, "bots", ...parts);
-    // The kind isn't in B's contract yet (it comes with forCaller), so the items are judged as the contract's shape.
-    const jm = (items: readonly unknown[], op: FenceOp) => judge(items as readonly FencedPath[], op);
-    const mine = botMemoryFenced({ cloverHome: clover, os: "linux", caller: { kind: "bot-session", bot: "pack/alpha" }, folders });
-    expect(mine).toEqual([
-      { kind: "bot-memory", path: b("luna", "memory"), deny: "read-write" },
-      { kind: "bot-memory", path: b("luna"), deny: "write" },
-      { kind: "bot-memory", path: b("pack--alpha", "agents"), deny: "write" }, // the rest of its own folder, as before
-    ]);
-    // Its memory is in none of them, so judge lets Write and Edit through there.
-    expect(jm(mine, { op: "write", path: b("pack--alpha", "memory", "MEMORY.md") })).toEqual({ allowed: true });
-    expect(jm(mine, { op: "read", path: b("luna", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
-    // Anyone else (the user's coding sessions, agents, the bot's own agents): every bot's memory, both ways.
-    const other = botMemoryFenced({ cloverHome: clover, os: "linux", caller: { kind: "other" }, folders });
-    for (const f of folders) {
-      expect(jm(other, { op: "read", path: b(f, "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
-      expect(jm(other, { op: "write", path: b(f, "memory", "x.md") })).toMatchObject({ allowed: false });
-      expect(jm(other, { op: "read", path: b(f, "agents", "t.json") })).toEqual({ allowed: true });
+    const luna = fence.forCaller({ sessionId: "s1", bot: "luna", botsOwnSession: true });
+    expect(luna.check({ op: "write", path: b("luna", "memory", "MEMORY.md") })).toEqual({ allowed: true });
+    expect(luna.check({ op: "read", path: b("LUNA", "Memory", "MEMORY.md") })).toEqual({ allowed: true }); // folded
+    expect(luna.check({ op: "read", path: b("sol", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    expect(luna.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    expect(luna.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
+    expect(luna.check({ op: "move", path: b("luna"), to: b("luna2") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    // The memory folder itself: not deleted or moved, by its own bot either.
+    expect(luna.check({ op: "delete", path: b("luna", "memory") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    expect(luna.check({ op: "move", path: b("luna", "memory"), to: join(home, "m") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    expect(luna.check({ op: "move", path: b("luna", "memory", "a.md"), to: b("luna", "memory", "b.md") })).toEqual({ allowed: true });
+    // Not luna's own session (its agent, a coding session): denied both ways, for a bot that doesn't exist yet too.
+    for (const other of [fence.forCaller({ sessionId: "a1", bot: "luna" }), fence.forCaller({ sessionId: "c1" }), fence.forCaller({ sessionId: "s2", bot: "sol", botsOwnSession: true })]) {
+      expect(other.check({ op: "read", path: b("luna", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+      expect(other.check({ op: "write", path: b("future-bot", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+      expect(other.check({ op: "write", path: b("future-bot") })).toMatchObject({ allowed: false });
+      expect(other.touches([b("luna", "memory")])).toMatchObject({ kind: "bot-memory" });
     }
-    expect(botFolders(join(clover, "nowhere"))).toEqual([]);
+    expect(fence.forCaller({ sessionId: "c1" }).check({ op: "write", path: join(home, "project", "x") })).toEqual({ allowed: true });
+    expect(botFolders(clover)).toEqual(["luna"]);
+  });
+
+  test("a bot's folders are made plain, never through a link (#205's S6)", () => {
+    const { home, clover } = make();
+    expect(makeBotFolders(clover, "pack/luna").memory).toBe(join(clover, "bots", "pack--luna", "memory"));
+    mkdirSync(join(home, "elsewhere"));
+    symlinkSync(join(home, "elsewhere"), join(clover, "bots", "sol"));
+    expect(() => makeBotFolders(clover, "sol")).toThrow(/link/);
+  });
+
+  test("the bot driver's state: write-denied to all, read only by its own session", () => {
+    const { clover, fence } = make();
+    const rt = (n: string) => join(clover, "sessions-runtime", n);
+    const s1 = fence.forCaller({ sessionId: "s1", bot: "luna", botsOwnSession: true });
+    expect(s1.check({ op: "read", path: rt("s1.json") })).toEqual({ allowed: true });
+    expect(s1.check({ op: "read", path: rt("s2.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
+    expect(s1.check({ op: "list", path: join(clover, "sessions-runtime") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
+    expect(s1.check({ op: "write", path: rt("s1.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
+    expect(fence.forCaller({ sessionId: "c1" }).check({ op: "read", path: rt("s1.json") })).toMatchObject({ allowed: false });
+  });
+
+  test("#205 B1: a `..` after a link is judged both ways, the link's target and the text; `\\\\?\\` paths with dots are refused", () => {
+    const { home, clover, fence } = make();
+    mkdirSync(join(root, "elsewhere", "deep"), { recursive: true });
+    symlinkSync(join(root, "elsewhere", "deep"), join(home, "X")); // a junction's part on Windows
+    // The disk climbs from X's target; Win32 (and path code) from X itself, onto the fenced file.
+    expect(fence.check({ op: "write", path: `${join(home, "X")}/../.clover/settings.json` })).toMatchObject({ allowed: false, reason: "settings" });
+    expect(fence.check({ op: "read", path: `${join(home, "X")}/../.clover/run/app.token` })).toMatchObject({ allowed: false, reason: "run-folder" });
+    expect(fence.checkAgentRoot(`${join(home, "X")}/../.clover/plugins`)).toMatchObject({ allowed: false });
+    expect(fence.check({ op: "write", path: join(home, "X", "fine.txt") })).toEqual({ allowed: true });
+    const win = new CloverFence({ os: "windows", home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", canonical: (p) => p });
+    expect(win.check({ op: "write", path: "\\\\?\\C:\\Users\\me\\x\\..\\.clover\\settings.json" })).toMatchObject({ allowed: false, reason: "clover-home" });
+    expect(win.check({ op: "read", path: "\\\\?\\C:\\Users\\me\\.\\notes.txt" })).toMatchObject({ allowed: false });
+    expect(win.check({ op: "read", path: "\\\\?\\C:\\Users\\me\\notes.txt" })).toEqual({ allowed: true });
+    void clover;
+  });
+
+  test.skipIf(process.platform !== "win32")("#205 B1 on Windows: `..` after a real junction, as Win32 opens it, is the fenced file", () => {
+    const { home, clover, fence } = make("windows");
+    writeFileSync(join(clover, "settings.json"), "orig");
+    mkdirSync(join(root, "elsewhere", "deep"), { recursive: true });
+    symlinkSync(join(root, "elsewhere", "deep"), join(home, "X"), "junction");
+    const sneaky = `${join(home, "X")}\\..\\.clover\\settings.json`;
+    expect(readFileSync(sneaky, "utf8")).toBe("orig"); // what Win32 opens
+    expect(fence.check({ op: "write", path: sneaky })).toMatchObject({ allowed: false, reason: "settings" });
+    expect(fence.checkAgentRoot(`${join(home, "X")}\\..\\.clover`)).toMatchObject({ allowed: false });
+  });
+
+  test("#205 B2: a hard link to a read-denied file can't be read either; past 40 links a path is refused", () => {
+    const { home, clover, fence } = make();
+    mkdirSync(join(clover, "run"), { recursive: true });
+    writeFileSync(join(clover, "run", "app.token"), "t");
+    linkSync(join(clover, "run", "app.token"), join(home, "project", "innocent.txt"));
+    expect(fence.check({ op: "read", path: join(home, "project", "innocent.txt") })).toMatchObject({ allowed: false, reason: "run-folder" });
+    writeFileSync(join(clover, "levels", "computer.json"), "{}");
+    linkSync(join(clover, "levels", "computer.json"), join(home, "project", "lv.json"));
+    expect(fence.check({ op: "read", path: join(home, "project", "lv.json") })).toEqual({ allowed: true }); // write-only item: reads stay
+    symlinkSync(join(home, "loop-b"), join(home, "loop-a"));
+    symlinkSync(join(home, "loop-a"), join(home, "loop-b"));
+    expect(fence.check({ op: "write", path: join(home, "loop-a", "x") })).toMatchObject({ allowed: false });
+  });
+
+  test("an agent's root reached through a link to the Clover home is refused at its real path", () => {
+    const { home, clover, fence } = make();
+    symlinkSync(clover, join(home, "link-to-clover"));
+    symlinkSync(home, join(home, "..", "link-to-home"));
+    expect(fence.checkAgentRoot(join(home, "link-to-clover"))).toMatchObject({ allowed: false, reason: "clover-home" });
+    expect(fence.checkAgentRoot(join(home, "link-to-clover", "plugins", "x"))).toMatchObject({ allowed: false, reason: "clover-home" });
+    expect(fence.checkAgentRoot(join(home, "..", "link-to-home"))).toMatchObject({ allowed: false, reason: "clover-home" });
   });
 
   test("the fenced spawn door (a hook's command, A-M3) is closed until the fenced process lands: refused, never run outside", async () => {

@@ -65,7 +65,15 @@ export function spawnDisclaimed(argv: readonly string[], env: Record<string, str
       };
       // Told of the exit by libdispatch (a DISPATCH_SOURCE_TYPE_PROC source for DISPATCH_PROC_EXIT), not by polling;
       // the poll is only the fallback when the source can't be made.
-      if (watchExit(child, () => { const code = reap(); resolve(code ?? 1); })) {
+      // The exit can be told a moment before waitpid can reap it (#205's minor): the reap is retried briefly then,
+      // never taken for a code of 1 at once.
+      const reapSoon = (tries: number) => {
+        const code = reap();
+        if (code !== null) resolve(code);
+        else if (tries > 0) setTimeout(() => reapSoon(tries - 1), 10);
+        else resolve(1);
+      };
+      if (watchExit(child, () => reapSoon(200))) {
         // A child that exited before the source was armed: reaped here (resolving twice is a no-op).
         setTimeout(() => { const code = reap(); if (code !== null) resolve(code); }, 0);
       } else {

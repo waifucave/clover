@@ -16,6 +16,7 @@ import {
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
+import { callerVerdict, type FenceCaller } from "./per-caller";
 import { foldPath, nonAsciiAlias } from "./fold";
 import { fenceLayout, type LaidOutKind } from "./layout";
 
@@ -94,40 +95,57 @@ export class CloverFence implements Fence {
     return foldPath(path, this.os);
   }
 
+  /** The forms a path is judged in (#205's B1): as the disk resolves it, links first (`canonicalPath`: a `..` after a
+   *  link climbs from its target, as POSIX kernels do), and with its `..` taken textually first (as Win32 and most
+   *  path code do). A path is refused when either form is. Null, refused outright: a `\\?\` path with a `.` or `..`
+   *  component (Windows passes it through unresolved), or one past the walk's link limit. */
+  #forms(raw: string): string[] | null {
+    if (/^[\\/]{2}[?.][\\/]/.test(raw) && raw.slice(4).split(/[\\/]/).some((c) => c === "." || c === "..")) return null;
+    try {
+      const linksFirst = this.#canonical(raw);
+      const textual = this.#canonical((this.os === "windows" ? win32 : posix).normalize(raw));
+      return linksFirst === textual ? [linksFirst] : [linksFirst, textual];
+    } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
+  }
+
   check(op: FenceOp): FenceVerdict {
-    const paths = op.op === "move" ? [op.path, op.to] : [op.path];
-    const canonical = paths.map((p) => this.#canonical(p));
-    // The folded item first, so a name that folds onto one (`ſettings`) is refused as that item; then a hard link to
-    // one; then a name that isn't ASCII where Clover names things, whatever it folds to (B's contract, #179's F1).
-    const { set, back } = this.#folded();
-    const folded: FenceOp = op.op === "move"
-      ? { op: "move", path: this.#fold(canonical[0]!), to: this.#fold(canonical[1]!) }
-      : { op: op.op, path: this.#fold(canonical[0]!) } as FenceOp;
-    const v = judge(set, folded);
-    if (!v.allowed) {
-      const item = back.get(v.path);
-      return { allowed: false, reason: v.reason, path: item?.path ?? v.path };
+    const write = op.op === "write" || op.op === "delete" || op.op === "move";
+    const all: string[] = [];
+    for (const raw of op.op === "move" ? [op.path, op.to] : [op.path]) {
+      const forms = this.#forms(raw);
+      if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+      all.push(...forms);
     }
-    if (op.op !== "read" && op.op !== "list" && op.op !== "stat") {
-      const linked = this.#hardLinked(canonical[0]!);
+    // The folded item first, so a name that folds onto one (`ſettings`) is refused as that item; then a hard link to
+    // one (for a read, to a read-denied one: #205's B2); then a name that isn't ASCII where Clover names things,
+    // whatever it folds to (B's contract, #179's F1).
+    const { set, back } = this.#folded();
+    for (const p of all) {
+      const v = judge(set, { op: write ? "write" : "read", path: this.#fold(p) });
+      if (!v.allowed) return { allowed: false, reason: v.reason, path: back.get(v.path)?.path ?? v.path };
+    }
+    for (const p of all) {
+      const linked = this.#hardLinked(p, !write);
       if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
     }
     const fenced = this.fencedSet().map((i) => i.path);
-    for (const p of canonical) {
+    for (const p of all) {
       if (nonAsciiAlias(p, fenced, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     }
     return { allowed: true };
   }
 
-  /** The fenced item a file with more than one link shares its inode with; also every fenced item when the set
-   *  holds more files than `HARD_LINK_SCAN_LIMIT` (it can't be told, so it's refused). */
-  #hardLinked(path: string): FencedPath | null {
+  /** The fenced item a file with more than one link shares its inode with (for a read, only the read-denied items);
+   *  also every such item when the set holds more files than `HARD_LINK_SCAN_LIMIT` (it can't be told, so it's
+   *  refused). */
+  #hardLinked(path: string, readsOnly = false): FencedPath | null {
     let st: BigIntStats;
     try { st = lstatSync(path, { bigint: true }); } catch { return null; }
     if (!st.isFile() || st.nlink < 2n) return null;
     const key = `${st.dev}:${st.ino}`;
     let seen = 0;
     for (const item of this.fencedSet()) {
+      if (readsOnly && item.deny !== "read-write") continue;
       const stack = [item.path];
       while (stack.length > 0) {
         const at = stack.pop()!;
@@ -143,8 +161,8 @@ export class CloverFence implements Fence {
 
   touches(paths: readonly string[]): FencedPath | null {
     const { set, back } = this.#folded();
-    for (const raw of paths) {
-      const p = this.#fold(this.#canonical(raw));
+    for (const raw of paths) for (const form of this.#forms(raw) ?? [this.#cloverHome]) {
+      const p = this.#fold(form);
       for (const item of set) {
         if (inside(p, item.path) || inside(item.path, p)) return back.get(item.path) ?? null;
       }
@@ -156,7 +174,17 @@ export class CloverFence implements Fence {
    *  plugin's folder, the settings, plugin data), a development folder, or any other fenced item (#197's check 3).
    *  Compared folded, so a different case or a decomposed name is the same folder. */
   checkAgentRoot(root: string): FenceVerdict {
-    const r = this.#fold(this.#canonical(root));
+    const forms = this.#forms(root);
+    if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    for (const f of forms) {
+      const v = this.#agentRoot(f);
+      if (!v.allowed) return v;
+    }
+    return { allowed: true };
+  }
+
+  #agentRoot(form: string): FenceVerdict {
+    const r = this.#fold(form);
     const home = this.#fold(this.#cloverHome);
     if (inside(home, r) || inside(r, home)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     for (const dev of this.#layout["dev-folders"] ?? this.#devFolders) {
@@ -180,6 +208,39 @@ export class CloverFence implements Fence {
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],
       network: "none",
+    };
+  }
+
+  /** The fence as one caller meets it (B's `Fence.forCaller`): the per-caller rules first (`per-caller.ts`: bots'
+   *  memory, the bot driver's state), matched by pattern, then everything else as for any caller. */
+  forCaller(caller: FenceCaller): Fence & { readonly caller: FenceCaller } {
+    const base = this;
+    const verdict = (path: string, write: boolean): FenceVerdict | null => {
+      const v = callerVerdict({ cloverHome: base.#cloverHome, os: base.os, caller, path: base.#canonical(path), write });
+      return v === null ? null : { allowed: false, reason: v.reason as FencedKind, path: v.path };
+    };
+    return {
+      os: base.os,
+      caller,
+      fencedSet: () => base.fencedSet(),
+      check(op: FenceOp): FenceVerdict {
+        const write = op.op !== "read" && op.op !== "list" && op.op !== "stat";
+        for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
+          const v = verdict(p, write);
+          if (v) return v;
+        }
+        return base.check(op);
+      },
+      touches(paths: readonly string[]): FencedPath | null {
+        for (const p of paths) {
+          const v = verdict(p, false) ?? verdict(p, true);
+          if (v && !v.allowed) return { kind: v.reason as FencedKind, path: v.path, deny: "read-write" };
+        }
+        return base.touches(paths);
+      },
+      checkAgentRoot: (root: string) => base.checkAgentRoot(root),
+      policy: () => base.policy(),
+      watch: (fn: () => void) => base.watch(fn),
     };
   }
 
