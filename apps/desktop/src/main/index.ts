@@ -1119,6 +1119,7 @@ async function smoke(): Promise<void> {
   };
   let frames: Probed[] = [];
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
+  let sealedClicked = false;
   type WebFact = { mount: string; url: string; visible: boolean; text: string };
   let webFacts: WebFact[] = [];
   const probeWeb = async (): Promise<WebFact[]> => Promise.all(webViews.list().map(async (v) => {
@@ -1195,6 +1196,24 @@ async function smoke(): Promise<void> {
           : `(() => { const e = document.querySelector(${sel}); if (!e || e.disabled) return false; e.click(); return true; })()`;
       const done = await win.webContents.mainFrame.executeJavaScript(js, true).catch(() => false);
       if (done === true) steps.shift();
+    }
+    // The sealed UI test's click: once everything has drawn, click the named sealed frame's button so its answer
+    // rides `card.answer` to the fake daemon (unpackaged runs only).
+    if (drawn && !sealedClicked) {
+      const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
+      if (spec !== undefined) {
+        try {
+          const { cardId, element } = JSON.parse(spec) as { cardId?: string; element?: string };
+          const frame = win.webContents.mainFrame.framesInSubtree.find((f) =>
+            f.url.startsWith("clover-sealed://") &&
+            (cardId === undefined || f.url.includes(cardId)) &&
+            (element === undefined || f.url.includes(element)));
+          if (frame !== undefined) {
+            void frame.executeJavaScript("document.querySelector('.seal-button')?.click()", true).catch(() => undefined);
+            sealedClicked = true;
+          }
+        } catch { /* bad spec: no click */ }
+      }
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
     // press in each window, which the menu gate counts as the user's input.

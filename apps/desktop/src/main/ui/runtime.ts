@@ -938,11 +938,16 @@ export class UiRuntime {
     const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
     const made = this.sealed.mint(cardId, element, bind, doc?.windowId, tokens);
     if (made === undefined) return undefined;
-    return `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
+    const url = `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
+    // The test-only knob: trust=1 in the URL lets a headless run's synthetic press count as the user's own.
+    if (process.env.CLOVER_TEST_SEALED_TRUST === "1") return `${url}&trust=1`;
+    return url;
   }
 
-  /** The scheme's serving: the page's own HTML for one token, once (the store marks it), with its own headers. */
-  serveSeal(token: string): { html: string; headers: Readonly<Record<string, string>> } | undefined {
+  /** The scheme's serving: the page's own HTML for one token, once (the store marks it), with its own headers. `trust`
+   *  is the test-only knob (`CLOVER_TEST_SEALED_TRUST=1` in the URL): a headless run's synthetic press counts as the
+   *  user's own. */
+  serveSeal(token: string, trust = false): { html: string; headers: Readonly<Record<string, string>> } | undefined {
     if (this.sealed === undefined) return undefined;
     const serving = this.sealed.serve(token);
     if (serving === undefined) return undefined;
@@ -955,7 +960,7 @@ export class UiRuntime {
     if (element.startsWith("button:")) {
       const option = card.options.find((o) => o.id === element.slice("button:".length));
       if (option === undefined) return undefined;
-      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }), headers: sealHeaders() };
+      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }, trust), headers: sealHeaders() };
     }
     if (element === "own") {
       return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options }), headers: sealHeaders() };

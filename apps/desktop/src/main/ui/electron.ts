@@ -91,7 +91,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (url.pathname !== "/" && !url.pathname.startsWith("/card/")) return notFound();
     const token = url.searchParams.get("token");
     if (token === null || token === "" || token.length > 128) return forbidden();
-    const serving = runtime.serveSeal(token);
+    const trust = url.searchParams.get("trust") === "1";
+    const serving = runtime.serveSeal(token, trust);
     if (serving === undefined) return forbidden();
     return new Response(serving.html, { headers: serving.headers });
   });
