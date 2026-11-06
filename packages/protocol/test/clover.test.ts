@@ -581,6 +581,6 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
 
   test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {
     expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [], adultConfirmed: true }).success).toBe(true);
-    expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [] }).success).toBe(false);
+    expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [], adultConfirmed: "yes" }).success).toBe(false);
   });
 });

@@ -161,8 +161,7 @@
           }
         },
         "required": [
-          "plugins",
-          "adultConfirmed"
+          "plugins"
         ],
         "additionalProperties": false
       }

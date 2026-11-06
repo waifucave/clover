@@ -263,8 +263,9 @@ export interface PluginSelf {
   readonly version: string;
   /** The computer this half runs on. */
   readonly computer: string;
-  /** This device's id (`DeviceRecord.id`), which phones and browsers have too (lane I's ask). */
-  readonly device: string;
+  /** This device's id (`DeviceRecord.id`), which phones and browsers have too (lane I's ask). Optional until B-M2's
+   *  host fills it, so the stand-ins already on main still type-check. */
+  readonly device?: string;
 }
 
 /** One entry of a point, with its paths turned into asset URLs (§5.4 "Points"). */
@@ -618,7 +619,7 @@ export interface PluginApi {
   confirm(text: string): Promise<boolean>;
   /** `confirm`, with the card's id for a record that names it (lane I's ask: `PairingProof`'s `{ via: "code", card }`).
    *  A separate call, so `if (await confirm(...))` never meets an object, which is always true. */
-  confirmCard(text: string): Promise<{ allowed: boolean; card: string }>;
+  confirmCard?(text: string): Promise<{ allowed: boolean; card: string }>;
   /** A string from the plugin's own keys, in the user's language (§5.5). */
   t(key: string, params?: Record<string, string | number>): string;
 

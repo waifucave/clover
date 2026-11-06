@@ -256,8 +256,8 @@ export const PLUGINS_METHODS = {
     name: "plugin.list", owner: "B", roles: ["app", "cli"],
     params: Empty,
     /** `adultConfirmed`: the user already confirmed they are 18 or older (§5.7), so Settings needn't ask again before an
-     *  adult plugin is switched on (lane F's ask). */
-    result: z.object({ plugins: z.array(PluginSummary), adultConfirmed: z.boolean() }),
+     *  adult plugin is switched on (lane F's ask). The registry always sends it; absent reads as not confirmed. */
+    result: z.object({ plugins: z.array(PluginSummary), adultConfirmed: z.boolean().optional() }),
     doc: "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
   }),
   pluginGet: defineMethod({
