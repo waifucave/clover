@@ -45,9 +45,8 @@ linux:
   # (packaging/linux/after-install.sh), as on macOS.
   executableName: clover
   synopsis: A bot-first, endlessly moddable desktop agent platform
-  # The deb's Maintainer field. Debian wants a name and an email; there is no project email yet (a question for
-  # the owner), so it is the name alone.
-  maintainer: waifucave
+  # The deb's Maintainer field and the rpm's Packager, the owner's contact: a name and an email, as Debian wants.
+  maintainer: Clover <w@waifucave.com>
 # The deb and the rpm are the main Linux packages: they install the AppArmor profile Electron's sandbox needs on
 # Ubuntu (spec §4). Their scripts and the profile live in packaging/linux/. Besides electron-builder's own
 # dependencies, the daemon's Bash tool needs bubblewrap (spec §4) and its secrets need libsecret.

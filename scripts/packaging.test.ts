@@ -101,6 +101,10 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     }
   });
 
+  test("the packages name the owner's contact as their maintainer", () => {
+    expect(builder.linux.maintainer).toBe("Clover <w@waifucave.com>");
+  });
+
   test("the deb and the rpm are named clover, file and package, with no folder in the name", () => {
     expect(builder.deb.packageName).toBe("clover");
     expect(builder.rpm.packageName).toBe("clover");
