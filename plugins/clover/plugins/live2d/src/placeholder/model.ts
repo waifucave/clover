@@ -36,12 +36,12 @@ const PALETTE = {
   eye: [0x2e, 0x23, 0x50],
   mouth: [0x8a, 0x2e, 0x4a],
 } as const;
-type Colour = keyof typeof PALETTE;
+export type Colour = keyof typeof PALETTE;
 const CELLS = Object.keys(PALETTE) as Colour[];
 const TEXTURE = 64;
 const CELL = 16;
 
-function uvOf(colour: Colour): [number, number] {
+export function uvOf(colour: Colour): [number, number] {
   const i = CELLS.indexOf(colour);
   const col = i % 4;
   const row = Math.floor(i / 4);
@@ -206,7 +206,8 @@ export function placeholderMocData(): MocData {
     m.band.push(mesh.band);
     m.firstKeyform.push(kf.opacity.length);
     m.keyformCount.push(mesh.keyforms.length);
-    m.firstUv.push(uvs.length / 2);
+    // An index into the flat UV array, in floats like `firstPosition` (Mochi2D reads `2 × vertexCount` from it).
+    m.firstUv.push(uvs.length);
     m.firstTriangleIndex.push(triangles.length);
     mesh.keyforms.forEach((outline, k) => {
       const built = fan(mesh.centre?.(k) ?? centroid(outline), outline);

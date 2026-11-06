@@ -57,7 +57,7 @@ const PAIRS: readonly (readonly [RegExp, string])[] = [
 ];
 
 /** Blanks that draw as a space without being White_Space (Hangul fillers, the braille blank). */
-const BLANKS = /[\p{White_Space}ᅟᅠㅤﾠ⠀]+/gu;
+const BLANKS = /[\p{White_Space}\u115F\u1160\u3164\uFFA0\u2800]+/gu;
 /** What draws nothing: default ignorables (zero-width spaces and joiners, bidi controls, variation selectors, the
  *  soft hyphen), formats and controls. */
 const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Cc}]/gu;
@@ -87,7 +87,7 @@ export function readsAs(a: string, b: string): boolean {
 }
 
 /** Bidi controls a shown name may not carry: one would turn "Servers · Home" around its separator. */
-const BIDI = /[؜‎‏‪-‮⁦-⁩]/g;
+const BIDI = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 /** A name as Clover shows it beside its own words: bidi controls out, its blanks one space. */
 export function shownName(name: string): string {

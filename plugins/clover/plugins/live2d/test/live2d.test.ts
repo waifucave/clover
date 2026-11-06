@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import { join } from "node:path";
 import { MemoryFileSource, ModelRuntime, readMoc, type MotionSyncSetting } from "@waifucave/mochi2d/headless";
-import { placeholderFiles, placeholderMocData, PLACEHOLDER_PARAMETERS } from "../src/placeholder/model";
+import { placeholderFiles, placeholderMeshes, placeholderMocData, uvOf, PLACEHOLDER_PARAMETERS } from "../src/placeholder/model";
 import { PLACEHOLDER_DIR } from "../scripts/make-placeholder";
 import { insideFolder, LIVE2D_BUDGETS, Live2dRefusal, pngSize, validateLive2d } from "../src/validate";
 import { memorySource, readCapped, urlSource, zipDeclared, zipSource } from "../src/sources";
@@ -121,6 +121,19 @@ describe("Alpha's placeholder (decision 87: a code-made model until open questio
     expect(model.stats).toMatchObject({ files: 3, mocVersion: 3, drawables: 11, parameters: 5, parts: 1, deformers: 0, textures: 1, texturePixels: 64 * 64, motions: 0 });
     expect(model.parameterIds).toEqual(PLACEHOLDER_PARAMETERS.map((p) => p.id));
     expect(readMoc(FILES["alpha.moc3"]!).data.artMeshes.ids).toEqual(placeholderMocData().artMeshes.ids);
+  });
+
+  test("each mesh samples its own colour cell, as Mochi2D loads it (the first CI render showed meshes reading others' UVs)", async () => {
+    const rt = await ModelRuntime.load(MemoryFileSource.fromFiles(FILES));
+    const { ids, uvs } = rt.model.meshes;
+    const meshes = placeholderMeshes();
+    expect(ids).toEqual(meshes.map((m) => m.id));
+    meshes.forEach((mesh, i) => {
+      const [u, v] = uvOf(mesh.colour);
+      const own = uvs[i]!;
+      expect(own.length).toBeGreaterThan(0);
+      for (let k = 0; k < own.length; k += 2) expect([mesh.id, own[k], own[k + 1]]).toEqual([mesh.id, Math.fround(u), Math.fround(v)]);
+    });
   });
 
   test("Mochi2D runs it: the mouth opens, widens and rounds, the eyes shut, the shoulders breathe", async () => {
