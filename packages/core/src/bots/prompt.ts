@@ -59,11 +59,12 @@ export function readMemoryIndex(paths: BotPaths): { text: string; cut: boolean }
   }
 }
 
-/** No tag written in the bot's file is a tag in the prompt: any `<` or `</` before a tag-like name becomes `‹`, so the
- *  index (which the bot writes, perhaps from a web page's text) can't close its own block or `</bot-instructions>`, nor
- *  open a `<safety>`, `<harness>` or any other harness block (A-M3's review). Other `<`s, as in `a < b`, stay. */
+/** No tag written in the bot's file is a tag in the prompt: any `<` or `</` before a tag-like name, spaces between them
+ *  or not (`< /safety`), becomes `‹`, so the index (which the bot writes, perhaps from a web page's text) can't close its
+ *  own block or `</bot-instructions>`, nor open a `<safety>`, `<harness>` or any other harness block (A-M3's review,
+ *  #202's S2). It covers every name, so A's `defuseTags` list is a subset. A `<` before a digit, as in `1 < 2`, stays. */
 export function escapeTags(text: string): string {
-  return text.replace(/<(\/?)(?=[A-Za-z_!?])/g, "‹$1");
+  return text.replace(/<(\s*\/?\s*)(?=[A-Za-z_!?])/g, "‹$1");
 }
 
 /** The block itself. `computer` is the one whose scratch folder it names (the session's own computer). */
