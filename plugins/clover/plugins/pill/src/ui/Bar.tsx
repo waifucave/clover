@@ -3,7 +3,7 @@
 // is room, and the trailing circle — send with text, stop while the bot works, the voice glyph otherwise.
 // One bar for the compact and the typing pill, so the field survives the first keystroke.
 
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { accessoriesVisible, type CircleRole, type Presentation } from "../model/metrics";
 import { t } from "../strings";
 import { Glyph } from "./glyphs";
@@ -16,6 +16,15 @@ export interface PillTarget {
   portrait?: string;
   /** The initial's background. */
   color?: string;
+  /** Muted words after the name in the menu: the plugin a `pill.target` entry comes from. */
+  detail?: string;
+  /** What the bar calls it where it names who it messages; `name` when absent. */
+  label?: string;
+}
+
+/** Who the bar says it messages. */
+export function targetLabel(target: PillTarget): string {
+  return target.label ?? target.name;
 }
 
 export interface PortraitProps {
@@ -112,7 +121,7 @@ export function Bar(props: BarProps): ReactElement {
         <button
           type="button"
           className="clp-portrait-button"
-          aria-label={canPick ? t("clover.pill.target") : target.name}
+          aria-label={canPick ? t("clover.pill.target") : targetLabel(target)}
           aria-haspopup={canPick ? "menu" : undefined}
           aria-expanded={canPick ? menu === "targets" : undefined}
           disabled={!canPick}
@@ -130,7 +139,7 @@ export function Bar(props: BarProps): ReactElement {
           rows={1}
           value={draft}
           placeholder={placeholder ?? ""}
-          aria-label={t("clover.pill.label", { name: target.name })}
+          aria-label={t("clover.pill.label", { name: targetLabel(target) })}
           spellCheck
           tabIndex={working || covered ? -1 : 0}
           onChange={(event) => props.onDraft?.(event.target.value)}
@@ -245,21 +254,25 @@ export function BarMenus({ menu, target, targets = [], width, onMenu, onTarget, 
     return (
       <div style={{ width }}>
         <Menu side="leading" label={t("clover.pill.targets")} onClose={close}>
-          {targets.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option.id === target.id}
-              className="clp-menu-item"
-              onClick={() => {
-                onTarget?.(option.id);
-                close();
-              }}
-            >
-              <Portrait target={option} size={20} />
-              {option.name}
-            </button>
+          {targets.map((option, i) => (
+            <Fragment key={option.id}>
+              {/* The plugins' targets after the bots, under a hairline. */}
+              {option.detail !== undefined && i > 0 && targets[i - 1]!.detail === undefined ? <span className="clp-menu-divider" role="separator" /> : null}
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={option.id === target.id}
+                className="clp-menu-item"
+                onClick={() => {
+                  onTarget?.(option.id);
+                  close();
+                }}
+              >
+                <Portrait target={option} size={20} />
+                {option.name}
+                {option.detail ? <span className="clp-menu-detail">{option.detail}</span> : null}
+              </button>
+            </Fragment>
           ))}
         </Menu>
       </div>
@@ -281,7 +294,7 @@ export function BarMenus({ menu, target, targets = [], width, onMenu, onTarget, 
             <span className="clp-menu-glyph">
               <Glyph name="open" />
             </span>
-            {t("clover.pill.openInApp", { name: target.name })}
+            {t("clover.pill.openInApp", { name: targetLabel(target) })}
           </button>
           <button
             type="button"

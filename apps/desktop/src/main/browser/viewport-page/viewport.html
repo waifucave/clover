@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>Clover browser view</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: transparent; }
+  #frame { position: absolute; left: 0; top: 0; display: block; }
+  /* The keyboard's, the IME's and paste's target: kept focused while the person uses the tab, never seen. */
+  #keys { position: absolute; left: 0; top: 0; width: 2px; height: 20px; opacity: 0; border: 0; padding: 0; resize: none; outline: none; }
+</style>
+</head>
+<body>
+<canvas id="frame" width="1" height="1" aria-hidden="true"></canvas>
+<textarea id="keys" aria-label="The page" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+</body>
+</html>

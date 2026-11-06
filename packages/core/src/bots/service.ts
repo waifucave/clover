@@ -16,23 +16,42 @@
 //   instructions at the next compaction (§5.6, §6.3), since drivers read the bot through `current()`.
 // * **The model**: the user layer's, else the plugin's default when the user has a key for it, else the user's
 //   default model (§6.1).
-// * **State** (`BotView.state`): `thinking` while the main conversation runs a turn, `asleep` with no connection to
-//   the computer running it (§6.4), otherwise `idle`. The pause switch (`paused`) is M2's.
+// * **State** (`BotView.state`): `paused` while the pause switch is on, `thinking` while the main conversation runs a
+//   turn, `asleep` with no connection to the computer running it (§6.4), otherwise `idle`.
+// * **The computer running the bots** (§6.4, main-computer.ts): every bot's main conversation runs on the runner, the
+//   lease's holder. The gate (gate.ts) starts its turns only there; elsewhere what the user and other sessions send it
+//   is relayed to the runner (`deliverTo`, `sendUserTo`; lane H's link). This computer:
+//   * **taking the bots over** catches each conversation up: a turn the old runner never ended is ended interrupted,
+//     its unfinished calls recorded as maybe having run there, never run again (`DurableSessionHost.catchUp`);
+//   * **losing them** (its lease lapsed or went to another computer) interrupts what runs, since it may no longer act;
+//   * **handing them back** to a returning main (`handBack`) starts no new turn, waits for each bot's running turn to
+//     end, then gives the lease up: a bot moves between turns, never in the middle of one;
+//   * **writes memory** only while it runs the bots (the starter memories, §6.5): the others get copies (lane H).
+// * **The pause switch** (§9.2, `bots.pause`; the owner's decision of November 6, it pauses everything): the user's
+//   alone. On, no new turn starts for a bot, a side thread or a background agent (messages wait), routines don't start
+//   (`runSideThread` refuses), and what runs is held at its next tool call (`mayAct`, `whenMayAct`), delegated agents
+//   included. Off, the held work goes on and what waited runs. The user's own coding sessions aren't paused.
+// * **J's placement** (`botsRunHere`, `placement`, `computerFor`): which bots this computer runs and where each runs,
+//   for the folder tree; and a session's scratch folder as a tree path (`scratchFor`), for J's MCP router.
 //
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
 import {
-  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type RoutineRunView, type SessionView, type Text,
+  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type RoutineRunView, type SessionView, type Text, type UserMessageInput,
 } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { PluginRegistry } from "../contracts/plugin-registry";
-import type { SessionDriver, TurnEnd } from "../contracts/session-host";
+import type { DeliveredInput, Disposition, SessionDriver, TurnEnd, UserInput } from "../contracts/session-host";
 import type { DurableSessionHost } from "../sessions/durable-host";
+import type { BotGate } from "./gate";
+import { memoryBlock } from "./prompt";
 import { mainSessionIdFor, mintSessionId } from "../sessions/ids";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { seedMemory } from "./memory";
-import { botPaths, botStateFile, type BotPaths } from "./paths";
+import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
 
@@ -62,8 +81,31 @@ export interface BotSessionContext {
   readonly computer: string;
   /** The bot's memory, agents' transcripts and scratch, which the system prompt names (§6.5). */
   readonly paths: BotPaths;
+  /** Who the session is when it calls anything, its bot named (§5.4; the controller's L-M1 answer): the runtime binds
+   *  each tool call's caller from this, never from what a plugin says (R7). */
+  readonly caller: Extract<Caller, { kind: "session" }>;
   /** The bot now: a driver reads the model and effort at each turn and the instructions at each compaction. */
   current(): EffectiveBot;
+  /** The memory block of the system prompt (§6.5), read fresh each time the driver builds or rebuilds its prompt. */
+  memoryBlock(): string;
+  /** Whether the session may start a tool call or a memory write now (§6.4 "Fencing the old main", §9.2): false once
+   *  this computer stops running the bots or the pause switch goes on. The driver checks it before each call. */
+  mayAct(): boolean;
+  /** Resolves once `mayAct` says yes: a turn the pause switch holds waits here at its next tool call, and goes on
+   *  when the user resumes (the owner's decision of November 6). Rejects when `signal` aborts. */
+  whenMayAct(signal?: AbortSignal): Promise<void>;
+  /** Whether the cached prompt has expired: the turn starting now rebuilds the harness blocks (the MCP block, the
+   *  devices block, the `computer` lists) without compacting (§6.1). */
+  cacheCold(): boolean;
+}
+
+/** How a message reaches a bot's conversation on another computer (lane H's link: `peer.session.send`, and a bot's
+ *  or a routine's message to the session there). */
+export interface BotRelay {
+  /** `peer.session.send`: the message as its device sent it (its signature too, which the runner checks), the device,
+   *  and this computer's stamp. */
+  sendUser(computer: string, session: string, p: { message: UserMessageInput; device: string; sentAt: number }): Promise<{ seq: number }>;
+  deliver(computer: string, session: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }>;
 }
 
 export type DriverFactory = (ctx: BotSessionContext) => SessionDriver;
@@ -71,15 +113,28 @@ export type DriverFactory = (ctx: BotSessionContext) => SessionDriver;
 export type BotServiceEvent =
   | { type: "bot_changed"; ts: number; bot: BotView }
   | { type: "bot_removed"; ts: number; id: string }
-  | { type: "session_changed"; ts: number; session: SessionView };
+  | { type: "session_changed"; ts: number; session: SessionView }
+  | { type: "bots_paused"; ts: number; paused: boolean };
 
 export interface BotServiceOptions {
   home: string;
-  /** This computer's name in the folder tree (§9.1): the computer running its bots' conversations until H-M2's main
-   *  computer exists. */
+  /** This computer's name in the folder tree (§9.1). */
   computer: string;
   registry: PluginRegistry;
+  /** Built with this gate's `mayStart` and its main computer's `epoch` (wiring.ts does both). */
   host: DurableSessionHost;
+  /** When bots may think here: the runner (lane H's lease) and the pause switch. */
+  gate: BotGate;
+  /** Reaches a bot's conversation on the computer running it, when that isn't this one; without it, such a message is
+   *  refused `bot_asleep`. */
+  relay?: BotRelay;
+  /** Whether a session's cached prompt has expired (compaction.ts); without it, always. */
+  cacheCold?(sessionId: string): boolean;
+  /** The user's home folder, which the folder tree names `home/<this computer>/` (§9.1); the OS's by default. */
+  userHome?: string;
+  /** Background agents and coding sessions a restart left dormant, handed over at start to be reattached (lane K's
+   *  `AgentManager.reattach`, which gives each its driver again). */
+  reattach?(sessions: SessionView[]): Promise<void> | void;
   drivers: DriverFactory;
   clock: Clock;
   /** The user's default model and effort (§6.1). */
@@ -101,6 +156,9 @@ export interface SideThreadRun {
   /** The computer that holds the routine; default this one. */
   computer?: string;
 }
+
+/** How long a hand-back waits for the bots' running turns to end before it gives up (they stay here). */
+export const HAND_BACK_MAX_MS = 10 * 60_000;
 
 /** The longest result a side thread posts into the main conversation (`RoutineRunView.summary`'s cap). */
 export const SIDE_THREAD_RESULT_MAX_CHARS = 4_000;
@@ -131,6 +189,9 @@ export class BotService {
   #offs: Unsubscribe[] = [];
   #sync: Promise<void> = Promise.resolve();
   #started = false;
+  /** What this computer last knew: whether it ran the bots, and which computer did. */
+  #ranHere = false;
+  #lastRunner: string | undefined;
 
   constructor(opts: BotServiceOptions) {
     this.#o = opts;
@@ -142,13 +203,25 @@ export class BotService {
   async start(): Promise<void> {
     if (this.#started) return;
     this.#started = true;
+    this.#ranHere = this.#o.gate.main.runsHere();
+    this.#lastRunner = this.#runner();
     this.#offs.push(this.#o.host.watch((view) => this.#onSession(view)));
     this.#offs.push(this.#o.registry.watch(() => void this.#queueSync()));
+    this.#offs.push(this.#o.gate.main.watch(() => void this.#queueSync(() => this.#onRunnerChanged())));
     await this.#queueSync();
     // Runs a crash cut off whose bot is no longer installed: ended too, with the result posted for when it returns.
     const host = this.#o.host;
     const orphans = new Set(host.list({ kind: "side-thread" }).filter((s) => s.bot !== undefined && !this.#bots.has(s.bot)).map((s) => s.bot!));
     for (const bot of orphans) await this.#endCutOffRuns(bot, mainSessionIdFor(bot));
+    const dormant = [...host.list({ kind: "agent" }), ...host.list({ kind: "coding" })]
+      .filter((v) => !host.isAttached(v.id) && v.status !== "stopped" && v.status !== "failed");
+    if (dormant.length > 0 && this.#o.reattach) {
+      try {
+        await this.#o.reattach(dormant);
+      } catch (err) {
+        this.#warn(`reattaching ${dormant.length} agent session(s) failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   /** Detaches every bot's sessions, leaving them dormant on disk (a shutdown). */
@@ -199,6 +272,92 @@ export class BotService {
     return this.#events.add(fn);
   }
 
+  /** The bots whose conversations this computer runs now (lane J's `bots()` for the folder tree). */
+  botsRunHere(): string[] {
+    return this.#o.gate.main.runsHere() ? [...this.#bots.keys()] : [];
+  }
+
+  /** Each bot and the computer running its conversation (§6.4). */
+  placement(): { bot: string; computer: string }[] {
+    const computer = this.#runner();
+    return [...this.#bots.keys()].map((bot) => ({ bot, computer }));
+  }
+
+  /** The computer running a bot's conversation, or undefined for a bot that isn't installed (lane J's `botPlacement`). */
+  computerFor(bot: string): string | undefined {
+    return this.#bots.has(bot) ? this.#runner() : undefined;
+  }
+
+  /** A session's scratch folder here, made if missing, as a folder-tree path (§6.5; lane J's MCP router saves a
+   *  call's files there when it names no `saveTo`). Refused for a Clover home outside the user's home. */
+  scratchFor(sessionId: string): string {
+    const view = this.#o.host.get(sessionId);
+    if (!view) throw new ContractError("not_found", `no session ${sessionId}`);
+    const bot = this.#o.host.callerOf(sessionId).bot;
+    const dir = sessionScratchDir(this.#o.home, { id: sessionId, ...(bot === undefined ? {} : { bot }) });
+    const tree = homeTreePath({ userHome: this.#o.userHome ?? homedir(), computer: this.#o.computer, dir });
+    if (tree === undefined) throw new ContractError("invalid", `the scratch folder ${dir} isn't inside the user's home, so the folder tree can't name it`);
+    mkdirSync(dir, { recursive: true });
+    return tree;
+  }
+
+  get paused(): boolean {
+    return this.#o.gate.paused;
+  }
+
+  /** `bots.pause`: the user's switch for every bot and routine at once (§9.2). */
+  async setPaused(paused: boolean, caller: Caller): Promise<void> {
+    if (caller.kind !== "user") throw new ContractError("refused", "only the user pauses or resumes the bots", { rpc: CLOVER_ERR.NOT_THE_USER });
+    if (!this.#o.gate.setPaused(paused, this.#o.clock.now())) return;
+    this.#events.emit({ type: "bots_paused", ts: this.#o.clock.now(), paused });
+    // Paused, what runs is held at its next tool call (the drivers read `mayAct`); resumed, it goes on, and what
+    // waited starts.
+    if (!paused) this.#o.host.resume();
+    for (const live of this.#bots.values()) this.#emitBot(live);
+  }
+
+  /** The user's message to a bot's conversation, wherever it runs (§6.4): here, or relayed to the runner with the
+   *  message as its device sent it (`message`, signature and all). */
+  async sendUserTo(id: string, input: Omit<UserInput, "from">, message: UserMessageInput): Promise<{ seq: number }> {
+    const live = this.#must(id);
+    const runner = this.#remoteRunner();
+    if (runner === undefined) return this.#o.host.sendUser(live.mainSession, input);
+    if (!this.#o.relay) throw new ContractError("bot_asleep", `can't reach ${runner}, the computer running ${id}; the draft is kept`);
+    return this.#o.relay.sendUser(runner, live.mainSession, { message: { ...message, sentAt: input.sentAt }, device: input.device, sentAt: input.sentAt });
+  }
+
+  /** Another session's message to a bot's conversation, wherever it runs: the host forwards it to the runner when that
+   *  is another computer (`DurableSessionHostOptions.forward`). */
+  async deliverTo(id: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }> {
+    return this.#o.host.deliver(this.#must(id).mainSession, input);
+  }
+
+  /** Hands the bots back to the main, which is back (§6.4 "When the main returns"): no new turn starts here, each
+   *  bot's running turn ends where it is, and then the lease goes, so the main takes each bot between its turns. */
+  async handBack(): Promise<void> {
+    const gate = this.#o.gate;
+    const main = gate.main.main();
+    if (!gate.main.runsHere() || main === undefined || main === gate.main.self || gate.handingBack) return;
+    gate.setHandingBack(true);
+    try {
+      const idle = await Promise.race([
+        this.#allIdle().then(() => true),
+        new Promise<false>((resolve) => this.#o.clock.setTimeout(() => resolve(false), HAND_BACK_MAX_MS)),
+      ]);
+      if (!idle) {
+        // A turn still runs: the bots stay here rather than move mid-turn, and the next hand-back tries again.
+        this.#warn(`handing the bots back to ${main} gave up after ${HAND_BACK_MAX_MS / 60_000} minutes: a turn still runs here`);
+        return;
+      }
+      await gate.main.release();
+    } catch (err) {
+      this.#warn(`handing the bots back to ${main} failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      gate.setHandingBack(false);
+      await this.#queueSync(() => this.#onRunnerChanged());
+    }
+  }
+
   /** `bot.setUserLayer`: only the user changes a bot's user layer (§6.1, §9.1). A change from a plugin's layer reaches
    *  this as the user only once the user approved its sealed card (lane C's `change: "core"` routing, §5.5). */
   async setUserLayer(id: string, patch: unknown, caller: Caller): Promise<ChangeResult> {
@@ -221,6 +380,7 @@ export class BotService {
    *  Resolves when the run has ended and its result is posted. */
   async runSideThread(id: string, run: SideThreadRun): Promise<RoutineRunView> {
     const live = this.#must(id);
+    if (this.#o.gate.paused) throw new ContractError("refused", "the bots are paused; routines don't run until the user resumes them");
     const host = this.#o.host;
     const session = mintSessionId("side-thread");
     const computer = run.computer ?? this.#o.computer;
@@ -246,7 +406,12 @@ export class BotService {
     const summary = sideThreadResult(end);
     const main = host.get(live.mainSession);
     if (main !== undefined && main.status !== "stopped" && main.status !== "failed") {
-      await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary });
+      // To the computer running the bot, wherever that is (the host forwards it, review S1).
+      try {
+        await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary });
+      } catch (err) {
+        this.#warn(`the side thread ${session}'s result didn't reach ${live.mainSession}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     await host.stop(session, "the run ended");
     return {
@@ -263,9 +428,78 @@ export class BotService {
     return live;
   }
 
-  #queueSync(): Promise<void> {
-    this.#sync = this.#sync.then(() => this.#syncNow()).catch((err: unknown) => this.#warn(`loading bots failed: ${err instanceof Error ? err.message : String(err)}`));
+  /** Runs the registry's sync, or `job`, after whatever is under way, one at a time. */
+  #queueSync(job: () => Promise<void> | void = () => this.#syncNow()): Promise<void> {
+    this.#sync = this.#sync.then(job).catch((err: unknown) => this.#warn(`updating bots failed: ${err instanceof Error ? err.message : String(err)}`));
     return this.#sync;
+  }
+
+  /** The computer running the bots' conversations; this one while none is known. */
+  #runner(): string {
+    return this.#o.gate.main.runner() ?? this.#o.computer;
+  }
+
+  /** The runner when it is another computer. */
+  #remoteRunner(): string | undefined {
+    if (this.#o.gate.main.runsHere()) return undefined;
+    const runner = this.#o.gate.main.runner();
+    return runner === undefined || runner === this.#o.computer ? undefined : runner;
+  }
+
+  /** The lease moved, lapsed or came back. */
+  async #onRunnerChanged(): Promise<void> {
+    const host = this.#o.host;
+    // Whether this computer holds the lease and may act, whatever a hand-back under way holds back: a lease event
+    // during a hand-back (a renewal) must not cut the running turn short.
+    const runsNow = this.#o.gate.main.runsHere();
+    const runner = this.#runner();
+    const before = this.#lastRunner;
+    if (runner !== before) for (const live of this.#bots.values()) if (host.get(live.mainSession)) host.update(live.mainSession, { computer: runner });
+    if (runsNow && !this.#ranHere) {
+      for (const live of this.#bots.values()) {
+        // Took over: a turn the computer before never finished is recorded so, and nothing is run again.
+        try {
+          const marked = host.catchUp(live.mainSession);
+          if (marked > 0) this.#warn(`took ${live.plugin.id} over from ${before ?? "another computer"}: ${marked} call(s) it never finished are recorded as maybe having run there`);
+        } catch (err) {
+          this.#warn(`catching ${live.mainSession} up failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        this.#seed(live.plugin);
+      }
+      host.resume();
+    } else if (!runsNow && this.#ranHere) {
+      // This computer may no longer act for the bots: what runs stops.
+      for (const live of this.#bots.values()) {
+        const view = host.get(live.mainSession);
+        if (view && (view.status === "prompting" || view.status === "cancelling")) {
+          try {
+            await host.interrupt(live.mainSession);
+          } catch (err) {
+            this.#warn(`stopping ${live.mainSession} after the lease went: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+    }
+    this.#ranHere = runsNow;
+    this.#lastRunner = runner;
+    for (const live of this.#bots.values()) this.#emitBot(live);
+  }
+
+  /** Resolves once no bot's conversation runs a turn or a compaction. */
+  #allIdle(): Promise<void> {
+    const host = this.#o.host;
+    const busy = () => [...this.#bots.values()].some((live) => {
+      const status = host.get(live.mainSession)?.status;
+      return status === "prompting" || status === "cancelling" || status === "starting" || host.isCompacting(live.mainSession);
+    });
+    if (!busy()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const off = host.watch(() => {
+        if (busy()) return;
+        off();
+        resolve();
+      });
+    });
   }
 
   async #syncNow(): Promise<void> {
@@ -294,14 +528,17 @@ export class BotService {
 
   async #add(bot: PluginBot): Promise<void> {
     const live: Live = { plugin: bot, mainSession: mainSessionIdFor(bot.id) };
-    this.#seed(bot);
+    this.#folders(bot);
+    // Only the computer running the bot writes its memory (§6.5); the others get copies.
+    if (this.#o.gate.main.runsHere()) this.#seed(bot);
     const host = this.#o.host;
     const eff = this.#effective(live);
+    const runner = this.#runner();
     try {
       host.open({
-        id: live.mainSession, kind: "bot", bot: bot.id, computer: this.#o.computer, title: plainText(eff.name).slice(0, 200), model: eff.model,
+        id: live.mainSession, kind: "bot", bot: bot.id, computer: runner, title: plainText(eff.name).slice(0, 200), model: eff.model,
         ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-      }, this.#o.drivers(this.#context(live, live.mainSession, "bot", this.#o.computer)));
+      }, this.#o.drivers(this.#context(live, live.mainSession, "bot", runner)));
     } catch (err) {
       this.#warn(`the bot ${bot.id}'s conversation didn't open: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -349,6 +586,18 @@ export class BotService {
       if (s.status !== "stopped" && s.status !== "failed") await host.stop(s.id, "its bot was removed");
     }
     this.#events.emit({ type: "bot_removed", ts: this.#o.clock.now(), id });
+  }
+
+  /** The bot's memory, agents' and scratch folders (§6.5), which the system prompt names. */
+  #folders(bot: PluginBot): void {
+    const paths = botPaths(this.#o.home, bot.id);
+    for (const dir of [paths.memory, paths.agents, paths.scratch]) {
+      try {
+        mkdirSync(dir, { recursive: true });
+      } catch (err) {
+        this.#warn(`the bot ${bot.id}'s folder ${dir} wasn't made: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   /** Copies the plugin's starter memories into the bot's memory folder, the first time this computer sees the bot. */
@@ -404,13 +653,20 @@ export class BotService {
   }
 
   #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string): BotSessionContext {
+    const paths = botPaths(this.#o.home, live.plugin.id);
+    const gate = this.#o.gate;
     return {
       botId: live.plugin.id,
       sessionId,
       kind,
       computer,
-      paths: botPaths(this.#o.home, live.plugin.id),
+      paths,
+      caller: { kind: "session", sessionId, sessionKind: kind, bot: live.plugin.id },
       current: () => this.#effective(live),
+      memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
+      mayAct: () => gate.mayAct({ kind }),
+      whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
+      cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
     };
   }
 
@@ -423,6 +679,7 @@ export class BotService {
 
   #state(live: Live): BotView["state"] {
     const host = this.#o.host;
+    if (this.#o.gate.paused) return "paused";
     if (host.isAsleep(live.mainSession)) return "asleep";
     const status = host.get(live.mainSession)?.status;
     return status === "prompting" || status === "cancelling" || status === "starting" ? "thinking" : "idle";
@@ -444,7 +701,7 @@ export class BotService {
       ...(eff.theme === undefined ? {} : { theme: eff.theme }),
       userLayer: eff.userLayer,
       state: this.#state(live),
-      computer: this.#o.computer,
+      computer: this.#runner(),
       mainSession: live.mainSession,
     };
   }
