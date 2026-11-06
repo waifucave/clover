@@ -24,8 +24,11 @@
 //   dev-folders            wherever the user keeps them
 //
 // The login-start places (under the user's home), the browser profiles (under userData), the OK'd agent installs and
-// the bot-memory items (per bot) are laid out in fence.ts, which holds the home, userData and options. Waiting on
-// kinds in B's contract, so not yet in `fencedSet()`: `pendingFenced` below.
+// the bot-memory items (per bot) are laid out in fence.ts, which holds the home, userData and options. The login-start
+// list names every folder and file a planted write could run later, outside the sandbox (spec item 1116, the
+// controller's ruling): Clover's own login item first, then the shells and their logout scripts, SSH and git config,
+// the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
+// Waiting on kinds in B's contract, so not yet in `fencedSet()`: `pendingFenced` below.
 import { readdirSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
@@ -96,20 +99,28 @@ export function pendingFenced(o: {
 export function loginStartPaths(home: string, cloverHome: string, os: Os): string[] {
   const p = pathFor(os, home);
   const u = (...parts: string[]) => p.join(home, ...parts);
-  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"];
+  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
+    ".bash_logout", ".zlogout", ".logout"];
+  // Places a planted file runs later, outside the sandbox (spec item 1116, the controller's ruling): shells and
+  // their logout scripts, SSH and git config, and the folders that come ahead on PATH.
+  const shells = [...shell.map((f) => u(f)), u(".config", "fish")];
+  const pathAhead = [u(".local", "bin"), u("bin")];
+  const sshGit = [u(".ssh"), u(".gitconfig"), u(".config", "git")];
   if (os === "macos") {
     return [
       u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), p.join(cloverHome, "login"),
       u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"), u("Library", "StartupItems"),
       u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
-      ...shell.map((f) => u(f)), u(".config", "fish"),
+      ...shells, ...pathAhead, ...sshGit,
+      u(".config", "environment.d"),
     ];
   }
   if (os === "linux") {
     return [
       u(".config", "systemd", "user"), u(".config", "autostart"), u(".local", "share", "systemd", "user"),
       u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".xsessionrc"), u(".xinitrc"),
-      ...shell.map((f) => u(f)),
+      u(".config", "autostart-scripts"), u(".config", "plasma-workspace", "env"), u(".config", "plasma-workspace", "shutdown"),
+      ...shells, ...pathAhead, ...sshGit,
     ];
   }
   return [

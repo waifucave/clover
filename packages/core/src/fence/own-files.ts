@@ -89,15 +89,14 @@ export function writeOwnFile(caller: CallerFence, path: string, data: string | U
   if (!ownRoots(caller, true).some((r) => isInsideFolded(normalForm(path, caller.os), r, caller.os))) {
     throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
   }
-  // A temp file next to the target, created exclusively through `openChecked` (a fresh random suffix each try,
-  // so a planted one can't be reused: the existence check makes the `O_EXCL` creation effective).
+  // A temp file next to the target, created exclusively through `openChecked` (a fresh random suffix each try: a
+  // planted name fails with EEXIST instead of being reused).
   let tmp = "";
   let fd = -1;
   for (let i = 0; i < 3 && fd === -1; i++) {
-    const cand = `${path}.tmp-${randomBytes(8).toString("hex")}`;
-    try { lstatSync(cand); continue; } catch { /* missing: create it */ }
-    tmp = cand;
-    fd = openChecked(caller, tmp, { write: true, create: true });
+    tmp = `${path}.tmp-${randomBytes(8).toString("hex")}`;
+    try { fd = openChecked(caller, tmp, { write: true, exclusive: true }); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
   }
   if (fd === -1) throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
   try {
@@ -112,6 +111,34 @@ export function writeOwnFile(caller: CallerFence, path: string, data: string | U
   } finally {
     if (fd !== -1) { try { closeSync(fd); } catch { /* gone */ } }
     try { unlinkSync(tmp); } catch { /* landed, or never made */ }
+  }
+}
+
+/** The temp-file suffix `writeOwnFile` leaves behind when it never reaches its rename (a crash between the create
+ *  and the rename): `.tmp-` plus 16 hex digits. */
+const TEMP_SUFFIX = /\.tmp-[0-9a-f]{16}$/;
+
+/** Removes leftover temp files from the caller's own folders, for when the bot starts: nothing else may reuse the
+ *  name. Walks without following links and removes regular files only; links, folders and everything else stay. */
+export function sweepOwnTempFiles(caller: CallerFence): void {
+  for (const root of new Set(ownRoots(caller, true))) {
+    let st: ReturnType<typeof lstatSync> | undefined;
+    try { st = lstatSync(root); } catch { continue; } // missing: nothing to sweep
+    if (st === undefined || !st.isDirectory() || st.isSymbolicLink()) continue;
+    const stack = [root];
+    while (stack.length > 0) {
+      const at = stack.pop()!;
+      let entries: string[];
+      try { entries = readdirSync(at); } catch { continue; }
+      for (const name of entries) {
+        const p = join(at, name);
+        let s: ReturnType<typeof lstatSync> | undefined;
+        try { s = lstatSync(p); } catch { continue; }
+        if (s.isSymbolicLink()) continue; // never follow, never remove
+        if (s.isDirectory()) { stack.push(p); continue; }
+        if (s.isFile() && TEMP_SUFFIX.test(name)) { try { unlinkSync(p); } catch { /* busy: the next start sweeps it */ } }
+      }
+    }
   }
 }
 

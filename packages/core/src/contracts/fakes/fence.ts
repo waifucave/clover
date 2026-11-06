@@ -64,23 +64,31 @@ function defaultUserData(os: Os, home: string): string {
 }
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
-/** The login-start places: everything a command run for a session could plant to run later outside the sandbox
- *  (spec item 1116) — Clover's own login item first, then every folder and startup file lane C's layout lists. */
+/** The login-start places: every folder and file a planted write could run later, outside the sandbox (spec item
+ *  1116, the controller's ruling) — Clover's own login item first, then the shells and their logout scripts, SSH and
+ *  git config, the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
+ *  Lane C's layout lists the same. */
 function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
-  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"];
+  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
+    ".bash_logout", ".zlogout", ".logout"];
+  const shells = [...shell.map((f) => `${home}/${f}`), `${home}/.config/fish`];
+  const pathAhead = [`${home}/.local/bin`, `${home}/bin`];
+  const sshGit = [`${home}/.ssh`, `${home}/.gitconfig`, `${home}/.config/git`];
   if (os === "macos") {
     return [
       `${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`,
       `${home}/Library/LaunchAgents`, `${home}/Library/LaunchDaemons`, `${home}/Library/StartupItems`,
       `${home}/Library/Application Support/com.apple.backgroundtaskmanagementagent`,
-      ...shell.map((f) => `${home}/${f}`), `${home}/.config/fish`,
+      ...shells, ...pathAhead, ...sshGit,
+      `${home}/.config/environment.d`,
     ];
   }
   if (os === "linux") {
     return [
       `${home}/.config/systemd/user`, `${home}/.config/autostart`, `${home}/.local/share/systemd/user`,
       `${home}/.config/environment.d`, `${home}/.pam_environment`, `${home}/.xprofile`, `${home}/.xsessionrc`, `${home}/.xinitrc`,
-      ...shell.map((f) => `${home}/${f}`),
+      `${home}/.config/autostart-scripts`, `${home}/.config/plasma-workspace/env`, `${home}/.config/plasma-workspace/shutdown`,
+      ...shells, ...pathAhead, ...sshGit,
     ];
   }
   return [
