@@ -54,7 +54,7 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type {
   HookCallback, HookCallbackMatcher, HookJSONOutput, Options,
   PostToolUseFailureHookInput, PostToolUseHookInput, PreToolUseHookInput,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import type { FileDiffSummary } from "@waifucave/clover-protocol";
 import { SHIPPED_DANGEROUS_DOMAINS, dangerousHostMatch, dangerousUrlMatch, normalizeDangerousDomain } from "../agent/dangerous-domains";
 import { BashReviewer, ReviewerNoRunnableModel, bashLooksSafe, plainOpenUrls } from "../agent/reviewer";
@@ -1833,7 +1833,7 @@ function webSearchInput(record: Record<string, unknown>, patch: { allowed_domain
 }
 
 /** `{ clover }` — the session's hook groups, built ONCE from `deps` and the per-tool hook functions
- *  above. `clover` is `Options["hooks"]` from `@yanlinglabs/winter-agent-sdk`. (WS-23: the identical
+ *  above. `clover` is `Options["hooks"]` from `@waifucave/clover-agent-sdk`. (WS-23: the identical
  *  `official` copy the retired official leg took is gone.)
  *
  *  Every hook function above is a safe, cheap no-op (`allow()`/`{}`) when its own dependency is

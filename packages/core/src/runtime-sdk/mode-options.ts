@@ -3,11 +3,11 @@ import { join } from "node:path";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import {
-  disableCronEnvName, envName, mcpToolName, pluginCacheDirEnvName, providerManagedByHostEnvName, storeHomeEnvName,
-} from "@yanlinglabs/winter-agent-sdk";
-import { escapeRulePath, escapeSandboxGlobPath, PROTECTED_ITEM_DIRS, RESUME_STAGING_PREFIX, type CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+  disableCronEnvName, envName, pluginCacheDirEnvName, providerManagedByHostEnvName, storeHomeEnvName,
+} from "@waifucave/clover-agent-sdk";
+import { escapeRulePath, escapeSandboxGlobPath, PROTECTED_ITEM_DIRS, RESUME_STAGING_PREFIX, type CredentialPresence } from "./host";
 import { EXA_API_KEY_SECRET } from "../agent/exa-key";
 import { approvedProjectRulesDir, homeCacheDir, sdkHomeFor, storeHomeFor, trustRecordFile } from "../agent/paths";
 import { repoRootFor } from "../agent/memory-dir";
@@ -1122,19 +1122,6 @@ const ANY_DEPTH_PROJECT_KINDS: readonly string[] = [...PROTECTED_ITEM_DIRS, "age
  * minus `toolsFor`) — belt and braces, so a runtime that ignored `tools` would still deny them (the review's
  * fail-closed rule; `toolSurfaceViolations` is the other half, for a built-in nobody knew about yet).
  */
-/**
- * C0: the standing server's alias twins of `SendMessage` and `ListAgents`, spelled from the daemon's brand
- * (`mcp__clover__send_message`, `mcp__clover__list_agents`). A twin follows its native into `disallowedTools` by
- * name. The SDK hides a withheld native's twin by spelling the twin from the session's brand, everywhere but
- * ToolSearch's own candidate pool (the runtime's `toolsearch/exposure.ts`), which still spells it from the SDK's
- * default brand (`WINTER_BRAND`) and so would list Clover's twins as loadable. Naming them here withholds nothing
- * the brand-aware paths do not already withhold; drop it once the SDK threads the brand there too.
- */
-const STANDING_TWINS: ReadonlyArray<readonly [native: string, twin: string]> = [
-  ["SendMessage", mcpToolName(CORE_BRAND, "send_message")],
-  ["ListAgents", mcpToolName(CORE_BRAND, "list_agents")],
-];
-
 export function disallowedToolsFor(
   mode: SessionMode,
   exposure: ToolExposure = {},
@@ -1145,7 +1132,6 @@ export function disallowedToolsFor(
     .map(([name, v]) => v.plainName ?? name);
   const allowed = toolsFor(mode, exposure);
   if (allowed !== undefined) out.push(...KNOWN_RUNTIME_BUILTINS.filter((name) => !allowed.includes(name)));
-  for (const [native, twin] of STANDING_TWINS) if (out.includes(native)) out.push(twin);
   return [...new Set(out)].sort();
 }
 
@@ -1395,7 +1381,7 @@ export function buildCloverOptions(input: CloverOptionsInput): Options {
   if (input.advisorModel !== undefined) {
     // Fix wave (M7): when the advisor's own target model resolves to the SAME provider as the
     // session's own model, thread the SESSION's already-resolved `authRef` onto `Options.advisor`
-    // too. The pinned `@yanlinglabs/winter-agent-sdk@0.0.6`'s own `AdvisorConfig`
+    // too. The pinned `@waifucave/clover-agent-sdk@0.0.6`'s own `AdvisorConfig`
     // (`protocol/config.d.ts`) has NO `connection` field at all — only `model`/`authRef` — so
     // `authRef` is the entire lever this door has, not a partial stand-in for a wider fix.
     //

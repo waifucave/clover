@@ -1,4 +1,4 @@
-import { CATALOG_TAG_RENAMES, loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { CATALOG_TAG_RENAMES, loadCatalog } from "@waifucave/clover-provider-catalog";
 import { setWireModelTagCanonicalizer } from "@waifucave/clover-protocol";
 
 /** WS-20: a model is ALWAYS a provider-qualified tag ("<providerId>/<modelId>") in code — the

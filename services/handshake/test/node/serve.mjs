@@ -1,6 +1,6 @@
 // Runs the handshake Worker on wrangler's local runtime (workerd), with the account service's local profile beside it
 // (services/accounts: keys in memory, and its mint without a sign-in), for end-to-end tests that talk to it over real
-// sockets: the web companion's (plugins' clover/companion-web) and a browser's.
+// sockets: the web companion plugin's (clover/companion-web) and a browser's.
 //
 // Input:  HANDSHAKE_E2E (environment, JSON): { ticketSecret, webOrigins? }, made by the test in memory for this run.
 //         Nothing is written to disk but wrangler's own local state folder.

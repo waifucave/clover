@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TRANSCRIPT_PROJECT_KEY_MAX_LENGTH, compatibilityKeys, isVendorCompliantProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { TRANSCRIPT_PROJECT_KEY_MAX_LENGTH, compatibilityKeys, isVendorCompliantProjectKey } from "@waifucave/clover-agent-sdk";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { memoryDirFor, memoryDirForRecord, repoRootFor, sanitizeProjectKey, _clearRepoRootCacheForTests } from "../../src/agent/memory-dir";

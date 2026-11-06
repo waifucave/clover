@@ -1625,7 +1625,7 @@ export const VersionsGetResult = z.object({
     winterRuntimeSdk: z.string(),
   }),
   installed: z.object({
-    /** The installed `@yanlinglabs/winter-agent-sdk` wrapper's own declared `SDK_VERSION`. Always
+    /** The installed `@waifucave/clover-agent-sdk` wrapper's own declared `SDK_VERSION`. Always
      *  present. */
     winterAgentSdk: z.string(),
     /** The installed `@yanlinglabs/winter-runtime-sdk` (router)'s own manifest version, or absent

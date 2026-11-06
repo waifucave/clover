@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
-import * as mcpAuth from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import * as mcpAuth from "@waifucave/clover-agent-runtime/mcp-auth";
 import * as daemonStore from "../src/runtime-sdk/mcp-oauth-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { FileSecretStore } from "../src/auth/secret-store";

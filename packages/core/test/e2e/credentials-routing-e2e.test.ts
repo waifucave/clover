@@ -32,14 +32,15 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openaiChatFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { openaiChatFake, startFake, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { readCredentialMaterial } from "../../src/auth/credential-material";
 import { credentialRefFor } from "../../src/runtime-sdk/keychain";
 import { keychainService } from "../../src/profile";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
+import { spawnEmbeddedWorker, type SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
 
 const SENTINEL = "WS19-SENTINEL-e2e-6d41af9c";
 const DEEPSEEK_MODEL = "deepseek/deepseek-v4-pro"; // R.1: DeepSeek's live row (deepseek-reasoner left the catalog, V16)
@@ -115,7 +116,7 @@ function everyFileUnder(dir: string): string[] {
   return out;
 }
 
-describeWithWinterBinary("WS-19 end to end: a stored credential routes a real session (B-1/B-3/B-8)", (winterBin) => {
+describeWithEmbeddedRuntime("WS-19 end to end: a stored credential routes a real session (B-1/B-3/B-8)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -133,6 +134,9 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
    *  environment as `ps` reports them. */
   const turnLines: string[] = [];
   let childCommandLine = "";
+  /** A-M1: what every embedded session's Worker was started with (the spawn the SDK asked for: its argv
+   *  and environment), captured through the embedded host's `spawnWorker` seam. */
+  const workerSpawns: Array<SpawnEmbeddedWorkerOptions["spawn"]> = [];
   /** B-1's code session — the LIVE one MAJOR 1 and B-3 re-open (the list also holds the §7 chat session). */
   let codeSessionId: string | undefined;
 
@@ -158,13 +162,16 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
       provider: { type: "openai-compatible", model: DEEPSEEK_MODEL, baseUrl: "http://127.0.0.1:9/v1" },
       // W19-6: the ONLY thing that points deepseek at the fake. No daemon-side endpoint table.
       providers: { deepseek: { baseUrl: `${fake.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     secretsRef = secrets;
     // DELIBERATELY NO CREDENTIAL WRITTEN HERE — B-1 requires the key to arrive through
     // `credential.set` on the LIVE daemon, with no restart before the turn that uses it.
-    daemon = await startDaemon({ home, secrets, agentProvider: null });
+    daemon = await startDaemon({
+      home, secrets, agentProvider: null,
+      embeddedHost: { spawnWorker: (options) => { workerSpawns.push(options.spawn); return spawnEmbeddedWorker(options); } },
+    });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;
     client = await TestClient.connect(daemon.socketPath);
     await client.hello(daemon.tokens.harness, "e2e");
@@ -229,14 +236,16 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
-    // The LIVE child's argv and environment (`ps -E` prints a same-user process's environment after its
-    // command): the child of THIS process that runs the winter binary.
-    const kids = Bun.spawnSync(["pgrep", "-P", String(process.pid)]).stdout.toString().split("\n").filter(Boolean);
-    for (const pid of kids) {
-      const line = Bun.spawnSync(["ps", "-wwwE", "-o", "command=", "-p", pid]).stdout.toString();
-      if (line.includes(winterBin)) childCommandLine += line;
+    // The LIVE session's argv and environment. A-M1: a code session runs EMBEDDED (spec §3.3), in a
+    // Worker of this process, so there is no child process for `ps -E` to read; what the session got is
+    // the spawn its Worker was started with, rendered the way `ps -wwwE` printed a child's (`command
+    // args… KEY=value…`). Its command is the embedded marker, never the binary.
+    expect(workerSpawns.length).toBeGreaterThan(0);
+    for (const spawn of workerSpawns) {
+      childCommandLine += [spawn.command, ...spawn.args, ...Object.entries(spawn.env ?? {}).map(([k, v]) => `${k}=${v ?? ""}`)].join(" ") + "\n";
     }
-    expect(childCommandLine).toContain(winterBin);
+    // Every session is a Worker started under the embedded marker, never a spawned coding-agent binary.
+    expect(workerSpawns.map((spawn) => spawn.command)).toEqual(workerSpawns.map(() => "clover-embedded"));
 
     // (4) THE ROUTING, measured on the wire: the turn reached the CONFIGURED loopback endpoint,
     // asking for the DeepSeek row's own upstream model id. Before W19-1/W19-6 neither was possible —
@@ -478,7 +487,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
 // TWO loopback fakes, one per provider, each recording its own requests — the assertion is that
 // turn 2 lands on B and NOT on A, which no single-fake bed could distinguish.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes the NEXT turn to the new endpoint", (winterBin) => {
+describeWithEmbeddedRuntime("WS-19 + D1 item 6: a same-leg PROVIDER change routes the NEXT turn to the new endpoint", () => {
   const ZAI_MODEL = "zai/glm-5";
   let home: string;
   let daemon: RunningDaemon | undefined;
@@ -510,7 +519,7 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
       provider: { type: "openai-compatible", model: DEEPSEEK_MODEL, baseUrl: "http://127.0.0.1:9/v1" },
       // W19-6's seam, one entry per provider — the ONLY thing pointing either at a fake.
       providers: { deepseek: { baseUrl: `${deepseekFake.url}/v1` }, zai: { baseUrl: `${zaiFake.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 600, handoff: { crossRuntime: true } },
+      runtimes: { winterIdleTimeoutSec: 600, handoff: { crossRuntime: true } },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     daemon = await startDaemon({ home, secrets, agentProvider: null });
@@ -593,7 +602,7 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
 // exactly such a home. The rule that actually matters is unchanged and is asserted in the suite
 // above (B-1/B-3): no TURN runs against a provider Clover HAS decided on and holds no credential for.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("W19-7: a credential-less, Codex-configured home creates, dispatches AND sends", (winterBin) => {
+describeWithEmbeddedRuntime("W19-7: a credential-less, Codex-configured home creates, dispatches AND sends", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -605,7 +614,7 @@ describeWithWinterBinary("W19-7: a credential-less, Codex-configured home create
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.6-sol" },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;

@@ -13,7 +13,7 @@ import { bearerToken } from "../../shared/account-token";
 import { verifyAccountTokenFrom } from "../../shared/jwks";
 import { b64u, fromB64u } from "../../shared/encoding";
 import { errorResponse, json, readBodyCapped, readJsonObject, TooLarge } from "../../shared/http";
-import { encodeRequestRecord, ROUTINE_ID_RE } from "../../../plugins/clover/forwarder/src/wire/envelope";
+import { encodeRequestRecord, ROUTINE_ID_RE } from "../../../plugins/clover/plugins/forwarder/src/wire/envelope";
 import {
   DEVICE_ID_RE,
   hookKeyHash,
@@ -21,7 +21,7 @@ import {
   type RoutineConflict,
   type RoutineRegistered,
   type Ticket,
-} from "../../../plugins/clover/forwarder/src/wire/protocol";
+} from "../../../plugins/clover/plugins/forwarder/src/wire/protocol";
 import type { Caller, ForwarderDO, Refusal } from "./forwarder-do";
 import { limitsFrom, type Env } from "./env";
 import { accountObject, accountTag, mintTicket, ownerHash, readTag, readTicket, TAG_RE, tagKeysFrom } from "./identity";

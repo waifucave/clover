@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, type ProtocolSdkMessage } from "@yanlinglabs/winter-agent-sdk";
+import { query, type ProtocolSdkMessage } from "@waifucave/clover-agent-sdk";
 import { ApprovalRequestedEvent, ApprovalResolvedEvent, type ApprovalPolicy, type SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";

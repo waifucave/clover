@@ -24,7 +24,7 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { unconsumedUserMessages } from "../../src/runtime-sdk/clover-session";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -75,7 +75,7 @@ class TestClient {
 const main = (log: SessionEvent[]) => log.filter((e) => (e as { threadId?: string }).threadId === "main");
 const count = (log: SessionEvent[], type: string) => main(log).filter((e) => e.type === type).length;
 
-describeWithWinterBinary("a message sent mid-turn is FOLDED into the running turn (agent SDK 0.0.44)", (bin) => {
+describeWithEmbeddedRuntime("a message sent mid-turn is FOLDED into the running turn (agent SDK 0.0.44)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -87,7 +87,7 @@ describeWithWinterBinary("a message sent mid-turn is FOLDED into the running tur
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/calls" },
-      runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 30 },
+      runtimes: { winterIdleTimeoutSec: 30 },
     }, null, 2));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;

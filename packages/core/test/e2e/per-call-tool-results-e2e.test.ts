@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -79,7 +79,7 @@ class TestClient {
 const SLEEP_SECONDS = 1.5;
 type ToolResultEvent = SessionEvent & { type: "tool_result"; callId: string; ts: number; isError: boolean; output: string; fileDiff?: { path: string; added: number; removed: number; diffId: string } };
 
-describeWithWinterBinary("tool results are projected as each call of a batch finishes (agent SDK 0.0.40)", (bin) => {
+describeWithEmbeddedRuntime("tool results are projected as each call of a batch finishes (agent SDK 0.0.40)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -91,7 +91,7 @@ describeWithWinterBinary("tool results are projected as each call of a batch fin
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/calls" },
-      runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 },
+      runtimes: { winterIdleTimeoutSec: 10 },
     }, null, 2));
     // A user-scope stdio MCP server whose `wait` tool is listed read-only (claude's format, `sdk/.clover.json`).
     mkdirSync(join(home, "sdk"), { recursive: true });

@@ -2,7 +2,7 @@ import type {
   CursorStore, DeliveryOutcome, DeliveryRecord, DeliveryRecordStore, GlobalAgentMessage, HeldMessageRecord,
   IdleSubscriptionRecord, IdleSubscriptionStore, MailboxStore, NameLeaseRecord, NameLeaseStore, RuntimeKind,
   RuntimeDirectoryEntry, RuntimeDirectoryStore, SerializedRuntimeAddress,
-} from "@yanlinglabs/winter-runtime-sdk";
+} from "../runtime-sdk/host";
 import type { RuntimeStateDb } from "./db";
 
 /**

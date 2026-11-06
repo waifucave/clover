@@ -40,8 +40,8 @@
 //   `control_response` over the child's stdio pipe (or the Worker's port). Nothing here logs it, puts it
 //   in an error, or keeps it past the call. Log lines name the account and a reason code, never a value.
 import { createHash } from "node:crypto";
-import type { CredentialResolveAnswer, CredentialResolveRequest, McpOAuthRefreshAnswer, McpOAuthRefreshRequest, McpServerConfig, Options } from "@yanlinglabs/winter-agent-sdk";
-import { McpOAuthError, mcpOAuthTokenAccount, refreshMcpOAuthToken, toSessionMcpTokenRecord, decodeMcpOAuthTokenRecord, MCP_OAUTH_CLIENT_ACCOUNT_PREFIX, MCP_OAUTH_TOKEN_ACCOUNT_PREFIX, type McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import type { CredentialResolveAnswer, CredentialResolveRequest, McpOAuthRefreshAnswer, McpOAuthRefreshRequest, McpServerConfig, Options } from "@waifucave/clover-agent-sdk";
+import { McpOAuthError, mcpOAuthTokenAccount, refreshMcpOAuthToken, toSessionMcpTokenRecord, decodeMcpOAuthTokenRecord, MCP_OAUTH_CLIENT_ACCOUNT_PREFIX, MCP_OAUTH_TOKEN_ACCOUNT_PREFIX, type McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import type { SecretStore } from "../auth/secret-store";
 import { TOKEN_NAMES } from "../auth/tokens";
 import { WEB_SEARCH_API_KEY_SECRET } from "../agent/tools/web";
