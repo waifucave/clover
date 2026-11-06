@@ -5,7 +5,7 @@ import * as appContract from "../src/main/browser/contract";
 import { choosePopup, siteOf } from "../src/main/browser/popups";
 import { parseGdbusBool, parseMacVoiceOver, parseWindowsTasklist, ScreenReaderSwitch, type ScreenReaderProbe } from "../src/main/browser/screen-reader";
 import * as coreContract from "../../../packages/core/src/browser/contract";
-import { partitionFor as corePartitionFor } from "../../../packages/core/src/browser/policy";
+import { CDP_DENIED_METHODS as CORE_DENIED_METHODS, partitionFor as corePartitionFor } from "../../../packages/core/src/browser/policy";
 
 describe("the contract mirrors", () => {
   test("the app's and the core's copies of lane B's contract agree", () => {
@@ -19,7 +19,11 @@ describe("the contract mirrors", () => {
     for (const m of ["Page.reload", "Target.getTargets", "Runtime.evaluate", "Tracing.start", "Browser.close"]) {
       expect(appContract.isCdpMethodAllowed(m)).toBe(coreContract.isCdpMethodAllowed(m));
     }
-    for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }, { kind: "session", session: "sess_1" }, { kind: "session", session: "a:b.c-d" }] as const) {
+    // The methods refused inside allowed domains: the same list, refused on the tab's debugger too.
+    expect([...appContract.CDP_DENIED_METHODS]).toEqual([...CORE_DENIED_METHODS]);
+    for (const m of CORE_DENIED_METHODS) expect(appContract.isCdpCallAllowed(m)).toBe(false);
+    expect(appContract.isCdpCallAllowed("Page.reload")).toBe(true);
+    for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }, { kind: "session", session: "sess_1" }, { kind: "session", session: "a:b.c-d" }, { kind: "plugin", plugin: "acme/tool" }] as const) {
       expect(appContract.partitionFor(owner)).toBe(corePartitionFor(owner));
     }
   });

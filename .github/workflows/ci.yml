@@ -202,15 +202,15 @@ jobs:
 
       # The Clover Browser in a real Electron (lane L, plan §4 L M1): offscreen bot tabs, the viewport, the person's
       # selecting and copying through it, the screen-reader hybrid. CI only, like the UI test.
-      - name: Browser test
-        if: runner.os != 'Linux'
+      - name: App · Browser test
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
         run: bun test test/browser.test.ts
 
-      - name: Browser test (under xvfb)
-        if: runner.os == 'Linux'
+      - name: App · Browser test (under xvfb)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"

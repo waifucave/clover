@@ -5,13 +5,18 @@
 // B-M2), and never from anything the plugin says; so the core holds each session to its own tabs whatever this tool
 // does. The tool still needs to know whose tabs to list and open, and checks the owner again itself.
 //
-// Until the plugin host carries the context, the tool reads it where the core, as the MCP client, puts it: the
-// request's `params._meta` under `clover/caller`, shaped like the protocol's `Caller`. The model's words land in
-// `params.arguments`, and anything that looks like a caller there is ignored. This file is the one place that reads it,
-// so moving to the host's context touches only it.
+// The tool learns who is calling only from that context, handed to it by the plugin host for each tool call
+// (`CallerOf`, given to `serveBrowser`). Nothing in the request itself is ever read as a caller: not `params._meta`,
+// not the arguments, which are the model's words. Until the plugin host carries the context (B-M2), nothing is known,
+// and the tool refuses every call rather than guess (review S2).
 import type { Caller, ClientKind, SessionKind, TabOwner } from "./types";
 
-export const CALLER_META_KEY = "clover/caller";
+/** The tool call's context as the plugin host carries it, looked up by the request; undefined when the host gives
+ *  none. Whatever it returns is checked (`parseCaller`) before it is used. */
+export type CallerOf = (request: { id: string | number }) => unknown;
+
+/** The plugin host carries no tool call's context yet (B-M2 does): nothing is known about the caller. */
+export const NO_CONTEXT: CallerOf = () => undefined;
 
 /** A bot's id is its plugin's id, a child's included (`luna`, `pack/luna`); each part 2–40 characters. */
 const BOT_ID_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/;
@@ -27,13 +32,7 @@ export function isBotId(bot: unknown): bot is string {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** The caller the core put on a request (`params._meta["clover/caller"]`), or undefined when there is none or it isn't
- *  shaped like a `Caller`. A malformed one is never guessed at. */
-export function callerFromRequest(params: unknown): Caller | undefined {
-  if (!isRecord(params) || !isRecord(params._meta)) return undefined;
-  return parseCaller(params._meta[CALLER_META_KEY]);
-}
-
+/** The host's context as a `Caller`, or undefined when it isn't shaped like one. A malformed one is never guessed at. */
 export function parseCaller(raw: unknown): Caller | undefined {
   if (!isRecord(raw)) return undefined;
   const bot = raw.bot;
@@ -76,7 +75,7 @@ export interface Acting {
  *  gets a plain refusal. */
 export function actingFor(caller: Caller | undefined): Acting | { refused: string } {
   if (caller === undefined) {
-    return { refused: "The browser tool can't tell which session is calling, so it won't touch any tab. (The core should say who is calling with each request.)" };
+    return { refused: "The browser tool can't tell which session is calling, so it won't touch any tab. (The plugin host says who is calling with each tool call; until it does, the tool waits.)" };
   }
   switch (caller.kind) {
     case "session":
@@ -98,5 +97,5 @@ export function actingFor(caller: Caller | undefined): Acting | { refused: strin
 }
 
 export function ownerLabel(owner: TabOwner): string {
-  return owner.kind === "bot" ? `${owner.bot}'s` : owner.kind === "session" ? "this session's" : "the person's";
+  return owner.kind === "bot" ? `${owner.bot}'s` : owner.kind === "session" ? "this session's" : owner.kind === "plugin" ? `${owner.plugin}'s` : "the person's";
 }

@@ -22,7 +22,7 @@ import { BrowserChrome } from "./BrowserChrome";
 import { BrowserTabs } from "./BrowserTabs";
 import { readSteps, type Steps } from "./history";
 import { useLiveView } from "./live-view";
-import { usePluginApi } from "./sdk";
+import { usePluginApi, useViewFrame } from "./sdk";
 import { S } from "./strings";
 import type { BrowserEntryProps, BrowserTab, TabOwner, TabView, Viewport } from "./types";
 import { normalizeAddress, tabName } from "./url";
@@ -33,7 +33,7 @@ export const VIEW = "browser";
 const MAX_SIDE = 16_384;
 
 const sameOwner = (a: TabOwner, b: TabOwner): boolean =>
-  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : b.kind === "user";
+  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : a.kind === "plugin" ? b.kind === "plugin" && a.plugin === b.plugin : b.kind === "user";
 
 /** The list with `tab` in it: replaced where it is, or added at the end. */
 const upsert = (list: TabView[], tab: TabView): TabView[] => (list.some((t) => t.id === tab.id) ? list.map((t) => (t.id === tab.id ? tab : t)) : [...list, tab]);
@@ -55,6 +55,12 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
   const [error, setError] = useState<string | null>(null);
   const [steps, setSteps] = useState<Steps>({});
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
+  // The live view's place: the host draws the browser's native view over this frame (lane E's `useViewFrame`).
+  const viewFrame = useViewFrame(VIEW);
+  const frameRef = useCallback((el: HTMLDivElement | null) => {
+    setFrame(el);
+    viewFrame(el);
+  }, [viewFrame]);
   const [size, setSize] = useState<Viewport | null>(null);
   // The tab this panel last had in the view, and its last picture once another panel took the view (R8).
   const [liveHere, setLiveHere] = useState<string | null>(null);
@@ -251,7 +257,7 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
         live={active?.place === "shown"}
         paused={paused ? { picture: still?.id === active.id ? still.picture : undefined, onResume: live.claim } : undefined}
         error={error ?? (api ? null : S.unavailable)}
-        frameRef={setFrame}
+        frameRef={frameRef}
         onBack={steps.back !== undefined ? () => devtools(S.failed.history, "Page.navigateToHistoryEntry", { entryId: steps.back }) : undefined}
         onForward={steps.forward !== undefined ? () => devtools(S.failed.history, "Page.navigateToHistoryEntry", { entryId: steps.forward }) : undefined}
         onReload={active ? () => devtools(S.failed.reload, "Page.reload") : undefined}

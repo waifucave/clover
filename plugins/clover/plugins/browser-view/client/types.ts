@@ -10,7 +10,7 @@ import type { Ref } from "react";
 // ---- Lane B's contract (mirrored) -----------------------------------------------------------------------------
 
 /** A bot's tabs live in its own partition, the user's in another. */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
+export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "plugin"; plugin: string } | { kind: "user" };
 
 /** `headless` in the host window at the agent's 1280x800, `shown` in a browser view at the view's size, `resting` in
  *  the never-shown window until a bot's next command. */

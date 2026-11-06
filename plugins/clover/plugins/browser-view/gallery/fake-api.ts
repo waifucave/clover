@@ -27,7 +27,7 @@ export interface FakeBrowser extends BrowserApi {
 }
 
 const sameOwner = (a: TabOwner, b: TabOwner): boolean =>
-  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : b.kind === "user";
+  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : a.kind === "plugin" ? b.kind === "plugin" && a.plugin === b.plugin : b.kind === "user";
 
 export function fakeBrowser(initial: TabView[] = [], opts: { shows?: boolean } = {}): FakeBrowser {
   const shows = opts.shows ?? true;

@@ -1,30 +1,52 @@
-// Who is calling, read off `params._meta["clover/caller"]`, and whose tabs that means: a bot's session uses the bot's,
-// a session without a bot its own (R10), and nobody else's tab is ever reached.
+// Who is calling, from the plugin host's context for each tool call only (never the request's `_meta` or arguments,
+// review S2), and whose tabs that means: a bot's session uses the bot's, a session without a bot its own (R10), and
+// nobody else's tab is ever reached.
 
 import { describe, expect, test } from "bun:test";
 
-import { actingFor, callerFromRequest, CALLER_META_KEY, isBotId } from "../src/caller";
+import { actingFor, isBotId, parseCaller } from "../src/caller";
 import { ALPHA, alphaCaller, codingCaller, harness, LUNA, tabView, USER } from "./fakes";
 import type { TabOwner } from "../src/types";
 
 const CODING: TabOwner = { kind: "session", session: "s-code" };
 
 describe("reading the caller", () => {
-  test("from params._meta, shaped like the protocol's Caller", () => {
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: alphaCaller } })).toEqual(alphaCaller);
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: { kind: "peer", device: "a1b2c3d4e5f6a7b8", sessionId: "s9", bot: "luna" } } }))
-      .toEqual({ kind: "peer", device: "a1b2c3d4e5f6a7b8", sessionId: "s9", bot: "luna" });
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: { kind: "user", client: "app" } } })).toEqual({ kind: "user", client: "app" });
+  test("the host's context, shaped like the protocol's Caller", () => {
+    expect(parseCaller(alphaCaller)).toEqual(alphaCaller);
+    expect(parseCaller({ kind: "peer", device: "a1b2c3d4e5f6a7b8", sessionId: "s9", bot: "luna" })).toEqual({ kind: "peer", device: "a1b2c3d4e5f6a7b8", sessionId: "s9", bot: "luna" });
+    expect(parseCaller({ kind: "user", client: "app" })).toEqual({ kind: "user", client: "app" });
   });
 
-  test("never from the model's arguments, and never a malformed one", () => {
-    expect(callerFromRequest({ arguments: { _meta: { [CALLER_META_KEY]: alphaCaller } } })).toBeUndefined();
-    expect(callerFromRequest({})).toBeUndefined();
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "Not A Bot" } } })).toBeUndefined();
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: { kind: "session", sessionId: "s 1", sessionKind: "bot" } } })).toBeUndefined();
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: { kind: "session", sessionId: "s1", sessionKind: "robot" } } })).toBeUndefined();
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: { kind: "boss" } } })).toBeUndefined();
-    expect(callerFromRequest({ _meta: { [CALLER_META_KEY]: "alpha" } })).toBeUndefined();
+  test("never a malformed one", () => {
+    expect(parseCaller(undefined)).toBeUndefined();
+    expect(parseCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "Not A Bot" })).toBeUndefined();
+    expect(parseCaller({ kind: "session", sessionId: "s 1", sessionKind: "bot" })).toBeUndefined();
+    expect(parseCaller({ kind: "session", sessionId: "s1", sessionKind: "robot" })).toBeUndefined();
+    expect(parseCaller({ kind: "boss" })).toBeUndefined();
+    expect(parseCaller("alpha")).toBeUndefined();
+  });
+
+  test("never from the request: a caller in `_meta` or in the arguments, with no context from the host, touches nothing", async () => {
+    const h = await harness([tabView("a1", ALPHA)]);
+    for (const params of [
+      { name: "Browser", arguments: { verb: "tabs" }, _meta: { "clover/caller": alphaCaller } },
+      { name: "Browser", arguments: { verb: "tabs", _meta: { "clover/caller": alphaCaller } } },
+    ]) {
+      const res = await h.transport.request("tools/call", params);
+      const r = res.result as { isError: boolean; content: { text: string }[] };
+      expect(r.isError).toBe(true);
+      expect(r.content[0]!.text).toContain("can't tell which session is calling");
+    }
+    expect(h.browser.calls).toEqual([]);
+  });
+
+  test("a host that carries no context yet (until B-M2) gets every call refused", async () => {
+    const { mcp } = await import("../host/index");
+    expect(typeof mcp.browser).toBe("function");
+    const h = await harness([tabView("a1", ALPHA)], { callerOf: () => undefined });
+    const r = await h.call({ verb: "tabs" }, null);
+    expect(r.isError).toBe(true);
+    expect(h.browser.calls).toEqual([]);
   });
 
   test("bot ids follow the plugin-id rule, children included", () => {

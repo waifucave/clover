@@ -6,10 +6,10 @@
 //
 // What the core decides, before anything reaches the app:
 // * who may touch a tab: a bot's session only its bot's tabs, a session without a bot only its own, the person's
-//   only with their OK for that session (ruling R10: a card per session, never the default), the person and plugins
-//   acting on their own any tab;
-// * while the person holds a tab in the view, an agent's commands on it are refused (the control lease, §12.1), except
-//   looking at it (`tabs`, `screenshot`);
+//   only with their OK for that session (ruling R10: a card per session, never the default), a plugin acting as
+//   itself only its own partition's (B-M1's contract review S1), the person (a layer acting for them) any tab;
+// * while the person holds a tab in the view, every command on it but theirs is refused (the control lease, §12.1),
+//   except looking at it (`tabs`, `screenshot`, DevTools events);
 // * the DevTools allow list, the URL rule, and a point from a picture taken at another size;
 // * a tab that stopped drawing gives an error, never an old picture.
 import { randomBytes } from "node:crypto";
@@ -17,6 +17,7 @@ import {
   AGENT_VIEWPORT, isBrowserUrlAllowed, type AppTabCommand, type AppTabEvent, type Screenshot, type ScreenshotFormat,
   type TabOwner, type TabPlace, type TabView, type Viewport,
 } from "./contract";
+import type { ApprovalRequest } from "../contracts/approval-broker";
 import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, sameOwner } from "./policy";
 
 /** Who is calling. The transport decides it (lane B's caller check): a layer acting for the person is `user`, a
@@ -26,7 +27,8 @@ import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, 
 export type BrowserCaller =
   | { kind: "user" }
   | { kind: "agent"; bot?: string; session?: string }
-  | { kind: "plugin"; pluginId: string };
+  | { kind: "plugin"; pluginId: string }
+  | { kind: "core" };
 
 /** The protocol's `Caller` (lane B's `common.ts`), as far as the browser reads it. */
 export type ProtocolCaller =
@@ -38,7 +40,8 @@ export type ProtocolCaller =
 
 /** The browser's caller for a protocol caller, for lane B's transport. Pass the session a plugin is serving a tool
  *  call for, when it is (R7); the plugin's own id is then never the caller. Another computer's session (`peer`) is
- *  held to the same rules as one of the same bot here; the core itself acts as a plugin would. */
+ *  held to the same rules as one of the same bot here; the core itself (routines, hooks) is its own kind, as a
+ *  plugin's own code is held. */
 export function browserCallerOf(caller: ProtocolCaller, servingToolCallOf?: Extract<ProtocolCaller, { kind: "session" | "peer" }>): BrowserCaller {
   const c = servingToolCallOf ?? caller;
   switch (c.kind) {
@@ -51,7 +54,7 @@ export function browserCallerOf(caller: ProtocolCaller, servingToolCallOf?: Extr
     case "plugin":
       return { kind: "plugin", pluginId: c.pluginId };
     case "core":
-      return { kind: "plugin", pluginId: "core" };
+      return { kind: "core" };
   }
 }
 
@@ -75,9 +78,35 @@ interface Entry {
   listeners: Set<CdpListener>;
 }
 
+/** The card that asks the person whether a session may use their own browser (R10), as lane D's `SessionGrants`
+ *  takes it: the grant adds the session, its bot and its turn's origin. Its strings are the core's own. */
+export type PersonsBrowserCard = Omit<ApprovalRequest, "session" | "bot" | "origin">;
+
+export function personsBrowserCard(computer: string): PersonsBrowserCard {
+  return {
+    kind: "confirm",
+    computers: [computer],
+    effect: "screen",
+    fields: {
+      title: { type: "text", text: "Use your own browser?" },
+      what: { type: "text", text: "This session asks to use your own browser tabs, with your sign-ins. A yes holds for this session only." },
+    },
+  };
+}
+
+/** R10's grant, kept by lane D (`SessionGrants` with `USER_BROWSER_PARTITION_GRANT`, #176): whether a session holds
+ *  it, and asking the person with the card once per session. The browser never records a grant itself. */
+export interface PersonsBrowserGrants {
+  has(session: string): boolean;
+  /** True on the person's yes (or a yes they gave this session before). */
+  ensure(session: string, card: PersonsBrowserCard, opts?: { signal?: AbortSignal }): Promise<boolean>;
+}
+
 export interface BrowserServiceOptions {
   /** This computer's name; tabs on other computers come with M2. */
   computer: string;
+  /** Lane D's session grants. Without them no session ever drives the person's own browser. */
+  grants?: PersonsBrowserGrants;
   /** The app's port, or undefined while no app runs on this computer. */
   app: () => AppTabPort | undefined;
   emit?: (event: BrowserEvent) => void;
@@ -89,8 +118,6 @@ const NO_APP = "the Clover app isn't running on this computer, so neither is its
 
 export class BrowserService {
   private readonly entries = new Map<string, Entry>();
-  /** Sessions the person said may use their own browser (a card per session, R10). */
-  private readonly personOk = new Set<string>();
   private readonly now: () => number;
   private readonly newId: () => string;
 
@@ -114,8 +141,10 @@ export class BrowserService {
   async open(caller: BrowserCaller, args: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView> {
     this.checkComputer(args.computer);
     if (!this.mayTouch(caller, args.owner)) {
-      if (args.owner.kind === "user" && caller.kind === "agent" && caller.session !== undefined) throw needsOk();
-      throw this.notYours(caller);
+      if (args.owner.kind !== "user" || caller.kind !== "agent" || caller.session === undefined) throw this.notYours(caller);
+      // The person's own browser: their yes for this session, asked on a card the first time (R10, lane D's grants).
+      const yes = this.opts.grants !== undefined && (await this.opts.grants.ensure(caller.session, personsBrowserCard(this.opts.computer)).catch(() => false));
+      if (!yes) throw needsOk();
     }
     const partition = partitionFor(args.owner);
     if (args.url !== undefined) this.checkUrl(args.url);
@@ -130,20 +159,20 @@ export class BrowserService {
   }
 
   async close(caller: BrowserCaller, id: string): Promise<void> {
-    const entry = this.entry(caller, id, { agentWhileHeld: false });
+    const entry = this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "close" });
     this.forget(entry.view.id);
   }
 
   async navigate(caller: BrowserCaller, id: string, url: string): Promise<TabView> {
-    this.entry(caller, id, { agentWhileHeld: false });
+    this.entry(caller, id, { lookOnly: false });
     this.checkUrl(url);
     await this.command(id, { kind: "navigate", url });
     return this.view(id);
   }
 
   async show(caller: BrowserCaller, id: string, view: string, viewport: Viewport): Promise<TabView> {
-    this.entry(caller, id, { agentWhileHeld: false });
+    this.entry(caller, id, { lookOnly: false });
     checkViewport(viewport);
     if (view.length === 0 || view.length > 128) throw new BrowserError("bad_viewport", "a view's name is 1–128 characters");
     await this.command(id, { kind: "place", place: "shown", view, viewport });
@@ -151,17 +180,10 @@ export class BrowserService {
   }
 
   async hide(caller: BrowserCaller, id: string): Promise<TabView> {
-    const entry = this.entry(caller, id, { agentWhileHeld: false });
+    const entry = this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "place", place: "headless", viewport: AGENT_VIEWPORT });
     // Whoever held it in the view lets go when it leaves the view.
     return this.update(entry.view.id, { place: "headless", viewport: { ...AGENT_VIEWPORT }, heldByUser: false });
-  }
-
-  /** The person's answer on the card asking whether this session may use their own browser, with their sign-ins
-   *  (R10). The card itself is the approvals' (lanes B and C); a session that ends should be let go of here. */
-  allowPersonsBrowser(session: string, allowed: boolean): void {
-    if (allowed) this.personOk.add(session);
-    else this.personOk.delete(session);
   }
 
   /** `browser.hold`, from the app only: the person took the tab in the view, or gave it back. */
@@ -173,7 +195,7 @@ export class BrowserService {
   }
 
   async screenshot(caller: BrowserCaller, id: string, opts: { format?: ScreenshotFormat; quality?: number } = {}): Promise<Screenshot> {
-    const entry = this.entry(caller, id, { agentWhileHeld: true });
+    const entry = this.entry(caller, id, { lookOnly: true });
     if (entry.stalledSince !== undefined) {
       throw new BrowserError("stalled", `the tab stopped drawing ${Math.round((this.now() - entry.stalledSince) / 1000)} s ago, so there's no fresh picture of it`);
     }
@@ -186,7 +208,7 @@ export class BrowserService {
   }
 
   async cdp(caller: BrowserCaller, id: string, method: string, params?: Record<string, unknown>, opts: { viewport?: Viewport } = {}): Promise<unknown> {
-    const entry = this.entry(caller, id, { agentWhileHeld: false });
+    const entry = this.entry(caller, id, { lookOnly: false });
     checkCdpMethod(method);
     checkPoint(method, opts.viewport, entry.view.viewport);
     return this.command(id, { kind: "cdp", method, ...(params !== undefined ? { params } : {}) });
@@ -194,7 +216,7 @@ export class BrowserService {
 
   /** `browser.onCdpEvent`: the tab's allowlisted DevTools events, for as long as the tab lives. */
   onCdpEvent(caller: BrowserCaller, id: string, listener: CdpListener): () => void {
-    const entry = this.entry(caller, id, { agentWhileHeld: true });
+    const entry = this.entry(caller, id, { lookOnly: true });
     entry.listeners.add(listener);
     return () => entry.listeners.delete(listener);
   }
@@ -208,17 +230,15 @@ export class BrowserService {
     for (const event of events) {
       switch (event.kind) {
         case "changed": {
-          const entry = this.entries.get(event.tab.id);
           // The core owns who holds a tab and whose it is; the app owns where it is and what it shows.
-          const view: TabView = entry === undefined
-            ? { ...event.tab, computer: this.opts.computer }
-            : { ...event.tab, computer: this.opts.computer, owner: entry.view.owner, partition: entry.view.partition, heldByUser: entry.view.heldByUser };
-          if (entry === undefined) this.entries.set(view.id, { view, listeners: new Set() });
-          else {
-            entry.view = view;
-            delete entry.stalledSince;
+          const entry = this.entries.get(event.tab.id);
+          if (entry === undefined) {
+            this.adopt(event.tab);
+            break;
           }
-          this.emit({ type: "tab_changed", tab: { ...view } });
+          entry.view = { ...event.tab, computer: this.opts.computer, owner: entry.view.owner, partition: entry.view.partition, heldByUser: entry.view.heldByUser };
+          delete entry.stalledSince;
+          this.emit({ type: "tab_changed", tab: { ...entry.view } });
           break;
         }
         case "closed":
@@ -277,6 +297,22 @@ export class BrowserService {
 
   // -----------------------------------------------------------------------------------------------
 
+  /** A tab the app made that the core never opened: a window a page opened, which the app keeps as a tab of its
+   *  opener's owner. The core takes none of the app's word for whose it is: it is adopted only as the owner of a tab the
+   *  core holds now, with that owner's partition as the core computes it, and not held. Anything else (a tab the core
+   *  can't place, as after the core itself restarted) is refused and closed in the app. */
+  private adopt(tab: TabView): void {
+    const owner = [...this.entries.values()].map((e) => e.view.owner).find((o) => sameOwner(o, tab.owner));
+    const partition = owner !== undefined ? partitionFor(owner) : undefined;
+    if (owner === undefined || partition !== tab.partition) {
+      void this.opts.app()?.command(tab.id, { kind: "close" }).catch(() => undefined);
+      return;
+    }
+    const view: TabView = { ...tab, owner, partition, computer: this.opts.computer, heldByUser: false };
+    this.entries.set(view.id, { view, listeners: new Set() });
+    this.emit({ type: "tab_changed", tab: { ...view } });
+  }
+
   private app(): AppTabPort {
     const app = this.opts.app();
     if (app === undefined) throw new BrowserError("no_app", NO_APP);
@@ -291,27 +327,32 @@ export class BrowserService {
     }
   }
 
-  private entry(caller: BrowserCaller, id: string, opts: { agentWhileHeld: boolean }): Entry {
+  private entry(caller: BrowserCaller, id: string, opts: { lookOnly: boolean }): Entry {
     const entry = this.entries.get(id);
     if (entry === undefined || !this.mayTouch(caller, entry.view.owner)) throw noTab(id);
-    // Spec §12.1: while the person holds a tab, the agent's commands on it are refused. The person (a layer acting
-    // for them, like the browser view's own back button) and a plugin's own code are not an agent.
-    if (entry.view.heldByUser && caller.kind === "agent" && !opts.agentWhileHeld) {
+    // Spec §12.1: while the person holds a tab, every command on it is refused but the person's own (a layer acting on
+    // their input, like the browser view's back button; B-M1's contract review S1). An agent, a plugin's own code and
+    // the core may still look at it.
+    if (entry.view.heldByUser && caller.kind !== "user" && !opts.lookOnly) {
       throw new BrowserError("held", "the person is using this tab in the browser view; try again once they let go of it");
     }
     return entry;
   }
 
   /** A bot's session: its bot's tabs. A session without a bot: its own. The person's tabs: only a session they said
-   *  yes to (R10). The person and plugins' own code: any. */
+   *  yes to (R10). A plugin acting as itself: only its own partition's (B-M1's contract review S1). The person (a layer
+   *  acting for them) and the core: any. */
   private mayTouch(caller: BrowserCaller, owner: TabOwner): boolean {
+    if (caller.kind === "plugin") return owner.kind === "plugin" && owner.plugin === caller.pluginId;
     if (caller.kind !== "agent") return true;
-    if (owner.kind === "user") return caller.session !== undefined && this.personOk.has(caller.session);
+    if (owner.kind === "user") return caller.session !== undefined && this.opts.grants?.has(caller.session) === true;
+    if (owner.kind === "plugin") return false;
     if (caller.bot !== undefined) return owner.kind === "bot" && owner.bot === caller.bot;
     return owner.kind === "session" && caller.session !== undefined && owner.session === caller.session;
   }
 
   private notYours(caller: BrowserCaller): BrowserError {
+    if (caller.kind === "plugin") return new BrowserError("not_yours", `a plugin acting as itself opens tabs only in its own partition: owner { kind: "plugin", plugin: "${caller.pluginId}" }`);
     const whose = caller.kind === "agent" && caller.bot !== undefined ? `${caller.bot}'s` : "its own";
     return new BrowserError("not_yours", `a session opens tabs only as ${whose}`);
   }
@@ -357,7 +398,7 @@ export class BrowserService {
 }
 
 function needsOk(): BrowserError {
-  return new BrowserError("needs_ok", "the person's own browser holds their sign-ins: a session uses it only after they say yes for that session; use your own tabs, or ask them");
+  return new BrowserError("needs_ok", "the person's own browser holds their sign-ins: a session uses it only after they say yes on the card for that session, and they haven't; use your own tabs");
 }
 
 function noTab(id: string): BrowserError {

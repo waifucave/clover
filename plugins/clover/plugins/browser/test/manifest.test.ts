@@ -26,7 +26,8 @@ describe("clover.json", () => {
     expect(typeof manifest.name).toBe("string");
     expect(manifest.name.length).toBeGreaterThan(0);
     expect(typeof manifest.engines?.clover).toBe("string");
-    const parent = JSON.parse(readFileSync(join(root, "..", "clover.json"), "utf8"));
+    // The installed tree's shape: a child sits in its parent's `plugins/` folder.
+    const parent = JSON.parse(readFileSync(join(root, "..", "..", "clover.json"), "utf8"));
     expect(parent.id).toBe("clover");
   });
 

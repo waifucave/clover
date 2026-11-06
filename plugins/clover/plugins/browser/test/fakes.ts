@@ -5,6 +5,7 @@ import { serveBrowser } from "../src/serve";
 import type { McpServerHandle } from "../src/server";
 import type { PageCall, PageOp } from "../src/page";
 import type { BrowserToolOptions } from "../src/tool";
+import type { CallerOf } from "../src/caller";
 import {
   isCdpMethodAllowed, type BrowserApi, type Caller, type McpServerTransport, type PluginApi, type Screenshot, type TabOwner,
   type TabView, type Unsubscribe, type Viewport,
@@ -264,13 +265,15 @@ export interface Harness {
   transport: FakeTransport;
   server: McpServerHandle;
   api: PluginApi;
-  /** `tools/call` for `Browser`, with the caller in `_meta` (null: none). */
+  /** `tools/call` for `Browser`, with the caller as the plugin host's context for it (null: none). */
   call(args: Record<string, unknown>, caller?: Caller | null): Promise<CallResult>;
+  /** Says, as the plugin host would, which caller the request with this id is for. */
+  as(id: string | number, caller: Caller): void;
   /** The text of a call's result. */
   text(args: Record<string, unknown>, caller?: Caller | null): Promise<string>;
 }
 
-export async function harness(tabs: TabView[] = [], opts: BrowserToolOptions = {}, api?: Partial<PluginApi>): Promise<Harness> {
+export async function harness(tabs: TabView[] = [], opts: BrowserToolOptions & { callerOf?: CallerOf } = {}, api?: Partial<PluginApi>): Promise<Harness> {
   const browser = new FakeBrowser(tabs);
   const transport = new FakeTransport();
   const fullApi: PluginApi = {
@@ -278,13 +281,16 @@ export async function harness(tabs: TabView[] = [], opts: BrowserToolOptions = {
     browser,
     ...api,
   };
-  const server = await serveBrowser(transport, fullApi, { mac: false, pollMs: 1, settleMs: 50, ...opts });
+  // The plugin host's context for each tool call (B-M2), as a test plays it.
+  const contexts = new Map<string, Caller>();
+  const key = (id: string | number) => `${typeof id}:${String(id)}`;
+  const as = (id: string | number, caller: Caller) => void contexts.set(key(id), caller);
+  const server = await serveBrowser(transport, fullApi, { mac: false, pollMs: 1, settleMs: 50, callerOf: ({ id }) => contexts.get(key(id)), ...opts });
+  let n = 0;
   const call = async (args: Record<string, unknown>, caller: Caller | null = alphaCaller): Promise<CallResult> => {
-    const res = await transport.request("tools/call", {
-      name: "Browser",
-      arguments: args,
-      ...(caller === null ? {} : { _meta: { "clover/caller": caller } }),
-    });
+    const id = `call-${++n}`;
+    if (caller !== null) as(id, caller);
+    const res = await transport.request("tools/call", { name: "Browser", arguments: args }, id);
     if (res.error !== undefined) throw new Error(`JSON-RPC error: ${JSON.stringify(res.error)}`);
     return res.result as CallResult;
   };
@@ -292,5 +298,5 @@ export async function harness(tabs: TabView[] = [], opts: BrowserToolOptions = {
     const r = await call(args, caller);
     return r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
   };
-  return { browser, transport, server, api: fullApi, call, text };
+  return { browser, transport, server, api: fullApi, call, text, as };
 }

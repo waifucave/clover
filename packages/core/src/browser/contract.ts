@@ -16,9 +16,13 @@ export {
 export type { TabPlace, Viewport } from "@waifucave/clover-protocol";
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot (a
- *  coding session) has a partition of its own too (ruling R10: the person's is never a session's by default).
- *  `session` is not in lane B's pin yet: proposed to B. */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
+ *  coding session) has a partition of its own too (ruling R10: the person's is never a session's by default), and so
+ *  does a plugin acting as itself (B-M1's contract review S1, which B pins in #179). */
+export type TabOwner =
+  | { kind: "bot"; bot: string }
+  | { kind: "session"; session: string }
+  | { kind: "plugin"; plugin: string }
+  | { kind: "user" };
 
 /** B's `TabView`, with the owner above. */
 export interface TabView {

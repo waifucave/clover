@@ -251,6 +251,21 @@ describe("the live view", () => {
     expect(api.of("screenshot")).toEqual([]);
   });
 
+  test("the frame is where the host places the live view: useViewFrame(\"browser\") gets it, and lets go on unmount", async () => {
+    const placed: { name: string; el: HTMLElement | null }[] = [];
+    const viewFrame = (name: string) => (el: HTMLElement | null) => void placed.push({ name, el });
+    const api = fakeBrowser([A]);
+    const view = render(
+      <PluginApiProvider api={{ browser: api }} viewFrame={viewFrame}>
+        <BrowserPanel props={{ app: "browser", bot: "alpha" }} />
+      </PluginApiProvider>,
+    );
+    await flush();
+    expect(placed.at(-1)).toEqual({ name: "browser", el: frame() });
+    view.unmount();
+    expect(placed.at(-1)).toEqual({ name: "browser", el: null });
+  });
+
   test("with no tab the frame says so, and nothing is shown", async () => {
     const api = fakeBrowser([]);
     await mount(api);

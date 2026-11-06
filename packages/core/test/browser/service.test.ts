@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  AGENT_VIEWPORT, BrowserError, BrowserService, browserCallerOf, isBrowserUrlAllowed, partitionFor,
+  AGENT_VIEWPORT, BrowserError, BrowserService, browserCallerOf, isBrowserUrlAllowed, partitionFor, type PersonsBrowserCard, type PersonsBrowserGrants,
   type AppTabCommand, type AppTabPort, type BrowserEvent, type TabOwner, type TabPlace, type TabView,
 } from "../../src/browser";
 
@@ -33,7 +33,23 @@ class FakeApp implements AppTabPort {
   }
 }
 
-function setup(opts: { app?: FakeApp | null } = {}) {
+/** Lane D's grants as a test plays them: the card's answer per session, and every card asked. */
+class FakeGrants implements PersonsBrowserGrants {
+  readonly held = new Set<string>();
+  readonly asked: { session: string; card: PersonsBrowserCard }[] = [];
+  answer = false;
+  has(session: string): boolean {
+    return this.held.has(session);
+  }
+  async ensure(session: string, card: PersonsBrowserCard): Promise<boolean> {
+    if (this.held.has(session)) return true;
+    this.asked.push({ session, card });
+    if (this.answer) this.held.add(session);
+    return this.answer;
+  }
+}
+
+function setup(opts: { app?: FakeApp | null; grants?: FakeGrants } = {}) {
   const app = opts.app === null ? undefined : (opts.app ?? new FakeApp());
   const events: BrowserEvent[] = [];
   let n = 0;
@@ -44,6 +60,7 @@ function setup(opts: { app?: FakeApp | null } = {}) {
     emit: (e) => events.push(e),
     newId: () => `tab_${++n}`,
     now: () => now,
+    ...(opts.grants !== undefined ? { grants: opts.grants } : {}),
   });
   return { app: app as FakeApp, service, events, advance: (ms: number) => { now += ms; } };
 }
@@ -69,6 +86,8 @@ describe("partitions", () => {
     expect(partitionFor(alpha)).toBe("persist:bot-alpha");
     expect(partitionFor({ kind: "bot", bot: "pack/luna" })).toBe("persist:bot-pack--luna");
     expect(partitionFor(user)).toBe("persist:user");
+    expect(partitionFor({ kind: "plugin", plugin: "clover/browser-view" })).toBe("persist:plugin-clover--browser-view");
+    expect(() => partitionFor({ kind: "plugin", plugin: "../x" })).toThrow(BrowserError);
     // A session without a bot: its own, named by a hash of its id (no id ever spells a folder name).
     const own = partitionFor({ kind: "session", session: "sess_1" });
     expect(own).toMatch(/^persist:session-[0-9a-f]{32}$/);
@@ -81,7 +100,9 @@ describe("partitions", () => {
 
 describe("the URL rule", () => {
   test("web pages and about:blank open; files, the browser's own pages and Clover's schemes never do", () => {
-    for (const ok of ["https://example.com/", "http://127.0.0.1:8080/x", "about:blank", "about:srcdoc", "data:text/html,hi"]) expect(isBrowserUrlAllowed(ok)).toBe(true);
+    // The URL rule is about schemes. Which addresses a tab may reach (no loopback or private address from a bot's tab,
+    // R13) is checked when each connection is made, after DNS, in the app (`apps/desktop/src/main/browser/network.ts`).
+    for (const ok of ["https://example.com/", "http://example.com:8080/x", "about:blank", "about:srcdoc", "data:text/html,hi"]) expect(isBrowserUrlAllowed(ok)).toBe(true);
     for (const no of ["file:///etc/passwd", "chrome://settings", "devtools://x", "view-source:https://a.b", "clover-plugin://x/y", "cloverui://a", "about:config", "not a url"]) expect(isBrowserUrlAllowed(no)).toBe(false);
   });
 });
@@ -121,21 +142,49 @@ describe("opening and owning tabs", () => {
     expect(await code(service.open({ kind: "agent" }, { owner: mine }))).toBe("not_yours");
   });
 
-  test("the person's own browser only with their OK, for that session alone, until they take it back (R10)", async () => {
-    const { service } = setup();
+  test("the person's own browser only after their yes on a card for that session, from lane D's grants (R10)", async () => {
+    const grants = new FakeGrants();
+    const { service } = setup({ grants });
     const theirs = await service.open(person, { owner: user });
     const coding = { kind: "agent", session: "sess_code" } as const;
     const bots = { kind: "agent", bot: "alpha", session: "sess_alpha" } as const;
+    // No yes: the card is asked, the answer is no, and nothing of theirs is reached.
     expect(await code(service.open(coding, { owner: user }))).toBe("needs_ok");
-    expect(await code(service.open(bots, { owner: user }))).toBe("needs_ok");
+    expect(grants.asked).toHaveLength(1);
+    expect(grants.asked[0]).toMatchObject({ session: "sess_code", card: { kind: "confirm", computers: ["Studio"], effect: "screen" } });
     expect(service.tabs(coding)).toEqual([]);
     expect(await code(service.navigate(coding, theirs.id, "https://a.example/"))).toBe("no_tab");
-    service.allowPersonsBrowser("sess_code", true);
-    expect(service.tabs(coding).map((t) => t.id)).toEqual([theirs.id]);
+    // A yes: for that session alone.
+    grants.answer = true;
+    expect((await service.open(coding, { owner: user })).partition).toBe("persist:user");
+    expect(service.tabs(coding).map((t) => t.id)).toContain(theirs.id);
     expect(await code(service.navigate(coding, theirs.id, "https://a.example/"))).toBeUndefined();
+    grants.answer = false;
     expect(await code(service.open(bots, { owner: user }))).toBe("needs_ok");
-    service.allowPersonsBrowser("sess_code", false);
-    expect(service.tabs(coding)).toEqual([]);
+    expect(service.tabs(bots).map((t) => t.id)).not.toContain(theirs.id);
+  });
+
+  test("without lane D's grants, no session ever drives the person's own browser", async () => {
+    const { service } = setup();
+    await service.open(person, { owner: user });
+    expect(await code(service.open({ kind: "agent", session: "sess_code" }, { owner: user }))).toBe("needs_ok");
+    expect(service.tabs({ kind: "agent", session: "sess_code" })).toEqual([]);
+  });
+
+  test("a plugin acting as itself opens and touches tabs only in its own partition (B-M1's contract review S1)", async () => {
+    const { service } = setup();
+    const plugin = { kind: "plugin", pluginId: "acme/tool" } as const;
+    const botTab = await service.open(asAlpha, { owner: alpha });
+    for (const owner of [alpha, user, { kind: "session", session: "s1" }, { kind: "plugin", plugin: "other" }] as const) {
+      expect(await code(service.open(plugin, { owner }))).toBe("not_yours");
+    }
+    const own = await service.open(plugin, { owner: { kind: "plugin", plugin: "acme/tool" } });
+    expect(own.partition).toBe("persist:plugin-acme--tool");
+    expect(service.tabs(plugin).map((t) => t.id)).toEqual([own.id]);
+    expect(await code(service.navigate(plugin, botTab.id, "https://a.example/"))).toBe("no_tab");
+    // No session reaches a plugin's tabs either; the person sees them all.
+    expect(service.tabs(asAlpha).map((t) => t.id)).toEqual([botTab.id]);
+    expect(service.tabs(person).map((t) => t.id).sort()).toEqual([botTab.id, own.id].sort());
   });
 
   test("a plugin's call while it serves a tool call is that session's, never the plugin's (R7)", () => {
@@ -145,7 +194,7 @@ describe("opening and owning tabs", () => {
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s2" })).toEqual({ kind: "agent", session: "s2" });
     expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", bot: "luna", session: "s3" });
     expect(browserCallerOf({ kind: "user" })).toEqual({ kind: "user" });
-    expect(browserCallerOf({ kind: "core" })).toEqual({ kind: "plugin", pluginId: "core" });
+    expect(browserCallerOf({ kind: "core" })).toEqual({ kind: "core" });
   });
 
   test("refused URLs never reach the app, at open or navigate", async () => {
@@ -217,9 +266,37 @@ describe("the person holding a tab", () => {
     app.answers.screenshot = { format: "png", data: "", width: 1280, height: 800, takenAt: 1 };
     expect(await code(service.screenshot(asAlpha, tab.id))).toBeUndefined();
     expect(await code(service.navigate(person, tab.id, "https://b.example/"))).toBeUndefined();
-    expect(await code(service.cdp({ kind: "plugin", pluginId: "clover/browser-view" }, tab.id, "Page.getNavigationHistory"))).toBeUndefined();
+    // Only the person passes a hold (B-M1's contract review S1): a plugin's own code and the core are refused too.
+    expect(await code(service.cdp({ kind: "plugin", pluginId: "clover/browser-view" }, tab.id, "Page.getNavigationHistory"))).toBe("no_tab");
+    expect(await code(service.navigate({ kind: "core" }, tab.id, "https://d.example/"))).toBe("held");
+    expect(await code(service.screenshot({ kind: "core" }, tab.id))).toBeUndefined();
     service.hold(tab.id, false);
     expect(await code(service.navigate(asAlpha, tab.id, "https://c.example/"))).toBeUndefined();
+  });
+
+  test("a tab the app made is adopted only as the owner of a tab the core holds, never on the app's word (review S1)", async () => {
+    const { app, service } = setup();
+    const opener = await service.open(asAlpha, { owner: alpha });
+    // A window the page opened, which the app keeps as a tab of the opener's owner, says it is held: it isn't.
+    const popup: TabView = { ...opener, id: "tab_pop", url: "https://pop.example/", heldByUser: true };
+    service.report([{ kind: "changed", tab: popup }]);
+    expect(service.tabs(asAlpha).find((t) => t.id === "tab_pop")).toMatchObject({ owner: alpha, partition: "persist:bot-alpha", heldByUser: false });
+    // One that claims an owner the core holds no tab for, or a partition that isn't that owner's, is refused and closed.
+    service.report([{ kind: "changed", tab: { ...opener, id: "tab_luna", owner: luna, partition: "persist:bot-luna" } }]);
+    service.report([{ kind: "changed", tab: { ...opener, id: "tab_odd", partition: "persist:user" } }]);
+    expect(service.tabs(person).map((t) => t.id).sort()).toEqual([opener.id, "tab_pop"].sort());
+    await Promise.resolve();
+    expect(app.commands.filter((c) => c.command.kind === "close").map((c) => c.id).sort()).toEqual(["tab_luna", "tab_odd"]);
+  });
+
+  test("after the core restarted, the app's tabs it can't place are closed, not taken on the app's word", async () => {
+    const app = new FakeApp();
+    const first = setup({ app }).service;
+    await first.open(asAlpha, { owner: alpha, url: "https://a.example/" });
+    const { service } = setup({ app }); // the core came back with nothing
+    expect(await service.reconnect()).toEqual([]);
+    expect(service.tabs(person)).toEqual([]);
+    expect(app.commands.at(-1)?.command).toEqual({ kind: "close" });
   });
 
   test("an app report doesn't undo the core's hold or owner", async () => {

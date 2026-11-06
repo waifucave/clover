@@ -29,8 +29,8 @@ export interface McpToolDefinition {
 export interface McpServerOptions {
   info: { name: string; title?: string; version: string };
   tools: readonly McpToolDefinition[];
-  /** Runs one tool. `params` is the whole request's (with its `_meta`); `signal` aborts on cancellation or close. */
-  call(name: string, args: unknown, request: { params: Record<string, unknown>; signal: AbortSignal }): Promise<ToolResult>;
+  /** Runs one tool. `id` and `params` are the request's own; `signal` aborts on cancellation or close. */
+  call(name: string, args: unknown, request: { id: string | number; params: Record<string, unknown>; signal: AbortSignal }): Promise<ToolResult>;
   instructions?: string;
   /** Where the server's own trouble goes; by default the console, which is the plugin's log. */
   log?: (line: string) => void;
@@ -110,7 +110,7 @@ export async function serveMcp(transport: McpServerTransport, opts: McpServerOpt
         inflight.set(key, controller);
         let result: ToolResult;
         try {
-          result = await opts.call(name, params.arguments, { params, signal: controller.signal });
+          result = await opts.call(name, params.arguments, { id, params, signal: controller.signal });
         } catch (e) {
           result = { content: [{ type: "text", text: `The ${name} tool failed: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
         }

@@ -9,7 +9,11 @@ import { createHash } from "node:crypto";
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot has
  *  a partition of its own (ruling R10). `session` is proposed to lane B, not in its pin yet. */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
+export type TabOwner =
+  | { kind: "bot"; bot: string }
+  | { kind: "session"; session: string }
+  | { kind: "plugin"; plugin: string }
+  | { kind: "user" };
 
 /** Where a tab is: `headless` (drawing for a bot at 1280×800), `shown` (in a browser view at the view's size) or
  *  `resting` (not drawing, until a bot's next command). */
@@ -83,6 +87,28 @@ export function isCdpMethodAllowed(method: string): boolean {
   return (CDP_ALLOWED_DOMAINS as readonly string[]).includes(domain) && !(CDP_DENIED_DOMAINS as readonly string[]).includes(domain);
 }
 
+/** The methods inside the allowed domains that the API refuses too, because they reach outside the page (the core's
+ *  `CDP_DENIED_METHODS`, `packages/core/src/browser/policy.ts`, checked against this copy in a test). The app refuses
+ *  them again on the tab's own debugger, where the call runs. */
+export const CDP_DENIED_METHODS: readonly string[] = [
+  "DOM.setFileInputFiles",
+  "Page.setDownloadBehavior",
+  "Page.setInterceptFileChooserDialog",
+  "Network.setCookies",
+  "Network.clearBrowserCookies",
+  "Network.clearBrowserCache",
+  "Network.loadNetworkResource",
+  "Input.setInterceptDrags",
+  "Emulation.setDeviceMetricsOverride",
+  "Emulation.clearDeviceMetricsOverride",
+  "Emulation.setVisibleSize",
+];
+
+/** A call the API passes to a tab's debugger: an allowed domain, and not one of the methods above. */
+export function isCdpCallAllowed(method: string): boolean {
+  return isCdpMethodAllowed(method) && !CDP_DENIED_METHODS.includes(method);
+}
+
 /** Schemes no browser partition loads, however the load starts. */
 export const BROWSER_REFUSED_SCHEMES = [
   "file:", "filesystem:", "chrome:", "chrome-extension:", "chrome-untrusted:", "devtools:", "view-source:",
@@ -114,6 +140,12 @@ export function partitionFor(owner: TabOwner): string {
   if (owner.kind === "session") {
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(owner.session)) throw new Error("that is not a session's id");
     return `persist:session-${createHash("sha256").update(owner.session).digest("hex").slice(0, 32)}`;
+  }
+  if (owner.kind === "plugin") {
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.plugin) || owner.plugin.length > 81) {
+      throw new Error(`"${owner.plugin}" is not a plugin's id`);
+    }
+    return `persist:plugin-${owner.plugin.replace("/", "--")}`;
   }
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.bot) || owner.bot.length > 81) {
     throw new Error(`"${owner.bot}" is not a bot's id`);
