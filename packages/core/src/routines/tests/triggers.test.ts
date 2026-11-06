@@ -53,7 +53,7 @@ describe("the bundled triggers", () => {
     expect(await call("clover/trigger-schedule", "schedule", "next", { fields: { schedule: "0 8 * * *" }, after: Date.parse("2026-07-01T06:00:00Z"), timezone: "Europe/London" }))
       .toEqual({ at: Date.parse("2026-07-01T07:00:00Z") });
     const label = await call<{ text: string }>("clover/trigger-webhook", "webhook", "label", { body: "{}", contentType: "application/json" });
-    expect(label.text).toStartWith("Untrusted outside content from a webhook (application/json).");
+    expect(label.text).toMatch(/^Untrusted outside content from a webhook \(application\/json\), between the two =====[0-9a-f]{16}===== lines\./);
   });
 
   test("the forwarder's webhook.ingress waits for the webhook trigger, and the core's ingress uses it once it is active", async () => {
@@ -74,12 +74,54 @@ describe("the bundled triggers", () => {
         drop: async () => ({}),
       },
     } as never);
-    const ingress = new WebhookIngress({ registry: both.registry, host, engine: { deliverWebhook: async () => "accepted", webhookRoutines: () => [] }, clock: new FakeClock() });
+    const ingress = new WebhookIngress({ registry: both.registry, host, engine: { deliverWebhook: async () => "accepted", webhookRoutines: () => [], webhook: async () => ({ url: "", key: "" }) }, clock: new FakeClock() });
     expect(await ingress.register("r_abcdefgh", "the-key")).toBe("https://hooks.waifucave.com/t/r_abcdefgh");
     expect(keyHashes).toHaveLength(1);
     expect(keyHashes[0]).not.toContain("the-key");
     // Without the webhook trigger there is no active ingress, and the routine has no URL yet.
-    const none = new WebhookIngress({ registry: alone.registry, host, engine: { deliverWebhook: async () => "accepted", webhookRoutines: () => [] }, clock: new FakeClock() });
+    const none = new WebhookIngress({ registry: alone.registry, host, engine: { deliverWebhook: async () => "accepted", webhookRoutines: () => [], webhook: async () => ({ url: "", key: "" }) }, clock: new FakeClock() });
     await expect(none.register("r_abcdefgh", "the-key")).rejects.toThrow("no webhook ingress");
+  });
+
+  test("a routine registers with one ingress, its named one or else the first, and only that ingress delivers for it (review S2)", async () => {
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    const calls: { plugin: string; method: string; args: unknown }[] = [];
+    const queues: Record<string, unknown[]> = { "clover/forwarder": [], "pack/tunnel": [] };
+    for (const plugin of Object.keys(queues)) {
+      host.define(plugin, {
+        ingress: {
+          register: async (a: { routine: string }) => (calls.push({ plugin, method: "register", args: a }), { url: `https://${plugin}/${a.routine}` }),
+          unregister: async (a: unknown) => (calls.push({ plugin, method: "unregister", args: a }), { released: true }),
+          next: async () => ({ deliveries: queues[plugin]!.splice(0) }),
+          ack: async (a: unknown) => (calls.push({ plugin, method: "ack", args: a }), {}),
+          drop: async (a: unknown) => (calls.push({ plugin, method: "drop", args: a }), {}),
+        },
+      } as never);
+    }
+    const registry = { entries: () => [
+      { pluginId: "clover/forwarder", entryId: "waifucave", state: "active", value: { handler: "ingress" } },
+      { pluginId: "pack/tunnel", entryId: "tunnel", state: "active", value: { handler: "ingress" } },
+    ] } as never;
+    const delivered: { ingress: string; id: string }[] = [];
+    const ingress = new WebhookIngress({
+      registry, host, clock: new FakeClock(),
+      engine: { deliverWebhook: async (d) => (delivered.push({ ingress: d.ingress, id: d.id }), "accepted"), webhookRoutines: () => [], webhook: async () => ({ url: "", key: "" }) },
+    });
+    expect(await ingress.register("r_first001", "k1")).toBe("https://clover/forwarder/r_first001");
+    expect(await ingress.register("r_named001", "k2", "tunnel")).toBe("https://pack/tunnel/r_named001");
+    await expect(ingress.register("r_nope0001", "k3", "ngrok")).rejects.toThrow('no webhook ingress "ngrok"');
+    expect(calls.filter((c) => c.method === "register").map((c) => c.plugin)).toEqual(["clover/forwarder", "pack/tunnel"]);
+    const d = (id: string, routine: string) => ({ id, routine, receivedAt: 0, method: "POST", query: "", headers: [], body: new Uint8Array(), untrusted: true });
+    queues["clover/forwarder"]!.push(d("a1", "r_first001"), d("a2", "r_named001"));
+    queues["pack/tunnel"]!.push(d("b1", "r_named001"), d("b2", "r_first001"));
+    await ingress.pollOnce(0);
+    expect(delivered).toEqual([{ ingress: "clover/forwarder", id: "a1" }, { ingress: "pack/tunnel", id: "b1" }]);
+    expect(calls.filter((c) => c.method === "drop")).toEqual([
+      { plugin: "clover/forwarder", method: "drop", args: { ids: ["a2"] } },
+      { plugin: "pack/tunnel", method: "drop", args: { ids: ["b2"] } },
+    ]);
+    // Moving a routine to another ingress lets go of the old one.
+    await ingress.register("r_first001", "k1", "tunnel");
+    expect(calls.at(-1)).toEqual({ plugin: "clover/forwarder", method: "unregister", args: { routine: "r_first001" } });
   });
 });

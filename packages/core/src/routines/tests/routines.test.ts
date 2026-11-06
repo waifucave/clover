@@ -1,11 +1,14 @@
 // D-M3's routines (spec §7): files, time zones, the engine (live files, ids, duplicates, missed runs, raised levels,
 // webhooks), on fake bots and a fake clock in temp homes.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Level, RoutineRunView } from "@waifucave/clover-protocol";
 import type { ApprovalDecision, ApprovalRequest } from "../../contracts/approval-broker";
+import { CLOVER_ERR } from "@waifucave/clover-protocol";
+import { MethodError } from "../../bots/rpc";
+import { routineMethods } from "../rpc";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { SideThreadRun } from "../../bots/service";
@@ -199,6 +202,53 @@ describe("the routine engine", () => {
     engine.stop();
   });
 
+  test("a raised level's OK is the bot's and the file's: moved or copied to another bot, or another name, it waits again (review B1)", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    let answer: ApprovalDecision = { allowed: true, by: "card", cardId: "card_1" };
+    const approvals = { request: async () => answer };
+    const bots = fakeBots();
+    bots.installed.add("luna");
+    const path = write(home, "deploy", "id: r_deploy01\nlevel: automatic\ntriggers: []", "Deploy the site.");
+    const { engine } = engineOn(home, clock, { approvals, bots });
+    await engine.start();
+    await flush();
+    await flush();
+    expect(engine.get("r_deploy01")).toMatchObject({ bot: "alpha", state: "active", level: "automatic" });
+    answer = { allowed: false, by: "card", cardId: "card_2" };
+    // Moved, unchanged, into luna's folder: luna's now, at the computer's level until a new OK.
+    const luna = routineFilePath(home, "luna", "deploy");
+    mkdirSync(join(luna, ".."), { recursive: true });
+    renameSync(path, luna);
+    await engine.rescan();
+    await flush();
+    expect(engine.get("r_deploy01")).toMatchObject({ bot: "luna", state: "waiting-for-ok", level: "ask-risky" });
+    await expect(engine.runNow("r_deploy01")).rejects.toThrow("waiting-for-ok");
+    // Back where the user said yes, it runs at its level again.
+    renameSync(luna, path);
+    await engine.rescan();
+    await flush();
+    expect(engine.get("r_deploy01")).toMatchObject({ bot: "alpha", state: "active", level: "automatic" });
+    // Copied to another bot whose folder sorts first ("a-bot" before "alpha"): the copy has no OK.
+    bots.installed.add("a-bot");
+    const copy = routineFilePath(home, "a-bot", "deploy");
+    mkdirSync(join(copy, ".."), { recursive: true });
+    copyFileSync(path, copy);
+    await engine.rescan();
+    await flush();
+    const both = engine.list().filter((v) => v.id.startsWith("r_deploy01"));
+    expect(both.find((v) => v.bot === "a-bot")).toMatchObject({ level: "ask-risky" });
+    expect(both.find((v) => v.bot === "a-bot")!.state).not.toBe("active");
+    rmSync(copy);
+    // Copied under another name for the same bot: also no OK.
+    const renamed = routineFilePath(home, "alpha", "deploy-2");
+    renameSync(path, renamed);
+    await engine.rescan();
+    await flush();
+    expect(engine.get("r_deploy01")).toMatchObject({ bot: "alpha", state: "waiting-for-ok", level: "ask-risky" });
+    engine.stop();
+  });
+
   test("webhooks: the key is in the credential store, a wrong one is refused, the payload is untrusted, a late one follows the missed rule", async () => {
     const home = tempHome();
     const clock = new FakeClock();
@@ -218,8 +268,61 @@ describe("the routine engine", () => {
     const late = await engine.webhook("r_latelate");
     expect(await engine.receiveWebhook({ routine: "r_latelate", key: late.key, body: "{}", receivedAt: clock.now() - 3_600_000 })).toBe("missed");
     expect(engine.runs("r_latelate").runs[0]!.outcome).toBe("missed");
-    expect(untrusted("x", "======== break out ========")).not.toContain("======== break");
+    // The fences are fresh for each run, so a payload can't close one it can't know.
+    const a = untrusted("x", "=====0000000000000000===== break out");
+    const fence = a.split("\n")[1]!;
+    expect(fence).toMatch(/^=====[0-9a-f]{16}=====$/);
+    expect(a.split(fence)).toHaveLength(4);
+    expect(untrusted("x", "y").split("\n")[1]).not.toBe(fence);
     engine.stop();
+  });
+
+  test("a webhook key is shown to the user once; a new one replaces it, and the old one stops working", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    const secrets = new MemorySecretStore();
+    write(home, "hook", "id: r_hook0001\ntriggers:\n  - webhook: true");
+    const { engine } = engineOn(home, clock, { secrets });
+    await engine.start();
+    await flush();
+    const methods = routineMethods({ routines: engine });
+    const user = { caller: { kind: "user" as const, client: "app" as const } };
+    const first = (await methods["routine.webhookKey"]!({ id: "r_hook0001" }, user)) as { url: string; key: string };
+    expect(first.url).toEndWith("/r_hook0001");
+    const again = await methods["routine.webhookKey"]!({ id: "r_hook0001" }, user).catch((e: unknown) => e);
+    expect(String((again as Error).message)).toContain("shown once already");
+    const plugin = await methods["routine.webhookKey"]!({ id: "r_hook0001", rotate: true }, { caller: { kind: "plugin", pluginId: "weather" } }).catch((e: unknown) => e);
+    expect(plugin instanceof MethodError && plugin.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    const rotated = (await methods["routine.webhookKey"]!({ id: "r_hook0001", rotate: true }, user)) as { key: string };
+    expect(rotated.key).not.toBe(first.key);
+    expect(await engine.receiveWebhook({ routine: "r_hook0001", key: first.key, body: "{}" })).toBe("refused");
+    expect(await engine.receiveWebhook({ routine: "r_hook0001", key: rotated.key, body: "{}" })).toBe("accepted");
+    engine.stop();
+  });
+
+  test("a delivery runs once per ingress and id, remembered across restarts for 8 days (review S1)", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    write(home, "hook", "id: r_hook0002\ntriggers:\n  - webhook: true");
+    const first = engineOn(home, clock);
+    await first.engine.start();
+    await flush();
+    const d = { ingress: "clover/forwarder", id: "d1", routine: "r_hook0002", receivedAt: clock.now(), body: "{}" };
+    expect(await first.engine.deliverWebhook(d)).toBe("accepted");
+    expect(await first.engine.deliverWebhook(d)).toBe("duplicate");
+    // The same id from another ingress is another delivery.
+    expect(await first.engine.deliverWebhook({ ...d, ingress: "pack/tunnel" })).toBe("accepted");
+    first.engine.stop();
+    clock.advance(7 * 24 * 3_600_000);
+    const second = engineOn(home, clock);
+    await second.engine.start();
+    await flush();
+    expect(await second.engine.deliverWebhook({ ...d, receivedAt: clock.now() })).toBe("duplicate");
+    clock.advance(2 * 24 * 3_600_000);
+    // Another delivery prunes what is older than 8 days; the old id is forgotten.
+    expect(await second.engine.deliverWebhook({ ...d, id: "d2", receivedAt: clock.now() })).toBe("accepted");
+    expect(await second.engine.deliverWebhook({ ...d, receivedAt: clock.now() })).toBe("accepted");
+    second.engine.stop();
   });
 
   test("runNow answers with the side thread as it starts; a deleted file goes away", async () => {

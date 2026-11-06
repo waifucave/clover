@@ -84,7 +84,7 @@ export interface SessionsMethodsDeps {
   /** This device's id, for a message the user sends from this computer's app or terminal (lane H's device key). */
   localDevice: string;
   /** This computer's name: `session.stageImage` stages only for a session it holds. */
-  computer?: string;
+  computer: string;
   /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
@@ -142,19 +142,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
   /** The staged copies a bot conversation's recent messages still name: the prune keeps them. */
   const namedStaged = (id: string): Set<string> => {
     const out = new Set<string>();
-    // The log's length, by doubling then halving on one-record reads, then its last records.
-    let lo = 0;
-    let hi = 1;
-    while (host.history(id, { afterSeq: hi - 1, limit: 1 }).length > 0) {
-      lo = hi;
-      hi *= 2;
-    }
-    while (lo < hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      if (host.history(id, { afterSeq: mid - 1, limit: 1 }).length > 0) lo = mid + 1;
-      else hi = mid;
-    }
-    const from = Math.max(0, lo - STAGED_KEEP_RECORDS);
+    const from = Math.max(0, host.length(id) - STAGED_KEEP_RECORDS);
     for (const r of host.history(id, { afterSeq: from - 1, limit: STAGED_KEEP_RECORDS })) {
       if (r.type === "input" && r.input.from === "user") for (const ref of r.input.images ?? []) out.add(ref.path);
     }
@@ -169,7 +157,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       // On the computer that holds the session: a bot's conversation where its bot runs, any other session here.
       if (v.kind === "bot" && v.bot !== undefined && bots.mainSession(v.bot) === id) {
         if (!bots.botsRunHere().includes(v.bot)) throw new ContractError("refused", `${v.bot}'s conversation runs on another computer; stage the image there`);
-      } else if (deps.computer !== undefined && v.computer !== deps.computer) {
+      } else if (v.computer !== deps.computer) {
         throw new ContractError("refused", `${id} runs on ${v.computer}; stage the image there`);
       }
       // A bot's conversation lives for months, as the inherited dispatch session did: staging lets go of its stale copies first,

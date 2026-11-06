@@ -1,4 +1,5 @@
-// Lane D's routine methods (protocol sessions area): `routine.list`, `routine.runs`, `routine.runNow`. Owner: lane D.
+// Lane D's routine methods (protocol sessions area): `routine.list`, `routine.runs`, `routine.runNow` and
+// `routine.webhookKey` (the user's only: a webhook key is shown once, then only a rotated one). Owner: lane D.
 // The list is this computer's routines; lane H's sync makes it the synced list every device shows (§8.5).
 import { SESSIONS_METHODS } from "@waifucave/clover-protocol";
 import { handler, requireUser, type MethodHandler } from "../bots/rpc";
@@ -17,6 +18,10 @@ export function routineMethods(deps: { routines: RoutineEngine }): Record<string
     [M.routineRunNow.name]: handler(M.routineRunNow, async ({ id }, ctx) => {
       requireUser(ctx, "run a routine now");
       return { session: await routines.runNow(id) };
+    }),
+    [M.routineWebhookKey.name]: handler(M.routineWebhookKey, async ({ id, rotate }, ctx) => {
+      requireUser(ctx, "see a routine's webhook key");
+      return routines.revealWebhookKey(id, rotate === undefined ? {} : { rotate });
     }),
   };
 }

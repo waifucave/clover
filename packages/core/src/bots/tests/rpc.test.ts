@@ -26,7 +26,7 @@ async function setup() {
   const home = tempDir();
   const clock = new FakeClock();
   const b = await boot({ home, clock, plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs });
-  const methods = sessionsMethods({ home, bots: b.bots, host: b.host, clock, localDevice: "studio0000000000000" });
+  const methods = sessionsMethods({ home, computer: "Studio", bots: b.bots, host: b.host, clock, localDevice: "studio0000000000000" });
   const call = async <S extends MethodSpec>(spec: S, params: unknown, caller: Caller = theUser, ctx: Partial<MethodContext> = {}): Promise<z.output<S["result"]>> =>
     spec.result.parse(await methods[spec.name]!(params, { caller, ...ctx })) as z.output<S["result"]>;
   const fails = async (spec: MethodSpec, params: unknown, caller: Caller = theUser): Promise<MethodError> => {

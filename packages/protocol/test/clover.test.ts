@@ -329,6 +329,16 @@ describe("session.stageImage (lane D, for lane I's phone)", () => {
   });
 });
 
+describe("routine.webhookKey (lane D)", () => {
+  test("the user's, on this computer's app and CLI only: never a remote, web or layer client", () => {
+    const m = CLOVER_METHODS.get("routine.webhookKey")!;
+    expect(m.userOnly).toBe(true);
+    for (const role of ["app", "cli"] as const) expect([role, calls(role).has("routine.webhookKey")]).toEqual([role, true]);
+    for (const role of ["remote", "web", "layer"] as const) expect([role, calls(role).has("routine.webhookKey")]).toEqual([role, false]);
+    expect(m.params.safeParse({ id: "r_deploy01", rotate: true }).success).toBe(true);
+  });
+});
+
 describe("cards", () => {
   test("canonical JSON sorts keys at every depth and drops undefined", () => {
     expect(canonicalJson({ b: 1, a: { d: [3, { y: 1, x: 2 }], c: undefined } })).toBe('{"a":{"d":[3,{"x":2,"y":1}]},"b":1}');

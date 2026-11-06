@@ -31,7 +31,9 @@ export type MissedRule = "run-once" | "skip";
 
 export type RoutineTrigger =
   | { type: "schedule"; spec: string; parsed: RoutineSpec }
-  | { type: "webhook" }
+  /** `ingress`: the `webhook.ingress` entry it comes in through (an entry id, such as `waifucave`, or a plugin id);
+   *  the first one installed when left out. */
+  | { type: "webhook"; ingress?: string }
   | { type: string; fields: Record<string, unknown> };
 
 export interface RoutineFile {
@@ -101,7 +103,11 @@ export function parseRoutine(text: string, fallbackName: string): ParseResult {
       } catch (err) {
         return { ok: false, reason: `its schedule "${tr["schedule"].slice(0, 80)}" doesn't read: ${err instanceof Error ? err.message : String(err)}` };
       }
-    } else if (tr["webhook"] === true) triggers.push({ type: "webhook" });
+    } else if (tr["webhook"] === true) {
+      const ingress = tr["ingress"];
+      if (ingress !== undefined && (typeof ingress !== "string" || !/^[a-z0-9][a-z0-9/._-]{0,127}$/.test(ingress))) return { ok: false, reason: "a webhook's `ingress` names a webhook.ingress entry or its plugin" };
+      triggers.push({ type: "webhook", ...(ingress === undefined ? {} : { ingress }) });
+    }
     else if (typeof tr["type"] === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(tr["type"])) {
       const { type, ...fields } = tr;
       triggers.push({ type: type as string, fields });
@@ -131,12 +137,15 @@ export function parseRoutine(text: string, fallbackName: string): ParseResult {
 const q = (s: string) => JSON.stringify(s);
 
 /** Writes a routine as its file (the `Routine` tool, a migration). */
-export function serializeRoutine(r: Omit<RoutineFile, "triggers"> & { triggers: (Omit<Extract<RoutineTrigger, { type: "schedule" }>, "parsed"> | { type: "webhook" } | { type: string; fields: Record<string, unknown> })[] }): string {
+export function serializeRoutine(r: Omit<RoutineFile, "triggers"> & { triggers: (Omit<Extract<RoutineTrigger, { type: "schedule" }>, "parsed"> | { type: "webhook"; ingress?: string } | { type: string; fields: Record<string, unknown> })[] }): string {
   const lines = [`id: ${r.id}`, `name: ${q(r.name)}`, "triggers:"];
   if (r.triggers.length === 0) lines[lines.length - 1] = "triggers: []";
   for (const t of r.triggers) {
     if (t.type === "schedule" && "spec" in t) lines.push(`  - schedule: ${q(t.spec)}`);
-    else if (t.type === "webhook") lines.push("  - webhook: true");
+    else if (t.type === "webhook") {
+      lines.push("  - webhook: true");
+      if ("ingress" in t && typeof t.ingress === "string") lines.push(`    ingress: ${q(t.ingress)}`);
+    }
     else if ("fields" in t) lines.push(`  - ${JSON.stringify({ type: t.type, ...t.fields })}`);
   }
   if (r.level !== undefined) lines.push(`level: ${r.level}`);
@@ -156,6 +165,6 @@ export function withId(text: string, id: string): string {
 /** A short summary of a trigger, for `RoutineView.triggers`. */
 export function triggerSummary(t: RoutineTrigger): { type: string; summary: string } {
   if (t.type === "schedule" && "spec" in t) return { type: "schedule", summary: t.spec };
-  if (t.type === "webhook") return { type: "webhook", summary: "a webhook URL with its key" };
+  if (t.type === "webhook") return { type: "webhook", summary: `a webhook URL with its key${"ingress" in t && typeof t.ingress === "string" ? `, through ${t.ingress}` : ""}` };
   return { type: t.type, summary: JSON.stringify("fields" in t ? t.fields : {}).slice(0, 500) };
 }

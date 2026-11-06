@@ -96,7 +96,7 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
 
   test("a message sent on a computer that doesn't run the bot is relayed to the one that does", async () => {
     const { studio, laptop } = await twoComputers({ holder: "Studio" });
-    const methods = sessionsMethods({ home: laptop.home, bots: laptop.bots, host: laptop.host, clock: laptop.clock, localDevice: "devlaptop000000000" });
+    const methods = sessionsMethods({ home: laptop.home, computer: "Laptop", bots: laptop.bots, host: laptop.host, clock: laptop.clock, localDevice: "devlaptop000000000" });
     await methods[M.sessionSend.name]!({ id: "b_alpha", message: msg("from the laptop") }, { caller: theUser });
     await flush();
     const turn = studio.drivers.for("b_alpha").turns[0]!;
@@ -308,7 +308,7 @@ describe("the pause switch (§9.2)", () => {
 
   test("bots.pause is the user's", async () => {
     const b = await boot({ home: tempDir(), plugins: await alpha() });
-    const methods = sessionsMethods({ home: b.home, bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio" });
+    const methods = sessionsMethods({ home: b.home, computer: "Studio", bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio" });
     const plugin: MethodContext = { caller: { kind: "plugin", pluginId: "clover/sidebar" } };
     const err = await thrown(methods[M.botsPause.name]!({ paused: true }, plugin));
     expect(err instanceof MethodError && err.code).toBe(CLOVER_ERR.NOT_THE_USER);
@@ -548,7 +548,7 @@ describe("the new sessions methods", () => {
     const b = await boot({ home: tempDir(), plugins: await alpha() });
     const set: { id: string; model: string; effort?: string }[] = [];
     const methods = sessionsMethods({
-      home: b.home, bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio",
+      home: b.home, computer: "Studio", bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio",
       setAgentModel: async (id, model, effort) => {
         set.push({ id, model, ...(effort === undefined ? {} : { effort }) });
       },
@@ -566,7 +566,7 @@ describe("the new sessions methods", () => {
 
   test("session.compact: refused for a driver that compacts itself", async () => {
     const b = await boot({ home: tempDir(), plugins: await alpha() });
-    const methods = sessionsMethods({ home: b.home, bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio" });
+    const methods = sessionsMethods({ home: b.home, computer: "Studio", bots: b.bots, host: b.host, clock: b.clock, localDevice: "studio" });
     const err = await thrown(methods[M.sessionCompact.name]!({ id: "b_alpha" }, { caller: theUser }));
     expect(err instanceof MethodError && err.message).toContain("compacts its own conversation");
     await b.shutdown();

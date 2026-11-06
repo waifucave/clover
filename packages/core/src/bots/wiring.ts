@@ -147,7 +147,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.routines.webhookBase === undefined ? {} : { webhookBase: o.routines.webhookBase }),
     ...(o.routines.pluginTriggers === undefined ? {} : { pluginTriggers: o.routines.pluginTriggers }),
     ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
-    ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string): Promise<string> => ingress!.register(id, key) }),
+    ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string, name?: string): Promise<string> => ingress!.register(id, key, name) }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({

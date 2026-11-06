@@ -11,8 +11,8 @@
 //   computer was off run once now (`missed: run-once`, the default) or are recorded `missed` (`skip`).
 // * **Levels** (§7 "Each routine has its own approval level"): a routine runs at its computer's level unless its file
 //   sets one. A level at or below the computer's applies at once. One above it waits for the user's OK on a sealed
-//   change card (`routine-level`); the OK is bound to the file's hash and this computer, so any edit, or a move, drops
-//   it back to the computer's level until a new OK. A webhook routine's card says anyone with the URL can start it.
+//   change card (`routine-level`); the OK is bound to the file's hash, its bot, its place and this computer, so any
+//   edit, a move or a copy (to another bot or another name) drops it back to the computer's level until a new OK. A webhook routine's card says anyone with the URL can start it.
 // * **Webhooks:** the key lives in the credential store (`routine-webhook:<id>`), never in the file, and a payload
 //   reaches the bot labelled as untrusted outside content. A payload the forwarder held while this computer was off
 //   is a missed run, and the missed-run rule decides.
@@ -21,9 +21,9 @@
 // * Runs are kept per routine in `<home>/transcripts/routines/runs/<id>.ndjson`, newest last; the engine's own state
 //   (last fires, last runs) in `<home>/transcripts/routines/state.json`; the OKs with the core's settings, in the fenced
 //   set (`<home>/settings/routine-oks.json`), so a bot can't approve its own raise.
-import { timingSafeEqual } from "node:crypto";
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { basename, join } from "node:path";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { appendFileSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, watch, writeFileSync, writeSync, type FSWatcher } from "node:fs";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { isAnyPluginId, levelAbove, pluginIdFromSegment, type Level, type RoutineRunView, type RoutineView } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock, TimerHandle } from "../contracts/clock";
@@ -45,6 +45,27 @@ export const RESCAN_MS = 60_000;
 /** The largest webhook payload a run gets. */
 export const WEBHOOK_PAYLOAD_MAX_BYTES = 256 * 1024;
 export const RUNS_KEPT = 500;
+/** How long a run delivery's id is remembered: longer than an ingress holds a delivery (the forwarder's 7 days). */
+export const DELIVERIES_KEPT_MS = 8 * 24 * 60 * 60 * 1000;
+export const DELIVERIES_KEPT_MAX = 50_000;
+
+/** Replaces a file's text without writing through a link a bot put at its name: a new temporary file, created
+ *  exclusively and not following a link, renamed over the name (review minor). */
+function replaceFile(path: string, text: string): void {
+  const tmp = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString("hex")}.tmp`);
+  const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+  try {
+    writeSync(fd, text);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    renameSync(tmp, path);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* best effort */ }
+    throw err;
+  }
+}
 
 export function routinesDir(home: string): string {
   return join(home, "routines");
@@ -81,7 +102,8 @@ export interface RoutineEngineOptions {
   /** Watches the folder for changes; tests turn it off and call `rescan`. */
   watchFiles?: boolean;
   /** Registers a webhook routine with the `webhook.ingress` plugins (webhooks.ts) and gives back its URL. */
-  registerWebhook?(id: string, key: string): Promise<string>;
+  /** Registers a webhook routine with its ingress (its trigger's named one, else the first), giving its URL. */
+  registerWebhook?(id: string, key: string, ingress?: string): Promise<string>;
   warn?: (message: string) => void;
 }
 
@@ -101,13 +123,21 @@ interface EngineState {
   /** By routine and trigger key: the last fire. */
   fires: Record<string, number>;
   lastRunAt: Record<string, number>;
-  /** The webhook deliveries already run, newest last, so a repeat runs nothing. */
-  deliveries?: string[];
+  /** The webhook deliveries already run, `<ingress plugin>:<delivery id>` to when (review S1): kept for
+   *  `DELIVERIES_KEPT_MS`, longer than an ingress holds one, and at most `DELIVERIES_KEPT_MAX`, oldest first out. */
+  deliveries?: Record<string, number>;
+  /** The routines whose webhook key the user has been shown (`routine.webhookKey` shows it once). */
+  keysShown?: Record<string, number>;
 }
 
 interface RoutineOk {
   hash: string;
   computer: string;
+  /** The bot and the file the user said yes to (review B1): the same text moved or copied to another bot, or to
+   *  another file, needs its own OK. */
+  bot: string;
+  /** Its path inside the routines folder, `<bot>/<name>.md`. */
+  file: string;
   level: Level;
   cardId?: string;
 }
@@ -131,7 +161,8 @@ export class RoutineEngine {
   constructor(opts: RoutineEngineOptions) {
     this.#o = opts;
     const saved = readJson(this.#stateFile()) as Partial<EngineState> | undefined;
-    this.#state = { fires: { ...(saved?.fires ?? {}) }, lastRunAt: { ...(saved?.lastRunAt ?? {}) }, deliveries: [...(saved?.deliveries ?? [])] };
+    const deliveries = saved?.deliveries !== null && typeof saved?.deliveries === "object" && !Array.isArray(saved.deliveries) ? saved.deliveries : {};
+    this.#state = { fires: { ...(saved?.fires ?? {}) }, lastRunAt: { ...(saved?.lastRunAt ?? {}) }, deliveries: { ...deliveries }, keysShown: { ...(saved?.keysShown ?? {}) } };
   }
 
   async start(): Promise<void> {
@@ -204,20 +235,34 @@ export class RoutineEngine {
     });
   }
 
-  /** The routine's webhook URL, minting its key the first time (the `Routine` tool hands it back). */
-  async webhook(id: string): Promise<{ url: string; key: string }> {
+  /** The routine's webhook URL and key, minting the key the first time, or a new one with `rotate` (the old one stops
+   *  working once the ingress has the new key's hash). The `Routine` tool hands back the URL only. */
+  async webhook(id: string, opts: { rotate?: boolean } = {}): Promise<{ url: string; key: string }> {
     const l = this.#must(id);
-    if (!l.routine.triggers.some((t) => t.type === "webhook")) throw new ContractError("invalid", `the routine ${id} has no webhook trigger`);
+    const trigger = l.routine.triggers.find((t): t is Extract<RoutineTrigger, { type: "webhook" }> => t.type === "webhook");
+    if (trigger === undefined) throw new ContractError("invalid", `the routine ${id} has no webhook trigger`);
     if (!this.#o.secrets) throw new ContractError("refused", "no credential store holds webhook keys here");
     const ref = { owner: { kind: "core" as const }, name: `routine-webhook:${id}` };
-    let key = (await this.#o.secrets.get(ref))?.value.reveal();
+    let key = opts.rotate ? undefined : (await this.#o.secrets.get(ref))?.value.reveal();
     if (key === undefined) {
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       key = Buffer.from(bytes).toString("base64url");
       await this.#o.secrets.set(ref, key);
     }
-    const url = this.#o.registerWebhook === undefined ? `${(this.#o.webhookBase ?? "https://hooks.waifucave.com").replace(/\/+$/, "")}/${id}` : await this.#o.registerWebhook(id, key);
+    const url = this.#o.registerWebhook === undefined
+      ? `${(this.#o.webhookBase ?? "https://hooks.waifucave.com").replace(/\/+$/, "")}/${id}`
+      : await this.#o.registerWebhook(id, key, trigger.ingress);
     return { url, key };
+  }
+
+  /** `routine.webhookKey`, the user's only: the key is shown once; after that only a new one (`rotate`) is shown. */
+  async revealWebhookKey(id: string, opts: { rotate?: boolean } = {}): Promise<{ url: string; key: string }> {
+    const shown = (this.#state.keysShown ??= {});
+    if (shown[id] !== undefined && !opts.rotate) throw new ContractError("refused", `the key of ${id} was shown once already; ask for a new one (rotate) to see a key again`);
+    const out = await this.webhook(id, opts);
+    shown[id] = this.#o.clock.now();
+    this.#saveState();
+    return out;
   }
 
   /** The routines here with a webhook trigger (the ingress registers each). */
@@ -227,13 +272,16 @@ export class RoutineEngine {
 
   /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the
    *  missed-run rule for one held while this computer was away. */
-  async deliverWebhook(d: { id: string; routine: string; receivedAt: number; body: string; contentType?: string }): Promise<"accepted" | "refused" | "missed" | "duplicate"> {
+  async deliverWebhook(d: { ingress: string; id: string; routine: string; receivedAt: number; body: string; contentType?: string }): Promise<"accepted" | "refused" | "missed" | "duplicate"> {
     const l = this.#loaded.get(d.routine);
     if (!l || l.state !== "active" || !l.routine.triggers.some((t) => t.type === "webhook")) return "refused";
-    const seen = (this.#state.deliveries ??= []);
-    if (seen.includes(d.id)) return "duplicate";
-    seen.push(d.id);
-    if (seen.length > 1000) seen.splice(0, seen.length - 1000);
+    const seen = (this.#state.deliveries ??= {});
+    const key = `${d.ingress}:${d.id}`;
+    if (seen[key] !== undefined) return "duplicate";
+    const now = this.#o.clock.now();
+    seen[key] = now;
+    const kept = Object.entries(seen).filter(([, at]) => now - at <= DELIVERIES_KEPT_MS).sort((a, b) => a[1] - b[1]).slice(-DELIVERIES_KEPT_MAX);
+    if (kept.length !== Object.keys(seen).length) this.#state.deliveries = Object.fromEntries(kept);
     this.#saveState();
     if (isLate(d.receivedAt, this.#o.clock.now()) && l.routine.missed === "skip") {
       this.#record(l, { outcome: "missed", summary: "A webhook that arrived while this computer was away; the routine skips missed runs." });
@@ -349,7 +397,7 @@ export class RoutineEngine {
           }
           if (parsed.minted) {
             text = withId(text, parsed.routine.id);
-            writeFileSync(path, text);
+            replaceFile(path, text);
           }
           out.push({ routine: parsed.routine, bot, path, hash: routineHash(text) });
         } catch (err) {
@@ -360,7 +408,7 @@ export class RoutineEngine {
     return out;
   }
 
-  #stateOf(f: { routine: RoutineFile; bot: string; hash: string }): RoutineView["state"] {
+  #stateOf(f: { routine: RoutineFile; bot: string; path: string; hash: string }): RoutineView["state"] {
     if (!this.#o.bots.has(f.bot)) return "bot-removed";
     if (f.routine.paused) return "paused";
     const want = f.routine.level;
@@ -368,7 +416,7 @@ export class RoutineEngine {
     return "active";
   }
 
-  #levelOf(f: { routine: RoutineFile; hash: string }): Level {
+  #levelOf(f: { routine: RoutineFile; bot: string; path: string; hash: string }): Level {
     const computer = this.#o.computerLevel();
     const want = f.routine.level;
     if (want === undefined) return computer;
@@ -384,15 +432,21 @@ export class RoutineEngine {
     return ((readJson(this.#oksFile()) as Record<string, RoutineOk> | undefined) ?? {});
   }
 
-  #hasOk(f: { routine: RoutineFile; hash: string }, level: Level): boolean {
+  /** The file's place in the routines folder, as an OK names it. */
+  #okFile(path: string): string {
+    return relative(routinesDir(this.#o.home), path).split(sep).join("/");
+  }
+
+  #hasOk(f: { routine: RoutineFile; bot: string; path: string; hash: string }, level: Level): boolean {
     const ok = this.#oks()[f.routine.id];
-    return ok !== undefined && ok.hash === f.hash && ok.computer === this.#o.computer && ok.level === level;
+    return ok !== undefined && ok.hash === f.hash && ok.computer === this.#o.computer && ok.level === level
+      && ok.bot === f.bot && ok.file === this.#okFile(f.path);
   }
 
   async #askForRaise(l: Loaded): Promise<void> {
     const approvals = this.#o.approvals;
     const level = l.routine.level;
-    const asking = `${l.routine.id}:${l.hash}`;
+    const asking = `${l.routine.id}:${l.hash}:${l.bot}:${this.#okFile(l.path)}`;
     if (!approvals || level === undefined || this.#asking.has(asking)) return;
     this.#asking.add(asking);
     try {
@@ -408,7 +462,7 @@ export class RoutineEngine {
       });
       if (!decision.allowed || decision.by !== "card") return;
       const oks = this.#oks();
-      oks[l.routine.id] = { hash: l.hash, computer: this.#o.computer, level, ...(decision.cardId === undefined ? {} : { cardId: decision.cardId }) };
+      oks[l.routine.id] = { hash: l.hash, computer: this.#o.computer, bot: l.bot, file: this.#okFile(l.path), level, ...(decision.cardId === undefined ? {} : { cardId: decision.cardId }) };
       writeJsonAtomic(this.#oksFile(), oks);
       await this.rescan();
     } catch (err) {

@@ -323,6 +323,12 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: utf16(128, 1) }), result: z.object({ session: SessionId }),
     doc: "Runs a routine now, in a side thread on its computer.",
   }),
+  routineWebhookKey: defineMethod({
+    name: "routine.webhookKey", owner: "D", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: utf16(128, 1), rotate: z.boolean().optional() }),
+    result: z.object({ url: utf16(4096, 1), key: utf16(256, 1) }),
+    doc: "A webhook routine's URL and key, for the user to paste into the service that calls it (§7). The key is shown once; after that only a new one (`rotate`), which replaces it, is shown. Never to a bot, a plugin or a remote client.",
+  }),
   archiveList: defineMethod({
     name: "archive.list", owner: "D", roles: ["app", "cli"],
     params: z.object({
