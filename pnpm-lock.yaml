@@ -118,6 +118,12 @@ importers:
       '@waifucave/clover-provider-conformance':
         specifier: 0.0.63
         version: 0.0.63
+      '@waifucave/clover-service-shared':
+        specifier: workspace:*
+        version: link:../../services/shared
+      '@waifucave/clover-test-harness':
+        specifier: workspace:*
+        version: link:../test-harness
     optionalDependencies:
       '@yanlinglabs/winter-agent-sdk-darwin-arm64':
         specifier: 0.0.55
@@ -806,6 +812,8 @@ importers:
       wrangler:
         specifier: 4.153.0
         version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
+
+  services/shared: {}
 
   spikes/bun-compile:
     dependencies:

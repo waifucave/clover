@@ -26,6 +26,11 @@ permissions:
   contents: read
   packages: read
 
+# The Rust the link sidecar (native/link) builds with: the link job, the macos job's link leg and the packages.
+env:
+  RUST_TOOLCHAIN: 1.99.1
+  CARGO_TERM_COLOR: never
+
 jobs:
   # CI covers four machines (plan §3): macOS arm64, Windows x64, and Ubuntu x64 and arm64. On each it runs the
   # workspace packages' tests (the plugins' and services' among them), builds the daemon binary and builds the
@@ -62,6 +67,7 @@ jobs:
       swift: ${{ steps.areas.outputs.swift }}
       verify: ${{ steps.areas.outputs.verify }}
       tree: ${{ steps.areas.outputs.tree }}
+      link: ${{ steps.areas.outputs.link }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -249,17 +255,33 @@ jobs:
   # x64 deb is installed on this runner, checked (`clover` is the daemon's command line, the AppArmor profile is in)
   # and removed (both are gone). Nothing is uploaded: the packages are unsigned skeletons until M2.
   packages:
-    name: packages · linux (deb, rpm, AppImage)
+    name: packages · linux-${{ matrix.arch }} (deb, rpm, AppImage)
     needs: changes
     if: needs.changes.outputs.packages == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    # One job per architecture, on that architecture's machine: the link sidecar, clover-link, is Rust (with ring's C),
+    # and builds for the machine it is on (scripts/build-packages.ts).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-24.04, deb: amd64 }
+          - { arch: arm64, runner: ubuntu-24.04-arm, deb: arm64 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link -> target
 
       - name: rpmbuild, for the rpm
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends rpm
@@ -270,15 +292,16 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and check the packages
-        run: bun scripts/build-packages.ts --arch x64,arm64 --check
+        run: bun scripts/build-packages.ts --arch ${{ matrix.arch }} --check
 
-      - name: Install the x64 deb, check it, and remove it
+      - name: Install the deb, check it, and remove it
         run: |
-          deb=$(ls apps/desktop/out/dist/*_amd64.deb)
+          deb=$(ls apps/desktop/out/dist/*_${{ matrix.deb }}.deb)
           name=$(dpkg-deb -f "$deb" Package)
           sudo apt-get install -y -qq "./$deb"
           test "$(readlink -f /usr/bin/clover)" = /opt/Clover/resources/daemon/clover-core
           CLOVER_HOME="$(mktemp -d)" clover --version
+          test -x /opt/Clover/resources/daemon/clover-link
           test -f /etc/apparmor.d/clover
           sudo apt-get remove -y -qq "$name"
           test ! -e /usr/bin/clover
@@ -317,6 +340,55 @@ jobs:
       - name: The tree and the computers, with lane B's conformance suites
         working-directory: packages/core
         run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
+
+  # The link sidecar (native/link, lane H's clover-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
+  # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
+  # stream, a revoke, a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind
+  # 127.0.0.1. macOS runs the same in the macos job, which keeps the macOS jobs a change takes to three. It was
+  # link.yml's `sidecar` job.
+  link:
+    name: link · ${{ matrix.runner }}
+    needs: changes
+    if: needs.changes.outputs.link == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link -> target
+
+      - name: Build clover-link
+        run: cargo build --release --locked --manifest-path native/link/Cargo.toml
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The link tests over the sidecar
+        working-directory: packages/core
+        env:
+          CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: bun test --timeout 60000 src/links
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
@@ -422,9 +494,9 @@ jobs:
   #    own ladder (the installed platform package first).
   # One job, not four, so a macOS runner (five at once on the org's plan) is taken once per change.
   macos:
-    name: macOS (core, cli, scripts, verify)
+    name: macOS (core, cli, scripts, verify, link)
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scripts == 'true' || needs.changes.outputs.verify == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scripts == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -432,12 +504,28 @@ jobs:
       CLI: ${{ needs.changes.outputs.cli }}
       SCRIPTS: ${{ needs.changes.outputs.scripts }}
       VERIFY: ${{ needs.changes.outputs.verify }}
+      LINK: ${{ needs.changes.outputs.link }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
+
+      # The link job's macOS leg (link: clover-link built, the core's link tests over it).
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        if: env.LINK == 'true'
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: env.LINK == 'true'
+        with:
+          workspaces: native/link -> target
+
+      - name: Build clover-link
+        if: env.LINK == 'true'
+        run: cargo build --release --locked --manifest-path native/link/Cargo.toml
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -494,6 +582,13 @@ jobs:
       - name: Scripts · test
         if: ${{ !cancelled() && env.SCRIPTS == 'true' }}
         run: bun test scripts
+
+      - name: Link · the link tests over the sidecar
+        if: ${{ !cancelled() && env.LINK == 'true' }}
+        working-directory: packages/core
+        env:
+          CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link
+        run: bun test --timeout 60000 src/links
 
       - name: verify:workflow
         if: ${{ !cancelled() && env.VERIFY == 'true' }}
@@ -720,7 +815,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

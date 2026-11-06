@@ -68,6 +68,8 @@
       },
       "devDependencies": {
         "@waifucave/clover-provider-conformance": "0.0.63",
+        "@waifucave/clover-service-shared": "workspace:*",
+        "@waifucave/clover-test-harness": "workspace:*",
       },
       "optionalDependencies": {
         "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55",
@@ -472,6 +474,10 @@
         "vitest": "4.1.12",
         "wrangler": "4.153.0",
       },
+    },
+    "services/shared": {
+      "name": "@waifucave/clover-service-shared",
+      "version": "0.0.0",
     },
     "spikes/bun-compile": {
       "name": "@winter-spike/bun-compile",
@@ -933,6 +939,8 @@
     "@waifucave/clover-service-hello": ["@waifucave/clover-service-hello@workspace:services/hello"],
 
     "@waifucave/clover-service-push": ["@waifucave/clover-service-push@workspace:services/push"],
+
+    "@waifucave/clover-service-shared": ["@waifucave/clover-service-shared@workspace:services/shared"],
 
     "@waifucave/clover-test-harness": ["@waifucave/clover-test-harness@workspace:packages/test-harness"],
 

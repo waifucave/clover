@@ -31,7 +31,7 @@ cargo build --release --locked --manifest-path native/link/Cargo.toml
 cd packages/core && bun test src/links/tests/sidecar.test.ts   # or CLOVER_LINK_BIN=<path> for another build
 ```
 
-`.github/workflows/link.yml` builds it on macOS, Windows and Linux (x64 and arm64) and runs the core's link tests over it on loopback. The relay is off and the endpoints bind 127.0.0.1, so nothing leaves the runner.
+CI's `link` job (`.github/workflows/ci.yml`; its macOS leg is in the `macos` job) builds it on macOS, Windows and Linux (x64 and arm64) and runs the core's link tests over it on loopback. The relay is off and the endpoints bind 127.0.0.1, so nothing leaves the runner.
 
 ## What it may touch
 
@@ -40,4 +40,8 @@ cd packages/core && bun test src/links/tests/sidecar.test.ts   # or CLOVER_LINK_
 - With `n0Lookup`, HTTPS and DNS to n0's address lookup.
 - Its stdin and stdout.
 
-It needs no files, no other network access and no other process. Lane C's fence wraps the spawn (`SidecarWireOptions.spawn`), and lane M signs the binary and ships it beside the core.
+It needs no files, no other network access and no other process. Lane C's fence wraps the spawn (`SidecarWireOptions.spawn`).
+
+## How it ships
+
+Beside the daemon, in the app's `resources/daemon/` (`clover-link`, `clover-link.exe` on Windows), where the daemon looks for it (`packages/core/src/links/sidecar-binary.ts`: beside its own executable, never from the environment or the PATH, since the sidecar is handed the device key). `scripts/build-packages.ts` builds it with `cargo build --release --locked` for the machine it is on and stages it with the daemon; the Linux packages' check holds them to it (`rwxr-xr-x`, root's). Release signing (macOS's Developer ID and notarization, Windows' Authenticode) is M2's, with the daemon's.
