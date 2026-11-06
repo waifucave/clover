@@ -44,6 +44,8 @@ export interface StreamStats {
   codecString?: string;
   /** A hardware encoder (H.264 only); false for VP8, software H.264 and JPEG. */
   hardware?: boolean;
+  /** The target the encoder runs at now (`kbps` is the one asked for; they differ for a moment after a change). */
+  encoderKbps?: number;
   width?: number;
   height?: number;
   kbps: number;
@@ -84,6 +86,7 @@ type PageOut =
   | { type: "ack"; source: string; seq: number }
   | { type: "config"; stream: string; codec: StreamCodec; codecString: string; width: number; height: number; hardware: boolean }
   | { type: "chunk"; stream: string; key: boolean; timestamp: number }
+  | { type: "rate"; stream: string; kbps: number }
   | { type: "ended"; stream: string; message: string }
   | { type: "unsupported"; stream: string; message: string };
 
@@ -306,6 +309,11 @@ export class TabStreamer {
         if (s === undefined) return;
         Object.assign(s.stats, { codec: msg.codec, codecString: msg.codecString, hardware: msg.hardware, width: msg.width, height: msg.height });
         this.emit(s.id, { kind: "config", codec: msg.codec, width: msg.width, height: msg.height, codecString: msg.codecString });
+        return;
+      }
+      case "rate": {
+        const s = this.streams.get(msg.stream);
+        if (s !== undefined) s.stats.encoderKbps = msg.kbps;
         return;
       }
       case "chunk": {

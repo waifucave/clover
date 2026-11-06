@@ -198,7 +198,7 @@ async function main(): Promise<void> {
     const after = kbpsBetween("s1", t1, Date.now());
     const stats = host.streams().find((s) => s.stream === "s1");
     summary.bitrate = { before, after, target: 300 };
-    return { ok: stats?.kbps === 300 && after < before * 0.6, detail: { before, after, stats } };
+    return { ok: stats?.kbps === 300 && stats.encoderKbps === 300 && after < before * 0.6, detail: { before, after, stats } };
   });
 
   await step("stopping sends `ended`, lets the encoder page go and puts the tab back at 10 fps", async () => {

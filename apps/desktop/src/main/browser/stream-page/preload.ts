@@ -32,6 +32,8 @@ interface Stream {
   width: number;
   height: number;
   configuring: boolean;
+  /** What the last config said, so a new encoder at the same codec and size sends none. */
+  told?: string;
   forceKey: boolean;
   n: number;
   lastTs: number;
@@ -114,13 +116,20 @@ async function configure(st: Stream, w: number, h: number): Promise<void> {
     st.width = w;
     st.height = h;
     st.forceKey = true;
-    out({ type: "config", stream: st.id, codec: pick.codec, codecString: pick.config.codec, width: w, height: h, hardware: pick.hardware });
+    const told = `${pick.config.codec} ${w}x${h}`;
+    if (told !== st.told) {
+      st.told = told;
+      out({ type: "config", stream: st.id, codec: pick.codec, codecString: pick.config.codec, width: w, height: h, hardware: pick.hardware });
+    }
+    out({ type: "rate", stream: st.id, kbps: st.kbps });
   } catch (e) {
     streams.delete(st.id);
     out({ type: "ended", stream: st.id, message: `the encoder couldn't start: ${e instanceof Error ? e.message : String(e)}` });
   } finally {
     st.configuring = false;
   }
+  // The target changed while the encoder was being made: again, at the new one.
+  if (streams.get(st.id) === st && st.config !== undefined && st.config.bitrate !== st.kbps * 1000) await configure(st, w, h);
 }
 
 /** Encodes the source's picture as it is now into one stream. */
@@ -178,16 +187,13 @@ ipc.on(`${CH}:control`, (_e, c: { stream: string; keyframe?: boolean; kbps?: num
   if (st === undefined) return;
   if (c.kbps !== undefined && c.kbps > 0 && c.kbps !== st.kbps) {
     st.kbps = c.kbps;
-    // Same codec and size: Chromium changes the target in place, no new keyframe needed.
-    if (st.encoder !== undefined && st.config !== undefined && st.encoder.state === "configured") {
-      st.config = { ...st.config, bitrate: c.kbps * 1000 };
-      try {
-        st.encoder.configure(st.config);
-      } catch (e) {
-        streams.delete(st.id);
-        out({ type: "ended", stream: st.id, message: `the encoder couldn't change its bitrate: ${e instanceof Error ? e.message : String(e)}` });
-        return;
-      }
+    // A new encoder at the new target, starting with a keyframe. Electron 45's VP8 kept its old target after an
+    // in-place `configure()` with a new bitrate (CI: 2.4 Mbit/s asked for 0.3), though the headless shell's follows
+    // it; a fresh encoder always starts at its target. The core lowers the target only when it also asks for a
+    // keyframe, and raises it at most every few seconds, so the keyframe costs little.
+    if (st.encoder !== undefined && !st.configuring) {
+      const src = sources.get(st.source);
+      void configure(st, st.width, st.height).then(() => { if (src !== undefined && streams.get(st.id) === st) encode(st, src, Date.now()); });
     }
   }
   if (c.keyframe === true) {
