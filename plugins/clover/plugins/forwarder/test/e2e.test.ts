@@ -77,7 +77,7 @@ async function startHarness(jwks: string): Promise<Harness> {
 async function token(account: string, device: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = b64u(utf8(JSON.stringify({ alg: "ES256", kid: "e2e", typ: "JWT" })));
-  const claims = b64u(utf8(JSON.stringify({ iss: issuer, aud: "hooks.waifucave.com", sub: account, dev: device, iat: now, exp: now + 600 })));
+  const claims = b64u(utf8(JSON.stringify({ iss: issuer, aud: "hooks.waifucave.com", sub: account, dev: device, iat: now, exp: now + 300 })));
   const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signingKey, utf8(`${header}.${claims}`));
   return `${header}.${claims}.${b64u(new Uint8Array(signature))}`;
 }

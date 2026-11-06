@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Scaleway AI",
+  "description": "Scaleway AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "scaleway",
+        "name": "Scaleway AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Scaleway AI API key. Clover keeps it in your credential store and adds it to Scaleway AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.scaleway.ai/v1"
+        }
+      }
+    ]
+  }
+}

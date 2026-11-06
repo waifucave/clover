@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Xiaomi MiMo Token Plan China (OpenAI dialect)",
+  "description": "Xiaomi MiMo Token Plan China (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "xiaomi-token-plan-cn",
+        "name": "Xiaomi MiMo Token Plan China (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Xiaomi MiMo Token Plan China (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Xiaomi MiMo Token Plan China (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1"
+        }
+      }
+    ]
+  }
+}

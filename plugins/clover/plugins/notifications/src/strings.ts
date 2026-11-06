@@ -1,25 +1,46 @@
-// The desktop notifications' words, in English: the keys a translation pack (`locales`) overrides. Never a message's,
-// a card's or a question's text: the core does not hand a notifier any.
+// The desktop notifications' words (never a message's, a card's or a question's text: the core hands a notifier none). The English table is `locales/en.json` (locale format 1, spec §5.5 "Translations"), which the manifest
+// declares, so the app has it to fall back to and a language pack can translate every key. `t` asks the translator the
+// app installs (`setTranslator`: lane E's `useT()` in a part, the plugin API's `t` in a host half) and falls back to
+// English for a key it doesn't know. Keys start with `clover.`; strings use `{name}` placeholders, and a key may hold
+// plural forms, chosen by `count`.
 
-type Entry = string | { one?: string; other: string };
+import en from "../locales/en.json" with { type: "json" };
 
-const EN: Record<string, Entry> = {
-  "clover.notifications.aBot": "A bot",
-  "clover.notifications.fallbackTitle": "Clover",
-  "clover.notifications.aPlugin": "A plugin",
-  "clover.notifications.plugin": "Plugin “{plugin}”",
-  "clover.notifications.fromPlugin": "{from}: {title}",
-  "clover.notifications.message": "Sent you a message",
-  "clover.notifications.card": "Needs your OK",
-  "clover.notifications.question": "Has a question for you",
-  "clover.notifications.routine": "A routine finished",
-  "clover.notifications.agent": "An agent finished",
-  "clover.notifications.unseen": { one: "1 unseen", other: "{count} unseen" },
-};
+type Entry = string | { readonly zero?: string; readonly one?: string; readonly two?: string; readonly few?: string; readonly many?: string; readonly other: string };
 
-export function t(key: string, vars: Record<string, string | number> = {}): string {
+/** The app's translator for this plugin's keys, in the user's language: a key it has no string for reads as itself. */
+export type Translator = (key: string, params?: Record<string, string | number>) => string;
+
+/** The English table, as `locales/en.json` holds it. */
+export const EN: Readonly<Record<string, Entry>> = en.strings;
+
+let installed: Translator | null = null;
+
+/** Installs the app's translator (null: English only). Calling it again with the same one changes nothing. */
+export function setTranslator(translator: Translator | null): void {
+  installed = translator;
+}
+
+const englishPlurals = new Intl.PluralRules("en");
+
+/** A key's English string, its placeholders filled and its plural form chosen by `count`. */
+export function english(key: string, vars: Record<string, string | number> = {}): string {
   const entry = EN[key];
   if (entry === undefined) return key;
-  const text = typeof entry === "string" ? entry : vars.count === 1 && entry.one !== undefined ? entry.one : entry.other;
+  let text: string;
+  if (typeof entry === "string") text = entry;
+  else {
+    const n = typeof vars.count === "number" ? vars.count : Number(vars.count);
+    const form = Number.isFinite(n) ? englishPlurals.select(n) : "other";
+    text = entry[form] ?? entry.other;
+  }
   return text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`));
+}
+
+export function t(key: string, vars: Record<string, string | number> = {}): string {
+  if (installed) {
+    const text = installed(key, vars);
+    if (text !== key) return text;
+  }
+  return english(key, vars);
 }

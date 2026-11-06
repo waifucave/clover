@@ -1,0 +1,340 @@
+# The waifucave handshake, wire format v1
+
+`handshake.waifucave.com` introduces devices to each other. It carries each device's addresses, a "dial now", and the browser's WebRTC signalling, and it holds the main computer's lease: in the account for devices with one, and in a group for devices paired without one (spec §8.3, §6.4; owner decisions 81 and 85; the controller's rulings on account-less pairs, November 5, 2026).
+
+This file is the contract between the service (lane I, `services/handshake/`) and its clients: the daemon's link layer (lane H) and the web companion (lane I). Change it only together.
+
+## Principles
+
+- **Signalling only.** It never carries a link's traffic. Records and messages are end-to-end encrypted between the devices, so the service sees only opaque boxes, their sizes and their timing.
+- **Current state only.** It keeps the latest record of each kind, queued messages for at most two minutes, the members of each pair and group, and the lease. It keeps no history, no IP log, no names and no addresses in the clear.
+- **No account needed.** A pair or a group is its own authority: its members' keys sign every request. Devices with an account use the account channel instead (below), with the same records, messages, sockets and lease.
+
+## Scopes
+
+| Scope | Who is in it | How a request proves it | Path prefix |
+| :- | :- | :- | :- |
+| **Pair** | The two devices of one pairing | an Ed25519 signature by a member's pair key | `/v1/pairs/<pair>` |
+| **Group** | One user's account-less devices (for the lease) | an Ed25519 signature by a member's group key | `/v1/groups/<group>` |
+| **Account** | The devices of one waifucave account | the device's account token (`aud`: `handshake.waifucave.com`) | `/v1/accounts/self` |
+
+- `<pair>` and `<group>` are 16 random bytes, chosen by the devices when they pair, as unpadded base64url (22 characters).
+- **Keys are Ed25519 public keys** (32 bytes, base64url).
+  - The service knows members only by these keys.
+  - Lane H chooses whether they are fresh per pair or group (recommended: then the service can't link a device's pairs to its link key or its other pairs) or the device's link key.
+  - Either way, every signature below starts with its own `clover-handshake-v1 …` prefix, so it can't be mistaken for any other use of the key.
+- **A pair belongs to no group at the service.** A group exists only for the lease; devices join it when they pair (the controller's ruling: one group per user for their account-less devices).
+
+## Encoding
+
+- **Bodies are JSON** (`content-type: application/json`), at most 16 KiB. Binary fields are unpadded base64url; a key is 32 bytes and a signature 64.
+- **Times are milliseconds since the epoch.** Durations are given in seconds (`ttl`).
+- **Errors** are `{"error": "<code>"}` with these statuses:
+
+  | Status | Codes |
+  | :- | :- |
+  | 400 | `bad_request`, `bad_kind`, `bad_signature_form` |
+  | 401 | `unauthorized`: a bad signature or token, or `t` out of range; `replay`: `t` not after the key's last (retry with a fresh `t`) |
+  | 403 | `not_member`, `revoked` |
+  | 404 | `not_found` |
+  | 409 | `conflict`, `stale`, `full`, `held` (with the current lease) |
+  | 410 | `ended`: a revoked pair or a deleted group |
+  | 413 | `too_large` |
+  | 429 | `rate_limited`, with `retry-after` in seconds |
+
+## Statements: proving a key at registration
+
+Registration requests carry statements signed with Ed25519. Each statement is UTF-8 lines joined by `\n`, with no trailing newline, and its `t` must be within 10 minutes of the service's clock.
+
+| Statement | Lines | Signed by |
+| :- | :- | :- |
+| Pair | `clover-handshake-v1 pair`, `<pair>`, `<key A>`, `<key B>`, `<t>` | both A and B, the same text |
+| Group | `clover-handshake-v1 group`, `<group>`, `<key>`, `<t>` | the founding member |
+| Join | `clover-handshake-v1 join`, `<group>`, `<new key>`, `<t>` | the joining device |
+| Admit | `clover-handshake-v1 admit`, `<group>`, `<new key>`, `<t>` | a current member |
+
+The keys in a pair statement are in the order the request lists them. `<t>` is written in decimal.
+
+## Signed requests (pair and group scopes)
+
+Every other pair or group request carries one header:
+
+```
+Authorization: Clover-Sig key=<member key>, t=<ms>, sig=<signature>
+```
+
+`sig` is the Ed25519 signature, by `key`, over:
+
+```
+clover-handshake-v1 request
+<METHOD>
+<path, with its query if any>
+<t>
+<base64url of SHA-256 of the body bytes; of zero bytes when there is no body>
+```
+
+The service accepts it when all of these hold:
+- `key` is a current member of the scope the path names.
+- `t` is within 120 s of its clock.
+- **For every request but a plain GET,** `t` is greater than the last `t` it accepted from that key in that scope. The client sends `t = max(now, last t + 1)`, and one such request at a time per scope, since a later one that arrives first makes the earlier a `replay`. This is the replay protection; it costs the service one stored number per member.
+- **A plain GET** may repeat within the 120 s. It returns only ciphertext the caller is entitled to, so a replay learns nothing new.
+
+## Pairs
+
+- **Register:** `POST /v1/pairs`, with no Authorization header:
+
+  ```json
+  {"pair": "<pair>", "keys": ["<A>", "<B>"], "t": 1793000000000, "sigs": ["<sig by A>", "<sig by B>"]}
+  ```
+
+  | Status | When |
+  | :- | :- |
+  | 201 | a new pair |
+  | 200 | the same pair and the same two keys again (idempotent) |
+  | 409 `conflict` | the pair id is held by other keys |
+  | 410 `ended` | the pair was revoked |
+
+  This is rate-limited hardest (see Limits).
+- **Read:** `GET /v1/pairs/<pair>` (signed). Answers:
+
+  ```json
+  {"pair": "<pair>", "keys": ["<A>", "<B>"], "peer": {"online": true},
+   "records": [{"from": "<key>", "kind": "addr", "gen": 1793000000123, "expiresAt": 1793000900123, "box": "<box>"}]}
+  ```
+
+  `records` holds the peer's records that haven't expired.
+- **End:** `DELETE /v1/pairs/<pair>` (signed, by either member) → 204.
+  - After §8.1's local revoke, the revoking device ends the pair here.
+  - The service forgets the keys, records and messages, closes both sockets (4003), and keeps only a tombstone (the pair id and when it ended) for 30 days, answering 410.
+
+### Records: the latest of each kind
+
+`PUT /v1/pairs/<pair>/records/<kind>` (signed):
+
+```json
+{"gen": 1793000000123, "ttl": 900, "box": "<box>"}
+```
+
+- Answers 204, or 409 `stale` when `gen` isn't greater than the sender's current record of that kind. Use the time in ms as `gen`.
+- The record replaces the sender's previous one, is pushed to the peer's socket, and is forgotten at `ttl`.
+
+### Messages: delivered once, gone in two minutes
+
+`POST /v1/pairs/<pair>/messages` (signed):
+
+```json
+{"kind": "dial", "ttl": 30, "box": "<box>"}
+```
+
+- Answers 202 `{"id": "<id>", "delivered": true|false}`.
+- `delivered: true` means it went straight to the peer's open socket, and nothing is kept.
+- Otherwise it is queued for the peer: at most 16 per recipient (the oldest is dropped first), each until its `ttl`.
+
+`POST /v1/pairs/<pair>/inbox` (signed, empty body) answers `{"messages": [{"id", "from", "kind", "at", "expiresAt", "box"}]}` and removes them.
+
+### The socket: pushes instead of polling
+
+1. `POST /v1/pairs/<pair>/tickets` (signed) answers `{"url": "wss://…/v1/socket?ticket=…", "expiresAt": …}`. The ticket is single-use, lasts 60 s and is bound to the member. Browsers can't sign a WebSocket upgrade, hence the ticket.
+2. Open a WebSocket to `url`. A member has one socket per scope: a new one replaces the old, which closes with 4000.
+
+Service → client (text, JSON):
+
+| Frame | When |
+| :- | :- |
+| `{"t":"hello","v":1,"scope":"pair","peer":{"online":bool}}` | first, then the queued messages and the peer's current records |
+| `{"t":"record","from","kind","gen","expiresAt","box"}` | the peer published a record |
+| `{"t":"message","id","from","kind","at","expiresAt","box"}` | a message for this member (delivered: not kept) |
+| `{"t":"presence","online":bool}` | the peer's socket opened or closed |
+| `{"t":"bye","reason":"replaced"\|"ended"\|"stale"\|"reauth"}` | then the close |
+
+- **Client → service:** only `"ping"`, answered `"pong"` by the runtime without waking the service. Send one every 30 s. Mutations always go over HTTPS, signed.
+- **Close codes:**
+
+  | Code | Meaning |
+  | :- | :- |
+  | 4000 | replaced |
+  | 4003 | ended or revoked |
+  | 4008 | protocol |
+  | 4009 | stale: no ping for 90 s |
+  | 4010 | reauth: the account token an account socket was opened with has ended; open a new one with a fresh token |
+
+- **Presence** means the member has an open socket that pinged within 90 s. Treat it as a hint: a `dial` waits 30 s in the queue anyway.
+
+### Kinds
+
+| Kind | Sent as | Most `ttl` (default) | Most box size | What it carries |
+| :- | :- | :- | :- | :- |
+| `addr` | record | 3600 s (900) | 4 KiB | the sender's addresses for this peer |
+| `dial` | message | 60 s (30) | 4 KiB | "dial me now" (both devices dial at once, and again about 100 ms later; S1) |
+| `signal` | message | 120 s (60) | 8 KiB | WebRTC signalling for a browser link |
+
+A box's size is its decoded bytes. Other kinds are refused with 400 `bad_kind`; a later version adds them.
+
+## Groups and the lease (account-less devices)
+
+The lease decides which computer is the main one (spec §6.4). For account-less devices the service holds it in their group, so "the first computer to take it wins" holds across all of one user's devices.
+
+- **Create:** `POST /v1/groups`, not signed: `{"group", "key", "t", "sig"}` (the group statement). Answers 201, 200 when the founder is already a member, 409 `conflict` when the group exists without them, or 410 for a deleted group.
+- **Join:** `POST /v1/groups/<group>/members`, not signed: `{"key", "t", "sig", "by", "bysig"}`.
+  - `sig` is the new device's join statement, and `bysig` the admit statement of `by`, a current member.
+  - Answers 201, or 200 if it's already a member. At most 32 members (409 `full`).
+  - A removed key may rejoin only with statements signed after its removal (403 `revoked` otherwise), so an old join can't be replayed.
+- **Remove:** `DELETE /v1/groups/<group>/members/<key>` (signed by any member) → 204.
+  - A device may remove itself or another (a revocation). Any member removing any other is v1's rule, and a stolen device can abuse it: see "Group recovery" below, proposed for H-M2.
+  - Removing the holder ends their lease.
+  - When the last member goes, the group is deleted (410 afterwards).
+- **Read:** `GET /v1/groups/<group>` (signed) answers `{"group", "members": [{"key", "joinedAt"}], "lease": {"holder": "<key>"|null, "epoch": 7, "expiresAt": …}}`.
+- **Lease:** `POST /v1/groups/<group>/lease` (signed): `{"op": "acquire"|"renew"|"release"|"takeover", "epoch": 7, "ttl": 60}`.
+
+  | `op` | Succeeds when | Then |
+  | :- | :- | :- |
+  | `acquire` | no holder, the lease expired, or the caller already holds it | the caller holds it; `epoch` rises by one unless the caller already held a live lease |
+  | `renew` | the caller holds it and `epoch` matches | `expiresAt` moves on |
+  | `release` | the caller holds it and `epoch` matches | no holder (the next acquire raises `epoch`) |
+  | `takeover` | always: the user chose this computer (§6.4) | the caller holds it, and `epoch` rises by one |
+
+  - `ttl` is 10–300 s (default 60).
+  - Answers 200 `{"lease": …}`, or 409 `{"error": "held", "lease": …}`.
+  - **`epoch` is the fencing token.** It only ever rises. The main computer stamps its acts with it, and peers refuse acts with an epoch older than the newest they have seen (lane H, H-M2).
+  - Only computers take the lease; phones and browsers read it.
+- **The socket:** `POST /v1/groups/<group>/tickets` (signed), then the WebSocket as for pairs.
+  - The hello is `{"t":"hello","v":1,"scope":"group","lease":…}`.
+  - Every change pushes `{"t":"lease","lease":…}` and every membership change `{"t":"members","members":[…]}`.
+
+## Group recovery (proposed for H-M2, with lane H; not built)
+
+**The problem.** In v1 any one member can remove every other member, admit keys of its own, and take the lease. A stolen device can therefore lock the user's other devices out of their group, and they can't come back, because rejoining needs a current member's admit. The thief gains no data this way: each device's local revoke cuts its links at once (§8.1). The harm is that the user's devices lose their shared lease, so recovery must give the group back to them.
+
+**The proposal:**
+
+1. **Voters.** A member votes once it has been in the group for 72 hours, or from the start if a quorum admitted it. The founder votes from the start. A thief's fresh keys don't vote, so it can't outvote the user with keys of its own.
+2. **A quorum for changes to others.** Admitting a key, or removing a member other than yourself, takes the signatures of q = ⌊v/2⌋ + 1 voters, where v counts the voters other than the target:
+   - **Admit:** the admit statement, from q members: `POST …/members` `{"key","t","sig","admits":[{"by","sig"}]}`.
+   - **Remove:** `clover-handshake-v1 remove\n<group>\n<key>\n<t>`, from q members: `DELETE …/members/<key>` `{"t","removes":[{"by","sig"}]}`.
+   - With one other voter, as in the usual two-device group, that voter alone is a quorum, which is v1's rule. Removing yourself needs only you.
+   - Co-signatures travel over the members' links, and each device asks its user first (lane H's card). A device never co-signs on its own, or the quorum means nothing.
+3. **Rollback.** When a quorum removes a member, the changes it signed in the 7 days before are undone, unless a quorum without it signs them again:
+   - the members it helped remove come back, with their old `joined`;
+   - the keys it helped admit are removed.
+
+   The lease's `epoch` still only rises. For this the group keeps each change for 7 days: its kind, target, signers and time.
+4. **The lease.** A member that doesn't vote yet can't take the lease over. Removing the holder ends their lease, as now.
+5. **Two voters.** With two voters the service can't tell the user's device from the thief's, and either may remove the other alone. Recovery there is a new group:
+   - the removed device founds a fresh group;
+   - the devices it is still paired with join it over their pair channels, where the thief has no part;
+   - lane H's registry follows the new group, and the old one is left behind.
+6. **With an account.** Once the user signs in, the account's device list replaces the group (ruling R17), and the account service's revocation is the authority.
+
+**For lane H to settle:**
+- the 72 hours and the 7 days;
+- whether two-device users get an optional recovery code at founding, kept by the user as a third voter.
+
+**The service's side, once agreed:**
+- members gain `votesFrom` and `admittedBy`, and the group gains a `changes` table kept for 7 days;
+- joins and removals take signature lists;
+- `GET /v1/groups/<group>` and the `members` frame show who votes.
+
+## The account channel (devices with an account)
+
+The same records, messages, socket and lease, for the devices of one account. The sender is the token's `dev`; records and messages are addressed to a device, and the lease's holder is a device id:
+
+| Request | Body / answer |
+| :- | :- |
+| `PUT /v1/accounts/self/records/<kind>/<to device>` | `{"gen","ttl","box"}` → 204 / 409 `stale` |
+| `GET /v1/accounts/self` | `{"online":["<device id>"],"records":[…addressed to the caller…],"lease":…}`; `online` lists the account's other devices with a live socket |
+| `POST /v1/accounts/self/messages` | `{"to","kind","ttl","box"}` → 202 `{"id","delivered"}` |
+| `POST /v1/accounts/self/inbox` | `{"messages":[…]}` |
+| `POST /v1/accounts/self/lease` | as for groups → 200 `{"lease"}` / 409 `held` |
+| `DELETE /v1/accounts/self/devices/<device>` | 204: after a revoke at the account service, any device of the account tells this service too |
+| `POST /v1/accounts/self/tickets` | `{"url","expiresAt"}`, then the socket |
+
+- **Account frames:**
+  - The hello is `{"t":"hello","v":1,"scope":"account","online":[…],"lease":…}`, `online` again without the caller.
+  - `record` and `message` frames carry `from` as a device id.
+  - `presence` frames carry the device: `{"t":"presence","device","online"}`.
+  - `lease` frames as for groups.
+- **The token:** `Authorization: Bearer <account token>`.
+  - ES256 or EdDSA, checked against the account service's JWKS, as the forwarder and push check it.
+  - Claims: `iss`, `aud`, `sub` (the account), `dev` (the device), `iat` and `exp`. A token may live 5 minutes plus a minute's skew (`services/accounts` mints 5 minutes); a longer one is refused.
+- **An account socket** lasts as long as the token it was opened with: its ticket carries the token's `exp`, and after it the socket closes with 4010, checked whenever the service next writes to it. So a device renews its socket every few minutes, with a fresh token. Revoking the device closes it at once.
+- **A device may keep 64 records** (one per recipient and kind), and the account holds at most 512 queued messages over all its devices; the oldest go first.
+- **A revoked device** is refused here for 16 minutes: the longest a token lasts (6 minutes with its skew), plus 10 minutes.
+  - Its records, queued messages and socket go at once, and so does its lease.
+  - This service keeps nothing else about it.
+
+## Rendezvous: short pairing codes
+
+A pairing by short code (lane H, `links/pairing.ts`) needs a place where the joiner finds the host before they share anything but the code. The code carries 40 bits that name a slot here and 80 bits of secret. The host puts its key and addresses in the slot, sealed under the secret, so this service can neither read them nor swap the host's key. None of these calls is signed, since the joiner has no key the service knows yet.
+
+| Request | Body / answer |
+| :- | :- |
+| `PUT /v1/rendezvous/<slot>` | `{"box", "ttl", "token"}` → 201 `{"slot","expiresAt"}`; 200 with the same answer for a retry (the same token and box); 409 `taken` for anything else on a claimed slot |
+| `GET /v1/rendezvous/<slot>` | → 200 `{"box","expiresAt"}`, or 404 `not_found` when there is none or it has ended |
+| `DELETE /v1/rendezvous/<slot>` | `Authorization: Bearer <token>` → 204; 403 `forbidden` for another token; 404 when it's already gone |
+
+- **`slot`:** the code's 5 bytes as base64url, 7 characters; a non-canonical one is 404.
+- **`box`:** the host's offer, sealed by the client (lane H seals it as a pair box under a key from the code's secret, with the slot as its scope). At most 4096 bytes decoded.
+- **`ttl`:** seconds, 1–600 (default 600). A pairing lasts 10 minutes.
+- **`token`:** 16–32 random bytes as base64url, chosen by the host. The service keeps only its SHA-256, and only the token removes the slot early.
+- **A slot is create-only.** Once claimed, its box never changes until the slot is removed or ends; not even its own token can replace it. So the box a joiner read is the one the host put, which lane H's pairing commits to. A retried `PUT` with the same token and box answers as the first did, ttl included. A host that gets 409 picks a new code. The service keeps nothing about a slot after it ends.
+- **The client:** `HandshakeRendezvous` (`client/rendezvous.ts`) has the `publish`, `lookup` and `remove` lane H's pairing asks for, and keeps each slot's token in memory.
+
+## Boxes: the client-side encryption
+
+The service never opens a box. Both clients must seal them alike:
+
+- **Pair scope.**
+  - Pairing gives both devices a 32-byte pair secret S (lane H derives it from the pairing handshake; it never reaches the service).
+  - The key: K = HKDF-SHA256(ikm = S, salt = the pair id's 16 bytes, info = `clover handshake v1 box`, 32 bytes).
+  - The box: base64url of `nonce (12 random bytes) || AES-256-GCM(K, nonce, plaintext, aad)`.
+- **Account scope.**
+  - HPKE base mode, single shot, with DHKEM(X25519, HKDF-SHA256), HKDF-SHA256 and AES-256-GCM: the forwarder's suite.
+  - It is sealed to the recipient device's X25519 key from the account's device list, with info `clover handshake v1 box`.
+  - The box: base64url of `enc (32) || ciphertext`.
+  - This needs every account device to list an X25519 key (lane H).
+- **`aad`** is UTF-8 lines joined by `\n`: `clover-handshake-v1 box`, the scope id (`<pair>`, or the account's `sub`), the sender key or device id, the recipient key or device id, the kind, and for a record its `gen`.
+
+  A box moved to another pair, another direction, another kind or another generation fails to open.
+
+Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the receiver drop stale ones:
+
+```json
+{"v": 1, "at": 1793000000123, "lan": ["192.168.1.20:41642"], "stun": ["203.0.113.7:41642"], "mapped": [],
+ "mapping": "same", "relay": "https://euw1-1.relay.iroh.network./", "node": "<link key or iroh node id>"}
+```
+`addr`: lane H owns these fields.
+- `node` is optional, and lane H's link layer leaves it out: the peer already has the link key from its device registry.
+- `stun` is asked from the port the link then binds (S1).
+- `mapping` is `same` when two STUN servers saw the same address, `varies` behind a symmetric NAT, or `unknown`.
+
+```json
+{"v": 1, "at": 1793000000123, "addr": { … an addr plaintext, optional … }}
+```
+`dial`: the receiver dials the sender at once, and again about 100 ms later.
+
+```json
+{"v": 1, "at": 1793000000123, "session": "<id>", "type": "offer", "sdp": "v=0…"}
+{"v": 1, "at": 1793000000123, "session": "<id>", "type": "candidate", "candidate": {"candidate": "…", "sdpMid": "0", "sdpMLineIndex": 0}}
+```
+`signal`: `type` is `offer`, `answer`, `candidate` or `end`. The web companion's one-time browser pairing uses the same kind for its own messages (`pair-request`, `pair-words`, `paired`, `pair-refused`; `services/web/protocol/pairing.ts`).
+
+## Limits
+
+- **Registration** (`POST /v1/pairs`, `POST /v1/groups`, `POST …/members`, and a rendezvous `PUT`) is limited hardest: 10 a minute per client address.
+  - IPv6 addresses are grouped by /64. IPv4 counts per address, with room for carrier-grade NAT.
+- **Everything else:** 120 requests a minute per member and scope (per device in the account channel), and signed requests 600 a minute per client address, counted before membership is known. A rendezvous `GET` or `DELETE` counts toward that same 600.
+- **Each limit counts per Cloudflare location.**
+- **Sizes:**
+  - bodies up to 16 KiB, and boxes up to their kind's size
+  - one record per sender and kind
+  - 16 queued messages per recipient
+  - 32 members per group
+- **Retention:**
+  - Records and messages are kept until their `ttl` at most, and so is a rendezvous slot.
+  - A pair's or group's membership stays until it is ended or emptied; registrations never expire.
+  - The lease and a member's last `t` stay with the membership.
+  - Tombstones are kept 30 days, and a group's removed keys as long as the group.
+
+## Cross-origin
+
+The web companion (`https://clover.waifucave.com`) calls the service from the browser. The service answers CORS preflights for that origin alone (a list, `WEB_ORIGINS`, for local emulators), allowing `authorization` and `content-type`.

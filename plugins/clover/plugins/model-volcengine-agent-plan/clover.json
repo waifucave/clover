@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Volcengine Ark Agent Plan",
+  "description": "Volcengine Ark Agent Plan's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "volcengine-agent-plan",
+        "name": "Volcengine Ark Agent Plan",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Volcengine Ark Agent Plan API key. Clover keeps it in your credential store and adds it to Volcengine Ark Agent Plan's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ark.cn-beijing.volces.com/api/plan/v3"
+        }
+      }
+    ]
+  }
+}

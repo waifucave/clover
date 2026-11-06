@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Baidu Qianfan (Anthropic dialect)",
+  "description": "Baidu Qianfan (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qianfan-anthropic",
+        "name": "Baidu Qianfan (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Baidu Qianfan (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Baidu Qianfan (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://qianfan.baidubce.com/anthropic"
+        }
+      }
+    ]
+  }
+}

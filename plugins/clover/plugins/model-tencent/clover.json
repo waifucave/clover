@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Tencent Hunyuan (legacy platform)",
+  "description": "Tencent Hunyuan (legacy platform)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "tencent",
+        "name": "Tencent Hunyuan (legacy platform)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Tencent Hunyuan (legacy platform) API key. Clover keeps it in your credential store and adds it to Tencent Hunyuan (legacy platform)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.hunyuan.cloud.tencent.com/v1"
+        }
+      }
+    ]
+  }
+}

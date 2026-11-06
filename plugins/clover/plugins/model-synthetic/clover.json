@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Synthetic",
+  "description": "Synthetic's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "synthetic",
+        "name": "Synthetic",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Synthetic API key. Clover keeps it in your credential store and adds it to Synthetic's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.synthetic.new/openai/v1"
+        }
+      }
+    ]
+  }
+}

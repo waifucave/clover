@@ -1,0 +1,486 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/stepfun/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://stepfun.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.stepfun.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "stepfun/step-1o-turbo-vision",
+      "providerId": "stepfun",
+      "upstreamId": "step-1o-turbo-vision",
+      "displayName": "Step 1o Turbo Vision",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1o-turbo-vision",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/vision (read 2026-09-27): \"该模型拥有强大的图像理解和视频理解能力，暂时只开放文本、图像和视频输入\" — catalog HAS inputModalities=['text'] only; page states text, image AND video input (output is text-only)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1o-turbo-vision — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1o-turbo-vision",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1o-turbo-vision",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/vision (read 2026-09-27): \"该模型拥有强大的图像理解和视频理解能力，暂时只开放文本、图像和视频输入，且仅支持文本生成\" — no reasoning/thinking-tier mention for this model, unlike Step 3.7 Flash / Step 5 Preview on the same overview page",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3725,
+          "outputPerMTokUsd": 1.192,
+          "cacheReadPerMTokUsd": 0.0745
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/pricing/details (read 2026-09-27): \"step-1o-turbo-vision | 1M tokens | 2.5元(未命中) | 0.5元(命中) | 8元\" — CNY 2.5 input / 8 output / 0.5 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — input is cache-miss price, cacheRead is cache-hit price",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "step-1o-turbo-vision",
+      "modelFamily": "other"
+    },
+    {
+      "key": "stepfun/step-1v",
+      "providerId": "stepfun",
+      "upstreamId": "step-1v",
+      "displayName": "Step 1V",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1v",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1v — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1v",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-1v",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "step-1v",
+      "modelFamily": "other"
+    },
+    {
+      "key": "stepfun/step-3.5-flash",
+      "providerId": "stepfun",
+      "upstreamId": "step-3.5-flash",
+      "displayName": "Step 3.5 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.5-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"原生图片与视频理解的旗舰多模态推理模型\" — catalog HAS inputModalities=['text'] only; page describes native image and video understanding",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.5-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力，支持多步任务分解与计划执行\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力，支持多步任务分解与计划执行\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"阶跃星辰的旗舰语言推理模型，具备顶尖推理能力\" — described as a reasoning model but the reasoning_effort parameter is explicitly documented only for step-3.5-flash-2603/step-3.7-flash/step-5-preview, not for plain step-3.5-flash — treated as reasoning-capable without an exposed effort control",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1043,
+          "outputPerMTokUsd": 0.3129,
+          "cacheReadPerMTokUsd": 0.02086
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/pricing/details (read 2026-09-27): \"step-3.5-flash | 1M tokens | 0.7元 | 0.14元 | 2.1元\" — CNY 0.7 input / 2.1 output / 0.14 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "step-3.5-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "stepfun/step-3.5-flash-2603",
+      "providerId": "stepfun",
+      "upstreamId": "step-3.5-flash-2603",
+      "displayName": "Step 3.5 Flash 2603",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.5-flash-2603",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.5-flash-2603",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.5-flash-2603 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力\" — documented on the shared step-3.5-flash family page which explicitly covers the -2603 variant",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"🛠\uFE0F 工具调用：可靠的 tools / tool_choice 调用能力\" — documented on the shared step-3.5-flash family page which explicitly covers the -2603 variant",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.5-flash (read 2026-09-27): \"Agent 优化版：基于 step-3.5-flash 针对高频 Agent 场景调优...支持 reasoning_effort 字段（low / high）\" — shared family page distinguishes this Agent-optimized -2603 variant from the base model specifically by this reasoning_effort capability",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1043,
+          "outputPerMTokUsd": 0.3129,
+          "cacheReadPerMTokUsd": 0.02086
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/pricing/details (read 2026-09-27): \"step-3.5-flash-2603 | 1M tokens | 0.7元 | 0.14元 | 2.1元\" — CNY 0.7 input / 2.1 output / 0.14 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — identical price row to base step-3.5-flash",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "step-3.5-flash-2603",
+      "modelFamily": "other"
+    },
+    {
+      "key": "stepfun/step-3.7-flash",
+      "providerId": "stepfun",
+      "upstreamId": "step-3.7-flash",
+      "displayName": "Step 3.7 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.7-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.7-flash (read 2026-09-27): \"原生支持图片和视频理解，在 Agent 框架中无需额外视觉模型，直接拖入对话框即可使用\" — catalog HAS inputModalities=['text'] only; page explicitly describes native image and video understanding",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/stepfun/index.ts#step-3.7-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.7-flash (read 2026-09-27): \"工具调用：可靠的工具调用能力，支持多步任务分解与计划执行\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.7-flash (read 2026-09-27): \"工具调用：可靠的工具调用能力，支持多步任务分解与计划执行\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-3.7-flash (read 2026-09-27): \"支持三档推理强度：low（简单问答）、medium（默认推荐，通用推理与多步任务）、high（复杂推理、数学、规划、代码分析）；Chat Completions API 使用 reasoning_effort，Messages API 使用 output_config.effort\" — \"medium\" is labelled the recommended default in the table, not stated as the API's literal default value, so default is left null",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.20115,
+          "outputPerMTokUsd": 1.2069,
+          "cacheReadPerMTokUsd": 0.04023
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/pricing/details (read 2026-09-27): \"step-3.7-flash | 1M tokens | 1.35元 | 0.27元 | 8.1元\" — CNY 1.35 input / 8.1 output / 0.27 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "step-3.7-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "stepfun/step-5-preview",
+      "providerId": "stepfun",
+      "upstreamId": "step-5-preview",
+      "displayName": "Step 5 Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-5-preview (read 2026-09-27): \"上下文窗口 1M tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-5-preview (read 2026-09-27): \"最大输出 64k tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-5-preview (read 2026-09-27): \"输入类型 文本、图片、视频\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-5-preview (read 2026-09-27): \"工具调用：支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-5-preview (read 2026-09-27): \"工具调用：支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.stepfun.com/docs/zh/guides/models/step-5-preview (read 2026-09-27): \"支持 low、medium、high；Chat Completions API 使用 reasoning_effort，Messages API 使用 output_config.effort\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.043,
+          "outputPerMTokUsd": 2.98,
+          "cacheReadPerMTokUsd": 0.05215
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.stepfun.com/docs/zh/guides/pricing/details (read 2026-09-27): \"step-5-preview | 1M tokens | 7元 | 0.35元 | 20元\" — CNY 7 input / 20 output / 0.35 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "step-5-preview",
+      "modelFamily": "other"
+    }
+  ]
+}

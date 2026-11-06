@@ -394,9 +394,16 @@ export function projectTerminal(input: TerminalInput): TerminalOutput {
   // The per-turn `usage` path needs no row match and no delta — it IS this turn — but the same two
   // exactness conditions hold: one round, and nothing else spent in the window.
   const contextFigure = totals !== undefined ? (mainExact ? mainDelta : 0) : turnUsage?.input ?? 0;
-  const contextTokens = rounds === 1 && contextFigure > 0 && input.sawSharedRowActivity !== true
-    ? { contextTokens: contextFigure }
-    : {};
+  // A-M2 (lane D's S5): the runtime states the figure itself from agent SDK 0.0.65 on, as `result.context_tokens`:
+  // the turn's LAST main-loop request's whole prompt (input + cache read + cache write), whatever the round count,
+  // never a subagent's or a tool's inner pass. It wins whenever it is there; the derivation below is the fallback
+  // for an older runtime, exact only for a one-round turn.
+  const stated = (result as { context_tokens?: unknown }).context_tokens;
+  const contextTokens = typeof stated === "number" && Number.isInteger(stated) && stated > 0
+    ? { contextTokens: stated }
+    : rounds === 1 && contextFigure > 0 && input.sawSharedRowActivity !== true
+      ? { contextTokens: contextFigure }
+      : {};
 
   const interrupted = (result as { interrupted?: unknown }).interrupted === true;
   const isError = !interrupted && (result.is_error === true || (typeof result.subtype === "string" && result.subtype.startsWith("error_")));

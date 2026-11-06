@@ -1,0 +1,324 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://router.huggingface.co/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/huggingface/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://huggingface.co — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://router.huggingface.co/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "huggingface/Qwen/Qwen2.5-7B-Instruct",
+      "providerId": "huggingface",
+      "upstreamId": "Qwen/Qwen2.5-7B-Instruct",
+      "displayName": "Qwen 2.5 7B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#Qwen/Qwen2.5-7B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#Qwen/Qwen2.5-7B-Instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#Qwen/Qwen2.5-7B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#Qwen/Qwen2.5-7B-Instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen2.5-7b-instruct",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "huggingface/deepseek-ai/DeepSeek-V3",
+      "providerId": "huggingface",
+      "upstreamId": "deepseek-ai/DeepSeek-V3",
+      "displayName": "DeepSeek V3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#deepseek-ai/DeepSeek-V3",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#deepseek-ai/DeepSeek-V3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://router.huggingface.co/v1/models (read 2026-09-27): \"\"supports_tools\":true\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://router.huggingface.co/v1/models (read 2026-09-27): \"\"supports_tools\":true\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 163840,
+        "source": "official-doc",
+        "sourceRef": "https://router.huggingface.co/v1/models (read 2026-09-27): \"\"id\":\"deepseek-ai/DeepSeek-V3\",\"providers\":[{\"provider\":\"deepinfra\",\"status\":\"live\",\"context_length\":163840,...}]\" — Only one backend (deepinfra) currently serves this id through the router.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v3",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "huggingface/google/gemma-2-9b-it",
+      "providerId": "huggingface",
+      "upstreamId": "google/gemma-2-9b-it",
+      "displayName": "Gemma 2 9B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#google/gemma-2-9b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#google/gemma-2-9b-it — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#google/gemma-2-9b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#google/gemma-2-9b-it",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "gemma-2-9b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "huggingface/meta-llama/llama-3.1-8b-instruct",
+      "providerId": "huggingface",
+      "upstreamId": "meta-llama/llama-3.1-8b-instruct",
+      "displayName": "Llama 3.1 8B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.1-8b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.1-8b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-3.1-8b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "huggingface/meta-llama/llama-3.2-11b-instruct",
+      "providerId": "huggingface",
+      "upstreamId": "meta-llama/llama-3.2-11b-instruct",
+      "displayName": "Llama 3.2 11B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.2-11b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.2-11b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.2-11b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#meta-llama/llama-3.2-11b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama-3.2-11b-instruct",
+      "modelFamily": "llama"
+    },
+    {
+      "key": "huggingface/mistralai/mistral-7b-instruct",
+      "providerId": "huggingface",
+      "upstreamId": "mistralai/mistral-7b-instruct",
+      "displayName": "Mistral 7B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#mistralai/mistral-7b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#mistralai/mistral-7b-instruct — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#mistralai/mistral-7b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/huggingface/index.ts#mistralai/mistral-7b-instruct",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-7b-instruct",
+      "modelFamily": "mistral"
+    }
+  ]
+}

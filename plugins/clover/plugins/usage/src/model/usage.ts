@@ -3,7 +3,7 @@
 // (`packages/protocol/src/usage.ts` on `lane/b-m0`) until #157 merges and the parts import it. Pure: every function
 // takes `now`, and nothing here reads a clock, a file or the network.
 
-import { t } from "../strings";
+import { isEnglish, language, t } from "../strings";
 
 export const USAGE_SOURCES = ["clover", "codex", "claude-code", "opencode", "antigravity"] as const;
 export type UsageSource = (typeof USAGE_SOURCES)[number];
@@ -68,6 +68,8 @@ export function sourceTitle(source: string): string {
 /** 950, 1.2k, 34k, 1.2M, 3.4B: tokens as the eye reads them. */
 export function compactCount(n: number): string {
   const v = Math.max(0, Math.round(n));
+  // Another language takes its own compact forms (German "1234" as "1234", Japanese "1.2万"), cut down, never up.
+  if (!isEnglish()) return numberFormat(language(), { notation: "compact", maximumFractionDigits: 1, roundingMode: "trunc" }).format(v);
   if (v < 1000) return String(v);
   const units: [number, string][] = [
     [1e9, "B"],
@@ -85,13 +87,32 @@ export function compactCount(n: number): string {
   return String(v);
 }
 
-/** $0.42, <$0.01, $12.30, $1,234: never more digits than the figure is worth. */
+/** $0.42, <$0.01, $12.30, $1,234: never more digits than the figure is worth; in the user's language's own
+ *  currency format (US dollars, which is what the providers price in). */
 export function formatCost(usd: number | undefined): string {
   if (usd === undefined) return t("clover.usage.unpriced");
-  if (usd === 0) return "$0";
-  if (usd < 0.01) return "<$0.01";
-  if (usd < 1000) return `$${usd.toFixed(2)}`;
-  return `$${Math.round(usd).toLocaleString("en-US")}`;
+  const money = (value: number, digits: number) => numberFormat(isEnglish() ? "en-US" : language(), { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+  if (usd === 0) return money(0, 0);
+  if (usd < 0.01) return `<${money(0.01, 2)}`;
+  if (usd < 1000) return money(usd, 2);
+  return money(Math.round(usd), 0);
+}
+
+const formats = new Map<string, Intl.NumberFormat>();
+
+/** One formatter per language and options, made once; an unknown language falls back to English. */
+function numberFormat(lang: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${lang} ${JSON.stringify(options)}`;
+  let f = formats.get(key);
+  if (!f) {
+    try {
+      f = new Intl.NumberFormat(lang, options);
+    } catch {
+      f = new Intl.NumberFormat("en-US", options);
+    }
+    formats.set(key, f);
+  }
+  return f;
 }
 
 /** How full a plan is, as a state with words (never colour alone): within it, nearing the limit, at it. */

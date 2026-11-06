@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "Docker Model Runner (local)",
+  "description": "Docker Model Runner (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "docker-model-runner",
+        "name": "Docker Model Runner (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:12434/engines/v1"
+        }
+      }
+    ]
+  }
+}

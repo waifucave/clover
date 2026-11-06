@@ -1,0 +1,100 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "admission is a FETCHED vendor document, but no live gate case has run against this endpoint and no terms page was read for it"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.poolside.ai/api/overview — the vendor's own documentation, retrieved 2026-09-06: the API overview documents base `https://inference.poolside.ai/v1` with `Authorization: Bearer <api-key>`.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "poolside/poolside/laguna-s-2.1",
+      "providerId": "poolside",
+      "upstreamId": "poolside/laguna-s-2.1",
+      "displayName": "poolside/laguna-s-2.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.poolside.ai/api/overview — the model is listed as a chat model; no vision/audio/video capability is stated",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.poolside.ai/release-notes/models#laguna-s-2-1 (read 2026-09-27): \"Use Laguna S 2.1 when you want an agent to: ... Hold onto a goal across extended tool use and validation loops. ... Laguna S 2.1 is designed for Poolside Agent CLI workflows and OpenAI-compatible API integrations.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.poolside.ai/release-notes/models#laguna-s-2-1 (read 2026-09-27): \"Use Laguna S 2.1 when you want an agent to: ... Hold onto a goal across extended tool use and validation loops. ... Laguna S 2.1 is designed for Poolside Agent CLI workflows and OpenAI-compatible API integrations.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.poolside.ai/release-notes/models#laguna-s-2-1 (read 2026-09-27): \"Laguna S 2.1 supports up to 1M tokens of context for long-horizon coding and research workflows.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.poolside.ai/release-notes/models#laguna-s-2-1 (read 2026-09-27): \"Laguna S 2.1 supports two thinking settings: off and max. Max thinking is enabled by default, and low, medium, and high effort controls are not available in this release.\" — effort values ['off', 'max'] ride `thinking`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "poolside/laguna-s-2.1",
+      "modelFamily": "other"
+    }
+  ]
+}

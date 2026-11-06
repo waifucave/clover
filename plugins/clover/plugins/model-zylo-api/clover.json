@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Zylo AI",
+  "description": "Zylo AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zylo-api",
+        "name": "Zylo AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Zylo AI API key. Clover keeps it in your credential store and adds it to Zylo AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.zyloai.net/v1"
+        }
+      }
+    ]
+  }
+}

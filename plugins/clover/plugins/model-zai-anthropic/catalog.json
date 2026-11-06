@@ -1,0 +1,701 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/zai/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "The cited documentation (docs.z.ai/devpack/tool/claude, and docs.z.ai/scenario-example/develop-tools/claude re-read 2026-09-25) describes `https://api.z.ai/api/anthropic` only for the GLM Coding Plan; no page read states that METERED (pay-as-you-go) API keys are accepted there. Needs a live metered-key probe before this row can be trusted for token billing.",
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint."
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.z.ai/devpack/tool/claude — z.ai's own GLM Coding Plan documentation for Anthropic-compatible clients, retrieved 2026-09-06: `ANTHROPIC_BASE_URL` is `\"https://api.z.ai/api/anthropic\"`, which is byte-identical to the API root the mapper derives from this id's pinned RegistryEntry (`format: \"claude\"` at `https://api.z.ai/api/anthropic/v1/messages`). Two independent sources, one value. (Round-1 finding I-4: the previous citation named `open.bigmodel.cn`, the mainland product site, and sat in the pinned-upstream tier although the lane had fetched this document.)",
+      "tier": "fetched-document"
+    }
+  },
+  "rows": [
+    {
+      "key": "zai-anthropic/glm-4.7",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-4.7",
+      "displayName": "GLM 4.7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-4.7",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-4.7 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-4.7 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-4.7 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 2.2,
+          "cacheReadPerMTokUsd": 0.11
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — current Z.AI USD price-per-1M-tokens table applies to Z.AI model use independent of the documented OpenAI- versus Anthropic-compatible request dialect; the cached-input field is recorded as cache-read. Cache storage is Limited-time Free but is not represented by ModelPricing (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"Context Length 200K\" — stated as \"200K\"; z.ai serves the same model on both OpenAI and Anthropic dialects at this one model page",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"Maximum Output Tokens 128K\" — stated as \"128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"\"thinking\": { \"type\": \"enabled\" } ... # Optional: \"disabled\" or \"enabled\", default is \"enabled\"\" — field is a nested object {\"thinking\":{\"type\":...}} — the page's effort values ['enabled', 'disabled'] are not recorded: a third-party Anthropic-dialect row keeps an empty vocabulary and continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-4.7",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-4.7-flash",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-4.7-flash",
+      "displayName": "GLM 4.7 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-4.7-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-4.7-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-4.7 lists Function Call (the GLM-4.7 page's GLM-4.7-Flash tab; the flash slug has no page of its own)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-4.7 lists Function Call (the GLM-4.7 page's GLM-4.7-Flash tab; the flash slug has no page of its own)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0,
+          "outputPerMTokUsd": 0,
+          "cacheReadPerMTokUsd": 0
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — current Z.AI USD price-per-1M-tokens table applies to Z.AI model use independent of the documented OpenAI- versus Anthropic-compatible request dialect; the cached-input field is recorded as cache-read. Cache storage is Limited-time Free but is not represented by ModelPricing (retrieved 2026-09-19). GLM-4.7-Flash is listed Free for input, cached input, cache storage, and output, so this is an explicit zero list price rather than an unknown price.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"GLM-4.7-Flash ... Context Length 200K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"GLM-4.7-Flash ... Maximum Output Tokens 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/llm/glm-4.7 (read 2026-09-27): \"\"thinking\": { \"type\": \"enabled\" } ... default is \"enabled\"\" — same shared page/mechanism as GLM-4.7 — the page's effort values ['enabled', 'disabled'] are not recorded: a third-party Anthropic-dialect row keeps an empty vocabulary and continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-4.7-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-5",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-5",
+      "displayName": "GLM 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 3.2,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — current Z.AI USD price-per-1M-tokens table applies to Z.AI model use independent of the documented OpenAI- versus Anthropic-compatible request dialect; the cached-input field is recorded as cache-read. Cache storage is Limited-time Free but is not represented by ModelPricing (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5 (read 2026-09-27): \"Context Length 200K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5 (read 2026-09-27): \"Maximum Output Tokens 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/llm/glm-5 (read 2026-09-27): \"\"thinking\": { \"type\": \"enabled\" }, # Optional: \"disabled\" or \"enabled\", default is \"enabled\"\" — the page's effort values ['enabled', 'disabled'] are not recorded: a third-party Anthropic-dialect row keeps an empty vocabulary and continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-5-turbo",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-5-turbo",
+      "displayName": "GLM 5 Turbo",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5-turbo",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5-turbo — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5-turbo lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5-turbo lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "canonicalModelId": "glm-5-turbo",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-5.1",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-5.1",
+      "displayName": "GLM 5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5.1",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5.1 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5.1 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5.1 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — current Z.AI USD price-per-1M-tokens table applies to Z.AI model use independent of the documented OpenAI- versus Anthropic-compatible request dialect; the cached-input field is recorded as cache-read. Cache storage is Limited-time Free but is not represented by ModelPricing (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.1 (read 2026-09-27): \"Context Length 200K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.1 (read 2026-09-27): \"Maximum Output Tokens 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/llm/glm-5.1 (read 2026-09-27): \"thinking = { \"type\": \"enabled\" }, # Optional: \"disabled\" or \"enabled\", default is \"enabled\"\" — the page's effort values ['enabled', 'disabled'] are not recorded: a third-party Anthropic-dialect row keeps an empty vocabulary and continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-5.2",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-5.2",
+      "displayName": "GLM 5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/zai/index.ts#glm-5.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5.2 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/devpack/tool/claude — the GLM Coding Plan's Claude Code guide points ANTHROPIC_BASE_URL at https://api.z.ai/api/anthropic (this row's endpoint); https://docs.z.ai/guides/llm/glm-5.2 lists Function Call",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — current Z.AI USD price-per-1M-tokens table applies to Z.AI model use independent of the documented OpenAI- versus Anthropic-compatible request dialect; the cached-input field is recorded as cache-read. Cache storage is Limited-time Free but is not represented by ModelPricing (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.2 (read 2026-09-27): \"Context Length 1M\" — stated as \"1M\"; larger than GLM-5/5.1's 200K",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.2 (read 2026-09-27): \"Maximum Output Tokens 128K\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/guides/overview/concept-param (read 2026-09-27): \"reasoning_effort ... Supported Models: GLM-5.2 and above; Allowed values: max, high, low; Default: max\" — GLM-5.2 also keeps the generic thinking.type enabled/disabled toggle documented on its own model page, but reasoning_effort is the model-specific granular control introduced starting with this model — the page's effort values ['max', 'high', 'low'] are not recorded: a third-party Anthropic-dialect row keeps an empty vocabulary and continuation `none`",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-5.3",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-5.3",
+      "displayName": "GLM-5.3 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — 1M context length",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — 128K maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — text chat input documented for glm-5.3",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — chat completion returns text content",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.3 — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/devpack/latest-model — Coding Plan Anthropic wire: output_config.effort maps low/high/max and disabled thinking maps to low",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "max"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — current Z.AI USD price-per-1M-tokens table applies to Z.AI model use independent of the documented OpenAI- versus Anthropic-compatible request dialect; the cached-input field is recorded as cache-read. Cache storage is Limited-time Free but is not represented by ModelPricing (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "zai-anthropic/glm-5.3-flash",
+      "providerId": "zai-anthropic",
+      "upstreamId": "glm-5.3-flash",
+      "displayName": "GLM-5.3-FLASH (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — 1M context length",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — 128K maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Flash/FlashX Input Modality Video/Image/Text/File; page explicitly cites PDF documents; PDF is normalized from File",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Output Modality Text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Function Calling listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Structured Output (JSON) listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/vlm/glm-5.3-flash — Context Caching listed under Capability Support",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.z.ai/devpack/latest-model — Coding Plan Anthropic wire: output_config.effort maps low/high/max and disabled thinking maps to low",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:04:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "continuation": "none",
+        "defaultEffort": "max"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/overview/pricing — GLM-5.3-FLASH input $0.15, cached input $0.03, output $0.5 per million tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:04:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    }
+  ]
+}

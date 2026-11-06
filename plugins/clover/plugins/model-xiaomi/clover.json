@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Xiaomi MiMo API (OpenAI dialect)",
+  "description": "Xiaomi MiMo API (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "xiaomi",
+        "name": "Xiaomi MiMo API (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Xiaomi MiMo API (OpenAI dialect) API key. Clover keeps it in your credential store and adds it to Xiaomi MiMo API (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.xiaomimimo.com/v1"
+        }
+      }
+    ]
+  }
+}

@@ -70,6 +70,8 @@ export interface IslandProps {
   working?: number;
   /** Tabs after Needs you. */
   tabs?: readonly IslandTabEntry[];
+  /** The bots' names and ids: another plugin named as one gets no tab. */
+  botNames?: readonly string[];
   /** The tab the working wing opens on; the island's current one when absent. */
   workingTab?: string;
   /** A question answered here. Resolve false (or throw) when the answer did not go through. */
@@ -107,7 +109,8 @@ export function Island(props: IslandProps): ReactElement {
   const [waitingHovered, setWaitingHovered] = useState(false);
 
   const given = props.tabs ?? NO_TABS;
-  const extraTabs = useMemo(() => guestTabs(given), [given]);
+  const botNames = props.botNames;
+  const extraTabs = useMemo(() => guestTabs(given, botNames), [given, botNames]);
   // Keyed by what the tabs are, not by the array: a parent passing a fresh array each render changes nothing.
   const tabKey = extraTabs.map(({ id, title }) => `${id}\u0000${title}`).join("\u0001");
   const tabList = useMemo(() => [NEEDS_YOU, ...extraTabs.map(({ id, title }) => ({ id, title }))], [tabKey]); // eslint-disable-line react-hooks/exhaustive-deps

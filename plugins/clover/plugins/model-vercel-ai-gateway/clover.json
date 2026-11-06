@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Vercel AI Gateway",
+  "description": "Vercel AI Gateway's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "vercel-ai-gateway",
+        "name": "Vercel AI Gateway",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Vercel AI Gateway API key. Clover keeps it in your credential store and adds it to Vercel AI Gateway's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ai-gateway.vercel.sh/v1"
+        }
+      }
+    ]
+  }
+}

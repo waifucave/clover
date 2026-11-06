@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Inference.net",
+  "description": "Inference.net's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "inference-net",
+        "name": "Inference.net",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Inference.net API key. Clover keeps it in your credential store and adds it to Inference.net's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.inference.net/v1"
+        }
+      }
+    ]
+  }
+}

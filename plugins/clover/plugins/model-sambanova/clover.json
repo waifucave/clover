@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "SambaNova",
+  "description": "SambaNova's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "sambanova",
+        "name": "SambaNova",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your SambaNova API key. Clover keeps it in your credential store and adds it to SambaNova's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.sambanova.ai/v1"
+        }
+      }
+    ]
+  }
+}

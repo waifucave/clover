@@ -1,0 +1,61 @@
+{
+  "manifest": 1,
+  "name": "Google Vertex AI",
+  "description": "Google Vertex AI's models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "node"
+  },
+  "capabilities": [
+    "network:us-central1-aiplatform.googleapis.com",
+    "network:us-east1-aiplatform.googleapis.com",
+    "network:us-east4-aiplatform.googleapis.com",
+    "network:us-east5-aiplatform.googleapis.com",
+    "network:us-south1-aiplatform.googleapis.com",
+    "network:us-west1-aiplatform.googleapis.com",
+    "network:us-west4-aiplatform.googleapis.com",
+    "network:northamerica-northeast1-aiplatform.googleapis.com",
+    "network:southamerica-east1-aiplatform.googleapis.com",
+    "network:europe-west1-aiplatform.googleapis.com",
+    "network:europe-west2-aiplatform.googleapis.com",
+    "network:europe-west3-aiplatform.googleapis.com",
+    "network:europe-west4-aiplatform.googleapis.com",
+    "network:europe-west6-aiplatform.googleapis.com",
+    "network:europe-west8-aiplatform.googleapis.com",
+    "network:europe-west9-aiplatform.googleapis.com",
+    "network:europe-north1-aiplatform.googleapis.com",
+    "network:europe-central2-aiplatform.googleapis.com",
+    "network:europe-southwest1-aiplatform.googleapis.com",
+    "network:asia-east1-aiplatform.googleapis.com",
+    "network:asia-east2-aiplatform.googleapis.com",
+    "network:asia-northeast1-aiplatform.googleapis.com",
+    "network:asia-northeast3-aiplatform.googleapis.com",
+    "network:asia-south1-aiplatform.googleapis.com",
+    "network:asia-southeast1-aiplatform.googleapis.com",
+    "network:australia-southeast1-aiplatform.googleapis.com",
+    "network:me-central1-aiplatform.googleapis.com",
+    "network:me-central2-aiplatform.googleapis.com",
+    "network:me-west1-aiplatform.googleapis.com",
+    "network:oauth2.googleapis.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "vertex",
+        "name": "Google Vertex AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "gcp-service-account",
+            "help": "A Google Cloud service account key for Vertex AI, as JSON. Only this plugin's own process reads it, to sign its token requests."
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

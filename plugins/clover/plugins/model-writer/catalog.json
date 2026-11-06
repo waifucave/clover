@@ -1,0 +1,249 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/writer/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://dev.writer.com — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.writer.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "writer/palmyra-x4",
+      "providerId": "writer",
+      "upstreamId": "palmyra-x4",
+      "displayName": "Palmyra X4",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x4",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x4 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Tool calling: Palmyra X4 is built to handle precise API interactions, allowing it to execute complex functions directly, making it a versatile tool for enterprise-level integrations and automated actions.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Tool calling: Palmyra X4 is built to handle precise API interactions, allowing it to execute complex functions directly, making it a versatile tool for enterprise-level integrations and automated actions.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 4096,
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Max output ... 8,192 tokens | 8,192 tokens | 4,096 tokens (columns: Palmyra X6 | Palmyra X5 | Palmyra X4)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2.5,
+          "outputPerMTokUsd": 10
+        },
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Input: $2.50 per 1M tokens / Output: $10.00 per 1M tokens\" — USD 2.5 input / 10.0 output per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "palmyra-x4",
+      "modelFamily": "other"
+    },
+    {
+      "key": "writer/palmyra-x5",
+      "providerId": "writer",
+      "upstreamId": "palmyra-x5",
+      "displayName": "Palmyra X5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/writer/index.ts#palmyra-x5",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Max output ... 8,192 tokens | 8,192 tokens | 4,096 tokens (columns: Palmyra X6 | Palmyra X5 | Palmyra X4)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6,
+          "outputPerMTokUsd": 6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Input: $0.60 per 1M tokens / Output: $6.00 per 1M tokens\" — USD 0.6 input / 6.0 output per 1M tokens; tiers: Palmyra X5 used inside WRITER Agent is billed at a different rate: $5.00 input / $12.00 output per 1M tokens (see /home/pricing#writer-agent). (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "palmyra-x5",
+      "modelFamily": "other"
+    },
+    {
+      "key": "writer/palmyra-x6",
+      "providerId": "writer",
+      "upstreamId": "palmyra-x6",
+      "displayName": "Palmyra X6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Context window: 1M\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Max output ... 8,192 tokens (Palmyra X6 column)\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"MCP tool use: Discover and call external tools through MCP connectors\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"MCP tool use: Discover and call external tools through MCP connectors\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 8
+        },
+        "source": "official-doc",
+        "sourceRef": "https://dev.writer.com/home/models (read 2026-09-27): \"Input: $2.00 per 1M tokens / Output: $8.00 per 1M tokens\" — USD 2.0 input / 8.0 output per 1M tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "palmyra-x6",
+      "modelFamily": "other"
+    }
+  ]
+}

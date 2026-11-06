@@ -1,0 +1,729 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.crusoecloud.com/quickstart/getting-started-with-serverless-inference, https://docs.crusoecloud.com/serverless-inference/available-models and https://www.crusoe.ai/cloud/pricing — Crusoe documentation, retrieved 2026-09-27: `OpenAI(api_key=CRUSOE_API_KEY, base_url=\"https://api.inference.crusoecloud.com/v1\")`; \"You can use the OpenAI-API compatible endpoint at api.inference.crusoecloud.com to access the models below\"; \"All prices shown per 1 million tokens in USD.\"",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "crusoe/deepseek-ai/DeepSeek-V4-Flash",
+      "providerId": "crusoe",
+      "upstreamId": "deepseek-ai/DeepSeek-V4-Flash",
+      "displayName": "DeepSeek V4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `deepseek-ai/DeepSeek-V4-Flash` — context length \"1M\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.28,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"DeepSeek V4 Flash | $0.14 | $0.28 | $0.03\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "crusoe/deepseek-ai/DeepSeek-V4-Pro",
+      "providerId": "crusoe",
+      "upstreamId": "deepseek-ai/DeepSeek-V4-Pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `deepseek-ai/DeepSeek-V4-Pro` — context length \"1M\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.74,
+          "outputPerMTokUsd": 3.48,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"DeepSeek V4 Pro | $1.74 | $3.48 | $0.15\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "crusoe/google/gemma-4-31b-it",
+      "providerId": "crusoe",
+      "upstreamId": "google/gemma-4-31b-it",
+      "displayName": "Gemma 4 31B-it",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `google/gemma-4-31b-it` — context length \"262k\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.14,
+          "outputPerMTokUsd": 0.4,
+          "cacheReadPerMTokUsd": 0.14
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"Gemma 4 31B-it | $0.14 | $0.40 | $0.14\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemma-4-31b-it",
+      "modelFamily": "gemma"
+    },
+    {
+      "key": "crusoe/moonshotai/Kimi-K2.6",
+      "providerId": "crusoe",
+      "upstreamId": "moonshotai/Kimi-K2.6",
+      "displayName": "Kimi K2.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `moonshotai/Kimi-K2.6` — context length \"256K\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.7,
+          "outputPerMTokUsd": 3.5,
+          "cacheReadPerMTokUsd": 0.35
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"Kimi K2.6 | $0.70 | $3.50 | $0.35\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "crusoe/nvidia/Nemotron-3-Nano-30B-A3B",
+      "providerId": "crusoe",
+      "upstreamId": "nvidia/Nemotron-3-Nano-30B-A3B",
+      "displayName": "Nemotron 3 Nano 30B-A3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `nvidia/Nemotron-3-Nano-30B-A3B` — context length \"262k\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.05,
+          "outputPerMTokUsd": 0.2,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"Nemotron 3 Nano 30B | $0.05 | $0.20 | $0.03\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3-nano-30b-a3b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "crusoe/nvidia/Nemotron-3-Super-120B-A12B",
+      "providerId": "crusoe",
+      "upstreamId": "nvidia/Nemotron-3-Super-120B-A12B",
+      "displayName": "Nemotron 3 Super 120B-A12B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `nvidia/Nemotron-3-Super-120B-A12B` — context length \"262k\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3,
+          "outputPerMTokUsd": 2.4,
+          "cacheReadPerMTokUsd": 0.15
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"Nemotron 3 Super 120B | $0.30 | $2.40 | $0.15\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3-super-120b-a12b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "crusoe/nvidia/nemotron-3.5-lightning-30b-a3b",
+      "providerId": "crusoe",
+      "upstreamId": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "displayName": "Nemotron 3.5 Lightning 30B-A3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `nvidia/nemotron-3.5-lightning-30b-a3b` — context length \"1M\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.05,
+          "outputPerMTokUsd": 0.2,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"Nemotron 3.5 Lightning | $0.05 | $0.20 | $0.03\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "nemotron-3.5-lightning-30b-a3b",
+      "modelFamily": "nemotron"
+    },
+    {
+      "key": "crusoe/openai/gpt-oss-120b",
+      "providerId": "crusoe",
+      "upstreamId": "openai/gpt-oss-120b",
+      "displayName": "GPT-OSS 120B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `openai/gpt-oss-120b` — context length \"128k\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.05,
+          "outputPerMTokUsd": 0.2,
+          "cacheReadPerMTokUsd": 0.05
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"GPT-OSS 120B | $0.05 | $0.20 | $0.05\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "crusoe/qwen/Qwen3.8-27B",
+      "providerId": "crusoe",
+      "upstreamId": "qwen/Qwen3.8-27B",
+      "displayName": "Qwen3.8 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `qwen/Qwen3.8-27B` — context length \"256k\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "crusoe/zai/GLM-5.3",
+      "providerId": "crusoe",
+      "upstreamId": "zai/GLM-5.3",
+      "displayName": "GLM 5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `zai/GLM-5.3` — context length \"1M\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.4,
+          "outputPerMTokUsd": 4.4,
+          "cacheReadPerMTokUsd": 0.26
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"GLM 5.3 | $1.40 | $4.40 | $0.26\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "zai/glm-5.3",
+      "modelFamily": "other"
+    },
+    {
+      "key": "crusoe/zai/GLM-5.3-Flash",
+      "providerId": "crusoe",
+      "upstreamId": "zai/GLM-5.3-Flash",
+      "displayName": "GLM 5.3 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.crusoecloud.com/serverless-inference/available-models (read 2026-09-27): model table row `zai/GLM-5.3-Flash` — context length \"1M\" (K read as 1000, M as 1,000,000)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "Crusoe's available-models and pricing pages state no tool-calling capability per model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.5,
+          "cacheReadPerMTokUsd": 0.03
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.crusoe.ai/cloud/pricing (read 2026-09-27): \"GLM 5.3 Flash | $0.15 | $0.50 | $0.03\" (Model | Input | Output | Cached); \"All prices shown per 1 million tokens in USD.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "zai/glm-5.3-flash",
+      "modelFamily": "other"
+    }
+  ]
+}

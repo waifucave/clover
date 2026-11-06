@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "NVIDIA Triton Inference Server (local)",
+  "description": "NVIDIA Triton Inference Server (local)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "triton",
+        "name": "NVIDIA Triton Inference Server (local)",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "http://127.0.0.1:9000/v1"
+        }
+      }
+    ]
+  }
+}

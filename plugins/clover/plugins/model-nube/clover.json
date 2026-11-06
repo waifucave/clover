@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Nube.sh",
+  "description": "Nube.sh's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nube",
+        "name": "Nube.sh",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Nube.sh API key. Clover keeps it in your credential store and adds it to Nube.sh's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://ai.nube.sh/api/v1"
+        }
+      }
+    ]
+  }
+}

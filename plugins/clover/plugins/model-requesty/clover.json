@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Requesty Router",
+  "description": "Requesty Router's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "requesty",
+        "name": "Requesty Router",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Requesty Router API key. Clover keeps it in your credential store and adds it to Requesty Router's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://router.requesty.ai/v1"
+        }
+      }
+    ]
+  }
+}
