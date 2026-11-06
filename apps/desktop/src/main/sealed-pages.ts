@@ -75,15 +75,13 @@ export function fieldPage(input: { cardId: string; token: string; field: string;
 /** A button's page: the card's own label (its kind's option), with the glyph only as the core draws it, and the
  *  answer's proof path through the preload — never a script of the part's own. Its click counts only while the whole
  *  button shows, uncovered, at its own visible size (IOv2 in the page; S4's run of it keeps the count honest), and
- *  the answer passes the option (B1: plain JS, the button's own dataset). `trust` is the test-only knob
- *  (`CLOVER_TEST_SEALED_TRUST=1`): it lets a headless run's synthetic pointerdown count as the user's own. */
-export function buttonPage(input: { cardId: string; token: string; option: string; label: string; kind: "approve" | "deny"; tokens?: Readonly<Record<string, TokenValue>> }, trust = false): string {
+ *  the answer passes the option (B1: plain JS, the button's own dataset). Nothing in production relaxes `isTrusted`
+ *  or the open-delay: a trusted press from the real input path is the only way an answer leaves this page. */
+export function buttonPage(input: { cardId: string; token: string; option: string; label: string; kind: "approve" | "deny"; tokens?: Readonly<Record<string, TokenValue>> }): string {
   const body = `<button type="button" class="seal-button" data-option="${esc(input.option)}" data-kind="${esc(input.kind)}">
-  <span class="label">${sealedEscape(input.label)}</span>
+  <span class="label">${esc(sealedEscape(input.label))}</span>
 </button>
 <p class="state" data-state="waiting" role="status"></p>`;
-  const skipTrust = trust ? "" : "if (!e.isTrusted) return;\n    ";
-  const skipOpened = trust ? "" : "if (Date.now() - openedAt < 400) return;\n    ";
   const script = `(() => {
   const b = window.cloverSealed;
   if (b === undefined) return;
@@ -104,15 +102,16 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     const b2 = document.querySelector(".seal-button");
     if (b2 !== null) io.observe(b2);
   });
-  // A click inside the button only, its own press through the renderer's own handed-over event (a page's own
-  // dispatch's isTrusted reads false), after enough time visible and a beat after the page was shown.
+  // A click inside the button only, the renderer's own handed-over press (a page's own dispatch's isTrusted reads
+  // false), after enough time visible and a beat after the page was shown. isTrusted and the 400 ms open-delay are
+  // never relaxed: only a real input event from Chromium's own input path counts.
   const openedAt = Date.now();
   window.addEventListener("pointerdown", (e) => {
     if (answering || !visible) return;
-    ${skipTrust}
+    if (!e.isTrusted) return;
     const closest = e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (closest === null) return;
-    ${skipOpened}
+    if (Date.now() - openedAt < 400) return;
     if (Date.now() - visibleAt < 500) return;
     const option = closest ? closest.dataset.option : null;
     if (typeof option !== "string" || option === "") return;

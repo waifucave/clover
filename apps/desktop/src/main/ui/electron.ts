@@ -83,7 +83,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
 
   // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
   // copy of the card's sealed content. What runs in it is the page's own check (IOv2 in E-M3's next piece); its
-  // answers go over the preload's own channel (`clover:sealed-answer`).
+  // answers go over the preload's own channel (`clover:sealed-answer`). Nothing in production relaxes `isTrusted`
+  // or the open-delay: there is no `trust` knob.
   ses.protocol.handle(SEALED_SCHEME, (request) => {
     // Only a real iframe load takes the token: a stray top-level or resource fetch never serves a frame's page (S7).
     if (request.headers.get("sec-fetch-dest") !== "iframe") return forbidden();
@@ -91,8 +92,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (url.pathname !== "/" && !url.pathname.startsWith("/card/")) return notFound();
     const token = url.searchParams.get("token");
     if (token === null || token === "" || token.length > 128) return forbidden();
-    const trust = url.searchParams.get("trust") === "1";
-    const serving = runtime.serveSeal(token, trust);
+    const serving = runtime.serveSeal(token);
     if (serving === undefined) return forbidden();
     return new Response(serving.html, { headers: serving.headers });
   });
