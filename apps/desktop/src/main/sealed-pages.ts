@@ -24,9 +24,10 @@ function tokenCss(tokens: Readonly<Record<string, TokenValue>> | undefined): str
   return lines.length === 0 ? "" : `:root {\n${lines.join("\n")}\n}\n`;
 }
 
-/** A token's value stays what the store said: quotes and backslashes escaped, so it is a value, never markup. */
+/** A token's value stays what the store said: quotes and backslashes escaped, so it is a value, never markup, and no
+ *  brace opens or closes anything the page's CSS holds. */
 function cssSafe(text: string): string {
-  return text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("<", "\\3c ").replaceAll(">", "\\3e ");
+  return text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("<", "\\3c ").replaceAll(">", "\\3e ").replaceAll("{", "\\7b ").replaceAll("}", "\\7d ");
 }
 
 /** The sealed text at one line's length: control characters and bidirectional marks visible as their escapes. */
@@ -46,7 +47,7 @@ function isBidirectional(code: number): boolean {
 }
 
 /** A text field's HTML: its lines in a block that scrolls inside the part's size, in the part's own typography. */
-export function fieldPage(input: { cardId: string; token: string; field: string; value: { type: "text"; text: string } | { type: "code"; code: string; language?: string } | { type: "list"; items: readonly string[] } | { type: "rows"; rows: readonly { label: string; value: string }[] }; tokens?: Readonly<Record<string, TokenValue>>; brand: { font: string; size: string; line: string; accent: string; text: string; family: string } }): string {
+export function fieldPage(input: { cardId: string; token: string; field: string; value: { type: "text"; text: string } | { type: "code"; code: string; language?: string } | { type: "list"; items: readonly string[] } | { type: "rows"; rows: readonly { label: string; value: string }[] }; tokens?: Readonly<Record<string, TokenValue>> }): string {
   const body = (() => {
     if (input.value.type === "text") return `<p class="text">${esc(input.value.text)}</p>`;
     if (input.value.type === "code") return `<pre class="code"><code>${esc(input.value.code)}</code></pre>`;
@@ -62,17 +63,15 @@ export function fieldPage(input: { cardId: string; token: string; field: string;
 export function buttonPage(input: {
   cardId: string; token: string; option: string; label: string; kind: "approve" | "deny";
   tokens?: Readonly<Record<string, TokenValue>>;
-  brand: { font: string; size: string; line: string; accent: string; text: string; family: string };
-  risk?: { channelMs: number; overMs: number };
 }): string {
   const body = `<button type="button" class="seal-button" data-option="${esc(input.option)}" data-kind="${esc(input.kind)}">
   <span class="label">${esc(input.label)}</span>
 </button>
 <p class="state" data-state="waiting" role="status"></p>`;
-  return page({ ...input, tokens: input.tokens }, body, input.kind === "approve" ? "seal-approve" : "seal-deny", true);
+  return page(input, body, input.kind === "approve" ? "seal-approve" : "seal-deny", true);
 }
 
-function page(input: { brand: { font: string; size: string; line: string; accent: string; text: string; family: string }; token: string; tokens?: Readonly<Record<string, TokenValue>> }, body: string, extraClass: string, script = false): string {
+function page(input: { cardId: string; token: string; tokens?: Readonly<Record<string, TokenValue>> }, body: string, extraClass: string, script = false): string {
   const style = tokenCss(input.tokens);
   return `<!doctype html>
 <html lang="en" class="${extraClass}">
@@ -82,9 +81,7 @@ ${style === "" ? "" : `<style>${style}</style>`}
 <style>
 html, body { margin: 0; background: transparent; }
 body {
-  font-family: ${cssSafe(input.brand.family)}, -apple-system, "Segoe UI", sans-serif;
-  font-size: ${cssSafe(input.brand.size)};
-  line-height: ${cssSafe(input.brand.line)};
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--clover-card-text, var(--clover-color-text, #1f1f1f));
   padding: 0;
   overflow-wrap: break-word;
@@ -94,10 +91,10 @@ body {
 .list, .rows { margin: 0; padding-inline-start: 1.2em }
 .seal-button {
  appearance: none;
-  border: 1px solid var(--clover-card-button-rim, transparent);
+  border: 1px solid var(--clover-card-button-radius, transparent);
   border-radius: var(--clover-card-button-radius, 10px);
-  background: ${input.brand.accent};
-  color: var(--clover-card-button-text, #fff);
+  background: var(--clover-card-approve-background, var(--clover-color-accent, #977000));
+  color: var(--clover-card-approve-text, #fff);
   font: inherit;
   font-weight: 500;
   padding: 6px 14px;

@@ -5,13 +5,11 @@ import { buttonPage, fieldPage, sealedEscape } from "../src/main/sealed-pages";
 import type { SealedValue } from "@waifucave/clover-protocol";
 
 const TOKEN = "se_001abcdef";
-const BRAND = { font: "14px", size: "14px", line: "1.4", accent: "var(--clover-card-approve-background)", text: "#1f1f1f", family: "system-ui" };
-
 describe("a sealed field's page", () => {
   const text: Extract<SealedValue, { type: "text" }> = { type: "text", text: "Run a command?" };
 
   test("the field's frame shows the sealed words, with the card's own tokens in, and nothing out", () => {
-    const p = fieldPage({ cardId: "card_0a1b2c3d", token: TOKEN, field: "title", value: text, tokens: { "card.radius": "12px", "plugin.other": "x" }, brand: BRAND });
+    const p = fieldPage({ cardId: "card_0a1b2c3d", token: TOKEN, field: "title", value: text, tokens: { "card.radius": "12px", "plugin.other": "x" } });
     expect(p).toContain("Run a command?");
     expect(p).toContain('--clover-card-radius: 12px;');
     expect(p).not.toContain("plugin.other");
@@ -21,16 +19,16 @@ describe("a sealed field's page", () => {
 
   test("code and lists and rows come through their own tags", () => {
     const code: Extract<SealedValue, { type: "code" }> = { type: "code", code: "rm -rf build/", language: "sh" };
-    expect(fieldPage({ cardId: "card_x", token: TOKEN, field: "command", value: code, brand: BRAND })).toContain('<pre class="code"><code>rm -rf build/</code></pre>');
+    expect(fieldPage({ cardId: "card_x", token: TOKEN, field: "command", value: code })).toContain('<pre class="code"><code>rm -rf build/</code></pre>');
     const list: Extract<SealedValue, { type: "list" }> = { type: "list", items: ["one", "two"] };
-    expect(fieldPage({ cardId: "card_x", token: TOKEN, field: "detail", value: list, brand: BRAND })).toContain("<li>one</li>");
+    expect(fieldPage({ cardId: "card_x", token: TOKEN, field: "detail", value: list })).toContain("<li>one</li>");
     const rows: Extract<SealedValue, { type: "rows" }> = { type: "rows", rows: [{ label: "site", value: "ev.example" }] };
-    expect(fieldPage({ cardId: "card_x", token: TOKEN, field: "detail", value: rows, brand: BRAND })).toContain("<dt>site</dt><dd>ev.example</dd>");
+    expect(fieldPage({ cardId: "card_x", token: TOKEN, field: "detail", value: rows })).toContain("<dt>site</dt><dd>ev.example</dd>");
   });
 
   test("the page stays text: markup in a field's content is escaped", () => {
     const evil: Extract<SealedValue, { type: "text" }> = { type: "text", text: `<img src=x onerror="alert(1)"><script>bad()</script>` };
-    const p = fieldPage({ cardId: "card_x", token: TOKEN, field: "detail", value: evil, brand: BRAND });
+    const p = fieldPage({ cardId: "card_x", token: TOKEN, field: "detail", value: evil });
     expect(p).not.toContain("<img");
     expect(p).not.toContain("<script>bad");
     expect(p).toContain("&lt;img src=x");
@@ -40,16 +38,16 @@ describe("a sealed field's page", () => {
     expect(sealedEscape("a\u202Eb")).toBe("aU+202Eb");
     expect(sealedEscape("a\u0007b")).toBe("aU+0007b");
     expect(sealedEscape("a\nb")).toBe("a\nb");
-    const tricky = fieldPage({ cardId: "card_x", token: TOKEN, field: "title", value: { type: "text", text: "x" }, tokens: { "card.font.family": 'a"); b { color: red }' }, brand: { ...BRAND, font: "" } });
-    expect(tricky).toContain('--clover-card-font-family: a\\"); b { color: red };');
-    // ...and that stays inside the custom property: no extra rule made of it.
-    expect(tricky.split("{color: red}").length).toBe(1);
+    const tricky = fieldPage({ cardId: "card_x", token: TOKEN, field: "title", value: { type: "text", text: "x" }, tokens: { "card.font.family": "a); b { color: red }" } });
+    // The value is one custom property's, escaped; nothing in it opens a rule.
+    expect(tricky).toContain("--clover-card-font-family: a); b \\7b  color: red \\7d ;");
+    expect(tricky).not.toContain("{ color: red }");
   });
 });
 
 describe("a sealed button's page", () => {
   test("the card's own label on the button, the option named for the answer, and the visible-only check before it", () => {
-    const p = buttonPage({ cardId: "card_0a1b2c3d", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve", brand: BRAND });
+    const p = buttonPage({ cardId: "card_0a1b2c3d", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve" });
     expect(p).toContain('data-option="allow_once"');
     expect(p).toContain('data-kind="approve"');
     expect(p).toContain(">Allow</span>");
@@ -59,13 +57,13 @@ describe("a sealed button's page", () => {
   });
 
   test("a deny button takes the deny's own colours, not the approve's", () => {
-    const p = buttonPage({ cardId: "card_x", token: TOKEN, option: "deny", label: "Deny", kind: "deny", brand: BRAND });
+    const p = buttonPage({ cardId: "card_x", token: TOKEN, option: "deny", label: "Deny", kind: "deny" });
     expect(p).toContain("seal-deny");
     expect(p).toContain('--clover-card-deny-background');
   });
 
   test("the page says the answer only once: the answering flag holds through the response", () => {
-    const p = buttonPage({ cardId: "card_x", token: TOKEN, option: "allow_once", label: "A", kind: "approve", brand: BRAND });
+    const p = buttonPage({ cardId: "card_x", token: TOKEN, option: "allow_once", label: "A", kind: "approve" });
     expect(p).toContain("answering = true");
     expect(p).toContain("answering = false"); // a refused answer can try again; one answered, the core's.
   });
