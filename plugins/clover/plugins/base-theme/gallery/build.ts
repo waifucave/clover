@@ -8,7 +8,8 @@ import type { BunPlugin } from "bun";
 
 const here = import.meta.dir;
 const dist = join(here, "dist");
-const plugins = join(here, "..", "..", "..");
+// The repo's plugins/ folder: this gallery is plugins/clover/plugins/base-theme/gallery.
+const plugins = join(here, "..", "..", "..", "..");
 
 const SHARED = /^(react|react-dom|three|@pixiv\/three-vrm)(\/.*)?$/;
 const dedupe: BunPlugin = {
