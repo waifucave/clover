@@ -47,13 +47,23 @@ describe("the installers' hooks", () => {
 
   test("the Homebrew cask's uninstall removes it through the daemon, as the user, and goes on without the app", () => {
     const code = codeLines(read("packaging/clover.rb.tmpl"), "#").join("\n");
-    expect(code).toContain('executable:   "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"');
-    expect(code).toContain(`args:         ${JSON.stringify(autostartArgs("remove")).replace(/,/g, ", ")}`);
+    // Through /bin/sh, so a binary already gone (the app in the Trash) exits 0: Homebrew refuses a missing executable.
+    expect(code).toContain('executable:   "/bin/sh"');
+    expect(code).toContain(`args:         ["-c", '[ -x "$1" ] || exit 0; exec "$1" ${autostartArgs("remove").join(" ")}', "sh", "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"]`);
     expect(code).toContain("sudo:         false");
     // Homebrew fails an uninstall whose script fails unless told otherwise; the app may already be gone.
     expect(code).toContain("must_succeed: false");
     // The fallback for a deleted app, Clover's own label only.
     expect(code).toContain(`uninstall launchctl: "${LAUNCHD_LABEL}"`);
+    // The guard itself: a missing binary exits 0 without running anything; a present one gets `autostart remove`.
+    if (process.platform !== "win32") {
+      const guard = '[ -x "$1" ] || exit 0; exec "$1" autostart remove';
+      const dir = mkdtempSync(join(tmpdir(), "clover-cask-guard-"));
+      const fake = join(dir, "clover-core");
+      expect(spawnSync("/bin/sh", ["-c", guard, "sh", fake], { encoding: "utf8" }).status).toBe(0);
+      writeFileSync(fake, `#!/bin/sh\necho "ran: $*"\n`, { mode: 0o755 });
+      expect(spawnSync("/bin/sh", ["-c", guard, "sh", fake], { encoding: "utf8" }).stdout).toBe("ran: autostart remove\n");
+    }
   });
 
   test("the cask's zap takes the app's caches, web storage, updater cache and login agent, never ~/.clover", () => {
@@ -90,6 +100,14 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
       expect(resolve(DESKTOP, options.afterRemove!)).toBe(join(ROOT, "packaging", "linux", "after-remove.sh"));
       expect(resolve(DESKTOP, options.appArmorProfile!)).toBe(join(ROOT, "packaging", "linux", "apparmor-profile"));
     }
+  });
+
+  test("the deb and the rpm are named clover, file and package, with no folder in the name", () => {
+    expect(builder.deb.packageName).toBe("clover");
+    expect(builder.rpm.packageName).toBe("clover");
+    expect(builder.deb.artifactName).toBe("clover_${version}_${arch}.${ext}");
+    expect(builder.rpm.artifactName).toBe("clover-${version}.${arch}.${ext}");
+    for (const name of [builder.deb.artifactName, builder.rpm.artifactName, builder.appImage.artifactName] as string[]) expect(name).not.toMatch(/[/@]|\$\{name\}/);
   });
 
   test("they depend on electron-builder's own list plus bubblewrap (the Bash tool's sandbox) and libsecret", () => {

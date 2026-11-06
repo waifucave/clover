@@ -142,7 +142,8 @@ function checkBuilt(outDir: string, arch: LinuxArch, formats: readonly LinuxForm
   const problems: string[] = [];
   for (const format of formats) {
     // The AppImage's name carries the architecture as electron-builder spells it (x64) or as AppImage does (x86_64).
-    const suffixes = format === "deb" ? [`_${names.deb}.deb`] : format === "rpm" ? [`.${names.rpm}.rpm`] : [`-${arch}.AppImage`, `-${names.appImage}.AppImage`];
+    // Likewise the rpm's: electron-builder spells arm64 as arm64 in the file name, where the package says aarch64.
+    const suffixes = format === "deb" ? [`_${names.deb}.deb`] : format === "rpm" ? [`.${names.rpm}.rpm`, `.${arch}.rpm`] : [`-${arch}.AppImage`, `-${names.appImage}.AppImage`];
     const suffix = suffixes.join(" or ");
     const file = files.find((f) => suffixes.some((x) => f.endsWith(x)));
     if (file === undefined) { problems.push(`${format} (${arch}): no *${suffix} in ${outDir}`); continue; }

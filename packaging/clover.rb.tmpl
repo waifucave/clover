@@ -32,14 +32,15 @@ cask "clover" do
   # Login start is the daemon's (lane C: a launchd agent running clover-core supervise). The app turns it on at its
   # first launch; uninstalling removes it through the daemon's own command, as the user, before the app's files go
   # (packaging/installer-hooks.ts): `autostart remove` stops the daemon and deletes its agent. Homebrew runs these in
-  # its own order: launchctl, then quit, then the script. The launchctl stanza is the fallback for an app that was
-  # already deleted, when the script has no binary to run (must_succeed: false lets the uninstall go on); it removes
-  # only Clover's own label.
+  # its own order: launchctl, then quit, then the script. The script runs through /bin/sh and exits 0 when the app's
+  # binary is gone (the app dragged to the Trash first), since Homebrew refuses a missing executable before
+  # must_succeed counts; then the launchctl stanza has already removed the agent, Clover's own label only, and
+  # must_succeed: false keeps a failing command from stopping the uninstall.
   uninstall launchctl: "com.waifucave.clover.core",
             quit:      "com.waifucave.clover",
             script:    {
-              executable:   "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core",
-              args:         ["autostart", "remove"],
+              executable:   "/bin/sh",
+              args:         ["-c", '[ -x "$1" ] || exit 0; exec "$1" autostart remove', "sh", "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"],
               sudo:         false,
               must_succeed: false,
             }

@@ -51,7 +51,11 @@ linux:
 # The deb and the rpm are the main Linux packages: they install the AppArmor profile Electron's sandbox needs on
 # Ubuntu (spec §4). Their scripts and the profile live in packaging/linux/. Besides electron-builder's own
 # dependencies, the daemon's Bash tool needs bubblewrap (spec §4) and its secrets need libsecret.
+# Both are named `clover`: electron-builder would otherwise name the file after the package.json name, whose
+# `@waifucave/` scope puts a folder in the path (the first packages run failed on it).
 deb:
+  packageName: clover
+  artifactName: clover_${version}_${arch}.${ext}
   # GNOME without the AppIndicator extension shows no tray, so the launcher entry carries Quit (spec §4): the app's
   # own executable with --quit (E-M1's app quits the pair). `clover` on the PATH is the daemon's command line.
   desktop:
@@ -79,6 +83,8 @@ deb:
     - libappindicator3-1
     - gnome-keyring
 rpm:
+  packageName: clover
+  artifactName: clover-${version}.${arch}.${ext}
   # The same Quit action as the deb's.
   desktop:
     entry:
