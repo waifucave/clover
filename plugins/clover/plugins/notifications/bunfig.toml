@@ -1,0 +1,2 @@
+# This plugin's own test settings; nothing is preloaded: the notifier is tested against a fake desktop, never the OS.
+[test]

@@ -61,6 +61,7 @@ jobs:
       codegen: ${{ steps.areas.outputs.codegen }}
       swift: ${{ steps.areas.outputs.swift }}
       verify: ${{ steps.areas.outputs.verify }}
+      tree: ${{ steps.areas.outputs.tree }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -313,6 +314,40 @@ jobs:
           sudo apt-get remove -y -qq "$name"
           test ! -e /usr/bin/clover
           test ! -e /etc/apparmor.d/clover
+
+  # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
+  # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
+  # suite (the macos job), so this job is the other two OSes' only run of them. It was spike-s6.yml's `tree` job (R6).
+  tree:
+    name: tree · ${{ matrix.runner }}
+    needs: changes
+    if: needs.changes.outputs.tree == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The tree and the computers, with lane B's conformance suites
+        working-directory: packages/core
+        run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
@@ -716,7 +751,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, tree, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

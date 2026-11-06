@@ -9,7 +9,12 @@ import type { Manifest } from "../../contracts/sdk-types";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakePluginRegistry, type FakePluginInput } from "../../contracts/fakes/plugin-registry";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
-import { DurableSessionHost } from "../../sessions/durable-host";
+import type { CacheTimedCompaction } from "../../sessions/compaction";
+import type { DurableSessionHost } from "../../sessions/durable-host";
+import type { BotGate } from "../gate";
+import type { MainComputer } from "../main-computer";
+import type { BotRelay } from "../service";
+import { createBotSide, type BotSide, type BotSideOptions } from "../wiring";
 import { BotService, type BotSessionContext } from "../service";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 
@@ -94,31 +99,45 @@ export interface Boot {
   registry: FakePluginRegistry;
   host: DurableSessionHost;
   bots: BotService;
+  gate: BotGate;
+  compaction: CacheTimedCompaction;
   drivers: Drivers;
   warnings: string[];
 }
 
-/** A daemon's bot side on `home`: the durable host over the transcripts there, and the bot service over a registry
- *  holding `plugins`. Call `shutdown` to release everything, as a daemon stopping would. */
-export async function boot(opts: { home: string; plugins: FakePluginInput[]; clock?: FakeClock; hasKeyFor?: (model: string) => boolean; computer?: string }): Promise<Boot & { shutdown(): Promise<void> }> {
+/** A daemon's bot side on `home` (wiring.ts): the durable host over the transcripts there, the gate, compaction, and
+ *  the bot service over a registry holding `plugins`. Call `shutdown` to release everything, as a daemon stopping
+ *  would. */
+export async function boot(opts: {
+  home: string; plugins: FakePluginInput[]; clock?: FakeClock; hasKeyFor?: (model: string) => boolean; computer?: string;
+  main?: MainComputer; relay?: BotRelay; compaction?: BotSideOptions["compaction"]; approvals?: BotSideOptions["approvals"];
+  reattach?: BotSideOptions["reattach"];
+  userHome?: string;
+  agents?: BotSideOptions["agents"];
+  levelOf?: BotSideOptions["levelOf"];
+}): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
   const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: opts.plugins });
-  const host = new DurableSessionHost({ home: opts.home, clock, warn: (m) => warnings.push(m) });
   const drivers = new Drivers();
-  const bots = new BotService({
-    home: opts.home, computer: opts.computer ?? "Studio", registry, host, drivers: drivers.factory, clock,
+  const side = createBotSide({
+    home: opts.home, computer: opts.computer ?? "Studio", registry, drivers: drivers.factory, clock,
     defaultModel: () => ({ model: "fireworks/kimi-k3" }),
     ...(opts.hasKeyFor === undefined ? {} : { hasKeyFor: opts.hasKeyFor }),
+    ...(opts.main === undefined ? {} : { main: opts.main }),
+    ...(opts.relay === undefined ? {} : { relay: opts.relay }),
+    ...(opts.compaction === undefined ? {} : { compaction: opts.compaction }),
+    ...(opts.approvals === undefined ? {} : { approvals: opts.approvals }),
+    ...(opts.reattach === undefined ? {} : { reattach: opts.reattach }),
+    ...(opts.userHome === undefined ? {} : { userHome: opts.userHome }),
+    ...(opts.agents === undefined ? {} : { agents: opts.agents }),
+    ...(opts.levelOf === undefined ? {} : { levelOf: opts.levelOf }),
     assetUrl: (pluginId, path) => `clover-asset://${pluginId.replace("/", "--")}/${path}`,
     warn: (m) => warnings.push(m),
   });
-  await bots.start();
+  await side.start();
   return {
-    home: opts.home, clock, registry, host, bots, drivers, warnings,
-    shutdown: async () => {
-      await bots.stop();
-      await host.close();
-    },
+    home: opts.home, clock, registry, host: side.host, bots: side.bots, gate: side.gate, compaction: side.compaction, drivers, warnings, side,
+    shutdown: () => side.close(),
   };
 }
