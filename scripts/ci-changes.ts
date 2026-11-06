@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 export type CiArea =
-  | "workspaces" | "daemon" | "app" | "gallery" | "typecheck" | "lockfiles"
+  | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
   | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
@@ -29,7 +29,11 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
   daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
-  app: ["apps/"],
+  // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
+  app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
+  // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon they carry
+  // (the job installs the deb and runs its `clover`)
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],

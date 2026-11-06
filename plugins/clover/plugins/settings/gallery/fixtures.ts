@@ -7,10 +7,10 @@ export const VALUES: SettingsValues = {
   language: { id: "en-US", name: "English (United States)" },
   notifications: { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
   plugins: [
-    { id: "clover", name: "Clover", source: "Bundled", state: "on", oks: ["Reads your bots and conversations", "Answers cards", "Uses your computers' files"] },
-    { id: "tarot-panel", name: "Tarot panel", source: "From the plugin index", state: "on", oks: ["Reads conversations"] },
-    { id: "weather-routine", name: "Weather routine", source: "From the plugin index", state: "waiting", oks: ["Reaches api.weather.example"] },
-    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "failed", oks: [] },
+    { id: "clover", name: "Clover", source: "Bundled", state: "running", enabled: true, oks: ["Reads your bots and conversations", "Answers cards", "Uses your computers' files"] },
+    { id: "tarot-panel", name: "Tarot panel", source: "From the plugin index", state: "running", enabled: true, oks: ["Reads conversations"] },
+    { id: "weather-routine", name: "Weather routine", source: "From the plugin index", state: "found", enabled: false, oks: ["Reaches api.weather.example"] },
+    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "stopped", enabled: true, reason: "Stopped after three crashes in two minutes", oks: [] },
   ],
   themes: [
     { id: "clover", name: "Clover" },
@@ -18,14 +18,14 @@ export const VALUES: SettingsValues = {
   ],
   theme: "clover",
   levels: [
-    { computer: "Studio", here: true, level: "risky" },
+    { computer: "Studio", here: true, level: "ask-risky" },
     { computer: "Laptop", level: "ask", requested: "accept-edits" },
     { computer: "Cloud computer", level: "automatic" },
   ],
   levelOptions: [
     { id: "read-only", label: "Read only" },
     { id: "ask", label: "Ask first" },
-    { id: "risky", label: "Ask when risky" },
+    { id: "ask-risky", label: "Ask when risky" },
     { id: "accept-edits", label: "Accept edits" },
     { id: "automatic", label: "Fully automatic" },
   ],
@@ -34,7 +34,24 @@ export const VALUES: SettingsValues = {
     { id: "d2", name: "Laptop", kind: "computer" },
     { id: "d3", name: "iPhone", kind: "phone" },
   ],
+  bots: [
+    { id: "alpha", name: "Alpha" },
+    { id: "beta", name: "Beta" },
+  ],
 };
+
+/** A stopped plugin's log tail. */
+export const LOG_LINES: string[] = [
+  "14:02:11 started (pid 4121)",
+  "14:02:12 registered the stage for Alpha",
+  "14:05:40 TypeError: Cannot read properties of undefined (reading 'scene')",
+  "14:05:40     at Stage.render (client/stage.tsx:88:14)",
+  "14:05:41 restarted (pid 4188)",
+  "14:05:44 TypeError: Cannot read properties of undefined (reading 'scene')",
+  "14:05:45 restarted (pid 4190)",
+  "14:05:49 TypeError: Cannot read properties of undefined (reading 'scene')",
+  "14:05:49 stopped after three crashes in two minutes",
+];
 
 export const LANGUAGES: Language[] = [
   { id: "am", native: "አማርኛ", name: "Amharic" },

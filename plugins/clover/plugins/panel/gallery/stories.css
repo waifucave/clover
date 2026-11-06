@@ -1,9 +1,1 @@
-.story-panel-placeholder {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  color: var(--clover-color-text-muted);
-  font-family: var(--clover-font-sans);
-  font-size: var(--clover-font-size-control);
-}
+

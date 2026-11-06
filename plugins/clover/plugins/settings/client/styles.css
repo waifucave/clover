@@ -215,6 +215,26 @@
   border-bottom: 1px solid var(--clover-color-hairline);
 }
 
+/* The row a place opened Settings at (lane E's useOpen; the island's Devices tab opens it at a device): tinted with
+   the accent while it stays the item, with a ring that fades as it comes into view. */
+.cl-settings__row[data-marked] {
+  margin-inline: calc(-1 * var(--clover-space-m));
+  padding-inline: var(--clover-space-m);
+  border-radius: var(--clover-radius-medium);
+  border-bottom-color: transparent;
+  background: var(--clover-color-accent-soft);
+  animation: cl-settings-mark 1.6s ease-out;
+}
+
+@keyframes cl-settings-mark {
+  from {
+    box-shadow: inset 0 0 0 2px var(--clover-color-focus);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+
 .cl-settings__text {
   display: flex;
   flex: 1 1 auto;
@@ -246,11 +266,15 @@
   line-height: 18px;
 }
 
+.cl-settings__state[data-state="found"],
 .cl-settings__state[data-state="waiting"] {
   color: var(--clover-color-attention-text);
 }
 
-.cl-settings__state[data-state="failed"] {
+.cl-settings__state[data-state="refused"],
+.cl-settings__state[data-state="invalid"],
+.cl-settings__state[data-state="stopped"],
+.cl-settings__state[data-state="blocked"] {
   color: var(--clover-color-danger);
 }
 
@@ -321,7 +345,7 @@
 
 .cl-settings__switch[aria-checked="true"] {
   justify-content: flex-end;
-  background: var(--clover-color-accent);
+  background: var(--clover-color-accent-fill);
 }
 
 .cl-settings__knob {
@@ -436,5 +460,61 @@
   .cl-settings *,
   .cl-languages * {
     transition: none;
+    animation: none;
   }
+}
+
+/* A plugin's log, on the Plugins page in place of the list. */
+.cl-settings__logs-head {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-m);
+}
+
+.cl-settings__logs-head .cl-settings__subhead {
+  margin: 0;
+}
+
+.cl-settings__log {
+  max-height: 480px;
+  margin: var(--clover-space-m) 0 0;
+  padding: var(--clover-space-m);
+  overflow: auto;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-plugin-clover-line-code);
+  white-space: pre-wrap;
+}
+
+.cl-settings__reason {
+  color: var(--clover-color-attention-text);
+}
+
+/* Pairing a device: a code to enter on the other device, then the four words both show. */
+.cl-settings__pairing {
+  margin-top: var(--clover-space-l);
+}
+
+.cl-settings__pair-row {
+  flex-wrap: wrap;
+  margin-top: var(--clover-space-s);
+}
+
+.cl-settings__pair {
+  padding: var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-surface);
+}
+
+.cl-settings__pair-code,
+.cl-settings__pair-words {
+  margin: 0 0 var(--clover-space-m);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-title);
+  letter-spacing: 0.04em;
 }

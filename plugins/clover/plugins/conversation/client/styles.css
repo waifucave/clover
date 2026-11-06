@@ -1023,7 +1023,7 @@ button.cl-conv-diff:hover {
   padding: 7px 14px;
   border: none;
   border-radius: var(--clover-radius-round);
-  background: var(--clover-color-accent);
+  background: var(--clover-color-accent-fill);
   color: var(--clover-color-accent-contrast);
   font-weight: 600;
   cursor: pointer;

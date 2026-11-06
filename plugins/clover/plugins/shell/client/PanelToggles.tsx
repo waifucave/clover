@@ -1,29 +1,31 @@
-// The panel toggles at the end of the window's title bar, then ⋯. Each opens its view in the panel; two
-// can be open at once. A toggle says whether its view is open (`aria-pressed`). Which ones show depends
-// on the tab: a code session has its column, the terminal, the changes, the browser and the files; a
-// bot's tab has its slim column and the browser. The terminal, the changes and the files work on a code
-// session's folder, so a bot's tab never offers them, whatever the host asks for.
+// The panel toggles at the end of the window's title bar, then ⋯. Each opens its view in the panel; two can be open
+// at once. A toggle says whether its view is open (`aria-pressed`). Which ones show depends on the session the tab
+// shows (lane B's `SessionKind`): a coding session has its column, the terminal, the changes, the browser and the
+// files; a bot's tab has its slim column and the browser; an agent's has its column and the browser. The terminal,
+// the changes and the files work on a coding session's folder, so no other tab offers them, whatever the host asks.
 import type { ReactNode } from "react";
-import { IconDiff, IconFolder, IconGlobe, IconMore, IconSession, IconTerminal } from "./icons";
+import { IconAgent, IconDiff, IconFolder, IconGlobe, IconMore, IconSession, IconTerminal } from "./icons";
 import { S } from "./strings";
-import type { PanelTogglesProps, PanelView, PanelViewId, SessionKind } from "./types";
+import type { PanelTogglesProps, PanelView, PanelViewId, SessionKind } from "./panel-types";
 
-/** The views each kind of tab has, in the order their toggles show. */
+/** The views each kind of tab offers, in the order their toggles show. */
 export const VIEWS_BY_KIND: Readonly<Record<SessionKind, readonly PanelViewId[]>> = {
-  code: ["session", "terminal", "diff", "browser", "files"],
+  coding: ["session", "terminal", "diff", "browser", "files"],
   bot: ["session", "browser"],
+  agent: ["session", "browser"],
+  "side-thread": ["browser"],
 };
 
-/** A code session's views (every default panel). */
-export const PANEL_VIEWS: readonly PanelViewId[] = VIEWS_BY_KIND.code;
+/** A coding session's views (every default panel). */
+export const PANEL_VIEWS: readonly PanelViewId[] = VIEWS_BY_KIND.coding;
 
-/** The panels that work on a code session's folder: never in a bot's tab. */
+/** The panels that work on a coding session's folder: never anywhere else (`when.session: "coding"`). */
 export const CODE_ONLY: readonly string[] = ["terminal", "diff", "files"];
 
-/** Whether a view may show in this kind of tab. A code-only panel never shows in a bot's tab, even if a
- *  plugin's manifest says it may; otherwise the view's own `sessions` decide, and absent, it may. */
+/** Whether a view may show in this kind of tab. A code-only panel shows only in a coding session, even if a plugin
+ *  says otherwise; otherwise the view's own `sessions` (its entry's `when.session`) decide, and absent, it may. */
 export function belongsIn(view: Pick<PanelView, "id" | "sessions">, kind: SessionKind): boolean {
-  if (kind === "bot" && CODE_ONLY.includes(view.id)) return false;
+  if (kind !== "coding" && CODE_ONLY.includes(view.id)) return false;
   return view.sessions === undefined || view.sessions.includes(kind);
 }
 
@@ -33,6 +35,7 @@ const ICONS: Record<PanelViewId, () => ReactNode> = {
   diff: IconDiff,
   browser: IconGlobe,
   files: IconFolder,
+  agent: IconAgent,
 };
 
 export function PanelToggles({ kind, open, onToggle, onMore, available }: PanelTogglesProps) {
@@ -42,7 +45,7 @@ export function PanelToggles({ kind, open, onToggle, onMore, available }: PanelT
       {offered.map((id) => {
         const Icon = ICONS[id];
         const pressed = open.includes(id);
-        const label = id === "session" && kind === "bot" ? S.botColumn : S.views[id];
+        const label = id === "session" && kind === "bot" ? S.botColumn : S.views[id] ?? id;
         return (
           <button
             key={id}
