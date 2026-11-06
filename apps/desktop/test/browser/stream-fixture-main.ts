@@ -15,17 +15,23 @@ const viewportAssets = { preload: process.env.CLOVER_BROWSER_TEST_PRELOAD ?? "",
 const streamAssets = { preload: process.env.CLOVER_STREAM_TEST_PRELOAD ?? "", html: process.env.CLOVER_STREAM_TEST_HTML ?? "" };
 const viewerHtml = process.env.CLOVER_STREAM_TEST_VIEWER ?? "";
 
-/** A red block that stays (the colour the viewer checks), on white, and below it a band of random tiles redrawn
- *  every frame: enough motion that the encoder spends its whole target, so a lower target shows. */
+/** A red block that stays (the colour the viewer checks), on white, and below it eight bands of colour gradients
+ *  that change every frame: the encoder spends about its whole target on them (2.8 Mbit/s at 2.5 in the headless
+ *  shell's VP8), and at 300 kbit/s it gets down to about 0.5. (Random tiles or text can't: VP8 at its coarsest still
+ *  needs 1.5 to 4 Mbit/s for them, so every target looks the same.) */
 const ANIM = `<!doctype html><html><head><meta charset="utf-8"><title>Stream fixture</title>
 <style>html,body{margin:0;background:#fff;overflow:hidden} #red{position:fixed;left:100px;top:100px;width:300px;height:300px;background:#d02020}
 #c{position:fixed;left:0;top:460px} #n{position:fixed;left:600px;top:120px;font:40px monospace}</style></head>
-<body><div id="red"></div><canvas id="c" width="1280" height="340"></canvas><div id="n">0</div><script>
-  let i = 0, seed = 1; const n = document.getElementById("n"), ctx = document.getElementById("c").getContext("2d");
-  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+<body><div id="red"></div><canvas id="c" width="1280" height="336"></canvas><div id="n">0</div><script>
+  let i = 0; const n = document.getElementById("n"), ctx = document.getElementById("c").getContext("2d");
   (function f(){
     i++; n.textContent = String(i);
-    for (let y = 0; y < 340; y += 20) for (let x = 0; x < 1280; x += 20) { ctx.fillStyle = "rgb(" + (rnd() * 255 | 0) + "," + (rnd() * 255 | 0) + "," + (rnd() * 255 | 0) + ")"; ctx.fillRect(x, y, 20, 20); }
+    for (let b = 0; b < 8; b++) {
+      const g = ctx.createLinearGradient(0, 0, 1280, 0);
+      g.addColorStop(0, "hsl(" + ((i * 5 + b * 40) % 360) + ",80%,50%)");
+      g.addColorStop(1, "hsl(" + ((i * 7 + b * 90) % 360) + ",80%,50%)");
+      ctx.fillStyle = g; ctx.fillRect(0, b * 42, 1280, 42);
+    }
     requestAnimationFrame(f);
   })();
 </script></body></html>`;
