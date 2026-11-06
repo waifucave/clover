@@ -9,7 +9,7 @@
 // The exchange, one framed CBOR message each way per step on one stream:
 //   joiner → host  ["hello", {pairingId, device, pairKey, groupKey, group, account, answerKeyProof?, commit, proof}]
 //   host → joiner  ["welcome", {device, pairKey, groupKey, group, fresh, t, account, answerKeyProof?, nonce, proof}] or ["refused", {reason}]
-//   `device.answerKey` ({publicKey, held}) is the device's answer key (a phone's own, item 91), and `answerKeyProof` that
+//   `device.answerKey` ({publicKey, held, alg?}) is the device's answer key (a phone's own, item 91), and `answerKeyProof` that
 //   key's signature over `answerKeyStatement` (base64); both are in the transcript, the record canonically.
 //   joiner → host  ["reveal", {nonce}], the nonce `commit` committed to; both show the words only after it
 //   both, when their user confirms the words (and their card is approved): ["confirm", {pairSig, admit?}]
@@ -33,12 +33,12 @@ import { deviceIdFor, type DeviceRecord, type PairingProof } from "../contracts/
 import type { SecretStore } from "../contracts/secret-store";
 import { type Bytes, constantTimeEqual, fromBase64, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
-import { type Ed25519Key, ed25519FromSecret, generateEd25519, publicKeyFromBase64, verifyEd25519 } from "../identity/keys";
+import { type AnswerKeyAlg, answerKeyBytes, type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519, verifyKeySignature } from "../identity/keys";
 import {
   canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
   PAIR_PROOF_HOST, PAIR_PROOF_JOINER, type PairSide, pairProof, sasWords, verifyPairProof,
 } from "../identity/sas";
-import { answerKeyStatement, type FileDeviceRegistry, type GroupRecord } from "../devices/registry";
+import { type AnswerKeyRecord, answerKeyStatement, type FileDeviceRegistry, type GroupRecord } from "../devices/registry";
 import { decode, encode } from "./codec";
 import { FrameReader, frame } from "./frames";
 import {
@@ -674,11 +674,15 @@ export class PairingService {
     // registration statement signed by that key: the record is in the transcript the user checks.
     let answerKey: DeviceRecord["answerKey"];
     if (d.answerKey !== undefined) {
-      const ak = d.answerKey as { publicKey?: unknown; held?: unknown };
+      const ak = d.answerKey as { publicKey?: unknown; held?: unknown; alg?: unknown };
+      if (ak?.alg !== undefined && ak.alg !== "ed25519" && ak.alg !== "p256") return undefined;
+      const alg: AnswerKeyAlg = (ak?.alg as AnswerKeyAlg | undefined) ?? "ed25519";
       const proof = typeof m.answerKeyProof === "string" ? fromBase64(m.answerKeyProof) : null;
-      const raw = typeof ak?.publicKey === "string" ? publicKeyFromBase64(ak.publicKey) : undefined;
-      if (!raw || typeof ak.held !== "string" || !AnswerKeyHolder.safeParse(ak.held).success || !proof || !verifyEd25519(raw, answerKeyStatement(d.id, ak.publicKey as string, ak.held), proof)) return undefined;
-      answerKey = { publicKey: ak.publicKey as string, held: ak.held as NonNullable<DeviceRecord["answerKey"]>["held"] };
+      const raw = typeof ak?.publicKey === "string" ? answerKeyBytes(alg, ak.publicKey) : null;
+      if (!raw || typeof ak.held !== "string" || !AnswerKeyHolder.safeParse(ak.held).success || !proof) return undefined;
+      // With the key's own algorithm: a phone's Secure Enclave key is P-256 (B's #187).
+      if (!verifyKeySignature(alg, raw, answerKeyStatement(d.id, ak.publicKey as string, ak.held, alg), proof)) return undefined;
+      answerKey = { publicKey: ak.publicKey as string, held: ak.held as NonNullable<DeviceRecord["answerKey"]>["held"], ...(alg === "p256" ? { alg } : {}) } as AnswerKeyRecord;
     }
     const record: Side["record"] = {
       id: d.id, name: d.name, kind: d.kind as DeviceRecord["kind"], runsCore: d.runsCore, publicKey: d.publicKey,

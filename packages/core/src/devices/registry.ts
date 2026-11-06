@@ -26,7 +26,7 @@ import type { SecretMeta } from "../contracts/secret-store";
 import { fromBase64, fromBase64Url, toBase64, utf8 } from "../identity/bytes";
 import { encode } from "../links/codec";
 import type { DeviceKey } from "../identity/device-key";
-import { publicKeyFromBase64, verifyEd25519 } from "../identity/keys";
+import { type AnswerKeyAlg, answerKeyBytes, publicKeyFromBase64, verifyEd25519, verifyKeySignature } from "../identity/keys";
 import { readJsonFile, writeJsonFile } from "./json-file";
 
 /** A pair of devices paired without an account (item 81). The pair's signing keys stay in the secret store. */
@@ -125,7 +125,14 @@ export interface AnswerKeyRotation {
   to: string;
   at: number;
   signature: string;
+  /** The algorithms of `from` and `to` (ed25519 when absent; B's #187). */
+  fromAlg?: AnswerKeyAlg;
+  toAlg?: AnswerKeyAlg;
 }
+
+/** An answer key as the registry keeps it: B's #187 adds `alg` to the contract's record; until it lands, here. */
+export type AnswerKeyRecord = NonNullable<DeviceRecord["answerKey"]> & { alg?: AnswerKeyAlg };
+const algOf = (k: object | undefined): AnswerKeyAlg => (k as { alg?: AnswerKeyAlg } | undefined)?.alg ?? "ed25519";
 
 /** Long enough that a peer away for years of rotations still follows the chain (H-M1's review); a peer that can't
  *  re-anchors by pairing again. */
@@ -134,9 +141,12 @@ const MAX_ROTATIONS = 256;
 const NAME_RE = /^[^\u0000-\u001f\u007f]{1,63}$/u;
 const KINDS: readonly DeviceKind[] = ["desktop", "server", "cloud", "phone", "browser"];
 
-/** What a desktop's app signs to show the core it holds an answer key. */
-export function answerKeyStatement(deviceId: string, publicKey: string, held: string): Uint8Array {
-  return utf8(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`);
+/** What a device's app signs to show it holds an answer key. The statement covers the key's algorithm (B's #187): a
+ *  P-256 key's is `clover/answer-key/2` with `alg` last; an Ed25519 key's stays `clover/answer-key/1`. */
+export function answerKeyStatement(deviceId: string, publicKey: string, held: string, alg: AnswerKeyAlg = "ed25519"): Uint8Array {
+  return alg === "ed25519"
+    ? utf8(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`)
+    : utf8(`clover/answer-key/2\n${deviceId}\n${publicKey}\n${held}\n${alg}`);
 }
 
 /** What the current answer key signs to hand over to the next one. */
@@ -145,20 +155,23 @@ export function answerKeyRotateStatement(deviceId: string, from: string, to: str
 }
 
 /** Whether `proof` carries a device's answer key from `from` (undefined: the device had none) to `to`. */
-function provesAnswerKey(id: string, from: string | undefined, to: { publicKey: string; held: string }, proof: AnswerKeyProof | undefined): boolean {
+function provesAnswerKey(id: string, from: { publicKey: string; alg?: AnswerKeyAlg } | undefined, to: { publicKey: string; held: string; alg?: AnswerKeyAlg }, proof: AnswerKeyProof | undefined): boolean {
   if (!proof || typeof proof.registration !== "string" || !Array.isArray(proof.rotations)) return false;
-  const next = publicKeyFromBase64(to.publicKey);
+  const next = answerKeyBytes(algOf(to), to.publicKey);
   const reg = fromBase64(proof.registration);
-  if (!next || !reg || !verifyEd25519(next, answerKeyStatement(id, to.publicKey, to.held), reg)) return false;
-  if (from === undefined || from === to.publicKey) return true;
-  // Walk the chain from the key this device knows to the new one, each step signed by the key it replaces.
-  let current = from;
+  if (!next || !reg || !verifyKeySignature(algOf(to), next, answerKeyStatement(id, to.publicKey, to.held, algOf(to)), reg)) return false;
+  if (from === undefined || from.publicKey === to.publicKey) return true;
+  // Walk the chain from the key this device knows to the new one, each step signed by the key it replaces, with that
+  // key's own algorithm.
+  let current = from.publicKey;
+  let alg = algOf(from);
   for (const r of proof.rotations.slice(-MAX_ROTATIONS)) {
     if (!r || r.from !== current || typeof r.to !== "string" || typeof r.at !== "number" || typeof r.signature !== "string") continue;
-    const k = publicKeyFromBase64(r.from);
+    const k = answerKeyBytes(alg, r.from);
     const sig = fromBase64(r.signature);
-    if (!k || !sig || !verifyEd25519(k, answerKeyRotateStatement(id, r.from, r.to, r.at), sig)) return false;
+    if (!k || !sig || !verifyKeySignature(alg, k, answerKeyRotateStatement(id, r.from, r.to, r.at), sig)) return false;
     current = r.to;
+    alg = r.toAlg ?? "ed25519";
     if (current === to.publicKey) return true;
   }
   return false;
@@ -297,8 +310,10 @@ export class FileDeviceRegistry implements DeviceRegistry {
     // `answerKeyOf` still falls back to the link key until lane B drops it.
     const keyText = d === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : answerKeyOf(d);
     if (keyText === undefined) return false;
-    const key = fromBase64(keyText);
-    return key !== null && verifyEd25519(key, data, signature);
+    // With the key's own algorithm: a phone's Secure Enclave key is P-256 (B's #187).
+    const alg = algOf(d!.answerKey as AnswerKeyRecord | undefined);
+    const key = answerKeyBytes(alg, keyText);
+    return key !== null && verifyKeySignature(alg, key, data, signature);
   }
 
   watch(fn: (change: DeviceChange) => void): Unsubscribe {
@@ -318,24 +333,30 @@ export class FileDeviceRegistry implements DeviceRegistry {
   /** Takes this device's app's answer key, after checking the app signed `answerKeyStatement` with it. A different key
    *  from the one held needs the held key's signature handing over to it (`rotation`, `answerKeyRotateStatement`); a
    *  first key after one was removed isn't taken (pair again). */
-  async setOwnAnswerKey(publicKey: string, held: AnswerKeyHolder, signature: Uint8Array, rotation?: { from: string; at: number; signature: Uint8Array }): Promise<DeviceRecord> {
-    this.#checkAnswerKey({ publicKey, held });
+  async setOwnAnswerKey(
+    publicKey: string, held: AnswerKeyHolder, signature: Uint8Array, rotation?: { from: string; at: number; signature: Uint8Array }, alg: AnswerKeyAlg = "ed25519",
+  ): Promise<DeviceRecord> {
+    this.#checkAnswerKey({ publicKey, held, alg });
     const self = this.#find(this.#state.self)!;
     if (self.kind !== "desktop" && self.kind !== "phone") throw new ContractError("refused", "only a desktop's or a phone's app holds an answer key apart from the link key");
-    const key = publicKeyFromBase64(publicKey)!;
-    if (!verifyEd25519(key, answerKeyStatement(self.id, publicKey, held), signature)) throw new ContractError("refused", "the app didn't sign the answer key's statement");
-    const current = self.answerKey?.publicKey;
+    const key = answerKeyBytes(alg, publicKey)!;
+    if (!verifyKeySignature(alg, key, answerKeyStatement(self.id, publicKey, held, alg), signature)) throw new ContractError("refused", "the app didn't sign the answer key's statement");
+    const held0 = self.answerKey as AnswerKeyRecord | undefined;
+    const current = held0?.publicKey;
     const rotations = [...(this.#state.answerKeyProof?.rotations ?? [])];
     if (current !== undefined && current !== publicKey) {
       if (!rotation || rotation.from !== current) throw new ContractError("refused", "a new answer key needs the current one's signature handing over to it");
-      if (!verifyEd25519(publicKeyFromBase64(current)!, answerKeyRotateStatement(self.id, current, publicKey, rotation.at), rotation.signature)) {
+      if (!verifyKeySignature(algOf(held0), answerKeyBytes(algOf(held0), current)!, answerKeyRotateStatement(self.id, current, publicKey, rotation.at), rotation.signature)) {
         throw new ContractError("refused", "the current answer key didn't sign the hand-over");
       }
-      rotations.push({ from: current, to: publicKey, at: rotation.at, signature: toBase64(rotation.signature) });
+      rotations.push({
+        from: current, to: publicKey, at: rotation.at, signature: toBase64(rotation.signature),
+        ...(algOf(held0) === "ed25519" ? {} : { fromAlg: algOf(held0) }), ...(alg === "ed25519" ? {} : { toAlg: alg }),
+      });
     } else if (current === undefined && this.#state.answerKeyGone[self.id] !== undefined) {
       throw new ContractError("refused", "this device's answer key was removed: pair it again to answer cards");
     }
-    self.answerKey = { publicKey, held };
+    self.answerKey = { publicKey, held, ...(alg === "ed25519" ? {} : { alg }) } as AnswerKeyRecord;
     this.#state.answerKeyProof = { registration: toBase64(signature), rotations: rotations.slice(-MAX_ROTATIONS) };
     this.#save();
     this.#listeners.emit({ type: "changed", device: { ...self } });
@@ -374,11 +395,11 @@ export class FileDeviceRegistry implements DeviceRegistry {
       } catch {
         return false;
       }
-      const current = d.answerKey;
-      const same = current !== undefined && current.publicKey === update.answerKey.publicKey && current.held === update.answerKey.held;
+      const current = d.answerKey as AnswerKeyRecord | undefined;
+      const same = current !== undefined && current.publicKey === update.answerKey.publicKey && current.held === update.answerKey.held && algOf(current) === algOf(update.answerKey);
       if (!same) {
         if (current === undefined && this.#state.answerKeyGone[id] !== undefined) return false;
-        if (!provesAnswerKey(id, current?.publicKey, update.answerKey, proof)) return false;
+        if (!provesAnswerKey(id, current, update.answerKey, proof)) return false;
       }
     }
     if (update.name !== undefined) {
@@ -399,8 +420,9 @@ export class FileDeviceRegistry implements DeviceRegistry {
     return true;
   }
 
-  #checkAnswerKey(k: { publicKey: string; held: string }): void {
-    if (!publicKeyFromBase64(k.publicKey)) throw new ContractError("invalid", "an answer key is a 32-byte Ed25519 public key");
+  #checkAnswerKey(k: { publicKey: string; held: string; alg?: unknown }): void {
+    if (k.alg !== undefined && k.alg !== "ed25519" && k.alg !== "p256") throw new ContractError("invalid", `unknown answer key algorithm ${String(k.alg)}`);
+    if (!answerKeyBytes(algOf(k as { alg?: AnswerKeyAlg }), k.publicKey)) throw new ContractError("invalid", "an answer key is a 32-byte Ed25519 key, or a P-256 key's 65-byte point");
     if (!AnswerKeyHolder.safeParse(k.held).success) throw new ContractError("invalid", `unknown answer key holder ${k.held}`);
   }
 
@@ -562,13 +584,15 @@ export interface PeerUpdate {
   name?: string;
   /** A computer's tree name. */
   computer?: string;
-  answerKey?: { publicKey: string; held: AnswerKeyHolder } | null;
+  answerKey?: { publicKey: string; held: AnswerKeyHolder; alg?: AnswerKeyAlg } | null;
   at: number;
 }
 
 /** The update as signed: canonical CBOR, so no field's value can read as another's or as "no change". */
-export function peerUpdateStatement(id: string, update: { name?: string; computer?: string; answerKey?: { publicKey: string; held: string } | null; at: number }): Uint8Array {
-  const ak = update.answerKey === undefined ? ["keep"] : update.answerKey === null ? ["none"] : ["key", update.answerKey.publicKey, update.answerKey.held];
+export function peerUpdateStatement(id: string, update: { name?: string; computer?: string; answerKey?: { publicKey: string; held: string; alg?: AnswerKeyAlg } | null; at: number }): Uint8Array {
+  // A P-256 key's algorithm is signed too (B's #187); an Ed25519 key's update reads as before.
+  const ak = update.answerKey === undefined ? ["keep"] : update.answerKey === null ? ["none"]
+    : algOf(update.answerKey) === "ed25519" ? ["key", update.answerKey.publicKey, update.answerKey.held] : ["key", update.answerKey.publicKey, update.answerKey.held, algOf(update.answerKey)];
   return encode(["clover/device-update/3", id, update.at, update.name === undefined ? ["keep"] : ["set", update.name], update.computer === undefined ? ["keep"] : ["set", update.computer], ak]);
 }
 

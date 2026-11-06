@@ -172,20 +172,26 @@ describe("pairing", () => {
     expect(b.registry.list()).toHaveLength(1);
   });
 
-  test("a phone's answer key travels in its record, with its own signature; its link key never answers a card", async () => {
+  test("a phone's answer key (P-256, the Secure Enclave's) travels in its record with its own signature; its link key never answers a card", async () => {
     const net = new MemoryNetwork();
     const host = await device(net, "Studio");
     const phone = await device(net, "Phone", { kind: "phone" });
     const { answerKeyStatement } = await import("../../devices/registry");
     const { utf8 } = await import("../../identity/bytes");
-    const ak = generateEd25519();
-    const pub = Buffer.from(ak.publicKey).toString("base64");
-    await phone.registry.setOwnAnswerKey(pub, "secure-enclave", ak.sign(answerKeyStatement(phone.key.id, pub, "secure-enclave")));
+    // The Secure Enclave's key is P-256 (B's #187): a raw uncompressed point, and r‖s signatures over SHA-256.
+    const { generateKeyPairSync, sign } = await import("node:crypto");
+    const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = pair.publicKey.export({ format: "jwk" }) as { x: string; y: string };
+    const pub = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]).toString("base64");
+    const es256 = (d: Uint8Array) => new Uint8Array(sign("sha256", d, { key: pair.privateKey, dsaEncoding: "ieee-p1363" }));
+    await phone.registry.setOwnAnswerKey(pub, "secure-enclave", es256(answerKeyStatement(phone.key.id, pub, "secure-enclave", "p256")), undefined, "p256");
     await pairBoth(host, phone);
-    expect(host.registry.get(phone.key.id)?.answerKey).toEqual({ publicKey: pub, held: "secure-enclave" });
+    expect(host.registry.get(phone.key.id)?.answerKey).toEqual({ publicKey: pub, held: "secure-enclave", alg: "p256" } as never);
     const data = utf8("an answer");
-    expect(await host.registry.verifyAnswer(phone.key.id, data, ak.sign(data))).toBe(true);
+    expect(await host.registry.verifyAnswer(phone.key.id, data, es256(data))).toBe(true);
     expect(await host.registry.verifyAnswer(phone.key.id, data, phone.key.sign(data))).toBe(false);
+    // The statement covers the algorithm: an Ed25519 statement doesn't register the same key.
+    await expect(phone.registry.setOwnAnswerKey(pub, "secure-enclave", es256(answerKeyStatement(phone.key.id, pub, "secure-enclave")), undefined, "p256")).rejects.toThrow();
   });
 
   test("two devices on the same account keep no pair credential and form no group", async () => {

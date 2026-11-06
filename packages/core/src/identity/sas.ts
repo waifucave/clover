@@ -102,7 +102,9 @@ export function derivePairId(pairSecret: Uint8Array): Bytes {
 /** A device record in the one form both sides hash. */
 export function canonicalRecord(r: {
   id: string; name: string; kind: string; os?: string; runsCore: boolean; computer?: string; hasDisplay?: boolean; publicKey: string;
-  answerKey?: { publicKey: string; held: string };
+  answerKey?: { publicKey: string; held: string; alg?: string };
 }): Bytes {
-  return own(encode([r.id, r.name, r.kind, r.os ?? null, r.runsCore, r.computer ?? null, r.hasDisplay ?? null, r.publicKey, r.answerKey ? [r.answerKey.publicKey, r.answerKey.held] : null]));
+  // The answer key with its algorithm (B's #187; ed25519 when absent), so the words cover it too.
+  const ak = r.answerKey ? [r.answerKey.publicKey, r.answerKey.held, r.answerKey.alg ?? "ed25519"] : null;
+  return own(encode([r.id, r.name, r.kind, r.os ?? null, r.runsCore, r.computer ?? null, r.hasDisplay ?? null, r.publicKey, ak]));
 }
