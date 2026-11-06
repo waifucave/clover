@@ -7,6 +7,11 @@
 //! * `0`: a JSON control message (`{"op": …}` from the core, `{"ev": …}` to it);
 //! * `1`: stream bytes, a big-endian u64 stream id and the data.
 //!
+//! Congestion control and windows (§8.3): quinn's BBR (`bbr.rs`) by default, its window sized to 1.25 times each
+//! path's bandwidth-delay product. QUIC's flow-control windows can't do that sizing: they are set per connection
+//! before any path is measured, can't be changed per stream after, and noq caps how big a stream's may safely be
+//! (`QUIC_STREAM_WINDOW`). `init`'s `congestion: "cubic"` keeps noq's default instead, for live gate 1's comparison.
+//!
 //! What the owner decided for edit 6 (items 79-81): presence on n0's relays is accepted and QUIC address discovery is
 //! on (iroh's default relays carry it); only a device without an account publishes to n0's address lookup, and then the
 //! relay URL only (`PkarrPublisher`'s default filter); UPnP, NAT-PMP and PCP stay off (no firewall prompt, S1).
@@ -15,6 +20,8 @@
 //!
 //! Hooks the other lanes fill (the sidecar holds the device key): lane C's fence wraps how the core spawns it (it needs
 //! only UDP, its stdin and stdout); lane M signs the binary and ships it beside the core.
+
+mod bbr;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -44,6 +51,17 @@ const LINK_ALPN: &str = "clover/link/1";
 const CLOSE_UNPAIRED: u32 = 2;
 const CLOSE_REVOKED: u32 = 3;
 const RESET_CONN_LOST: u32 = 3;
+/// QUIC's per-stream receive window: noq's own 1.25 MB, and no more. noq 1.4.0's receive assembler keeps each
+/// full-packet chunk apart, compacts a stream holding over 2048 of them, and closes the whole connection
+/// (INTERNAL_ERROR "too many gaps in stream buffer") if over 1024 remain; a bigger window lets a reader that pauses,
+/// or one lost packet on a long fat path, cross that. So one stream stays capped at about 1.25 MB per round trip (S1's
+/// 8 MB/s at 150 ms) until noq lifts the limit; what a path has in flight is the congestion window's to size.
+const QUIC_STREAM_WINDOW: u32 = 1_250_000;
+/// QUIC's per-connection receive window: room for many streams whose readers are slow, so they can't hold up the
+/// control lanes, and a bound on what one peer can make this side buffer.
+const QUIC_CONN_WINDOW: u32 = 32 * 1024 * 1024;
+/// What one connection keeps sent and unacknowledged: the congestion window's ceiling.
+const QUIC_SEND_WINDOW: u64 = bbr::WINDOW_CEILING;
 
 enum Out {
     Json(Value),
@@ -59,6 +77,7 @@ enum StreamCmd {
 struct Sidecar {
     ep: iroh::Endpoint,
     out: mpsc::UnboundedSender<Out>,
+    congestion: &'static str,
     conns: Mutex<HashMap<u64, Connection>>,
     /// Codes this side closed a connection with, for its `closed` event.
     local_close: Mutex<HashMap<u64, (u32, String)>>,
@@ -104,16 +123,54 @@ fn is_lan(addr: &SocketAddr) -> bool {
     }
 }
 
+fn kind_of(addr: &iroh::TransportAddr) -> &'static str {
+    match addr {
+        iroh::TransportAddr::Ip(addr) => {
+            if is_lan(addr) {
+                "lan"
+            } else {
+                "direct"
+            }
+        }
+        iroh::TransportAddr::Relay(_) => "relay",
+        _ => "direct",
+    }
+}
+
 /// The path a connection's traffic takes now: `lan`, `direct` or `relay`, its round trip and its relay.
 fn path_of(conn: &Connection) -> Value {
     let paths = conn.paths();
     let Some(p) = paths.iter().find(|p| p.is_selected()) else { return json!({ "kind": "relay" }) };
     let rtt = (p.rtt().as_secs_f64() * 10_000.0).round() / 10.0;
     match p.remote_addr() {
-        iroh::TransportAddr::Ip(addr) => json!({ "kind": if is_lan(addr) { "lan" } else { "direct" }, "rttMs": rtt }),
         iroh::TransportAddr::Relay(url) => json!({ "kind": "relay", "rttMs": rtt, "relay": url.to_string() }),
-        _ => json!({ "kind": "direct", "rttMs": rtt }),
+        other => json!({ "kind": kind_of(other), "rttMs": rtt }),
     }
+}
+
+/// Every open path of a connection, with what its congestion controller makes of it (`stats`).
+fn paths_detail(conn: &Connection) -> Vec<Value> {
+    let paths = conn.paths();
+    paths
+        .iter()
+        .map(|p| {
+            let s = p.stats();
+            let cc = conn
+                .congestion_state(p.id())
+                .and_then(|c| c.into_any().downcast::<bbr::Bbr>().ok())
+                .map(|b| b.snapshot())
+                .unwrap_or(Value::Null);
+            json!({
+                "selected": p.is_selected(),
+                "kind": kind_of(p.remote_addr()),
+                "rttUs": s.rtt.as_micros() as u64,
+                "cwnd": s.cwnd,
+                "bandwidth": s.bandwidth_estimate.map(|b| b / 8),
+                "lostPackets": s.lost_packets,
+                "bbr": cc,
+            })
+        })
+        .collect()
 }
 
 impl Sidecar {
@@ -124,9 +181,22 @@ impl Sidecar {
             .as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.as_bytes().to_vec())).collect())
             .unwrap_or_else(|| vec![LINK_ALPN.as_bytes().to_vec()]);
+        let congestion = match init["congestion"].as_str() {
+            None | Some("bbr") => "bbr",
+            Some("cubic") => "cubic",
+            Some(other) => bail!("unknown congestion controller {other}"),
+        };
+        let mut tc = iroh::endpoint::QuicTransportConfig::builder()
+            .stream_receive_window(VarInt::from_u32(QUIC_STREAM_WINDOW))
+            .receive_window(VarInt::from_u32(QUIC_CONN_WINDOW))
+            .send_window(QUIC_SEND_WINDOW);
+        if congestion == "bbr" {
+            tc = tc.congestion_controller_factory(Arc::new(bbr::BbrConfig::default()));
+        }
         let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
             .secret_key(secret)
             .alpns(alpns)
+            .transport_config(tc.build())
             .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled);
         builder = match &init["relay"] {
             Value::String(s) if s == "disabled" => builder.relay_mode(iroh::RelayMode::Disabled),
@@ -152,6 +222,7 @@ impl Sidecar {
         Ok(Arc::new(Sidecar {
             ep,
             out,
+            congestion,
             conns: Mutex::new(HashMap::new()),
             local_close: Mutex::new(HashMap::new()),
             streams: Mutex::new(HashMap::new()),
@@ -169,6 +240,7 @@ impl Sidecar {
             "publicKey": hex(self.ep.id().as_bytes()),
             "relay": addr.relay_urls().next().map(|u| u.to_string()),
             "bound": self.ep.bound_sockets().iter().map(|a| a.to_string()).collect::<Vec<_>>(),
+            "congestion": self.congestion,
         })
     }
 
@@ -358,6 +430,19 @@ impl Sidecar {
                     "globalV4": report.as_ref().and_then(|r| r.global_v4).map(|a| a.to_string()),
                     "relay": addr.relay_urls().next().map(|u| u.to_string()),
                     "direct": addr.ip_addrs().map(|a| a.to_string()).collect::<Vec<_>>(),
+                }));
+            }
+            "stats" => {
+                // Each path's congestion state (diagnostics, and the windows' tests).
+                let conns: Vec<Value> = {
+                    let c = self.conns.lock().await;
+                    c.iter().map(|(id, conn)| json!({ "conn": id, "paths": paths_detail(conn) })).collect()
+                };
+                emit(&self.out, json!({
+                    "ev": "stats", "id": m["id"].clone(), "congestion": self.congestion,
+                    "quic": { "streamWindow": QUIC_STREAM_WINDOW, "connWindow": QUIC_CONN_WINDOW, "sendWindow": QUIC_SEND_WINDOW,
+                              "windowFloor": bbr::WINDOW_FLOOR, "windowCeiling": bbr::WINDOW_CEILING, "windowGain": bbr::WINDOW_GAIN },
+                    "conns": conns,
                 }));
             }
             "shutdown" => return Ok(false),
