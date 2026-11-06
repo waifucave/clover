@@ -75,6 +75,23 @@ opened/closed around the probes); without it `exec` fails closed with
 | 11 | `sandbox remove` again / `sandbox status` after remove | 0 / 1 | `removed` / `Bash isn't set up yet` — idempotent |
 | 12 | `sandbox setup` unelevated | — | not live-measured (SSH is always elevated; `runas /trustlevel` doesn't work over SSH session 0). Branch is `net session` → exit 2 by inspection |
 
+Second round (branch at `0c3b0c1`, same VM-only pin caveat): `setup` now stamps the owner
+SID, warms up, resolves the profile by SID, and locks down all three Startup folders.
+- `setup` exit 0; ProfileList key exists (`ProfileImagePath=C:\Users\clover-sb-f41c96d1`, real profile —
+  no more TEMP); `USERPROFILE` in the child is the principal's profile, not `C:\Users\TEMP`.
+- Description is the owner SID; `status`/`status --json` exit 0 with `user.sid` reported.
+- Principal's and real-user Startup folders carry `(OI)(CI)(N)` for the principal; common Startup likewise.
+  A deleted real-user Startup is recreated and denied by re-running `setup` (exit 0).
+- Launch with explicit `--env HOME/USERPROFILE/APPDATA=<profile>` (i.e. `sandboxHomeEnv`): child sees them;
+  write to `$HOME` works; write to the locked-down Startup is `Permission denied` (`STARTUP-DENIED`).
+  Baseline without `--env` still inherits the broker's `HOME` — every launch must pass the three vars.
+- Network unchanged: principal TCP connect EACCES, real user TCP-OPEN.
+- `remove` exit 0: principal gone, ProfileList key gone, profile dir gone, Startup denies removed
+  (`icacls` shows no `clover-sb` entries), WFP `absent`/`filters 0`; `status` exit 1 afterwards.
+- Measurement-only fixes this round: icacls trustees need the `*` SID prefix (else 0x534);
+  `cmd /d /s /c` breaks quoted paths under `Bun.spawn` (mkdir/rmdir silently did nothing) — replaced with
+  `powershell New-Item` / `Remove-Item`; `remove` skips profile teardown for TEMP profiles (shared, keyless).
+
 Still open after measuring: the principal's profile never loads (no `ProfileList` key for its SID,
 `USERPROFILE=C:\Users\TEMP`, temp-profile fail-closed check and per-session reset unimplemented —
 brief item 7); `HOME` is inherited from the broker (the caller must pass `--env HOME/USERPROFILE`);
@@ -86,10 +103,8 @@ unprobed; `setup` does no profile/Startup-folder work yet (brief item 5).
 ---
 
 ## What's still missing
-1. **Per-session reset + temp-profile fail-closed** — reset the principal's profile/hive per session and refuse TEMP profiles on launch (brief item 7; VM shows the profile never loads)
-2. **Description SID store-and-check** — set the user SID in the principal's description on setup, verify on status/remove (Addendum 9)
-3. **Caller env** — pass `HOME`/`USERPROFILE` (and proxy) via `--env` so the child doesn't inherit the broker's home
-4. **Session 0 startup task** — no registration path exists without the broker password; live gate (item 8)
-5. **Credential broker integration** — principal's password lives in daemon's credential broker (item 76); broker may be a later step
-6. **Windows signing check** — once Clover's certificate exists, launch must also verify signature is from Clover (Addendum 1)
-7. **Setup's profile work** — resolve profile by SID, pre-create and deny Startup folders (brief item 5)
+1. **Per-session reset at launch** — `sessionResetPlan` + `profileLaunchCheck` are shipped for the daemon's
+   Windows spawn (lane C); the spawn itself is out of this worktree.
+2. **Session 0 startup task** — no registration path exists without the broker password; live gate (item 8)
+3. **Credential broker integration** — principal's password lives in daemon's credential broker (item 76); broker may be a later step
+4. **Windows signing check** — once Clover's certificate exists, launch must also verify signature is from Clover (Addendum 1)
