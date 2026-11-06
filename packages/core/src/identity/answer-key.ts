@@ -73,6 +73,13 @@ export class AnswerKey {
     return { publicKey: this.publicKey, held: this.held, signature: toBase64(this.#key.sign(statement)) };
   }
 
+  /** Hands this device's answering over to `next` (a new key, a new holder): this key signs the hand-over, which the
+   *  core and every peer need before they take `next` (`answerKeyRotateStatement`). */
+  handOverTo(next: AnswerKey, deviceId: string, at: number): { from: string; at: number; signature: string } {
+    const statement = utf8(`clover/answer-key-rotate/1\n${deviceId}\n${this.publicKey}\n${next.publicKey}\n${at}`);
+    return { from: this.publicKey, at, signature: toBase64(this.#key.sign(statement)) };
+  }
+
   /** Signs the user's answer to a card, for any computer to verify (`cardAnswerSigningInput`). */
   signAnswer(a: { id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {
     return toBase64(this.#key.sign(utf8(cardAnswerSigningInput(a))));

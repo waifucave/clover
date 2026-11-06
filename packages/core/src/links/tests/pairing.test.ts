@@ -9,6 +9,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { FileDeviceRegistry } from "../../devices/registry";
 import { toBase64Url } from "../../identity/bytes";
 import { DeviceKey } from "../../identity/device-key";
+import { generateEd25519 } from "../../identity/keys";
 import { SystemClock } from "../../clock/system-clock";
 import { EFF_SHORT_WORDLIST } from "../../identity/wordlist";
 import { HandshakeClient, pairKeyRef, pairSecretRef } from "../handshake";
@@ -213,6 +214,52 @@ describe("pairing", () => {
     await a.registry.revoke(c.key.id, "lost");
     expect(isContractError(await link.request<unknown>("test.whoami", {}).catch((e: unknown) => e), "refused")).toBe(true);
     expect(a.registry.pairWith(c.key.id)).toBeUndefined();
+  });
+});
+
+describe("the pair door and the words' commitment (S2, S6.3 of H-M1's review)", () => {
+  test("the door turns a connection away while no pairing is shown, and once a pairing is spent", async () => {
+    const net = new MemoryNetwork();
+    const a = await device(net, "Studio");
+    const stranger = net.endpoint(generateEd25519().publicKey);
+    const conn = await stranger.dial({ key: a.key.publicKey }, { alpn: "clover/pair/1" });
+    expect((await conn.closed).reason).toBe("no pairing is open");
+  });
+
+  test("an opened connection that sends no hello is closed when its first frame is late", async () => {
+    const net = new MemoryNetwork();
+    const store = new MemorySecretStore();
+    const key = await DeviceKey.loadOrCreate(store);
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-pair-")), key, clock, self: { name: "Studio" } });
+    const pairing = new PairingService({
+      self: key, registry, wire: net.endpoint(key.publicKey), clock, store, selfTarget: () => ({}), account: () => null, door: { firstFrameMs: 50 },
+    });
+    cleanup.push(() => pairing.close());
+    await pairing.begin();
+    const stranger = net.endpoint(generateEd25519().publicKey);
+    const conn = await stranger.dial({ key: key.publicKey }, { alpn: "clover/pair/1" });
+    conn.openStream(3);
+    expect((await conn.closed).reason).toBe("no hello in time");
+  });
+
+  test("a code's slot is create-only, so no one swaps the host's key in it", async () => {
+    const r = new MemoryRendezvous();
+    await r.publish("slot", "box-1");
+    expect(isContractError(await r.publish("slot", "box-2").catch((e: unknown) => e), "conflict")).toBe(true);
+    expect(await r.lookup("slot")).toBe("box-1");
+  });
+
+  test("the words and the pair secret cover both nonces, and the commitment binds the joiner's", async () => {
+    const { finalTranscript, nonceCommitment, sasWords, derivePairSecret } = await import("../../identity/sas");
+    const { randomBytes } = await import("../../identity/bytes");
+    const secret = randomBytes(32);
+    const full = randomBytes(64);
+    const n1 = randomBytes(32);
+    const n2 = randomBytes(32);
+    expect(sasWords(secret, finalTranscript(full, n1))).not.toEqual(sasWords(secret, finalTranscript(full, n2)));
+    expect(toBase64Url(derivePairSecret(secret, finalTranscript(full, n1)))).not.toBe(toBase64Url(derivePairSecret(secret, finalTranscript(full, n2))));
+    expect(toBase64Url(nonceCommitment(n1))).not.toBe(toBase64Url(nonceCommitment(n2)));
+    expect(toBase64Url(nonceCommitment(n1))).toBe(toBase64Url(nonceCommitment(new Uint8Array(n1))));
   });
 });
 

@@ -112,12 +112,14 @@ describe("account", () => {
   test("two devices on one account take each other from its list, with their box keys", async () => {
     const s = stack();
     const a = await device(s, "Studio");
-    const b = await device(s, "Laptop");
+    const b = await device(s, "Laptop 2");
     for (const d of [a, b]) await d.account.signInWithPassword("someone@example.invalid", new Secret("correct horse"));
     await syncAccountDevices({ registry: a.registry, account: a.account, device: a.key, boxKey: a.boxKey });
     expect((await syncAccountDevices({ registry: b.registry, account: b.account, device: b.key, boxKey: b.boxKey })).added).toEqual([a.key.id]);
     expect((await syncAccountDevices({ registry: a.registry, account: a.account, device: a.key, boxKey: a.boxKey })).added).toEqual([b.key.id]);
     expect(a.registry.get(b.key.id)?.addedBy).toBe("account");
+    // Its tree name is one lane J takes, made from its name (S4), never the raw name.
+    expect(a.registry.get(b.key.id)?.computer).toBe("Laptop-2");
     // A's box key, as B holds it, opens what is sealed to it.
     const sealed = sealToBoxKey(Buffer.from(b.registry.boxKey(a.key.id)!, "base64url"), utf8("aad"), utf8("hello"));
     expect(new TextDecoder().decode(a.boxKey.open(sealed, utf8("aad"))!)).toBe("hello");

@@ -11,12 +11,13 @@ import type { SecretMeta, SecretStore } from "../contracts/secret-store";
 import type { AccountClient } from "../identity/account";
 import { BoxKey } from "../identity/box-key";
 import { DeviceKey } from "../identity/device-key";
+import { retryRevokes, type RevokeOptions } from "../devices/account-devices";
 import { FileDeviceRegistry, type FileDeviceRegistryOptions } from "../devices/registry";
 import { DialPolicy, type NatMapping } from "./dial-policy";
 import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
 import { PairingService, type PairingRendezvous } from "./pairing";
-import { shareDeviceUpdates } from "./relay";
+import { mountRenameRequests, shareDeviceUpdates } from "./relay";
 import { followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
 import { CloverLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
 import type { DialTarget, WireEndpoint } from "./wire";
@@ -37,6 +38,8 @@ export interface DeviceLinksOptions {
   account?: AccountClient;
   handshake?: HandshakeClient;
   rendezvous?: PairingRendezvous;
+  /** The waifucave services a revocation tells (`WAIFUCAVE_DEVICE_SERVICES` in production; none by default). */
+  services?: RevokeOptions["services"];
   /** The transport's timings, for tests. */
   transport?: Partial<Omit<LinkTransportOptions, "self" | "wire" | "registry" | "directory" | "clock" | "planner">>;
 }
@@ -126,6 +129,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
 
   // Peers learn this device's name and answer key over the link, so they can check what its app signs (lane D's relay).
   offs.push(shareDeviceUpdates({ transport, registry, key, clock: o.clock }));
+  offs.push(mountRenameRequests(transport, registry));
 
   // One persistent link per pair (§8.2): every paired computer's link is wanted from the start and from its pairing,
   // so a daemon that restarts dials its computers itself; phones and browsers dial in.
@@ -137,10 +141,23 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   offs.push(registry.watch((c) => {
     if (c.type === "added") keepUp(c.device.id);
   }));
+  // When each device was last seen: as its link comes up, and as it goes down.
+  const upNow = new Set<string>();
+  offs.push(transport.watch((v) => {
+    if (v.up === upNow.has(v.peer)) return;
+    if (v.up) upNow.add(v.peer);
+    else upNow.delete(v.peer);
+    registry.seen(v.peer);
+  }));
 
   const refresh = async () => {
     await readNet().catch(() => undefined);
     await pairing.retryRegistrations().catch(() => undefined);
+    // A revocation's steps the services haven't confirmed yet (S5).
+    await retryRevokes({
+      registry, store: o.store, ...(o.handshake ? { handshake: o.handshake } : {}), ...(o.account ? { account: o.account } : {}),
+      ...(o.services ? { services: o.services } : {}),
+    }).catch(() => undefined);
     await directory?.publish().catch(() => undefined);
   };
   return {

@@ -62,7 +62,8 @@ export function startFakeAccountService(opts: { authUrl: string; anonKey: string
         const d = b.device;
         if (!d || typeof d.id !== "string" || typeof d.publicKey !== "string" || typeof d.boxKey !== "string" || !fresh(b.t)) return Response.json({ error: "bad_request" }, { status: 400 });
         if ((await deviceIdFor(new Uint8Array(Buffer.from(d.publicKey, "base64")))) !== d.id) return Response.json({ error: "bad_request" }, { status: 400 });
-        if (!sigOk(d.publicKey, registerStatement(sub, d.id, b.t!), b.sig)) return Response.json({ error: "unauthorized" }, { status: 401 });
+        if (typeof d.name !== "string" || typeof d.kind !== "string") return Response.json({ error: "bad_request" }, { status: 400 });
+        if (!sigOk(d.publicKey, registerStatement(sub, { id: d.id, publicKey: d.publicKey, boxKey: d.boxKey, name: d.name, kind: d.kind, ...(typeof d.os === "string" ? { os: d.os } : {}) }, b.t!), b.sig)) return Response.json({ error: "unauthorized" }, { status: 401 });
         const existing = list.find((x) => x.id === d.id);
         if (existing?.revokedAt !== undefined) return Response.json({ error: "revoked" }, { status: 403 });
         const record: AccountDevice = { id: d.id, publicKey: d.publicKey, boxKey: d.boxKey, name: d.name, kind: d.kind, ...(d.os ? { os: d.os } : {}), addedAt: existing?.addedAt ?? Date.now() };

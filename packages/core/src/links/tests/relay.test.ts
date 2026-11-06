@@ -91,6 +91,19 @@ describe("the user-message relay", () => {
     expect(server.registry.get(studio.key.id)?.computer).toBe("Studio-2");
   });
 
+  test("renaming another computer goes to that computer, which tells everyone (S4 of H-M1's review)", async () => {
+    const net = new MemoryNetwork();
+    const studio = await daemon(net, "Studio");
+    const server = await daemon(net, "Server");
+    await pair(studio, server);
+    await waitFor(() => server.transport.links().some((l) => l.peer === studio.key.id && l.up));
+    const { renameRemote } = await import("../relay");
+    await renameRemote(server.transport, studio.key.id, "Workshop");
+    expect(studio.registry.self()).toMatchObject({ name: "Workshop", computer: "Workshop" });
+    // It doesn't revert at the studio's next update: the studio itself carries the name now.
+    await waitFor(() => server.registry.get(studio.key.id)?.computer === "Workshop");
+  });
+
   test("only a paired computer relays, and bad params are refused before D's host sees them", async () => {
     const net = new MemoryNetwork();
     const a = await daemon(net, "Studio");

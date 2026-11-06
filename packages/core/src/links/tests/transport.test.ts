@@ -271,4 +271,80 @@ describe("CloverLinkTransport, beyond the contract's cases", () => {
     expect(back).toEqual([[2, 3]]);
     s.end();
   });
+
+  test("each direction ends on its own: the receiver reads the request to its end, then writes the answer back", async () => {
+    const c = await cluster(["a", "b"]);
+    c.t("b").onStream("req", (s) => {
+      const got: number[] = [];
+      s.onData((chunk) => got.push(...chunk));
+      s.onEnd(() => {
+        void s.write(new Uint8Array(got.map((x) => x * 2))).then(() => s.end());
+      });
+    });
+    const s = (await c.t("a").connect(c.id("b"))).openStream("req", "files");
+    const back: number[] = [];
+    let ended: Error | undefined | "not yet" = "not yet";
+    s.onData((chunk) => back.push(...chunk));
+    s.onEnd((e) => (ended = e));
+    await s.write(new Uint8Array([1, 2, 3]));
+    s.end();
+    // Ending its own side doesn't end the stream for the opener: the answer is still to come.
+    expect(ended).toBe("not yet");
+    await waitFor(() => ended !== "not yet");
+    expect(ended).toBeUndefined();
+    expect(back).toEqual([2, 4, 6]);
+  });
+
+  test("a stream still running keeps a retired connection open past the grace", async () => {
+    const c = await cluster(["a", "b"], { clock: new SystemClock(), transport: { retireGraceMs: 50 } });
+    const chunks: number[] = [];
+    let rx: { end(): void } | undefined;
+    c.t("b").onStream("bulk", (s) => {
+      rx = s;
+      s.onData((chunk) => chunks.push(chunk[0]!));
+    });
+    const link = await c.t("a").connect(c.id("b"));
+    const s = link.openStream("bulk", "files");
+    await s.write(new Uint8Array([1]));
+    await waitFor(() => chunks.length === 1);
+    // A network change brings a new connection; the old one retires with the stream still on it.
+    c.t("a").networkChanged();
+    await Bun.sleep(300);
+    await s.write(new Uint8Array([2]));
+    await waitFor(() => chunks.length === 2);
+    s.end();
+    rx?.end();
+    expect(chunks).toEqual([1, 2]);
+  });
+
+  test("'not paired yet' means try again only just after this side's own pairing; then the link stops being wanted", async () => {
+    const c = await cluster(["a", "b"], { clock: new SystemClock(), pairAll: false, transport: { unpairedGraceMs: 300, redialBackoffMs: [0, 50, 50] } });
+    const { recordFor } = await import("../testing");
+    // Only a added b: b doesn't know a.
+    await c.devices.get("a")!.registry.add(recordFor(c.devices.get("b")!.key, "b"), { via: "terminal" });
+    const link = c.t("a").link(c.id("b"));
+    const first = (await c.t("a").connect(c.id("b")).catch((e: unknown) => e)) as ContractError;
+    expect(first.detail?.unpaired).toBe(true);
+    expect((link as unknown as { wanted: boolean }).wanted).toBe(true);
+    await Bun.sleep(400);
+    await c.t("a").connect(c.id("b")).catch(() => undefined);
+    await waitFor(() => !(link as unknown as { wanted: boolean }).wanted);
+  });
+});
+
+describe("FrameReader", () => {
+  test("frames split anywhere, empty ones and several in a chunk come out whole, each copied once into its own buffer", async () => {
+    const { FrameReader, frame } = await import("../frames");
+    const big = new Uint8Array(100_000).map((_, i) => i % 251);
+    const bytes = new Uint8Array([...frame(new Uint8Array([1, 2])), ...frame(new Uint8Array(0)), ...frame(big), ...frame(new Uint8Array([9]))]);
+    for (const step of [1, 3, 7, 4096, bytes.length]) {
+      const r = new FrameReader();
+      const out: Uint8Array[] = [];
+      for (let i = 0; i < bytes.length; i += step) out.push(...r.push(bytes.subarray(i, i + step)));
+      expect(out.map((f) => f.length)).toEqual([2, 0, 100_000, 1]);
+      expect(out[2]).toEqual(big);
+      expect(r.pending).toBe(0);
+    }
+    expect(() => new FrameReader(10).push(frame(new Uint8Array(11)))).toThrow();
+  });
 });

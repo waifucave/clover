@@ -43,8 +43,35 @@ export interface SidecarWireOptions {
   onLog?(line: string): void;
 }
 
-function defaultSpawn(argv: readonly string[]): SidecarProcess {
-  const p = Bun.spawn([...argv], { stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+/** The sidecar's environment: only what the OS needs to give it a network (Winsock wants `SystemRoot`), never the
+ *  daemon's own (its tokens, its paths). */
+export function sidecarEnv(env: Record<string, string | undefined> = process.env): Record<string, string> {
+  const keep = process.platform === "win32" ? ["SystemRoot", "SYSTEMROOT", "windir", "WINDIR"] : [];
+  const out: Record<string, string> = {};
+  for (const k of keep) if (env[k] !== undefined) out[k] = env[k]!;
+  out.RUST_LOG = env.CLOVER_LINK_LOG ?? "warn";
+  return out;
+}
+
+function defaultSpawn(argv: readonly string[], onLog?: (line: string) => void): SidecarProcess {
+  const p = Bun.spawn([...argv], { stdin: "pipe", stdout: "pipe", stderr: onLog ? "pipe" : "ignore", env: sidecarEnv() });
+  if (onLog && p.stderr) {
+    // Its diagnostics, a line at a time (never a secret: it never prints the key).
+    void (async () => {
+      let rest = "";
+      const decoder = new TextDecoder();
+      try {
+        for await (const chunk of p.stderr as ReadableStream<Uint8Array>) {
+          rest += decoder.decode(chunk, { stream: true });
+          const lines = rest.split("\n");
+          rest = lines.pop() ?? "";
+          for (const line of lines) if (line.trim()) onLog(line.slice(0, 2000));
+        }
+      } catch {
+        // the pipe closed
+      }
+    })();
+  }
   return {
     write: (b) => {
       p.stdin.write(b);
@@ -76,7 +103,7 @@ export class SidecarWire implements WireEndpoint {
   }
 
   static async start(o: SidecarWireOptions): Promise<SidecarWire> {
-    const proc = (o.spawn ?? defaultSpawn)([o.binary]);
+    const proc = o.spawn ? o.spawn([o.binary]) : defaultSpawn([o.binary], o.onLog);
     const seed = fromBase64(o.key.seed().reveal());
     if (!seed) throw new ContractError("invalid", "the device key's seed is unreadable");
     send(proc, { op: "init", seed: toHex(seed), alpns: [...(o.alpns ?? [ALPN_LINK, ALPN_PAIR])], relay: o.relay ?? "default", n0Lookup: o.n0Lookup, ...(o.bind ? { bind: o.bind } : {}) });
@@ -136,9 +163,10 @@ export class SidecarWire implements WireEndpoint {
     };
   }
 
-  /** The keys whose link connections the sidecar takes at all; the transport checks the registry again. */
-  allow(keys: readonly Uint8Array[]): void {
-    this.#send({ op: "allow", keys: keys.map(toHex) });
+  /** The keys whose link connections the sidecar lets through, and the revoked ones it closes as revoked. Until the
+   *  first call, it lets none through. */
+  allow(keys: readonly Uint8Array[], revoked: readonly Uint8Array[] = []): void {
+    this.#send({ op: "allow", keys: keys.map(toHex), revoked: revoked.map(toHex) });
   }
 
   networkChanged(): void {
@@ -301,15 +329,18 @@ export class SidecarWire implements WireEndpoint {
 }
 
 /** Keeps the sidecar's allow list to the registry's paired, unrevoked devices, so a link connection from any other
- *  key is closed before the core sees it (the transport checks again). Returns the unsubscribe. */
+ *  key is closed before the core sees it (the transport checks again), and a revoked device's is closed as revoked, so
+ *  it learns it and stops re-dialling. Returns the unsubscribe. */
 export function followRegistry(
   wire: Pick<SidecarWire, "allow">,
-  registry: { self(): { id: string }; list(): { id: string; publicKey: string }[]; watch(fn: () => void): Unsubscribe },
+  registry: { self(): { id: string }; all(): { id: string; publicKey: string; revokedAt?: number }[]; watch(fn: () => void): Unsubscribe },
 ): Unsubscribe {
   const sync = () => {
     const self = registry.self().id;
-    const keys = registry.list().filter((d) => d.id !== self).map((d) => fromBase64(d.publicKey)).filter((k): k is Bytes => k !== null && k.length === 32);
-    wire.allow(keys);
+    const key = (d: { publicKey: string }) => fromBase64(d.publicKey);
+    const ok = (k: Bytes | null): k is Bytes => k !== null && k.length === 32;
+    const devices = registry.all().filter((d) => d.id !== self);
+    wire.allow(devices.filter((d) => d.revokedAt === undefined).map(key).filter(ok), devices.filter((d) => d.revokedAt !== undefined).map(key).filter(ok));
   };
   sync();
   return registry.watch(sync);

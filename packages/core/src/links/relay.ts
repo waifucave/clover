@@ -1,6 +1,7 @@
 // Lane D's relay of a user's message to the computer that runs the bot (`peer.session.send`, review N3; D's ask for
 // H-M1), over the link, and what makes its signature checkable there: each computer tells its peers its own name and
-// answer key, signed with its link key, whenever a link comes up and whenever they change (`DEVICE_UPDATE`).
+// answer key, signed with its link key, whenever a link comes up and whenever they change (`DEVICE_UPDATE`). A new
+// answer key travels with its own proofs, since the link key alone can't install one (registry.ts).
 //
 // The sending device signs `userMessageSigningInput` with the key it answers cards with (`AnswerKey.signUserMessage`
 // on a desktop's app). The relaying computer passes the message on as it came; the receiver checks it with
@@ -12,7 +13,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { fromBase64, toBase64 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
-import { type FileDeviceRegistry, type PeerUpdate, peerUpdateStatement } from "../devices/registry";
+import { type AnswerKeyProof, type FileDeviceRegistry, type PeerUpdate, peerUpdateStatement } from "../devices/registry";
 
 export type RelayParams = z.input<typeof DEVICES_METHODS.peerSessionDeliver.params>;
 
@@ -44,9 +45,34 @@ export function mountUserMessageRelay(
  *  the link). */
 export const DEVICE_UPDATE = "link.device.update";
 
+/** The link's own request to rename the receiving computer (`device.rename` of another device, S4 of H-M1's review):
+ *  a computer's name is its own, so a rename made elsewhere goes to it, and it tells everyone with its signed update.
+ *  Taken only from a paired computer; a name is no grant (`device.rename` is a `core` change, not a sensitive one). */
+export const DEVICE_RENAME = "link.device.rename";
+
+/** Asks `computer` to take a new name; resolves once it has. */
+export async function renameRemote(transport: Pick<LinkTransport, "connect">, computer: string, name: string): Promise<void> {
+  const link = await transport.connect(computer);
+  await link.request(DEVICE_RENAME, { name });
+}
+
+/** Takes renames of this computer made on the user's other computers. */
+export function mountRenameRequests(transport: Pick<LinkTransport, "handle">, registry: FileDeviceRegistry): Unsubscribe {
+  return transport.handle(DEVICE_RENAME, async (raw, from) => {
+    const sender = registry.get(from);
+    if (!sender || sender.revokedAt !== undefined || !sender.runsCore) throw new ContractError("refused", "only a paired computer renames this one");
+    const name = (raw as { name?: unknown } | undefined)?.name;
+    if (typeof name !== "string") throw new ContractError("invalid", "a rename names the new name");
+    await registry.rename(registry.self().id, name);
+    return { ok: true };
+  });
+}
+
 interface UpdateWire {
   update: PeerUpdate;
   signature: string;
+  /** The answer key's own proofs (B1): the app's registration of it and the hand-overs from earlier keys. */
+  proof?: AnswerKeyProof;
 }
 
 /** Keeps the peers' records of this device current, and takes theirs: on every link that comes up, and whenever this
@@ -63,7 +89,8 @@ export function shareDeviceUpdates(
       name: self.name, ...(self.computer ? { computer: self.computer } : {}),
       answerKey: self.answerKey ? { publicKey: self.answerKey.publicKey, held: self.answerKey.held } : null, at,
     };
-    return { update, signature: toBase64(o.key.sign(peerUpdateStatement(self.id, update))) };
+    const proof = o.registry.ownAnswerKeyProof();
+    return { update, signature: toBase64(o.key.sign(peerUpdateStatement(self.id, update))), ...(proof && update.answerKey ? { proof } : {}) };
   };
   let lastAt = 0;
   const send = (peer: string) => {
@@ -75,7 +102,8 @@ export function shareDeviceUpdates(
     const sig = typeof m?.signature === "string" ? fromBase64(m.signature) : null;
     if (!m?.update || typeof m.update.at !== "number" || !sig) return;
     // Only the sender's own record: `from` is the device the link authenticated, so no peer updates a third one.
-    void o.registry.applyPeerUpdate(from, m.update, sig);
+    const proof = typeof m.proof === "object" && m.proof !== null ? m.proof : undefined;
+    void o.registry.applyPeerUpdate(from, m.update, sig, proof);
   }));
   // Once per link coming up, not on every change of its path or round trip.
   const up = new Set<string>();

@@ -39,4 +39,21 @@ describe("answer key", () => {
     expect(await registry.verifyAnswer(key.id, data, fromBase64(appKey.signAnswer(answer))!)).toBe(true);
     expect(await registry.verifyAnswer(key.id, data, key.sign(data))).toBe(false);
   });
+
+  test("the app moves to a new key by having the old one sign the hand-over", async () => {
+    const mem = () => {
+      let saved: Secret | null = null;
+      return { load: async () => saved, save: async (s: Secret) => void (saved = s) };
+    };
+    const old = await AnswerKey.loadOrCreate(mem(), "none");
+    const next = await AnswerKey.loadOrCreate(mem(), "app-keychain");
+    const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
+    const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-answer-")), key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
+    const r1 = old.registration(key.id);
+    await registry.setOwnAnswerKey(r1.publicKey, r1.held, fromBase64(r1.signature)!);
+    const r2 = next.registration(key.id);
+    const h = old.handOverTo(next, key.id, Date.now());
+    await registry.setOwnAnswerKey(r2.publicKey, r2.held, fromBase64(r2.signature)!, { from: h.from, at: h.at, signature: fromBase64(h.signature)! });
+    expect(registry.self().answerKey).toEqual({ publicKey: next.publicKey, held: "app-keychain" });
+  });
 });

@@ -124,6 +124,39 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     expect(await link.request<string>("who", null)).toBe("laptop again");
   }, 40_000);
 
+  test("a revoked device is told so at the sidecar's door, and stops dialling (S1 of H-M1's review)", async () => {
+    const where = new Map<string, DeviceLinks>();
+    const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
+    const start = async (name: string) => {
+      const l = await startDeviceLinks({
+        home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-rev-")), store: new MemorySecretStore(), clock, self: { name }, directory,
+        sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false }, transport: { redialBackoffMs: [0, 200, 200, 200] },
+      });
+      where.set(l.key.id, l);
+      stops.push(() => l.close());
+      return l;
+    };
+    const a = await start("Studio");
+    const b = await start("Laptop");
+    const view = await a.pairing.begin();
+    const joined = await b.pairing.join(view.qr!);
+    await waitFor(() => a.pairing.get(view.pairingId)?.status === "words");
+    await Promise.all([a.pairing.confirm(view.pairingId, joined.words!, { terminal: true }), b.pairing.confirm(view.pairingId, joined.words!, { terminal: true })]);
+    await waitFor(() => a.registry.get(b.key.id) !== undefined && b.registry.get(a.key.id) !== undefined);
+    const link = await b.transport.connect(a.key.id);
+    await waitFor(() => link.view().up, 10_000);
+    await a.registry.revoke(b.key.id);
+    await waitFor(() => !link.view().up, 10_000);
+    const e = (await link.request("echo", 1).catch((x: unknown) => x)) as { code?: string; detail?: Record<string, unknown> };
+    expect(e.code).toBe("refused");
+    expect(e.detail?.revoked).toBe(true);
+    // Told it was revoked, it stops wanting the link, so it doesn't keep dialling.
+    expect((link as unknown as { wanted: boolean }).wanted).toBe(false);
+    await Bun.sleep(800);
+    expect(link.view().up).toBe(false);
+    expect(isContractError(await link.request("echo", 1).catch((x: unknown) => x), "refused")).toBe(true);
+  }, 40_000);
+
   test("a key the core didn't allow is closed at the sidecar's door", async () => {
     const a = await device("Studio");
     const b = await device("Stranger");

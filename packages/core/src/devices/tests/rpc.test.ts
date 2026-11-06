@@ -41,7 +41,7 @@ async function computer(net: MemoryNetwork, name: string) {
   const pairing = new PairingService({ self: key, registry, wire: net.endpoint(key.publicKey), clock, store, selfTarget: () => ({}), account: () => null });
   stops.push(() => pairing.close());
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-  const transport = { links: () => [], watch: () => () => undefined };
+  const transport = { links: () => [], watch: () => () => undefined, connect: () => Promise.reject(new Error("no links in this test")) };
   const methods = devicesMethods({ registry, pairing, transport, clock, openCard: brokerCardOpener(broker), revoke: { store } });
   const events: { type: string }[] = [];
   stops.push(devicesEvents({ registry, transport, pairing, clock }, (e) => events.push(e)));
@@ -99,7 +99,8 @@ describe("peer.call", () => {
     // The laptop's own registry took its app's key with proof; here it reaches A as a signed peer update.
     const update = { answerKey: { publicKey: appKey, held: "app-keychain" as const }, at: Date.now() };
     const { peerUpdateStatement } = await import("../registry");
-    expect(await a.registry.applyPeerUpdate(laptop.id, update, laptop.sign(peerUpdateStatement(laptop.id, update)))).toBe(true);
+    const proof = { registration: toBase64(app.sign(answerKeyStatement(laptop.id, appKey, "app-keychain"))), rotations: [] };
+    expect(await a.registry.applyPeerUpdate(laptop.id, update, laptop.sign(peerUpdateStatement(laptop.id, update)), proof)).toBe(true);
     expect(answerKeyStatement(laptop.id, appKey, "app-keychain").length).toBeGreaterThan(0);
     const ran: { method: string; caller: Caller }[] = [];
     const render = (call: { computer: string; method: string; params: unknown }): CardContent => ({
