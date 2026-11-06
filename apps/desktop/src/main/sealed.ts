@@ -107,6 +107,9 @@ export class SealedFrames {
   /** The answers whose own `card.answer` went out and is not answered back yet: `buildAnswer` burns the channel, the
    *  core's own result (`confirmedAnswer`) sets the card's fate (S6). */
   private readonly pending = new Map<string, string>();
+  /** The frame tokens whose page has reported itself visible (IOv2), for the fallback rule (§5.5: only show the
+   *  fallback when no plugin has both buttons visible within 2 s). */
+  private readonly visible = new Set<string>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -166,6 +169,30 @@ export class SealedFrames {
    *  undefined (a token that never bound, or past its band). */
   boundOf(token: string): string | undefined {
     return this.channels.get(token)?.bound;
+  }
+
+  /** The card a token's channel belongs to. */
+  cardOf(token: string): string | undefined {
+    return this.channels.get(token)?.cardId;
+  }
+
+  /** Records that a frame's page has reported itself visible or not (IOv2). */
+  markVisible(token: string, visible: boolean): void {
+    if (visible) this.visible.add(token);
+    else this.visible.delete(token);
+  }
+
+  /** Whether every `button:*` channel of a card has reported itself visible (the fallback rule: only show the
+   *  fallback when no plugin has both buttons on screen and visible within 2 s). */
+  buttonsVisible(cardId: string): boolean {
+    let any = false;
+    for (const [t, ch] of this.channels) {
+      if (ch.cardId === cardId && ch.element.startsWith("button:")) {
+        any = true;
+        if (!this.visible.has(t)) return false;
+      }
+    }
+    return any;
   }
 
   /** Binds a channel to a frame key after the page has loaded (the fallback's own window's main frame isn't known at

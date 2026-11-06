@@ -66,5 +66,6 @@ if (isRoot || isLayer) {
   const token = new URLSearchParams(location.search).get("token") ?? "";
   contextBridge.exposeInMainWorld("cloverSealed", {
     answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("clover:sealed-answer", { token, option, children }),
+    visible: (visible: boolean) => void ipcRenderer.send("clover:sealed-visible", { token, visible }),
   });
 }

@@ -524,6 +524,14 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       : `m:${f.processId}:${f.routingId}`;
     return hooks.sealedAnswer(token, option, key, ch);
   });
+  // A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
+  // a card's buttons show (§5.5's fallback rule).
+  on("clover:sealed-visible", (event, a) => {
+    const token = str(a.token, 128);
+    const visible = typeof a.visible === "boolean" ? a.visible : undefined;
+    if (token === undefined || visible === undefined) throw new LayerError("bad sealed visibility");
+    return hooks.sealedVisible(token, visible);
+  });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
     const f = event.senderFrame;
@@ -548,7 +556,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }

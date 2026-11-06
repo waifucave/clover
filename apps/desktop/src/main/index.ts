@@ -182,6 +182,15 @@ async function ready(): Promise<void> {
       sealed.confirmedAnswer(out.card.id, true);
       return { accepted: true };
     },
+    // A sealed frame's page reports its own visibility (IOv2). When all of a card's buttons are visible, the
+    // fallback's timer is disarmed (§5.5: only show the fallback when no plugin has both buttons visible within 2 s).
+    sealedVisible: (token, visible) => {
+      sealed.markVisible(token, visible === true);
+      if (visible === true) {
+        const cardId = sealed.cardOf(token);
+        if (cardId !== undefined && sealed.buttonsVisible(cardId)) disarmFallback(cardId);
+      }
+    },
     userSend: async (windowId, to, message) => {
       // One key press or click the main process saw come to the window covers one send (§5.5).
       if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");

@@ -96,6 +96,8 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     const seen = whole === true && e.isVisible === true && enough === true;
     if (seen && !visible) visibleAt = Date.now();
     visible = seen;
+    // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
+    if (b !== undefined) b.visible?.(seen);
   }, { threshold: [0, 0.25, 0.5, 0.75, 1], trackVisibility: true, delay: 200 });
   window.addEventListener("DOMContentLoaded", () => {
     const b2 = document.querySelector(".seal-button");
