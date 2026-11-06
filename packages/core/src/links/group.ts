@@ -154,7 +154,8 @@ export class GroupKeeper {
     // The keys its removal would roll back: the user keeps the ones they recognise (the controller's ruling).
     // The service's own preview when it has one, else this computer's reading of the same rule.
     const preview = await this.#o.handshake.rollbackPreview(group, key, member).catch(() => undefined);
-    const dropped = preview ? read.members.filter((m) => preview.drops.includes(m.key)) : rolledBack(read.members, member, now);
+    // This computer is never dropped by its own removal's rollback, so its card never lists it.
+    const dropped = (preview ? read.members.filter((m) => preview.drops.includes(m.key)) : rolledBack(read.members, member, now)).filter((m) => m.key !== g.ownKey);
     const keeps = await this.#keepsFor(g, group, member, name, dropped);
     const eligible = eligibleVoters(read.members, member, now);
     const need = quorumOf(eligible.length);
@@ -575,9 +576,9 @@ export function survivor(a: { id: string; size: number }, b: { id: string; size:
 /** The voters a change to `target` counts: those who vote now, not the target, and not the keys it admitted lately
  *  (a quorum's removal of it undoes those). */
 export function eligibleVoters(members: GroupMember[], target: string, now: number): GroupMember[] {
-  const since = now - ROLLBACK_MS;
-  return members.filter((m) =>
-    m.key !== target && m.votesFrom != null && m.votesFrom <= now && !(m.joinedAt >= since && (m.admittedBy ?? []).includes(target)));
+  // Transitively, as lane I's service counts them: those keys can't co-sign either (403 not_voter).
+  const lately = new Set(rolledBack(members, target, now).map((m) => m.key));
+  return members.filter((m) => m.key !== target && m.votesFrom != null && m.votesFrom <= now && !lately.has(m.key));
 }
 
 /** The members a quorum's removal of `target` would roll back: the keys it admitted in the last 7 days, and theirs. */

@@ -227,7 +227,8 @@ describe("voters and the quorum (lane I's proposal)", () => {
     const m = (key: string, votesFrom: number | null, admittedBy: string[] = [], joinedAt = now - 1000) => ({ key, joinedAt, votesFrom, admittedBy });
     const members = [m("A", now - 10), m("B", now - 10, ["A"]), m("C", now + 1000, ["A"]), m("D", now - 10, ["B"]), m("E", now - 10, ["B"], now - 8 * 86_400_000)];
     expect(eligibleVoters(members, "B", now).map((x) => x.key)).toEqual(["A", "E"]);
-    expect(eligibleVoters(members, "A", now).map((x) => x.key)).toEqual(["D", "E"]);
+    // Transitively: B, C and D came in through the studio this week.
+    expect(eligibleVoters(members, "A", now).map((x) => x.key)).toEqual(["E"]);
   });
 });
 

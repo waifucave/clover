@@ -438,7 +438,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           // What a quorum's removal of the target would undo, without doing it.
           const copy: Group = { ...g, members: new Map(g.members), removed: new Map(g.removed), changes: [...g.changes], lease: { ...g.lease } };
           const before = new Set(copy.members.keys());
-          rollBack(copy, parts[4], new Set());
+          rollBack(copy, parts[4], new Set([who]));
           return Response.json({
             restores: [...copy.members.keys()].filter((k) => !before.has(k)),
             drops: [...before].filter((k) => k !== parts[4] && !copy.members.has(k)),
@@ -455,7 +455,12 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
             const b = body() as { t?: unknown; removes?: unknown; keep?: unknown } | undefined;
             const kept = Array.isArray(b?.keep) ? (b.keep as unknown[]).filter((k): k is string => typeof k === "string") : [];
             const since = now() - rollbackMs;
-            const its = new Set(g.changes.filter((c) => c.kind === "admit" && c.at >= since && c.signers.includes(gone)).map((c) => c.target));
+            // The keys it admitted lately, transitively.
+            const its = new Set<string>();
+            const walk = (k: string) => {
+              for (const c of g.changes) if (c.kind === "admit" && c.at >= since && c.signers.includes(k) && !its.has(c.target) && c.target !== gone) (its.add(c.target), walk(c.target));
+            };
+            walk(gone);
             const eligible = new Set([...g.members].filter(([k, m]) => k !== gone && !its.has(k) && votes(m)).map(([k]) => k));
             const agreed = new Set<string>();
             if (eligible.has(who)) agreed.add(who);
@@ -471,7 +476,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
               }
             }
             const need = quorumOf(eligible.size);
-            if (eligible.size === 0 || agreed.size < need) return err(403, "no_quorum", { need, have: agreed.size });
+            if (eligible.size === 0 || agreed.size < need) return err(403, "no_quorum", { voters: eligible.size, needed: need });
             signers = [...agreed];
             // The quorum signed the kept keys again: the rollback leaves them.
             keeps = new Set(kept);
@@ -481,7 +486,7 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           if (g.lease.holder === gone) g.lease = { holder: null, epoch: g.lease.epoch, expiresAt: null };
           if (gone !== who) {
             g.changes.push({ kind: "remove", target: gone, signers, at: now(), member });
-            rollBack(g, gone, keeps);
+            rollBack(g, gone, new Set([...keeps, who]));
           }
           g.changes = g.changes.filter((c) => c.at >= now() - rollbackMs);
           if (g.members.size === 0) groups.delete(id);
