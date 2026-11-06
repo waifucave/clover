@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } fr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bunPinProblem, thisBunFirst } from "./bun-pin";
 
 export type DaemonTarget = "darwin-arm64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
@@ -93,11 +94,15 @@ export function parseBuildDaemonArgs(argv: readonly string[], host: DaemonTarget
   return { targets, smoke, dryRun };
 }
 
-/** Runs a package script's `a && b && c` line in `cwd`: `/bin/sh` on macOS and Linux, `cmd.exe` on Windows. */
+/**
+ * Runs a package script's `a && b && c` line in `cwd`: `/bin/sh` on macOS and Linux, `cmd.exe` on Windows. The
+ * running Bun's folder goes first on PATH, so the line's `bun build` is this Bun, the one `main` checked.
+ */
 export function runScriptLine(line: string, cwd: string): number {
+  const env = thisBunFirst(process.env);
   const r = process.platform === "win32"
-    ? spawnSync(line, { cwd, stdio: "inherit", shell: true })
-    : spawnSync("/bin/sh", ["-c", line], { cwd, stdio: "inherit" });
+    ? spawnSync(line, { cwd, stdio: "inherit", shell: true, env })
+    : spawnSync("/bin/sh", ["-c", line], { cwd, stdio: "inherit", env });
   return r.status ?? 1;
 }
 
@@ -129,6 +134,12 @@ export function main(argv: readonly string[], root: string): number {
   } catch (err) {
     console.error(`build:daemon: ${(err as Error).message}`);
     return 2;
+  }
+  // release.ts's check: CI tests the Bun `.bun-version` pins, so the binary must be compiled by that one.
+  const pin = args.dryRun ? null : bunPinProblem(root);
+  if (pin !== null) {
+    console.error(`build:daemon: ${pin} — build with the pinned Bun: scripts/pinned-bun run build:daemon`);
+    return 1;
   }
   const cliDir = join(root, "packages", "cli");
   const script = (JSON.parse(readFileSync(join(cliDir, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"] ?? "";
