@@ -827,6 +827,17 @@ export class UiRuntime {
     return this.partIn(frame, mountId).plugin?.capabilities ?? new Set();
   }
 
+  /** A web page part placed by the document `frame` (throws otherwise): its plugin, its page and its window. */
+  webOf(frame: FrameRef, mountId: string): { plugin: UiPlugin; web: Readonly<Record<string, unknown>>; windowId: number } {
+    const doc = this.requireDoc(frame);
+    const m = this.mounts.get(mountId);
+    const parent = m?.parent === undefined ? undefined : this.mounts.get(m.parent);
+    if (m === undefined || m.kind !== "web" || parent === undefined || this.docOf(parent)?.id !== doc.id || m.plugin === undefined) throw new LayerError("that web part isn't in this document");
+    const web = this.entryOf(m)?.web;
+    if (web === undefined) throw new LayerError("that part has no page");
+    return { plugin: m.plugin, web, windowId: doc.windowId };
+  }
+
   private partIn(frame: FrameRef, mountId: string): Mount {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);

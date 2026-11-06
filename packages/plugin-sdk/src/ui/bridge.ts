@@ -262,6 +262,9 @@ export interface LayerBridge {
    *  viewport, null when it has no place; `used` when the person just used it (ruling R8: the view the person used
    *  last gets the live view). */
   viewFrame(mount: string, name: string, rect: Rect | null, used?: boolean): void;
+  /** Where a web page part's view goes, in this document's viewport (null: hidden). Only the document that placed
+   *  the web part places its view. */
+  webFrame(mount: string, rect: Rect | null): void;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
   /** Claims a dropped grant for the part `mount`. */

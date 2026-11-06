@@ -130,6 +130,8 @@ beforeAll(() => {
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
+  registries.web = join(work, "web.json");
+  writeFileSync(registries.web, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-web"), 1005)] }));
   registries.spin = join(work, "spin.json");
   writeFileSync(registries.spin, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-spin"), 1004)] }));
   registries.dns = join(work, "dns.json");
@@ -201,6 +203,20 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const spin = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "spin");
     expect(spin?.frames.some((f) => f.text.includes("stopped drawing")), r.output).toBe(true);
     expect(r.facts!.safeMode).toBe(false);
+    expectBothStopped(r);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("a web page entry shows in an isolated view of its own, in its own session, reaching nothing of the app's", () => {
+    const r = smoke(electron(), [root], "web", { CLOVER_SMOKE_WAIT_TEXT: "Fixture web page (scripted)" });
+    expectShell(r);
+    const web = r.facts!.web as { mount: string; url: string; visible: boolean; text: string }[];
+    expect(web, r.output).toHaveLength(1);
+    expect(web[0]!.url).toBe("clover-web://fixture-web/page.html");
+    expect(web[0]!.text).toContain("Fixture web page (scripted)");
+    expect(web[0]!.text).toContain("bridge: none; node: none");
+    // The view is drawn over its part, in the window (shown, though the window itself never is in a headless run).
+    expect(web[0]!.visible).toBe(true);
     expectBothStopped(r);
     expectQuiet(r);
   }, 120_000);

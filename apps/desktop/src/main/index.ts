@@ -30,6 +30,7 @@ import { MenuGate, PointerLog, ViewFrames, checkRegions, inRegions, mayOpen, sur
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
+import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -89,7 +90,8 @@ if (!app.requestSingleInstanceLock()) {
   // The app's guards on every webContents but the Clover Browser's (its tabs, the windows its pages open and its
   // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
   app.on("web-contents-created", (_event, contents) => {
-    if (!isBrowserContents(contents)) guardContents(contents, log);
+    // Web page entries' views keep to their own origin instead (web-views.ts).
+    if (!isBrowserContents(contents) && !isWebViewContents(contents)) guardContents(contents, log);
   });
   app.on("before-quit", (event) => {
     if (leaving || shuttingDown) return;
@@ -115,7 +117,14 @@ async function ready(): Promise<void> {
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
 
-  runtime = new UiRuntime({ os, platform: process.platform, safeMode, log, onGone: (mount) => views.drop(mount), systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale() });
+  runtime = new UiRuntime({
+    os, platform: process.platform, safeMode, log,
+    onGone: (mount) => {
+      views.drop(mount);
+      webViews.drop(mount);
+    },
+    systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
+  });
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });
@@ -131,6 +140,14 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
+    webFrame: (windowId, mount, web, bounds) => {
+      const spec = webSpec(web.web);
+      if (spec === undefined) {
+        log(`web: ${web.plugin.id}'s page isn't one the app shows (a URL or a page in its folder, and a partition)`);
+        return;
+      }
+      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${err instanceof Error ? err.message : String(err)}`));
+    },
   }, log);
   startCensus(runtime);
   syncAppearance();
@@ -553,6 +570,12 @@ const views = new ViewFrames((name, target) => {
   browser.setView(name, win === null || win.isDestroyed() ? undefined : { window: win, bounds: target!.bounds });
 });
 
+/** Web page entries' views (§5.5 "Web pages"), each in its plugin's own session. */
+const webViews = new WebViews((windowId) => {
+  const w = BrowserWindow.fromId(windowId);
+  return w === null || w.isDestroyed() ? undefined : w;
+}, log);
+
 /** The Clover Browser in this process (lane L, spec §12.1): made once the app is ready; what it reports goes to the
  *  daemon over the pair. */
 function startBrowser(): void {
@@ -593,6 +616,7 @@ function watchWindow(win: BrowserWindow): void {
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);
+    webViews.dropWindow(id);
   });
 }
 
@@ -719,6 +743,12 @@ async function smoke(): Promise<void> {
   };
   let frames: Probed[] = [];
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
+  type WebFact = { mount: string; url: string; visible: boolean; text: string };
+  let webFacts: WebFact[] = [];
+  const probeWeb = async (): Promise<WebFact[]> => Promise.all(webViews.list().map(async (v) => {
+    const text = await Promise.race([v.contents.executeJavaScript("document.body ? document.body.innerText : ''", true).then((t) => String(t), () => ""), new Promise<string>((r) => setTimeout(() => r(""), 1_000))]);
+    return { mount: v.mount, url: v.url, visible: v.visible, text: text.slice(0, 200) };
+  }));
   // Texts the run waits for, all of them (`|` between).
   const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
   let hung = false;
@@ -730,7 +760,8 @@ async function smoke(): Promise<void> {
     const wanted = Number(process.env.CLOVER_SMOKE_LAYERS ?? "0");
     const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
     const others = new Set(layers.filter((f) => f.origin !== "clover-plugin://clover").map((f) => f.origin));
-    const texts = [...frames, ...surfaceFacts.flatMap((x) => x.frames)].map((f) => f.text);
+    webFacts = await probeWeb();
+    const texts = [...[...frames, ...surfaceFacts.flatMap((x) => x.frames)].map((f) => f.text), ...webFacts.map((w) => w.text)];
     const drawn = shell?.shell === true && shell.composer && others.size >= wanted && layers.every((f) => f.rendered);
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w)))) break;
@@ -796,6 +827,7 @@ async function smoke(): Promise<void> {
     frames: frames.map((f) => ({ ...f, sandboxed: metrics.find((m) => m.pid === f.osPid)?.sandboxed ?? null })),
     mounts: runtime.stats(),
     surfaces: surfaceFacts,
+    web: webFacts,
     captured,
   });
   if (process.env.CLOVER_SMOKE_KEEP === "1") return;

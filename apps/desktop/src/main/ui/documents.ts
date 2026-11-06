@@ -6,6 +6,7 @@
 //                             `/_clover/…` the layer runtime (React, the UI API, the boot, the clover tree's bundle),
 //                             `/_p/<plugin id>/…` that plugin's own files
 //   clover-sealed://          sealed card frames (E-M3); refused until then
+//   clover-web://<layer>/     a web page entry's folder page, served only in that plugin's own web session
 //
 // Every layer document and script carries a CSP that keeps it to its own origin, and `Connection-Allowlist`, which
 // Chromium 156 enforces per document and worker, DNS lookups included: a document's lookups are matched against the
@@ -21,6 +22,8 @@ import { createHash } from "node:crypto";
 export const LAYER_SCHEME = "clover-plugin";
 export const CORE_SCHEME = "clover-core";
 export const SEALED_SCHEME = "clover-sealed";
+/** A web page entry's folder page (§5.5 "Web pages"), in that plugin's own web session only. */
+export const WEB_SCHEME = "clover-web";
 
 /** What the layer runtime serves under `/_clover/`. */
 export const RUNTIME_PATH = "/_clover/";

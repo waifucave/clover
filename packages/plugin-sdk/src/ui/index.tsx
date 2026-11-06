@@ -384,10 +384,58 @@ export function Spot({ name, spotKey, props }: SpotProps) {
 
 function SpotItemView({ item, parent, spot, spotKey, props }: { item: SpotItem; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
   if (item.kind === "frame") return <LayerFrame item={item} props={props} />;
-  if (item.kind === "web") {
-    return <div className="clover-web-placeholder" data-clover-entry={item.ref} role="note">This part is a web page, which shows in a later version.</div>;
-  }
+  if (item.kind === "web") return <WebPart item={item} />;
   return <InlineItem item={item} parent={parent} spot={spot} spotKey={spotKey} props={props} />;
+}
+
+/** A web page part: the core draws the page's own view over this element, in the page's own session (§5.5). */
+function WebPart({ item }: { item: Extract<SpotItem, { kind: "web" }> }) {
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (el === null) return;
+    const bridge = rt().bridge;
+    let last = "";
+    const measure = () => {
+      const b = el.getBoundingClientRect();
+      const shown = b.width > 0 && b.height > 0 && document.visibilityState !== "hidden" && el.isConnected;
+      const rect = shown ? { x: b.x, y: b.y, width: b.width, height: b.height } : null;
+      const key = JSON.stringify(rect);
+      if (key === last) return;
+      last = key;
+      bridge.webFrame(item.mount, rect);
+    };
+    return trackRect(el, measure, () => bridge.webFrame(item.mount, null));
+  }, [el, item.mount]);
+  return <div ref={setEl} className="clover-web-part" data-clover-entry={item.ref} data-clover-web={item.mount} style={{ display: "block", width: "100%", height: "100%", minHeight: 120 }} />;
+}
+
+/** Calls `measure` whenever an element may have moved or changed size (its resizes, the window's, any scroll, the
+ *  document's visibility, and a slow poll for moves with no resize); `gone` when it stops. */
+function trackRect(el: HTMLElement, measure: () => void, gone: () => void, extra?: { onUse: () => void }): () => void {
+  const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => measure());
+  resize?.observe(el);
+  const onChange = () => measure();
+  window.addEventListener("resize", onChange);
+  document.addEventListener("scroll", onChange, true);
+  document.addEventListener("visibilitychange", onChange);
+  if (extra !== undefined) {
+    el.addEventListener("pointerdown", extra.onUse, true);
+    el.addEventListener("keydown", extra.onUse, true);
+  }
+  const poll = setInterval(onChange, VIEW_FRAME_POLL_MS);
+  measure();
+  return () => {
+    resize?.disconnect();
+    window.removeEventListener("resize", onChange);
+    document.removeEventListener("scroll", onChange, true);
+    document.removeEventListener("visibilitychange", onChange);
+    if (extra !== undefined) {
+      el.removeEventListener("pointerdown", extra.onUse, true);
+      el.removeEventListener("keydown", extra.onUse, true);
+    }
+    clearInterval(poll);
+    gone();
+  };
 }
 
 function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<SpotItem, { kind: "inline" }>; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
@@ -650,28 +698,9 @@ export function useViewFrame(name: string): (el: HTMLElement | null) => void {
       last = key;
       bridge.viewFrame(part.mount, name, rect, used || undefined);
     };
-    const onUse = () => measure(true);
-    const onChange = () => measure();
-    const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onChange);
-    resize?.observe(el);
-    window.addEventListener("resize", onChange);
-    document.addEventListener("scroll", onChange, true);
-    document.addEventListener("visibilitychange", onChange);
-    el.addEventListener("pointerdown", onUse, true);
-    el.addEventListener("keydown", onUse, true);
-    const poll = setInterval(onChange, VIEW_FRAME_POLL_MS);
     // Placed: the newest place gets the view until the person uses another.
     measure(true);
-    return () => {
-      resize?.disconnect();
-      window.removeEventListener("resize", onChange);
-      document.removeEventListener("scroll", onChange, true);
-      document.removeEventListener("visibilitychange", onChange);
-      el.removeEventListener("pointerdown", onUse, true);
-      el.removeEventListener("keydown", onUse, true);
-      clearInterval(poll);
-      bridge.viewFrame(part.mount, name, null);
-    };
+    return trackRect(el, () => measure(), () => bridge.viewFrame(part.mount, name, null), { onUse: () => measure(true) });
   }, [el, name, part.mount]);
   return setEl;
 }

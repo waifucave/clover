@@ -6,15 +6,16 @@ import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
+import type { UiPlugin } from "./model";
 
 /** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
  *  `bypassCSP` are never granted. */
 export function registerSchemes(): void {
-  protocol.registerSchemesAsPrivileged([CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME].map((scheme) => ({
+  protocol.registerSchemesAsPrivileged([CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME].map((scheme) => ({
     scheme,
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
   })));
@@ -230,6 +231,8 @@ export interface IpcHooks {
   open(pluginId: string, target: OpenTarget): Promise<void>;
   /** Where a part's native view goes in the window (undefined: nowhere now); `used` when the person just used it. */
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
+  /** Where a web page part's view goes in the window (undefined: hidden). */
+  webFrame(windowId: number, mount: string, web: { plugin: UiPlugin; web: Readonly<Record<string, unknown>> }, bounds: Rect | undefined): void;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
   menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
 }
@@ -385,6 +388,27 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.viewFrame(place.windowId, mount, name, bounds, used);
     });
   });
+  // A web page part's view (§5.5 "Web pages"): the place its part reports, clipped to the frame, as for a native view.
+  const webSeq = new Map<string, number>();
+  on("clover:web-frame", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) return;
+    const web = runtime.webOf(s.frame, mount);
+    const seq = (webSeq.get(mount) ?? 0) + 1;
+    webSeq.set(mount, seq);
+    const r = a.rect === null ? undefined : rect(a.rect);
+    if (r === undefined) {
+      hooks.webFrame(web.windowId, mount, web, undefined);
+      return;
+    }
+    const place = runtime.placeOf(s.frame);
+    void Promise.all(place.steps.map((step) => askRect(step.parent, step.child))).then((chain) => {
+      if (webSeq.get(mount) !== seq) return;
+      const bounds = chain.some((c) => c === undefined) ? undefined : viewRect(r, chain as Rect[]);
+      hooks.webFrame(place.windowId, mount, web, bounds);
+    });
+  });
   handle("clover:drag-offer", (event, a) => {
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
@@ -415,7 +439,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
 
   return () => {
     for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame"]) ipcMain.removeAllListeners(c);
   };
 }
 
