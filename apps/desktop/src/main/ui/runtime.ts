@@ -156,6 +156,7 @@ export class UiRuntime {
     this.themes = opts.themes ?? new ThemeStore(this.log);
     this.strings = new StringStore(this.log);
     this.layouts = new LayoutStore(this.log);
+    this.sealed = opts.sealed;
   }
 
   get safeMode(): boolean {
