@@ -58,8 +58,10 @@ export interface LinkTransportOptions {
   directory: PeerDirectory;
   clock: Clock;
   planner?: DialPlanner;
-  /** The lease epoch the hello carries (H-M2); 0 until then. */
+  /** The lease epoch the hello carries. */
   epoch?: () => number;
+  /** The epoch a peer's hello carried: a hint to read the lease again, never a fencing token by itself. */
+  onPeerEpoch?: (peer: string, epoch: number) => void;
   features?: readonly string[];
   /** A relay's id for `LinkView.relay`, from its URL (the relay plugin that configured it). */
   relayLabel?: (url: string) => string | undefined;
@@ -82,7 +84,7 @@ const DEFAULTS = {
   redialBackoffMs: [0, 250, 1_000, 2_000, 5_000, 10_000, 30_000] as readonly number[],
 };
 
-type ResolvedLinkOptions = Required<Omit<LinkTransportOptions, "relayLabel" | "epoch">> & Pick<LinkTransportOptions, "relayLabel" | "epoch">;
+type ResolvedLinkOptions = Required<Omit<LinkTransportOptions, "relayLabel" | "epoch" | "onPeerEpoch">> & Pick<LinkTransportOptions, "relayLabel" | "epoch" | "onPeerEpoch">;
 
 const PRIORITY_OF: Record<number, LinkPriority> = { 3: "control", 2: "tokens", 1: "screenshots", 0: "files" };
 
@@ -632,17 +634,18 @@ class Session {
   }
 
   #helloAnswered(v: unknown): void {
-    const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown };
+    const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; epoch?: unknown };
     if (r?.device !== this.#link.peer || typeof r.connSeq !== "number" || !PEER_PROTOCOL_VERSION_RANGE.accepts(r.protocolVersion)) {
       this.close(CLOSE_PROTOCOL, "a bad hello answer");
       return;
     }
     this.seq = r.connSeq;
+    this.#peerEpoch(r.epoch);
     this.#becomeReady();
   }
 
   #answerHello(id: number, lane: number, v: unknown): void {
-    const h = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; features?: unknown };
+    const h = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; features?: unknown; epoch?: unknown };
     if (this.conn.outbound || this.#ready) {
       this.close(CLOSE_PROTOCOL, "an unexpected hello");
       return;
@@ -658,9 +661,14 @@ class Session {
     const agreed = Math.max(h.connSeq, this.#link.lastSeq + 1);
     this.#link.lastSeq = agreed;
     this.seq = agreed;
+    this.#peerEpoch(h.epoch);
     const t = this.#t;
     const answer = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.agree(h.protocolVersion as number), device: t.self, epoch: t.opts.epoch?.() ?? 0, features: [...t.opts.features], connSeq: agreed };
     void this.#reply(lane, id, true, answer).then(() => this.#becomeReady(), (e: unknown) => this.#fail(e instanceof Error ? e : new Error(String(e))));
+  }
+
+  #peerEpoch(epoch: unknown): void {
+    if (typeof epoch === "number" && Number.isSafeInteger(epoch) && epoch > 0) this.#t.opts.onPeerEpoch?.(this.#link.peer, epoch);
   }
 
   #becomeReady(): void {

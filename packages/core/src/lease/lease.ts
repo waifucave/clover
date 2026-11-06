@@ -1,0 +1,330 @@
+// The main computer's lease on this device (spec §6.4 "The main holds a lease", "Fencing the old main"; the contract in
+// contracts/lease.ts, whose conformance suite this passes). It is the device's view of the one lease record the
+// handshake keeps for its scope (scope.ts): the account's, or the group's for account-less devices (decision 85).
+//
+// What it decides by itself:
+// * **Whether this device may act** (`canAct`), from its own sleep-counting monotonic clock only: the moment it sent
+//   its last acquire or renew that the service granted, plus the TTL, minus the margin for clock error. Never from
+//   shared or wall time. After a wake, nothing until a renew succeeds.
+// * **The spec's exceptions to fencing** (`mayOutlast`): past its deadline, a holder that can't renew keeps acting
+//   only while no other computer could take over, or while it has a live link to each one that could. The
+//   coordinator answers that from the links (coordinator.ts).
+// * **The fencing token.** The epoch only rises; `highestEpoch` is the newest this device has seen, and
+//   `isStale(epoch)` tells a receiver to refuse an act stamped with an older one (PROTOCOL.md: "peers refuse acts with
+//   an epoch older than the newest they have seen").
+//
+// What it leaves to the coordinator: when to renew, when to read, when to take over, and choosing the main.
+//
+// With no scope at all (no account and no account-less pair, so no handshake to ask), only the user's own takeover
+// acquires (`byUser`), a lease held here alone; the daemon gives a lone computer that.
+import type { LeaseView } from "@waifucave/clover-protocol";
+import type { Clock, TimerHandle } from "../contracts/clock";
+import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
+import type { Lease, LeaseState } from "../contracts/lease";
+import type { LeaseScope, ScopeLease } from "./scope";
+
+/** The lease's numbers: a 30 s lease renewed every 10 s, acted on until 5 s before it ends. */
+export const LEASE_TTL_MS = 30_000;
+export const LEASE_MARGIN_MS = 5_000;
+
+export interface MainLeaseOptions {
+  /** This device's id. */
+  self: string;
+  /** Where the lease is held now; undefined while this device has no account and no group. */
+  scope(): LeaseScope | undefined;
+  /** Shared time (views) and timers. */
+  clock: Pick<Clock, "now" | "setTimeout" | "clearTimeout">;
+  /** A monotonic clock that counts sleep (boot-clock.ts); the clock's own `monotonic` by default. */
+  monotonic?: () => number;
+  ttlMs?: number;
+  marginMs?: number;
+  /** The TTL the request names, in seconds: the TTL's, within the service's 10–300. Tests with a memory service set
+   *  a shorter one. */
+  ttlSec?: number;
+  /** The computer the user chose as main, or the one chosen for them (main-choice.ts). */
+  main?: () => string | null;
+  /** Past the deadline, whether this holder may still act: no other computer could take over, or it has a live link
+   *  to each one that could. */
+  mayOutlast?: () => boolean;
+}
+
+export class MainLease implements Lease {
+  readonly self: string;
+  readonly ttlMs: number;
+  readonly marginMs: number;
+  readonly #o: MainLeaseOptions;
+  readonly #mono: () => number;
+  readonly #listeners = new Listeners<LeaseState>();
+  /** The last record the service gave, by any answer or push. */
+  #known: ScopeLease = { holder: null, holderRaw: null, epoch: 0, expiresAt: null };
+  #highest = 0;
+  #reachable = true;
+  /** On the monotonic clock: when this device stops acting on its lease, unless an exception holds. */
+  #deadline: number | null = null;
+  #woke = false;
+  #handingOver = false;
+  /** A lease held with no handshake (`byUser`, no scope). */
+  #local: { epoch: number } | null = null;
+  #lastEmitted = "";
+  #lapseTimer: TimerHandle | undefined;
+  #deadlineTimer: TimerHandle | undefined;
+
+  constructor(o: MainLeaseOptions) {
+    this.#o = o;
+    this.self = o.self;
+    this.ttlMs = o.ttlMs ?? LEASE_TTL_MS;
+    this.marginMs = o.marginMs ?? LEASE_MARGIN_MS;
+    this.#mono = o.monotonic ?? (() => (o.clock as Clock).monotonic());
+  }
+
+  // ---- the contract ----
+
+  state(): LeaseState {
+    const main = this.#o.main?.() ?? null;
+    if (this.#local) {
+      return { main, holder: this.self, epoch: this.#local.epoch, expiresAt: null, refresher: this.self, state: this.#handingOver ? "handing-over" : "held" };
+    }
+    const k = this.#known;
+    const live = k.holderRaw !== null && k.expiresAt !== null && this.#o.clock.now() < k.expiresAt;
+    const mine = live && k.holder === this.self;
+    let state: LeaseView["state"] = live ? "held" : "lapsed";
+    if (!this.#reachable && !mine) state = "unreachable";
+    if (this.#handingOver && mine) state = "handing-over";
+    return {
+      main,
+      holder: live ? k.holder : null,
+      epoch: k.epoch,
+      expiresAt: live ? k.expiresAt : null,
+      refresher: live ? k.holder : null,
+      state,
+    };
+  }
+
+  canAct(): boolean {
+    if (this.#local) return true;
+    if (this.#woke || this.#deadline === null || this.#known.holder !== this.self) return false;
+    if (this.#mono() < this.#deadline) return true;
+    return this.#o.mayOutlast?.() ?? false;
+  }
+
+  async acquire(opts: { byUser?: boolean } = {}): Promise<LeaseState> {
+    const scope = this.#o.scope();
+    if (!scope) {
+      if (!opts.byUser) throw new ContractError("refused", "with no account and no account-less pair there is no handshake: taking over is the user's own action");
+      this.#local = { epoch: (this.#local?.epoch ?? this.#known.epoch) + (this.#local ? 0 : 1) };
+      this.#highest = Math.max(this.#highest, this.#local.epoch);
+      this.#changed();
+      return this.state();
+    }
+    return this.#op(scope, "acquire");
+  }
+
+  async renew(): Promise<LeaseState> {
+    if (this.#local) return this.state();
+    const scope = this.#o.scope();
+    if (!scope) throw new ContractError("not_main", "this device doesn't hold the lease");
+    return this.#op(scope, "renew");
+  }
+
+  /** The user chose this computer (§6.4 `main.set`, PROTOCOL.md `takeover`): it takes the lease whoever holds it,
+   *  with a new epoch, so the old holder's acts are refused from then on. */
+  async takeOver(): Promise<LeaseState> {
+    const scope = this.#o.scope();
+    if (!scope) return this.acquire({ byUser: true });
+    return this.#op(scope, "takeover");
+  }
+
+  async release(): Promise<void> {
+    this.#deadline = null;
+    if (this.#local) {
+      this.#local = null;
+      this.#known = { ...this.#known, epoch: Math.max(this.#known.epoch, this.#highest) };
+      this.#changed();
+      return;
+    }
+    const scope = this.#o.scope();
+    const k = this.#known;
+    if (scope && k.holder === this.self) {
+      try {
+        this.#observe(await scope.op("release", k.epoch, this.#ttlSec()));
+        this.#reachable = true;
+      } catch (err) {
+        // Refused (someone else holds it now) or unanswered: this device has stopped acting either way, and an
+        // unanswered release lapses by itself within the TTL.
+        if (err instanceof ContractError && err.code === "conflict") this.#observeConflict(err);
+        else if (err instanceof ContractError && err.code === "offline") this.#reachable = false;
+      }
+    }
+    this.#changed();
+  }
+
+  wake(): void {
+    this.#woke = true;
+    this.#changed();
+  }
+
+  watch(fn: (state: LeaseState) => void): Unsubscribe {
+    return this.#listeners.add(fn);
+  }
+
+  // ---- beyond the contract, for the coordinator ----
+
+  /** The record as the service last gave it. */
+  known(): ScopeLease {
+    return { ...this.#known };
+  }
+
+  /** Whether there is a handshake to ask (an account, or an account-less group). */
+  hasScope(): boolean {
+    return this.#o.scope() !== undefined;
+  }
+
+  /** Whether the last request reached the service. */
+  get reachable(): boolean {
+    return this.#reachable;
+  }
+
+  /** The newest epoch this device has seen: the fencing token's high-water mark. */
+  highestEpoch(): number {
+    return this.#highest;
+  }
+
+  /** Whether an act stamped with `epoch` comes from an earlier lease than one this device has seen, and is refused. */
+  isStale(epoch: number): boolean {
+    return epoch < this.#highest;
+  }
+
+  /** Whether this device holds the lease by the last record (whether or not it may act on it now). */
+  holds(): boolean {
+    return this.#local !== null || this.#known.holder === this.self;
+  }
+
+  /** Reads the record from the service. */
+  async refresh(): Promise<LeaseState> {
+    if (this.#local) return this.state();
+    const scope = this.#o.scope();
+    if (!scope) return this.state();
+    try {
+      this.#observe(await scope.read());
+      this.#reachable = true;
+    } catch (err) {
+      if (err instanceof ContractError && err.code === "offline") this.#reachable = false;
+      this.#changed();
+      throw err;
+    }
+    this.#changed();
+    return this.state();
+  }
+
+  /** A record the service pushed (the scope's socket, or a peer's word over the link with the service's own record). */
+  observe(record: ScopeLease): void {
+    this.#observe(record);
+    this.#changed();
+  }
+
+  /** The service could (true) or couldn't (false) be reached, as some other request found. */
+  setReachable(reachable: boolean): void {
+    if (this.#reachable === reachable) return;
+    this.#reachable = reachable;
+    this.#changed();
+  }
+
+  /** While a hand-over or hand-back runs here, the view says `handing-over`. */
+  setHandingOver(on: boolean): void {
+    this.#handingOver = on;
+    this.#changed();
+  }
+
+  /** The scope changed (a sign-in, a sign-out, a group merge): what was known about the old one no longer holds. */
+  scopeChanged(): void {
+    this.#deadline = null;
+    this.#known = { holder: null, holderRaw: null, epoch: 0, expiresAt: null };
+    this.#local = null;
+    this.#changed();
+  }
+
+  /** Something `canAct` reads from outside changed (the links, for `mayOutlast`): tells watchers if it moved. */
+  recheck(): void {
+    this.#changed();
+  }
+
+  close(): void {
+    if (this.#lapseTimer) this.#o.clock.clearTimeout(this.#lapseTimer);
+    if (this.#deadlineTimer) this.#o.clock.clearTimeout(this.#deadlineTimer);
+  }
+
+  // ---- inside ----
+
+  #ttlSec(): number {
+    return this.#o.ttlSec ?? Math.min(300, Math.max(10, Math.round(this.ttlMs / 1000)));
+  }
+
+  async #op(scope: LeaseScope, op: "acquire" | "renew" | "takeover"): Promise<LeaseState> {
+    const sent = this.#mono();
+    let record: ScopeLease;
+    try {
+      record = await scope.op(op, this.#known.epoch, this.#ttlSec());
+    } catch (err) {
+      if (err instanceof ContractError && err.code === "conflict") {
+        this.#reachable = true;
+        this.#observeConflict(err);
+        this.#changed();
+        const holder = this.#known.holder ?? "another device";
+        throw new ContractError("not_main", op === "renew" ? "this device doesn't hold the lease" : `${holder} holds the lease until ${this.#known.expiresAt}`);
+      }
+      if (err instanceof ContractError && err.code === "offline") {
+        this.#reachable = false;
+        this.#changed();
+      }
+      throw err;
+    }
+    this.#reachable = true;
+    this.#observe(record);
+    if (record.holder === this.self) {
+      this.#deadline = sent + this.ttlMs - this.marginMs;
+      this.#woke = false;
+      this.#armDeadline();
+    }
+    this.#changed();
+    return this.state();
+  }
+
+  #observeConflict(err: ContractError): void {
+    const lease = (err.detail as { lease?: ScopeLease } | undefined)?.lease;
+    if (lease) this.#observe(lease);
+  }
+
+  #observe(r: ScopeLease): void {
+    // Never step back to an older record (a read that crossed a newer push).
+    if (r.epoch < this.#known.epoch) return;
+    this.#known = { ...r };
+    this.#highest = Math.max(this.#highest, r.epoch);
+    if (r.holder !== this.self) this.#deadline = null;
+    this.#armLapse();
+  }
+
+  /** Tells watchers when the known record runs out unrenewed. */
+  #armLapse(): void {
+    if (this.#lapseTimer) this.#o.clock.clearTimeout(this.#lapseTimer);
+    this.#lapseTimer = undefined;
+    const at = this.#known.expiresAt;
+    if (at === null) return;
+    this.#lapseTimer = this.#o.clock.setTimeout(() => this.#changed(), Math.max(0, at - this.#o.clock.now()));
+  }
+
+  /** Tells watchers when this device stops being allowed to act. */
+  #armDeadline(): void {
+    if (this.#deadlineTimer) this.#o.clock.clearTimeout(this.#deadlineTimer);
+    this.#deadlineTimer = undefined;
+    if (this.#deadline === null) return;
+    this.#deadlineTimer = this.#o.clock.setTimeout(() => this.#changed(), Math.max(0, this.#deadline - this.#mono()));
+  }
+
+  #changed(): void {
+    const s = this.state();
+    const key = JSON.stringify([s, this.canAct()]);
+    if (key === this.#lastEmitted) return;
+    this.#lastEmitted = key;
+    this.#listeners.emit(s);
+  }
+}

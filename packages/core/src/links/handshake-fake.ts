@@ -1,6 +1,6 @@
 // A stand-in for the waifucave handshake service (services/handshake/PROTOCOL.md v1), for lane H's tests until lane
 // I's service (I-M2) runs locally: the pair and group scopes, the statements and signed requests with their replay
-// rule, records, messages, the inbox, the socket with tickets, and the group's lease. It checks what the format says
+// rule, records, messages, the inbox, the socket with tickets, the group's lease, and the account channel's lease. It checks what the format says
 // a service checks, so a client that passes here speaks the format; it keeps everything in memory.
 import { createHash } from "node:crypto";
 import { fromBase64Url, randomBytes, toBase64Url } from "../identity/bytes";
@@ -28,12 +28,23 @@ export interface FakeHandshake {
   readonly pairs: ReadonlyMap<string, { keys: [string, string] }>;
   readonly ended: ReadonlySet<string>;
   readonly groups: ReadonlyMap<string, { members: ReadonlyMap<string, number>; lease: LeaseRecord }>;
+  /** The account channel's leases, by account. */
+  readonly accountLeases: ReadonlyMap<string, LeaseRecord>;
   /** Requests answered, by `METHOD path-pattern`. */
   readonly log: string[];
   stop(): void;
 }
 
-export function startFakeHandshake(opts: { registrationsPerMinute?: number } = {}): FakeHandshake {
+export interface FakeHandshakeOptions {
+  registrationsPerMinute?: number;
+  /** The service's clock (a test's FakeClock); the wall clock by default. */
+  now?: () => number;
+  /** The account channel: who an account token is (`sub`, `dev`), as the service checks it against the JWKS; without
+   *  it the channel answers 401. */
+  accountOf?: (token: string) => { sub: string; dev: string } | undefined;
+}
+
+export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandshake {
   const pairs = new Map<string, Pair>();
   const ended = new Set<string>();
   const groups = new Map<string, Group>();
@@ -42,7 +53,9 @@ export function startFakeHandshake(opts: { registrationsPerMinute?: number } = {
   const registrations: number[] = [];
   const log: string[] = [];
   const state = { skewMs: 0 };
-  const now = () => Date.now() + state.skewMs;
+  const clock = opts.now ?? Date.now;
+  const now = () => clock() + state.skewMs;
+  const accountLeases = new Map<string, LeaseRecord>();
   const limit = opts.registrationsPerMinute ?? 10;
 
   const err = (status: number, error: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
@@ -64,6 +77,29 @@ export function startFakeHandshake(opts: { registrationsPerMinute?: number } = {
     const t = now();
     p.records = p.records.filter((r) => r.expiresAt > t);
     p.messages = p.messages.filter((m) => m.expiresAt > t);
+  };
+
+  /** One lease operation (PROTOCOL.md's table): the new record, or the 409 `held` refusal with the current one. */
+  const leaseOp = (l: LeaseRecord, who: string, b: Record<string, unknown> | undefined): LeaseRecord | Response => {
+    const op = b?.op;
+    const epoch = typeof b?.epoch === "number" ? b.epoch : -1;
+    const ttl = Math.min(Math.max(typeof b?.ttl === "number" ? b.ttl : 60, 10), 300);
+    const lapsed = l.holder === null || (l.expiresAt ?? 0) <= now();
+    const held = () => err(409, "held", { lease: l });
+    if (op === "acquire") {
+      if (!lapsed && l.holder !== who) return held();
+      return { holder: who, epoch: l.holder === who && !lapsed ? l.epoch : l.epoch + 1, expiresAt: now() + ttl * 1000 };
+    }
+    if (op === "renew") {
+      if (l.holder !== who || l.epoch !== epoch || lapsed) return held();
+      return { ...l, expiresAt: now() + ttl * 1000 };
+    }
+    if (op === "release") {
+      if (l.holder !== who || l.epoch !== epoch) return held();
+      return { holder: null, epoch: l.epoch, expiresAt: null };
+    }
+    if (op === "takeover") return { holder: who, epoch: l.epoch + 1, expiresAt: now() + ttl * 1000 };
+    return err(400, "bad_request");
   };
 
   /** Checks a signed request; returns the member key, or the refusal. */
@@ -229,6 +265,26 @@ export function startFakeHandshake(opts: { registrationsPerMinute?: number } = {
         return err(404, "not_found");
       }
 
+      // ---- the account channel ----
+      if (parts[1] === "accounts" && parts[2] === "self") {
+        const m = /^Bearer (.+)$/.exec(req.headers.get("authorization") ?? "");
+        const who = m ? opts.accountOf?.(m[1]!) : undefined;
+        if (!who) return err(401, "unauthorized");
+        const lease = accountLeases.get(who.sub) ?? { holder: null, epoch: 0, expiresAt: null };
+        if (parts.length === 3 && req.method === "GET") return Response.json({ online: [], records: [], lease });
+        if (parts[3] === "lease" && parts.length === 4 && req.method === "POST") {
+          const r = leaseOp(lease, who.dev, body());
+          if (r instanceof Response) return r;
+          accountLeases.set(who.sub, r);
+          return Response.json({ lease: r });
+        }
+        if (parts[3] === "devices" && parts[4] && req.method === "DELETE") {
+          if (lease.holder === decodeURIComponent(parts[4])) accountLeases.set(who.sub, { holder: null, epoch: lease.epoch, expiresAt: null });
+          return new Response(null, { status: 204 });
+        }
+        return err(404, "not_found");
+      }
+
       // ---- groups ----
       if (parts[1] === "groups" && parts.length === 2 && req.method === "POST") {
         if (registrationLimited()) return err(429, "rate_limited", {}, { "retry-after": "60" });
@@ -273,25 +329,9 @@ export function startFakeHandshake(opts: { registrationsPerMinute?: number } = {
           return new Response(null, { status: 204 });
         }
         if (parts[3] === "lease" && req.method === "POST") {
-          const b = body();
-          const op = b?.op;
-          const epoch = typeof b?.epoch === "number" ? b.epoch : -1;
-          const ttl = Math.min(Math.max(typeof b?.ttl === "number" ? b.ttl : 60, 10), 300);
-          const l = g.lease;
-          const lapsed = l.holder === null || (l.expiresAt ?? 0) <= now();
-          const held = () => err(409, "held", { lease: l });
-          if (op === "acquire") {
-            if (!lapsed && l.holder !== who) return held();
-            g.lease = { holder: who, epoch: l.holder === who && !lapsed ? l.epoch : l.epoch + 1, expiresAt: now() + ttl * 1000 };
-          } else if (op === "renew") {
-            if (l.holder !== who || l.epoch !== epoch || lapsed) return held();
-            g.lease = { ...l, expiresAt: now() + ttl * 1000 };
-          } else if (op === "release") {
-            if (l.holder !== who || l.epoch !== epoch) return held();
-            g.lease = { holder: null, epoch: l.epoch, expiresAt: null };
-          } else if (op === "takeover") {
-            g.lease = { holder: who, epoch: l.epoch + 1, expiresAt: now() + ttl * 1000 };
-          } else return err(400, "bad_request");
+          const r = leaseOp(g.lease, who, body());
+          if (r instanceof Response) return r;
+          g.lease = r;
           for (const k of g.members.keys()) push(scope, k, { t: "lease", lease: g.lease });
           return Response.json({ lease: g.lease });
         }
@@ -317,6 +357,7 @@ export function startFakeHandshake(opts: { registrationsPerMinute?: number } = {
     pairs,
     ended,
     groups,
+    accountLeases,
     log,
     stop() {
       server.stop(true);
