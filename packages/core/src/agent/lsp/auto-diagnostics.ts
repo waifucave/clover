@@ -17,7 +17,7 @@ import { resolveWithinAny } from "../paths";
  * on the DAEMON's own lowercase registry tool names (`write`/`edit`/`notebook_edit`, each carrying
  * a `path` or `notebook_path` arg). The Clover leg's built-in tools are named and shaped
  * differently — `Edit`/`Write` take `file_path`; `NotebookEdit` takes `notebook_path`
- * (`@yanlinglabs/winter-agent-sdk`'s `descriptors/{edit,write,notebook-edit}.ts`, captured verbatim)
+ * (`@waifucave/clover-agent-sdk`'s `descriptors/{edit,write,notebook-edit}.ts`, captured verbatim)
  * — so the map below is keyed on THOSE names. Clover 0.0.4 has no `MultiEdit` tool at all (measured:
  * absent from `CLOVER_ADVERTISED_TOOLS_0_0_4_BASE`), so there is nothing to map it to; a future SDK
  * that adds one is a one-line addition here, not a silent gap (the calling hook in `hooks.ts` only

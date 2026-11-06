@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryMcpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { createMemoryMcpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import {
   acquireCredentialMigrationLock, credentialMigrationLockHolder, credentialMigrationLockPath, CredentialMigrationBusy, processStartSeconds, processStartSecondsViaPs, processStartSecondsViaSysctl, UNREADABLE_GRACE_MS, waitForCredentialMigrationLock,
 } from "../../src/auth/credential-migration-lock";

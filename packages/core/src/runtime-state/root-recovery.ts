@@ -54,7 +54,7 @@ import {
   updateClaudeResumeScanPending,
   type ClaudeResumeLister,
 } from "./claude-resume-scan";
-import type { RecoveryReport } from "@yanlinglabs/winter-runtime-sdk";
+import type { RecoveryReport } from "../runtime-sdk/host";
 import { normalizeRecoveryReport, quarantinedBackendSessions } from "../runtime-sdk/run-home-support";
 
 /** The router's `reconcileRootForRecovery`: a per-transcript `RecoveryReport` (review I6), or — from an

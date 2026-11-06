@@ -16,8 +16,8 @@
 // there on disk. Keeping the two stores separate is what makes the index disposable; this test is
 // what keeps it that way.
 import { describe, expect, test } from "bun:test";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { RuntimeDirectoryEntry } from "@yanlinglabs/winter-runtime-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { RuntimeDirectoryEntry } from "../../src/runtime-sdk/host";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {

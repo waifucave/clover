@@ -10,7 +10,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query as agentQuery, type Options, type ProtocolSdkMessage } from "@yanlinglabs/winter-agent-sdk";
+import { query as agentQuery, type Options, type ProtocolSdkMessage } from "@waifucave/clover-agent-sdk";
 import type { ApprovalPolicy, SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";

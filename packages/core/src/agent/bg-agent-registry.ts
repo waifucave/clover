@@ -1,6 +1,6 @@
-import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { GlobalAgentMessage } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
+import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { GlobalAgentMessage } from "@waifucave/clover-agent-sdk/messaging";
+import type { SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
 import type { ChildProfiles, ChildStatus, PersistedCloverChild, RuntimeChildren } from "../runtime-state/children";
 import type { SessionApprovalPolicy } from "./gate";
 import { UNSTATED_TAG } from "../runtime-sdk/model-tag";

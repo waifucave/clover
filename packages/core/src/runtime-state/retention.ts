@@ -15,8 +15,8 @@
 // WHAT THIS FILE NEVER TOUCHES. `<home>/projects/<key>/memory` is the user's own writing; the
 // session JSONL is the product's own history and belongs to `SessionStore.deleteSession`. A runtime
 // record is metadata ABOUT an execution; destroying it must never destroy what was executed.
-import { parseRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { GlobalAgentMessage, RuntimeDirectoryStore, SerializedRuntimeAddress } from "@yanlinglabs/winter-runtime-sdk";
+import { parseRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { GlobalAgentMessage, RuntimeDirectoryStore, SerializedRuntimeAddress } from "../runtime-sdk/host";
 import type { ChildProfiles, RuntimeChildren } from "./children";
 import type { RuntimeStateDb } from "./db";
 import type { RuntimeLeases } from "./leases";

@@ -17,7 +17,7 @@ export { officeCapability, type OfficeCapabilityDeps } from "./office";
 export { lspCapability, type LspCapabilityDeps } from "./lsp";
 export { externalCapability, type ExternalCapabilityDeps, type ExternalToolSource } from "./external";
 
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../runtime-sdk/brand";
 import { browserCapability, type BrowserCapabilityDeps } from "./browser";
 import { computerCapability, type ComputerCapabilityDeps } from "./computer";

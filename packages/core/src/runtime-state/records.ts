@@ -11,7 +11,7 @@
 // can never clobber a generation's end reason, and closing a generation can never drop a live
 // holder. `runtime_handoffs` is append-only on purpose (WS-16 §4: "never overwrite the only evidence
 // of the previous producer") and therefore has no update or delete door at all.
-import type { RuntimeKind, RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeKind, RuntimeSelection } from "../runtime-sdk/host";
 import type { RuntimeStateDb } from "./db";
 import { canonicalModelTag } from "../runtime-sdk/model-tag";
 

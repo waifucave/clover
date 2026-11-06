@@ -7,7 +7,7 @@ import { runHomeInputFor, gitRootFor, _clearGitRootCacheForTests, type RunHomeIn
 import { assistantMemoryDirFor, memoryDirFor, repoRootFor, _clearRepoRootCacheForTests } from "../../src/agent/memory-dir";
 import { CAPABILITY_SERVER_KEYS, reservedMcpServerNames } from "../../src/capabilities/names";
 import type { Settings } from "../../src/settings";
-import { buildRunHome } from "@yanlinglabs/winter-runtime-sdk";
+import { buildRunHome } from "../../src/runtime-sdk/host";
 import { TrustStore } from "../../src/agent/trust";
 
 const real = (p: string): string => realpathSync(p);
