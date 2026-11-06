@@ -113,14 +113,23 @@ export class CloverFence implements Fence {
 
   /** The forms a path is judged in (#205's B1): as the disk resolves it, links first (`canonicalPath`: a `..` after a
    *  link climbs from its target, as POSIX kernels do), and with its `..` taken textually first (as Win32 and most
-   *  path code do). A path is refused when either form is. Null, refused outright: a `\\?\` path with a `.` or `..`
-   *  component (Windows passes it through unresolved), or one past the walk's link limit. */
+   *  path code do). A path is refused when either form is. Null, refused outright: a Windows device path that isn't a
+   *  drive or a share once its prefix is taken off (`windowsLocalForm`), a `\\?\` path with a `.` or `..` component
+   *  (Windows passes it through unresolved), or one past the walk's link limit. */
   #forms(raw: string): string[] | null {
-    if (/^[\\/]{2}[?.][\\/]/.test(raw) && raw.slice(4).split(/[\\/]/).some((c) => c === "." || c === "..")) return null;
+    let path = raw;
+    if (this.os === "windows") {
+      const local = windowsLocalForm(raw);
+      if (local === null) return null;
+      path = local;
+    }
     try {
-      const linksFirst = this.#canonical(raw);
-      const textual = this.#canonical((this.os === "windows" ? win32 : posix).normalize(raw));
-      return linksFirst === textual ? [linksFirst] : [linksFirst, textual];
+      const linksFirst = this.#canonical(path);
+      const textual = this.#canonical((this.os === "windows" ? win32 : posix).normalize(path));
+      const forms = linksFirst === textual ? [linksFirst] : [linksFirst, textual];
+      // On a real Windows disk every form judged is a drive path or a \\server\share path (#205's check 2).
+      if (this.os === "windows" && isWindowsDiskForm(this.#cloverHome) && !forms.every(isWindowsDiskForm)) return null;
+      return forms;
     } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
   }
 
@@ -298,4 +307,24 @@ export class CloverFence implements Fence {
 function inside(path: string, root: string): boolean {
   const p = posix.normalize(path), r = posix.normalize(root);
   return p === r || p.startsWith(r.endsWith("/") ? r : `${r}/`);
+}
+
+/** A Windows path with its device prefix (`\\?\`, `\\.\`, and the NT `\??\` that Bun also opens) taken off:
+ *  `C:\…` for a drive, `\\server\share\…` for `UNC\`. Null for anything else behind a prefix (`GLOBALROOT`, a
+ *  volume GUID, a pipe or a device), and for a prefixed path with a `.` or `..` component, which Windows passes
+ *  through unresolved (#205's B1 and check 2). A path without a prefix is returned as it is. */
+export function windowsLocalForm(raw: string): string | null {
+  const m = /^(?:[\\/]{2}[?.]|\\\?\?)[\\/](.*)$/s.exec(raw);
+  if (!m) return raw;
+  const rest = m[1]!;
+  if (rest.split(/[\\/]/).some((c) => c === "." || c === "..")) return null;
+  if (/^[A-Za-z]:([\\/]|$)/.test(rest)) return rest;
+  const unc = /^UNC[\\/](.+)$/i.exec(rest);
+  if (unc) return `\\\\${unc[1]}`;
+  return null;
+}
+
+/** A drive path (`C:\…`) or a share path (`\\server\share\…`), nothing else. */
+export function isWindowsDiskForm(p: string): boolean {
+  return /^[A-Za-z]:([\\/]|$)/.test(p) || /^[\\/]{2}(?![?.][\\/])[^\\/]+[\\/][^\\/]+/.test(p);
 }
