@@ -29,8 +29,15 @@ async function boot(): Promise<void> {
     configureLayer({ bridge });
     return fail(`${info.pluginId}'s client entry isn't a built JavaScript module.`);
   }
-  const mod = await load(info.module);
-  // The `clover` bundle carries a module per child plugin; any other layer's module is its plugin's own.
+  // The `clover` bundle carries a module per child plugin; any other layer's module is its plugin's own. A module
+  // that never delivers (a bad bundle, an old build served somewhere) still says so: an unhandled rejection would
+  // leave the document empty.
+  let mod: Record<string, unknown>;
+  try {
+    mod = await load(info.module);
+  } catch (err) {
+    return fail(`This part couldn't start: its client module failed — ${err instanceof Error ? err.message : String(err)}`);
+  }
   const modules = (mod.modules as Record<string, ClientModule> | undefined) ?? { [info.pluginId]: mod as ClientModule };
   configureLayer({ bridge, modules });
   createRoot(document.getElementById("clover-root")!).render(<LayerRoot info={info} />);
