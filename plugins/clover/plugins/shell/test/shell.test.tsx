@@ -51,7 +51,23 @@ const COMPONENTS: Record<string, EntryComponent> = {
   DefaultBotTab: DefaultBotTab as EntryComponent,
   AgentTab: AgentTab as EntryComponent,
   Sidebar: SidebarStub,
-  Conversation: stub("conversation"),
+  Conversation: (p) => (
+    <>
+      {stub("conversation")(p)}
+      {typeof p.props.onOpenFile === "function" && (
+        <>
+          <button type="button" onClick={() => (p.props.onOpenFile as (path: string) => void)("home/Studio/projects/clover/src/a.ts")}>
+            open a file
+          </button>
+          <button type="button" onClick={() => (p.props.onOpenFile as (path: string) => void)(`home/Studio/.clover/outputs/${String(p.props.session)}/report.md`)}>
+            open an output
+          </button>
+        </>
+      )}
+    </>
+  ),
+  Files: stub("panel:files"),
+  Output: stub("panel:output"),
   Composer: stub("composer"),
   Side: SideStub,
   Column: stub("panel:session"),
@@ -75,6 +91,8 @@ const ENTRIES: UiEntry[] = [
   entry("clover/panel", "bot.side", "Side"),
   entry("clover/panel", "panel", "Column", { key: "session", when: { session: ["coding", "agent"] } }),
   entry("clover/panel-terminal", "panel", "Terminal", { key: "terminal", when: { session: "coding" } }),
+  entry("clover/panel-files", "panel", "Files", { key: "files", when: { session: "coding" } }),
+  entry("clover/panel", "panel", "Output", { key: "output" }),
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
@@ -180,6 +198,19 @@ describe("the shell", () => {
     expect(document.querySelectorAll('[data-stub="panel.view"]').length).toBe(1);
     // Not in the view's body: the host draws it beside expand and close.
     expect(document.querySelector('.cl-panel__view[data-view="terminal"] .cl-panel__body [data-stub="panel.view"]')).toBeNull();
+  });
+
+  test("a file the conversation names opens in the Files panel (a coding session's folder) or the output view (the session's outputs)", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session"] });
+    fireEvent.click(screen.getByRole("button", { name: "open a file" }));
+    await act(() => settle());
+    expect(stubText("panel:files")).toContain('"reveal":"home/Studio/projects/clover/src/a.ts"');
+    cleanup();
+    await mount();
+    expect(stubText("panel:output")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "open an output" }));
+    await act(() => settle());
+    expect(stubText("panel:output")).toContain('"path":"home/Studio/.clover/outputs/s_alpha/report.md","folder":"home/Studio/.clover/outputs/s_alpha"');
   });
 
   test("the agent tab interrupts and stops through the core", async () => {

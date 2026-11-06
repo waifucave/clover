@@ -41,6 +41,12 @@ export async function kindNoFollow(files: Files, path: string): Promise<"file" |
   }
 }
 
+/** Where a session's outputs live: its own `outputs/<session>` folder in the Clover home of the computer it runs on,
+ *  read through the tree as the user's own surface. `home/<computer>/.clover/…` is the tree's name for that computer's
+ *  Clover home wherever it is on disk (`~/.clover`, `~/.clover-dev`, `CLOVER_HOME`): the holder maps it, and it is the
+ *  spec's own spelling (lane J, #225; review N5). */
+export const outputsFolder = (s: { id: string; computer: string }): string => `home/${s.computer}/.clover/outputs/${s.id}`;
+
 /** Whether `path` is exactly one name directly inside `folder`: no `.`, `..` or empty segment, nothing nested (N1). */
 export function directlyIn(path: string, folder: string | undefined): boolean {
   if (!folder || path.split("/").some((s) => s === ".." || s === "." || s === "")) return false;

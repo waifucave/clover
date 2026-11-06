@@ -17,6 +17,7 @@ import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggl
 import type { PanelView } from "./panel-types";
 import { Palette, paletteCommand, fieldsOf, type PaletteCommand } from "./Palette";
 import { noArgs, runsBare } from "./args";
+import { directlyIn, outputsFolder } from "../runtime/files";
 import { Spot, useApprovals, useCore, useLayerMessage, usePluginApi, useSpotEntries, useT } from "./sdk";
 import { bindings, chordOf, commandFor, currentPlatform, parseChord, PALETTE_KEY, sameChord } from "./shortcuts";
 import { setTranslator } from "../runtime/strings";
@@ -186,6 +187,21 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     if (!open.includes("output")) setOpen(toggleView(open, "output"));
   };
 
+  // A file the conversation names (a tool's path, an attachment), opened where the tab shows files: in a coding session,
+  // the Files panel, at that file, when it is in the session's folder; in any tab, the output view, when it is one of
+  // the session's outputs. Anything else isn't offered.
+  const tabView = sessions?.find((s) => s.id === tabSession);
+  const [reveals, setReveals] = useState<Record<string, string | undefined>>({});
+  const inRoot = (root: string, path: string) => !path.split("/").some((p) => p === ".." || p === ".") && path.startsWith(`${root.replace(/\/+$/, "")}/`);
+  const openFile = (path: string) => {
+    if (kind === "coding" && tabView?.root && inRoot(tabView.root, path)) {
+      setReveals((r) => ({ ...r, [key]: path }));
+      if (!open.includes("files")) setOpen(toggleView(open, "files"));
+      return;
+    }
+    if (tabView && directlyIn(path, outputsFolder(tabView))) openOutput(path, outputsFolder(tabView));
+  };
+
   // Any card this window will draw: one in a session it shows (the tab's, the agent's in the panel), or one raised
   // from a dialog (a level change, removing a device), which has no session.
   const { cards } = useApprovals();
@@ -209,6 +225,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       ? { app: id, session: tabSession, sessionKind: kind, ...(output ? { path: output.path, folder: output.folder } : {}) }
       : id === "agent" && agentSession
       ? { app: id, session: agentSession.id, sessionKind: agentSession.kind, ...(botRef ? { bot: botRef.id } : {}) }
+      : id === "files"
+      ? { app: id, session: tabSession, sessionKind: kind, ...(reveals[key] ? { reveal: reveals[key] } : {}) }
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   const views: PanelView[] = kind
     ? open
@@ -256,9 +274,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const main = !shown ? (
     <NothingHere title={S.loading} />
   ) : shown.route === "bot" ? (
-    botRef ? <Spot name="bot.tab" spotKey={botRef.id} props={{ bot: botRef, onOpenAgent: openAgent }} fallback={<NothingHere title={S.nothingHere} />} /> : <NothingHere title={S.loading} />
+    botRef ? <Spot name="bot.tab" spotKey={botRef.id} props={{ bot: botRef, onOpenAgent: openAgent, onOpenFile: openFile }} fallback={<NothingHere title={S.nothingHere} />} /> : <NothingHere title={S.loading} />
   ) : (
-    <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate }} fallback={<NothingHere title={S.nothingHere} />} />
+    <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate, ...(shown.route === "agent" ? { onOpenFile: openFile } : {}) }} fallback={<NothingHere title={S.nothingHere} />} />
   );
 
   return (

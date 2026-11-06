@@ -15,6 +15,8 @@ import type { FileEntry } from "./types";
 export interface FilesEntryProps {
   session?: string;
   header?: HTMLElement | null;
+  /** A file to open, named in the conversation (the shell's `onOpenFile`): it opens when it is in the folder. */
+  reveal?: string;
 }
 
 function Header({ slot, children }: { slot: HTMLElement | null | undefined; children: ReactNode }) {
@@ -47,6 +49,19 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
       () => undefined,
     );
   };
+
+  const openPath = (path: string) => {
+    if (!files || !where || !inside(where.root, path)) return;
+    // An image is never read as text: its preview reads it.
+    if (previews(path, false)) return setOpen({ path, text: "" });
+    files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
+  };
+
+  // A file the conversation named opens here, once the folder is known.
+  useEffect(() => {
+    if (props.reveal && where) openPath(props.reveal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.reveal, where?.root]);
 
   useEffect(() => {
     if (!props.session || !api.conversation?.get) return;
@@ -98,12 +113,7 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
         root={where.root}
         listing={listing}
         onList={list}
-        onOpen={(path) => {
-          if (!files || !inside(where.root, path)) return;
-          // An image is never read as text: its preview reads it.
-          if (previews(path, false)) return setOpen({ path, text: "" });
-          files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
-        }}
+        onOpen={openPath}
         {...(open ? { open } : {})}
         {...(open && previewed ? { preview: <FilePreview key={open.path} path={open.path} /> } : {})}
         onSearch={(query) =>

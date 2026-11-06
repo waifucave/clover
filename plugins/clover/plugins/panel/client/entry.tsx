@@ -7,6 +7,7 @@
 // The session, its agents and the computers come through the plugin API. Changes, outputs, context use and connectors
 // have no plugin-API call yet: the `clover` layer reads them from the core (provisional methods, `session.changes`
 // and the rest, for lanes A and D to settle).
+import { outputsFolder } from "../../shell/runtime/files";
 import { useEffect, useState } from "react";
 import type { ComputerView, CoreClient, PluginApi, SessionView as Session } from "../../shell/runtime/types";
 import { SessionView } from "./SessionView";
@@ -40,11 +41,8 @@ interface Loaded {
   connectors?: { total: number; needSignIn: number };
 }
 
-/** Where a session's outputs live: its own `outputs/<session>` folder in the Clover home of the computer it runs on,
- *  read through the tree as the user's own surface. `home/<computer>/.clover/…` is the tree's name for that computer's
- *  Clover home wherever it is on disk (`~/.clover`, `~/.clover-dev`, `CLOVER_HOME`): the holder maps it, and it is the
- *  spec's own spelling (lane J, #225; review N5). */
-export const outputsFolder = (s: { id: string; computer: string }): string => `home/${s.computer}/.clover/outputs/${s.id}`;
+/** Where a session's outputs live (`shell/runtime/files.ts`: the tree's name for its computer's Clover home). */
+export { outputsFolder };
 
 const PAGE = /\.(html?|md|markdown)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;

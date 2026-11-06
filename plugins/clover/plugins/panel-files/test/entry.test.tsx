@@ -99,6 +99,25 @@ describe("the files entry", () => {
     expect(screen.getByTestId("json-preview").closest("[data-clover-frame]")).toBeTruthy();
   });
 
+  test("a file the conversation named opens when it is in the folder; one outside never does", async () => {
+    const read: string[] = [];
+    const api = fakeApi({
+      conversation: { get: async () => CODE },
+      files: fakeFiles({ list: async () => [], readText: async (p) => (read.push(p), "body"), grep: async () => ({ matches: [], truncated: false }) }),
+    });
+    const at = (reveal: string) => (
+      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+        <FilesEntry props={{ session: "code-1", reveal }} />
+      </UiRuntimeProvider>
+    );
+    const { rerender } = render(at(`${ROOT}/README.md`));
+    await act(() => settle());
+    expect(screen.getByLabelText(`Contents of ${ROOT}/README.md`).textContent).toContain("body");
+    rerender(at("home/Studio/secrets.txt"));
+    await act(() => settle());
+    expect(read).toEqual([`${ROOT}/README.md`]);
+  });
+
   test("`inside` keeps to the folder", () => {
     expect(inside("home/S/a", "home/S/a")).toBe(true);
     expect(inside("home/S/a", "home/S/a/b")).toBe(true);
