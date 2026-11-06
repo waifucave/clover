@@ -1,0 +1,282 @@
+{
+  "meta": {
+    "state": "done",
+    "platform": "win32",
+    "arch": "x64",
+    "osRelease": "10.0.26100",
+    "seconds": 187,
+    "names": {
+      "suffix": "aa21ec1b",
+      "label": "com.waifucave.clover.s7.core.aa21ec1b",
+      "coreUnit": "clover-s7-core-aa21ec1b.service",
+      "appUnit": "clover-s7-app-aa21ec1b.service",
+      "coreTask": "\\Clover S7\\core-aa21ec1b",
+      "appTask": "\\Clover S7\\app-aa21ec1b",
+      "socket": "\\\\.\\pipe\\clover-s7-core-aa21ec1b",
+      "lockFile": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\run\\core.lock",
+      "pidFile": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\run\\core.pid",
+      "bootsFile": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\run\\boots.jsonl",
+      "appStartFile": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\run\\app-start.json",
+      "appLog": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\run\\app.jsonl",
+      "configFile": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\pair.json",
+      "logsDir": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\logs"
+    },
+    "windowsAppStart": "task",
+    "windowsSupervise": false
+  },
+  "steps": [
+    {
+      "step": "login start",
+      "install": [
+        {
+          "ok": true,
+          "how": "schtasks /Create /TN \\Clover S7\\core-aa21ec1b /XML C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\core-task.xml /F",
+          "code": 0,
+          "out": "SUCCESS: The scheduled task \"\\Clover S7\\core-aa21ec1b\" has successfully been created."
+        },
+        {
+          "ok": true,
+          "how": "schtasks /Create /TN \\Clover S7\\app-aa21ec1b /XML C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-pair-jXy4se\\app-task.xml /F",
+          "code": 0,
+          "out": "SUCCESS: The scheduled task \"\\Clover S7\\app-aa21ec1b\" has successfully been created."
+        },
+        {
+          "ok": true,
+          "how": "schtasks /Run /TN \\Clover S7\\core-aa21ec1b",
+          "code": 0,
+          "out": "SUCCESS: Attempted to run the scheduled task \"\\Clover S7\\core-aa21ec1b\"."
+        }
+      ],
+      "daemonUpMs": 361,
+      "daemonUp": true,
+      "appConnectedMs": 2941,
+      "appStartedBy": "daemon",
+      "appStart": {
+        "at": 1793842004370,
+        "safeMode": false,
+        "reason": "daemon start",
+        "ok": true,
+        "how": "schtasks /Run /TN \\Clover S7\\app-aa21ec1b",
+        "out": "SUCCESS: Attempted to run the scheduled task \"\\Clover S7\\app-aa21ec1b\"."
+      },
+      "daemonParent": 2528,
+      "registeredForLogin": {
+        "ok": true,
+        "how": "schtasks /Query /TN \\Clover S7\\core-aa21ec1b /XML",
+        "code": 0,
+        "out": "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\r\n<Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\r\n  <RegistrationInfo>\r\r\n    <Description>Clover core (S7 spike)</Description>\r\r\n    <URI>\\Clover S7\\core-aa21ec1b</URI>\r\r\n  </RegistrationInfo>\r\r\n  <Principals>\r\r\n    <Principal id=\"Author\">\r\r\n      <UserId>S-1-5-21-3077485881-3661871218-4154919024-500</UserId>\r\r\n      <LogonType>InteractiveToken</LogonType>\r\r\n    </Principal>\r\r\n  </Principals>\r\r\n  <Settings>\r\r\n    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\r\n    <StopIfGoingOnBatteries>false</StopIf"
+      }
+    },
+    {
+      "step": "second daemon on the same home",
+      "exitCode": 0,
+      "ms": 79,
+      "said": "2026-11-05T01:26:44.958Z [core 4016] another daemon holds this home (CreateFileW: error 32 (sharing violation: another daemon holds it)); exiting",
+      "firstStillServing": true
+    },
+    {
+      "step": "app crash",
+      "killed": 8872,
+      "kill": {
+        "ok": true,
+        "how": "taskkill /F /T /PID 8872",
+        "code": 0,
+        "out": "SUCCESS: The process with PID 7304 (child process of PID 8872) has been terminated.\r\nSUCCESS: The process with PID 7904 (child process of PID 8872) has been terminated.\r\nSUCCESS: The process with PID 8872 (child process of PID 2528) has been terminated."
+      },
+      "restartedMs": 1213,
+      "newPid": 9184,
+      "startedBy": "daemon",
+      "safeMode": false,
+      "how": "schtasks /Run /TN \\Clover S7\\app-aa21ec1b",
+      "eventsSinceKill": [
+        "start",
+        "tray",
+        "connected"
+      ]
+    },
+    {
+      "step": "app crash loop → safe mode",
+      "rounds": [
+        {
+          "killed": 9184,
+          "restartedMs": 2202,
+          "safeMode": false,
+          "crashesInDaemon": 2
+        },
+        {
+          "killed": 8080,
+          "restartedMs": 4196,
+          "safeMode": true,
+          "crashesInDaemon": 3
+        }
+      ],
+      "thirdRestartInSafeMode": true
+    },
+    {
+      "step": "daemon crash, restarted by the OS alone",
+      "killed": 4380,
+      "kill": {
+        "ok": true,
+        "how": "taskkill /F /PID 4380",
+        "code": 0,
+        "out": "SUCCESS: The process with PID 4380 has been terminated."
+      },
+      "appSurvived": true,
+      "appPidAfter": 8248,
+      "samePid": true,
+      "appStartedTheDaemon": {
+        "atMs": 150293,
+        "ok": true,
+        "how": "schtasks /Run /TN \\Clover S7\\core-aa21ec1b"
+      },
+      "appEvents": [
+        "56ms daemon-lost",
+        "150293ms start-daemon",
+        "150796ms connected",
+        "150797ms reconnected"
+      ],
+      "unit": {
+        "ok": false,
+        "how": "schtasks /Query /TN \\Clover S7\\core-aa21ec1b /V /FO LIST",
+        "code": null,
+        "out": "spawnSync schtasks ETIMEDOUT"
+      }
+    },
+    {
+      "step": "daemon crash, the app helps after 3 s",
+      "killed": 7172,
+      "kill": {
+        "ok": true,
+        "how": "taskkill /F /PID 7172",
+        "code": 0,
+        "out": "SUCCESS: The process with PID 7172 has been terminated."
+      },
+      "daemonBackMs": 3311,
+      "newDaemonPid": 8420,
+      "appSurvived": true,
+      "appPidAfter": 8248,
+      "samePid": true,
+      "appStartedTheDaemon": {
+        "atMs": 3124,
+        "ok": true,
+        "how": "schtasks /Run /TN \\Clover S7\\core-aa21ec1b"
+      },
+      "appEvents": [
+        "90ms daemon-lost",
+        "3124ms start-daemon",
+        "3635ms connected",
+        "3635ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "schtasks /Query /TN \\Clover S7\\core-aa21ec1b /V /FO LIST",
+        "code": 0,
+        "out": "Folder: \\Clover S7\r\nHostName:                             runnervmhao91\r\nTaskName:                             \\Clover S7\\core-aa21ec1b\r\nNext Run Time:                        N/A\r\nStatus:                               Running\r\nLogon Mode:                           Interactive only\r\nLast Run Time:                        11/5/2026 1:29:26 AM\r\nLast Result:                          267009\r\nAuthor:                               N/A\r\nTask To Run:                          D:\\a\\clover\\clover\\spikes\\s7-browser\\prototype\\out\\pair\\clover-core-s7.exe daemon \"--home=C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clo"
+      }
+    },
+    {
+      "step": "tray Quit stops both, and they stay down",
+      "forwarded": {
+        "forwarded": true
+      },
+      "bothDownMs": 423,
+      "restartedWithin12s": false,
+      "appEvents": [
+        "quit",
+        "quit-acked"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "schtasks /Query /TN \\Clover S7\\core-aa21ec1b /V /FO LIST",
+        "code": 0,
+        "out": "Folder: \\Clover S7\r\nHostName:                             runnervmhao91\r\nTaskName:                             \\Clover S7\\core-aa21ec1b\r\nNext Run Time:                        N/A\r\nStatus:                               Ready\r\nLogon Mode:                           Interactive only\r\nLast Run Time:                        11/5/2026 1:29:26 AM\r\nLast Result:                          0\r\nAuthor:                               N/A\r\nTask To Run:                          D:\\a\\clover\\clover\\spikes\\s7-browser\\prototype\\out\\pair\\clover-core-s7.exe daemon \"--home=C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\clover-s7-"
+      }
+    },
+    {
+      "step": "a user starts the app → it starts the daemon",
+      "start": {
+        "ok": true,
+        "how": "spawn detached",
+        "code": 0,
+        "out": "8416"
+      },
+      "bothUpMs": 571,
+      "startedBy": "user",
+      "appStartedTheDaemon": [
+        {
+          "ok": true,
+          "how": "schtasks /Run /TN \\Clover S7\\core-aa21ec1b",
+          "out": "SUCCESS: Attempted to run the scheduled task \"\\Clover S7\\core-aa21ec1b\"."
+        }
+      ],
+      "appEvents": [
+        "start",
+        "tray",
+        "start-daemon",
+        "connected"
+      ]
+    },
+    {
+      "step": "the daemon side's Quit stops both",
+      "bothDownMs": 330,
+      "restartedWithin8s": false
+    },
+    {
+      "step": "uninstall",
+      "results": [
+        {
+          "ok": true,
+          "how": "schtasks /End /TN \\Clover S7\\core-aa21ec1b",
+          "code": 0,
+          "out": "SUCCESS: The scheduled task \"\\Clover S7\\core-aa21ec1b\" has been terminated successfully."
+        },
+        {
+          "ok": true,
+          "how": "schtasks /Delete /TN \\Clover S7\\core-aa21ec1b /F",
+          "code": 0,
+          "out": "SUCCESS: The scheduled task \"\\Clover S7\\core-aa21ec1b\" was successfully deleted."
+        },
+        {
+          "ok": true,
+          "how": "schtasks /End /TN \\Clover S7\\app-aa21ec1b",
+          "code": 0,
+          "out": "SUCCESS: The scheduled task \"\\Clover S7\\app-aa21ec1b\" has been terminated successfully."
+        },
+        {
+          "ok": true,
+          "how": "schtasks /Delete /TN \\Clover S7\\app-aa21ec1b /F",
+          "code": 0,
+          "out": "SUCCESS: The scheduled task \"\\Clover S7\\app-aa21ec1b\" was successfully deleted."
+        }
+      ]
+    }
+  ],
+  "daemonLog": [
+    "2026-11-05T01:26:42.334Z [core 4380] up (lock: CreateFileW share-none, ppid 2528)",
+    "2026-11-05T01:26:42.347Z [core 4380] listening on \\\\.\\pipe\\clover-s7-core-aa21ec1b",
+    "2026-11-05T01:26:44.370Z [core 4380] started the app (daemon start): schtasks /Run /TN \\Clover S7\\app-aa21ec1b → ok",
+    "2026-11-05T01:26:44.810Z [core 4380] app 8872 connected (started by daemon)",
+    "2026-11-05T01:26:44.958Z [core 4016] another daemon holds this home (CreateFileW: error 32 (sharing violation: another daemon holds it)); exiting",
+    "2026-11-05T01:26:45.064Z [core 4380] app 8872 went away without saying so: restart in 1000 ms",
+    "2026-11-05T01:26:46.095Z [core 4380] started the app (crash): schtasks /Run /TN \\Clover S7\\app-aa21ec1b → ok",
+    "2026-11-05T01:26:46.220Z [core 4380] app 9184 connected (started by daemon)",
+    "2026-11-05T01:26:46.347Z [core 4380] app 9184 went away without saying so: restart in 2000 ms",
+    "2026-11-05T01:26:48.386Z [core 4380] started the app (crash): schtasks /Run /TN \\Clover S7\\app-aa21ec1b → ok",
+    "2026-11-05T01:26:48.504Z [core 4380] app 8080 connected (started by daemon)",
+    "2026-11-05T01:26:48.619Z [core 4380] app 8080 went away without saying so: restart in 4000 ms in safe mode",
+    "2026-11-05T01:26:52.647Z [core 4380] started the app (crash, safe mode): schtasks /Run /TN \\Clover S7\\app-aa21ec1b → ok",
+    "2026-11-05T01:26:52.771Z [core 4380] app 8248 connected (started by daemon, safe mode)",
+    "2026-11-05T01:29:23.346Z [core 7172] up (lock: CreateFileW share-none, ppid 2528)",
+    "2026-11-05T01:29:23.369Z [core 7172] listening on \\\\.\\pipe\\clover-s7-core-aa21ec1b",
+    "2026-11-05T01:29:23.611Z [core 7172] app 8248 connected (started by daemon, safe mode)",
+    "2026-11-05T01:29:26.988Z [core 8420] up (lock: CreateFileW share-none, ppid 2528)",
+    "2026-11-05T01:29:26.996Z [core 8420] listening on \\\\.\\pipe\\clover-s7-core-aa21ec1b",
+    "2026-11-05T01:29:27.283Z [core 8420] app 8248 connected (started by daemon, safe mode)",
+    "2026-11-05T01:29:27.336Z [core 8420] exiting 0: the app's Quit (tray)",
+    "2026-11-05T01:29:40.275Z [core 1300] up (lock: CreateFileW share-none, ppid 2528)",
+    "2026-11-05T01:29:40.283Z [core 1300] listening on \\\\.\\pipe\\clover-s7-core-aa21ec1b",
+    "2026-11-05T01:29:40.358Z [core 1300] app 8416 connected (started by user)",
+    "2026-11-05T01:29:40.465Z [core 1300] exiting 0: the daemon side's Quit",
+    ""
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.6.0",
+    "cpus": 3,
+    "memGiB": 7,
+    "bun": "1.3.14",
+    "seconds": 187.2
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: Runtime.evaluate timed out",
+        "screenshots: browser exited (0) during Page.captureScreenshot",
+        "cost: browser gone (Target.createBrowserContext)"
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "mac-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-mac-arm64",
+        "bin": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-mac-arm64/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 103982159,
+        "unpackedBytes": 213410127,
+        "files": 16,
+        "symlinks": 0,
+        "downloadMs": 2184,
+        "extractMs": 2473,
+        "sha256": "ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "on",
+      "start": {
+        "coldPipeMs": 400,
+        "warmPipeMs": 183,
+        "portMs": 215,
+        "pipe": "works"
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "tabs: Runtime.evaluate timed out",
+        "screenshots: browser exited (0) during Page.captureScreenshot"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "mac-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-mac-arm64",
+        "bin": "/Users/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-mac-arm64/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "reused": false,
+        "zipBytes": 195027080,
+        "unpackedBytes": 383704858,
+        "files": 344,
+        "symlinks": 5,
+        "downloadMs": 2463,
+        "extractMs": 2995,
+        "sha256": "8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "on",
+      "start": {
+        "coldPipeMs": 3549,
+        "warmPipeMs": 1439,
+        "portMs": 825,
+        "pipe": "works"
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 265.89,
+            "memKind": "footprint",
+            "rssMiB": 972.47,
+            "procs": 10,
+            "cpuPct": 8.89
+          },
+          {
+            "tabs": 1,
+            "memMiB": 312.69,
+            "memKind": "footprint",
+            "rssMiB": 1094.05,
+            "procs": 11,
+            "cpuPct": 4.43
+          },
+          {
+            "tabs": 2,
+            "memMiB": 341.05,
+            "memKind": "footprint",
+            "rssMiB": 1201.09,
+            "procs": 12,
+            "cpuPct": 5.33
+          },
+          {
+            "tabs": 4,
+            "memMiB": 395.71,
+            "memKind": "footprint",
+            "rssMiB": 1412.61,
+            "procs": 14,
+            "cpuPct": 5.69
+          },
+          {
+            "tabs": 8,
+            "memMiB": 455.64,
+            "memKind": "footprint",
+            "rssMiB": 1686.73,
+            "procs": 16,
+            "cpuPct": 6.41
+          }
+        ],
+        "perIdleTabMiB": 23.72,
+        "browserBaseMiB": 265.89,
+        "fourContextsMiB": 519.65,
+        "animatedTabCpuPct": 16.31,
+        "secondBrowserBaseMiB": 271.28,
+        "secondBrowserProcs": 10,
+        "firstBrowserMiBAtThatMoment": 728.75
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>S7 viewport page</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #f4f1ea; color: #222; font: 14px/1.4 system-ui, sans-serif; }
+  .at { position: fixed; box-sizing: border-box; }
+  #box { left: 20px; top: 20px; width: 160px; height: 100px; background: rgb(255, 0, 0); }
+  #btn { left: 200px; top: 20px; width: 120px; height: 40px; }
+  #field { left: 200px; top: 80px; width: 260px; height: 28px; }
+  #sel { left: 480px; top: 20px; width: 180px; height: 28px; }
+  #file { left: 480px; top: 80px; width: 200px; }
+  #check { left: 690px; top: 86px; }
+  #alertBtn { left: 700px; top: 20px; width: 100px; height: 28px; }
+  #confirmBtn { left: 810px; top: 20px; width: 100px; height: 28px; }
+  #promptBtn { left: 920px; top: 20px; width: 100px; height: 28px; }
+  #openBtn { left: 720px; top: 80px; width: 120px; height: 28px; }
+  #openXBtn { left: 850px; top: 80px; width: 130px; height: 28px; }
+  #copyText { left: 450px; top: 228px; width: 420px; height: 24px; margin: 0; white-space: nowrap; font-size: 16px; }
+  #drag { left: 20px; top: 160px; width: 100px; height: 60px; background: #6a6; }
+  #drop { left: 200px; top: 160px; width: 200px; height: 100px; background: #ccd; border: 2px dashed #557; }
+  #curPointer { left: 450px; top: 160px; width: 80px; height: 60px; background: #ddd; cursor: pointer; }
+  #curText { left: 540px; top: 160px; width: 80px; height: 60px; background: #eee; cursor: text; }
+  #curCross { left: 630px; top: 160px; width: 80px; height: 60px; background: #ddd; cursor: crosshair; }
+  #curMove { left: 720px; top: 160px; width: 80px; height: 60px; background: #eee; cursor: move; }
+  #anim { left: 0; top: 290px; width: 100vw; height: 260px; display: none; }
+  #tall { height: 6000px; padding-top: 600px; }
+  .row { height: 120px; border-bottom: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<div id="box" class="at"></div>
+<button id="btn" class="at">Click me</button>
+<input id="field" class="at" value="" aria-label="field">
+<select id="sel" class="at" aria-label="choice">
+  <option value="a">Alpha</option>
+  <option value="b">Bravo</option>
+  <option value="c">Charlie</option>
+  <option value="d">Delta</option>
+  <option value="e">Echo</option>
+  <option value="f">Foxtrot</option>
+</select>
+<input id="file" class="at" type="file" aria-label="file">
+<input id="check" class="at" type="checkbox" aria-label="check">
+<button id="alertBtn" class="at">alert</button>
+<button id="confirmBtn" class="at">confirm</button>
+<button id="promptBtn" class="at">prompt</button>
+<button id="openBtn" class="at">open window</button>
+<button id="openXBtn" class="at">open cross-site</button>
+<div id="drag" class="at" draggable="true">drag me</div>
+<div id="drop" class="at">drop here</div>
+<div id="curPointer" class="at">pointer</div>
+<div id="curText" class="at">text</div>
+<div id="curCross" class="at">crosshair</div>
+<div id="curMove" class="at">move</div>
+<p id="copyText" class="at">s7 select and copy this sentence please</p>
+<canvas id="anim" class="at"></canvas>
+<div id="tall"></div>
+<script src="/pages/vp-page.js"></script>
+</body>
+</html>

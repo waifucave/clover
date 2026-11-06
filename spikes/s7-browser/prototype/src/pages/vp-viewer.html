@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>S7 viewport</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #303030; width: 100%; height: 100%; }
+  #vp { position: absolute; left: 0; top: 0; display: block; }
+  /* the keyboard's, the IME's and paste's target: kept focused, invisible, moved to the page's caret when known */
+  #ime { position: absolute; left: 0; top: 0; width: 2px; height: 20px; opacity: 0; border: 0; padding: 0; resize: none; outline: none; }
+</style>
+</head>
+<body>
+<canvas id="vp" width="1" height="1"></canvas>
+<textarea id="ime" aria-label="viewport input" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+</body>
+</html>

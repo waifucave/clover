@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>S7 probe</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #f4f1ea; color: #222; font: 15px/1.4 system-ui, sans-serif; }
+  #marker { position: fixed; left: 0; top: 0; width: 520px; height: 40px; z-index: 10; }
+  #bg { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 0; display: none; }
+  #content { position: relative; z-index: 1; padding: 48px 24px 0; }
+  .block { height: 100px; box-sizing: border-box; overflow: hidden; border-bottom: 1px solid #ddd; }
+  .block:nth-child(5n) { background: #e6eef5; }
+  #controls { position: fixed; right: 12px; top: 8px; z-index: 11; background: #fff; padding: 6px; border: 1px solid #ccc; }
+  video { width: 160px; height: 120px; display: block; }
+</style>
+</head>
+<body>
+<canvas id="marker" width="520" height="40"></canvas>
+<canvas id="bg"></canvas>
+<div id="controls">
+  <input id="field" value="" size="20" aria-label="field">
+  <div id="media"></div>
+</div>
+<div id="content"></div>
+<script src="/pages/probe.js"></script>
+</body>
+</html>
