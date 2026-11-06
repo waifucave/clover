@@ -981,8 +981,10 @@ async function smoke(): Promise<void> {
     }
     return { mount: v.mount, url, visible: v.visible, text: text.slice(0, 200) };
   }));
-  // Texts the run waits for, all of them (`|` between).
+  // Texts the run waits for, all of them (`|` between), and mounts it waits for (per kind, "kind:n" each, `,` between):
+  // a part's frames are placed a beat after its document draws, so a test that counts mounts waits for its own counts.
   const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
+  const waitMounts = Object.fromEntries((process.env.CLOVER_SMOKE_WAIT_MOUNTS ?? "").split(",").filter((t) => t.includes(":")).map((t) => [t.slice(0, t.indexOf(":")), Number(t.slice(t.indexOf(":") + 1))])) as Partial<Record<"root" | "frame" | "inline" | "web", number>>;
   let hung = false;
   // The UI test's user on the core's own pages (unpackaged runs only): a page to open once everything has drawn, and
   // steps in the root, one a turn, each once its element is there (a click, a tick, text typed into a field).
@@ -1008,7 +1010,7 @@ async function smoke(): Promise<void> {
       win.webContents.emit("unresponsive");
     }
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
-    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w)))) break;
+    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v)) break;
     // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
     // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says

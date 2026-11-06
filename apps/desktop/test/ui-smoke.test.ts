@@ -158,7 +158,8 @@ afterAll(() => {
 
 describe.if(enabled)("the app in Electron (UI test: CI, or locally with a background-only Electron)", () => {
   test("the default shell from F's plugins renders in the clover layer; the app starts the daemon and Quit stops both", () => {
-    const r = smoke(electron(), [root], "default");
+    // The mounts it asserts are the ones it waits for: a placed part's mounts land a beat after its document draws.
+    const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_WAIT_MOUNTS: "root:3,frame:3" });
     const shell = expectShell(r);
     expect(shell.composer).toBe(true);
     expect(shell.text).toContain("Alpha");
@@ -169,7 +170,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
 
   test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
     // Both menus answered: the composer's (in the main window) and the surface's (in its own window).
-    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
+    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", CLOVER_SMOKE_WAIT_MOUNTS: "root:4,frame:5", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
     const shell = expectShell(r);
     const part = r.facts!.frames.find((x) => x.origin === "clover-plugin://fixture-composer");
     expect(part, r.output).toMatchObject({ bridge: "object", node: false });
@@ -207,7 +208,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   test("a third-party layer that hangs has its process stopped; the app doesn't restart into safe mode", () => {
     // The layer hangs in its own handler; the window's `unresponsive` is raised by the run (index.ts says why), and
     // the app pings each document (3 s), stops the silent layer's process, and the census finds it gone.
-    const r = smoke(electron(), [root], "spin", { CLOVER_SMOKE_HANG: "spin", CLOVER_SMOKE_WAIT_TEXT: "stopped drawing" });
+    const r = smoke(electron(), [root], "spin", { CLOVER_SMOKE_HANG: "spin", CLOVER_SMOKE_WAIT_TEXT: "stopped drawing", CLOVER_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
     expectShell(r);
     // The whole run's output: these lines come early in it, and a fast run's 6,000-character tail cuts them.
     expect(r.all).toContain("went unresponsive; not answering: fixture-spin");

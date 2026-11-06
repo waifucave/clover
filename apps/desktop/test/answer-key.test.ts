@@ -54,6 +54,23 @@ describe("the answer key", () => {
     expect(holderFor("linux")).toBe("none");
   });
 
+  test("the user is never asked for their presence or identity to hold or to use the key (the owner's decision, E-M2)", () => {
+    // The holder names: none of them is a prompt-gated one on this side; a Windows Hello key credential and a TPM or
+    // Secure Enclave key with a user-presence ACL would ask. What the app holds is safeStorage's Keychain item / DPAPI
+    // / Secret Service, which keep it at rest with no ACL, and the stores' names for the core stay honest above.
+    const labels = [holderFor("darwin"), holderFor("win32"), holderFor("linux")];
+    expect(labels).not.toContain("hello");
+    expect(labels).not.toContain("tpm");
+    // Loading, saving (over a made key) and signing stay free of anything the OS would ask about.
+    const file = join(mkdtempSync(join(tmpdir(), "clover-answer-key-")), "answer-key");
+    const vault = safeStorageVault(file, fakeStorage, "win32");
+    const key = new AnswerKey(vault);
+    expect(key.sign(new Uint8Array([1, 2, 3]))).toHaveLength(64);
+    key.vault.save(new Uint8Array(key.sign(new Uint8Array([4]))));
+    expect(key.publicKey()).toHaveLength(44);
+    expect(vault.held).toBe("none");
+  });
+
   test("a core that refuses (an older one, a device that isn't a desktop) is said and not fatal; nothing secret in the line", async () => {
     const lines: string[] = [];
     const key = new AnswerKey(memoryVault(), (l) => lines.push(l));

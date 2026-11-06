@@ -8,6 +8,11 @@
 // without asking ("app-keychain"); on Windows DPAPI and on Linux the Secret Service, which plugin code running as the
 // user could also reach, so the core hears "none", the risk the owner accepted. The key never goes into a log line, an
 // error message or the core. A headless run and the tests use a vault in memory and never touch the OS's store.
+//
+// safeStorage adds no user-presence or biometric gate on any OS — no Touch ID, Windows Hello or passcode prompt, ever
+// (the owner's decision, folded at E-M2): the stores above keep it at rest with none. Signing a card's answer takes the
+// key from memory and never prompts. The one place an OS auth check may appear at all is pairing or revoking a device,
+// and only if it is asked for later.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
