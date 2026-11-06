@@ -8,6 +8,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -54,6 +55,12 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/reg.rs     |  26 ++++++++
  src/user.rs    |  16 +++--
  4 files changed, 292 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 116 ++++++++++++++++++++++++++------
+ src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  37 +++++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 303 insertions(+), 43 deletions(-)
 
  src/cli.rs     | 116 ++++++++++++++++++++++++++------
  src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
@@ -538,7 +545,7 @@ index ba0ac37..70c213e 100644
  }
  
 diff --git a/src/reg.rs b/src/reg.rs
-index 68ff089..e3ab422 100644
+index 68ff089..abbf150 100644
 --- a/src/reg.rs
 +++ b/src/reg.rs
 @@ -319,6 +319,43 @@ pub fn set_key_dacl_from_sddl(path: &str, sddl: &str) -> Result<()> {
@@ -565,7 +572,7 @@ index 68ff089..e3ab422 100644
 +                key.0,
 +                index,
 +                Some(PWSTR(buf.as_mut_ptr())),
-+                Some(&mut len),
++                &mut len as *mut u32,
 +                None,
 +                None,
 +                None,
