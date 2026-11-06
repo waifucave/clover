@@ -18,6 +18,9 @@
 //   came meanwhile stays, and the move says so (two copies, never none).
 // * Links travel as links when their target stays inside what moves; anything that isn't a file, a folder or a link
 //   refuses the whole operation before anything moves.
+// * No cap per file (item 89), and frames stay at 256 KiB, so memory is bounded; but transfers aren't counted in the
+//   service's per-computer bulk slots (`BULK_PER_DEVICE`), so several large ones at once share the disk with no
+//   back-pressure (check 2's N3). A per-computer transfer budget is lane M's call.
 // * R1, the caller's side (`transferAsking`): before it sends the call, it asks each holder that will judge it as a
 //   peer whether its level needs the user's answer (`tree.judge`, which takes no answer and so spends none). If any
 //   does, the user sees one card naming both computers and the whole operation, and its answer goes with the call.
@@ -31,6 +34,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Link, LinkStream, LinkTransport } from "../contracts/link-transport";
 import type { TreeChange } from "../contracts/tree";
 import type { HolderCall, LocalHolder } from "./holder";
+import { atOps } from "./at";
 import { answerNeeded, type AnswerAsker, type NeedsAnswer } from "./judge";
 import { offlineAs } from "./remote";
 
@@ -345,8 +349,10 @@ async function copyInto(root: string, e: Sent, fh: FileHandle): Promise<void> {
 }
 
 /** Moves the finished copy into place, never over something that's there: a file by a new link (which refuses an
- *  existing name), a folder by a rename after checking the name is still free. */
-async function placeInto(staging: string, real: string, label: string): Promise<void> {
+ *  existing name); a folder by a rename that refuses one too (`renameat2`'s `RENAME_NOREPLACE`, `renameatx_np`'s
+ *  `RENAME_EXCL`), anchored at the destination's folder (check 2's N2). Where the C library has neither (Windows,
+ *  whose rename doesn't replace a folder anyway), a checked rename. */
+async function placeInto(staging: string, real: string, label: string, root?: string): Promise<void> {
   const st = await fsp.lstat(staging);
   if (st.isFile()) {
     try {
@@ -356,6 +362,13 @@ async function placeInto(staging: string, real: string, label: string): Promise<
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new ContractError("conflict", `${label} already exists`);
       // A disk without hard links: the rename below, after the same check.
+    }
+  }
+  const at = process.platform === "win32" || root === undefined ? null : atOps();
+  if (at && root !== undefined) {
+    const rel = relative(root, dirname(real));
+    if (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`)) {
+      if (at.renameNew(root, rel === "" ? [] : rel.split(sep), basename(staging), basename(real), label)) return;
     }
   }
   if (await fsp.lstat(real).then(() => true, () => false)) throw new ContractError("conflict", `${label} already exists`);
@@ -413,7 +426,7 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
       files++;
       bytes += e.size ?? 0;
     }
-    await placeInto(staging, to.real, p.to);
+    await placeInto(staging, to.real, p.to, to.root);
   } catch (e) {
     await cleanUp(staging, kept);
     throw e;
@@ -465,7 +478,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     let got: { sendId: string; files: number; bytes: number };
     try {
       got = await receive(stream, staging);
-      await placeInto(staging, dst.real, p.to);
+      await placeInto(staging, dst.real, p.to, dst.root);
     } catch (e) {
       await cleanUp(staging, above);
       throw offlineAs(src.computer, e);

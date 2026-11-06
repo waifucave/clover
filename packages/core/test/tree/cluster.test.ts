@@ -181,6 +181,11 @@ describe("hard links (review S4)", () => {
     expect(await code(studio.node.tree.write("home/Laptop1/innocent.json", { encoding: "utf8", text: '{"allow":["*"]}' }, { as: BOT }))).toBe("refused");
     expect(await code(studio.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
     expect(await code(laptop.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
+    // Nor through grep, nor any other content read (check 2's N1).
+    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), '{"note":"only-in-the-fenced-file"}');
+    const found = await studio.node.tree.grep("only-in-the-fenced-file", { as: BOT, path: "home/Laptop1" });
+    expect(found.map((m) => m.path)).not.toContain("home/Laptop1/innocent.json");
+    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), "{}");
     expect(readFileSync(join(laptop.cloverHome, "rules", "allow.json"), "utf8")).toBe("{}");
     // The user's own call isn't fenced.
     expect(await laptop.node.tree.read("home/Laptop1/innocent.json", { as: { kind: "user", client: "app" } })).toEqual({ encoding: "utf8", text: "{}" });

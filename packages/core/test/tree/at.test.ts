@@ -34,6 +34,12 @@ describe("anchored changes", () => {
     expect(isContractError(caught(() => at!.rename(root, ["a", "g.txt"], root, ["swapped", "g.txt"], "g.txt")), "refused")).toBe(true);
     expect(existsSync(join(outside, "keep.json"))).toBe(true);
     expect(existsSync(join(outside, "new"))).toBe(false);
+    // A rename into place never replaces what's there, not even an empty folder (check 2's N2).
+    mkdirSync(join(root, "a", "staged"));
+    mkdirSync(join(root, "a", "taken"));
+    expect(isContractError(caught(() => at!.renameNew(root, ["a"], "staged", "taken", "a/taken")), "conflict")).toBe(true);
+    expect(at!.renameNew(root, ["a"], "staged", "placed", "a/placed")).toBe(true);
+    expect(existsSync(join(root, "a", "placed"))).toBe(true);
     // A recursive remove takes the link itself, never what it leads to.
     mkdirSync(join(root, "a", "deep", "er"), { recursive: true });
     symlinkSync(outside, join(root, "a", "deep", "out"));

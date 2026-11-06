@@ -16,6 +16,9 @@ import { join } from "node:path";
 import { ContractError } from "../contracts/common";
 
 type Libc = {
+  /** Renames, failing with `EEXIST` rather than replacing what's there: Linux's `renameat2(…, RENAME_NOREPLACE)`, or
+   *  macOS's `renameatx_np(…, RENAME_EXCL)`; null where the C library has neither. */
+  renameNoReplace: ((fromfd: number, from: Uint8Array, tofd: number, to: Uint8Array) => number) | null;
   openat(dirfd: number, path: Uint8Array, flags: number, mode: number): number;
   mkdirat(dirfd: number, path: Uint8Array, mode: number): number;
   unlinkat(dirfd: number, path: Uint8Array, flags: number): number;
@@ -43,7 +46,19 @@ function libc(): Libc | null {
       [errnoName]: { args: [], returns: "ptr" },
     });
     const at = s as unknown as Record<string, (...a: unknown[]) => unknown>;
+    // Optional: an older C library without it keeps the rest.
+    let noReplace: Libc["renameNoReplace"] = null;
+    try {
+      const name = process.platform === "darwin" ? "renameatx_np" : "renameat2";
+      const flag = process.platform === "darwin" ? 0x4 : 0x1; // RENAME_EXCL, RENAME_NOREPLACE
+      const { symbols: r } = dlopen(lib, { [name]: { args: ["i32", "ptr", "i32", "ptr", "u32"], returns: "i32" } });
+      const fn = (r as unknown as Record<string, (...a: unknown[]) => unknown>)[name]!;
+      noReplace = (a, b, c, d) => fn(a, b, c, d, flag) as number;
+    } catch {
+      noReplace = null;
+    }
     loaded = {
+      renameNoReplace: noReplace,
       openat: (d, p, f, m) => at.openat!(d, p, f, m) as number,
       mkdirat: (d, p, m) => at.mkdirat!(d, p, m) as number,
       unlinkat: (d, p, f) => at.unlinkat!(d, p, f) as number,
@@ -70,6 +85,8 @@ export interface AtOps {
   remove(root: string, rel: readonly string[], o: { dir: boolean; recursive: boolean }, label: string): void;
   /** Renames `fromRel` under `fromRoot` to `toRel` under `toRoot`. */
   rename(fromRoot: string, fromRel: readonly string[], toRoot: string, toRel: readonly string[], label: string): void;
+  /** Renames within one folder, never over something that's there (`conflict`); false where the C library can't. */
+  renameNew(root: string, dirRel: readonly string[], from: string, to: string, label: string): boolean;
 }
 
 function fail(c: Libc, what: string, label: string): never {
@@ -161,6 +178,14 @@ export function atOps(): AtOps | null {
         if (o.recursive && o.dir) return removeTree(c, fd, name, join(root, ...rel), label);
         if (c.unlinkat(fd, z(name), o.dir ? AT_REMOVEDIR : 0) !== 0) fail(c, "remove", label);
       });
+    },
+    renameNew(root, dirRel, from, to, label) {
+      const nr = c.renameNoReplace;
+      if (!nr) return false;
+      withDir(c, root, dirRel, label, (fd) => {
+        if (nr(fd, z(from), fd, z(to)) !== 0) fail(c, "rename", label);
+      });
+      return true;
     },
     rename(fromRoot, fromRel, toRoot, toRel, label) {
       if (fromRel.length === 0 || toRel.length === 0) throw new ContractError("invalid", `${label} is a whole area of the tree`);

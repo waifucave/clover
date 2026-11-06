@@ -460,9 +460,9 @@ export class LocalHolder implements Holder {
     for (const rel of files) {
       const real = rel === "" ? r.real : join(r.real, rel);
       if (!this.#mayRead(real, call)) continue;
-      const st = await fsp.lstat(real).catch(() => null);
-      if (!st?.isFile() || st.size > GREP_FILE_MAX) continue;
-      const bytes = await fsp.readFile(real).catch(() => null);
+      // The same checked open as `read` (check 2's N1): no link followed, the opened file's identity compared, and a
+      // file with other names (hard links) skipped for anyone the fence judges.
+      const bytes = await this.#contents(real, r.root, call, GREP_FILE_MAX);
       if (!bytes || bytes.subarray(0, 8192).includes(0)) continue;
       const lines = bytes.toString("utf8").split("\n");
       const path = rel === "" ? base : `${base}/${rel.split(sep).join("/")}`;
@@ -631,6 +631,40 @@ export class LocalHolder implements Holder {
   }
 
   /** Makes the folders from the deepest one that exists down to `dir`, each made inside the area. */
+  /** A file's bytes for a content search, read the way `read` opens a file (`#openChecked`), or null to skip it: not
+   *  a regular file, larger than `max`, another name of a file (hard links) for a fenced caller, or not what the
+   *  path named by the time it was opened. */
+  async #contents(real: string, root: string, call: HolderCall, max: number): Promise<Buffer | null> {
+    const nofollow = this.os === "windows" ? 0 : FS.O_NOFOLLOW ?? 0;
+    const fh = await fsp.open(real, FS.O_RDONLY | nofollow).catch(() => null);
+    if (!fh) return null;
+    try {
+      const opened = await fh.stat({ bigint: true });
+      if (!opened.isFile() || opened.size > BigInt(max)) return null;
+      if (opened.nlink > 1n && call.as.kind !== "user" && call.as.kind !== "core") return null;
+      const now = await fsp.realpath(real).catch(() => null);
+      if (!now) return null;
+      try {
+        this.#landsInside(now, root, real);
+      } catch {
+        return null;
+      }
+      if (!this.#mayRead(now, call)) return null;
+      const again = await fsp.stat(now, { bigint: true }).catch(() => null);
+      if (!again || again.dev !== opened.dev || again.ino !== opened.ino) return null;
+      const buf = Buffer.alloc(Number(opened.size));
+      let off = 0;
+      while (off < buf.length) {
+        const { bytesRead } = await fh.read(buf, off, buf.length - off, off);
+        if (bytesRead === 0) break;
+        off += bytesRead;
+      }
+      return buf.subarray(0, off);
+    } finally {
+      await fh.close();
+    }
+  }
+
   /** The anchored changes, on macOS and Linux. */
   #at(): AtOps | null {
     return this.os === "windows" ? null : atOps();
@@ -744,7 +778,7 @@ export class LocalHolder implements Holder {
   async #statOf(treePath: string, real: string, st: Stats): Promise<FileStat> {
     const type = st.isFile() ? "file" : st.isDirectory() ? "dir" : st.isSymbolicLink() ? "symlink" : "other";
     let executable = false;
-    if (type === "file") executable = this.os === "windows" ? await windowsExecutable(real) : (st.mode & 0o111) !== 0;
+    if (type === "file") executable = this.os === "windows" ? await windowsExecutable(real, st.nlink > 1) : (st.mode & 0o111) !== 0;
     return { path: treePath, type, size: type === "file" ? st.size : 0, modifiedAt: Math.max(0, Math.floor(st.mtimeMs)), executable };
   }
 }
@@ -752,9 +786,11 @@ export class LocalHolder implements Holder {
 const WINDOWS_EXEC = /\.(exe|com|bat|cmd|ps1)$/i;
 
 /** Windows keeps no x bit. A file counts as executable by its extension, or by a `#!` line, as Git for Windows reads
- *  a script. */
-async function windowsExecutable(real: string): Promise<boolean> {
+ *  a script. A file with other names (hard links) is judged by its extension alone, so not even two of its bytes are
+ *  read through this name (check 2's N1). */
+async function windowsExecutable(real: string, linked = false): Promise<boolean> {
   if (WINDOWS_EXEC.test(real)) return true;
+  if (linked) return false;
   const fh = await fsp.open(real, FS.O_RDONLY).catch(() => null);
   if (!fh) return false;
   try {
