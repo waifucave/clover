@@ -20,7 +20,7 @@
 //   dev-folders            wherever the user keeps them
 //
 // Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review; `plugins` by the
-// controller's ruling on B's registry review; `sessions-runtime` and `bot-memory` from A-M3's review), so not yet in
+// controller's ruling on B's registry review; `sessions-runtime` from A-M3's review), so not yet in
 // `fencedSet()`: `pendingFenced` below.
 import { readdirSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
@@ -28,14 +28,17 @@ import type { Os } from "@waifucave/clover-protocol";
 import type { FencedKind } from "../contracts/fence";
 import { userLayersDir } from "../bots/paths";
 import { botSegment, transcriptsDir } from "../sessions/ids";
+import { foldName } from "./fold";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
 
-const pathFor = (os: Os) => (os === "windows" ? win32 : posix);
+/** Windows joins with backslashes, except under a home written POSIX-style (`/Users/me/.clover`, as B's conformance
+ *  suite writes every OS's paths), so the items come back in the form the home was given. */
+const pathFor = (os: Os, home?: string) => (os === "windows" && !(home?.startsWith("/") && !home.includes("\\")) ? win32 : posix);
 
 /** Each kind's paths under `cloverHome` on `os`. */
 export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, string[]> {
-  const p = pathFor(os);
+  const p = pathFor(os, cloverHome);
   const h = (...parts: string[]) => p.join(cloverHome, ...parts);
   const offMac = (path: string) => (os === "macos" ? [] : [path]);
   return {
@@ -70,10 +73,7 @@ export function pendingFenced(o: {
   // allowed. A bot's plugin comes in only through `plugin.install`'s OK card, and is made in a dev folder, which the
   // fence follows by its real path (`followDevFolders`).
   // `sessions-runtime`: the bot driver's state per session (A-M3), which a turn resumes from.
-  // `bot-memory`: every bot's folder, `bots/<bot>/` (its memory and its agents), write-denied to all: memory changes
-  // go only through the memory tool, never a bot's Bash (the controller's ruling). Reads of other bots' folders are
-  // denied per caller: `botMemoryReadDenied` below.
-  const p = pathFor(o.os);
+  const p = pathFor(o.os, o.cloverHome);
   const u = (...parts: string[]) => p.join(o.home, ...parts);
   const loginStart: Record<Os, string[]> = {
     macos: [u("Library", "LaunchAgents"), u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
@@ -91,19 +91,37 @@ export function pendingFenced(o: {
     "agent-installs": [...(o.agentInstalls ?? [])],
     plugins: [p.join(o.cloverHome, "plugins")],
     "sessions-runtime": [p.join(o.cloverHome, "sessions-runtime")],
-    "bot-memory": [p.join(o.cloverHome, "bots")],
   };
 }
 
-/** The bots' folders a caller of `bot` may not read (the controller's rulings on A-M3's review): a bot's sessions,
- *  and the agents it delegates, read only their own bot's folder under `<home>/bots/`. `folders` are the folder names
- *  there now (`botFolders`). A coding session the user drives (no bot) may read every bot's memory: the user owns it.
- *  B's `Fence.forCaller(caller)` is where this applies. */
-export function botMemoryReadDenied(o: { cloverHome: string; os: Os; bot?: string; folders: readonly string[] }): string[] {
-  if (o.bot === undefined) return [];
-  const p = pathFor(o.os);
-  const own = botSegment(o.bot);
-  return o.folders.filter((f) => f !== own).map((f) => p.join(o.cloverHome, "bots", f));
+/** Who is asking, for bots' memory (the owner's decision): a bot's own sessions (its main conversation and side
+ *  threads), or anyone else (other bots' sessions, coding sessions the user drives, ACP or delegated agents, that
+ *  bot's own agents included). */
+export type MemoryCaller = { readonly kind: "bot-session"; readonly bot: string } | { readonly kind: "other" };
+
+/** The `bot-memory` items for one caller, for B's per-caller view (`Fence.forCaller`). A bot writes its memory with
+ *  ordinary Write and Edit in `<home>/bots/<bot>/memory/` (the tree's `home/memory`, synced): its own sessions read and
+ *  write it; everyone else is denied both. The rest of each `<home>/bots/<bot>/` (its agents' transcripts, which the
+ *  core writes) stays write-denied to all, reads allowed. `folders` are the folder names under `<home>/bots/` now
+ *  (`botFolders`); `entries` the names in one of them (default: read from the disk). */
+export function botMemoryFenced(o: {
+  cloverHome: string; os: Os; caller: MemoryCaller; folders: readonly string[];
+  entries?: (folder: string) => readonly string[];
+}): { kind: "bot-memory"; path: string; deny: "write" | "read-write" }[] {
+  const p = pathFor(o.os, o.cloverHome);
+  const own = o.caller.kind === "bot-session" ? botSegment(o.caller.bot) : null;
+  const entries = o.entries ?? ((f: string) => { try { return readdirSync(join(o.cloverHome, "bots", f)); } catch { return []; } });
+  const out: { kind: "bot-memory"; path: string; deny: "write" | "read-write" }[] = [];
+  for (const f of o.folders) {
+    const root = p.join(o.cloverHome, "bots", f);
+    if (f === own) {
+      for (const e of entries(f)) if (foldName(e) !== "memory") out.push({ kind: "bot-memory", path: p.join(root, e), deny: "write" });
+    } else {
+      out.push({ kind: "bot-memory", path: p.join(root, "memory"), deny: "read-write" });
+      out.push({ kind: "bot-memory", path: root, deny: "write" });
+    }
+  }
+  return out;
 }
 
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */

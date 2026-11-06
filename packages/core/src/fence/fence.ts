@@ -94,22 +94,26 @@ export class CloverFence implements Fence {
   check(op: FenceOp): FenceVerdict {
     const paths = op.op === "move" ? [op.path, op.to] : [op.path];
     const canonical = paths.map((p) => this.#canonical(p));
-    const fenced = this.fencedSet().map((i) => i.path);
-    for (const p of canonical) {
-      if (nonAsciiAlias(p, fenced, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
-    }
-    if (op.op !== "read" && op.op !== "list" && op.op !== "stat") {
-      const linked = this.#hardLinked(canonical[0]!);
-      if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
-    }
+    // The folded item first, so a name that folds onto one (`ſettings`) is refused as that item; then a hard link to
+    // one; then a name that isn't ASCII where Clover names things, whatever it folds to (B's contract, #179's F1).
     const { set, back } = this.#folded();
     const folded: FenceOp = op.op === "move"
       ? { op: "move", path: this.#fold(canonical[0]!), to: this.#fold(canonical[1]!) }
       : { op: op.op, path: this.#fold(canonical[0]!) } as FenceOp;
     const v = judge(set, folded);
-    if (v.allowed) return v;
-    const item = back.get(v.path);
-    return { allowed: false, reason: v.reason, path: item?.path ?? v.path };
+    if (!v.allowed) {
+      const item = back.get(v.path);
+      return { allowed: false, reason: v.reason, path: item?.path ?? v.path };
+    }
+    if (op.op !== "read" && op.op !== "list" && op.op !== "stat") {
+      const linked = this.#hardLinked(canonical[0]!);
+      if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
+    }
+    const fenced = this.fencedSet().map((i) => i.path);
+    for (const p of canonical) {
+      if (nonAsciiAlias(p, fenced, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    }
+    return { allowed: true };
   }
 
   /** The fenced item a file with more than one link shares its inode with; also every fenced item when the set
