@@ -16,6 +16,7 @@ import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, se
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
+import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
@@ -546,12 +547,16 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   clickThrough(s);
 }
 
+/** The screen add-on (macOS), for the camera housing; undefined where there is none. */
+let screens: ReturnType<typeof loadScreens> | null = null;
+
 /** A surface window's environment: the OS, the display server, its display (the primary one, where surfaces sit), and
- *  the camera housing, which the native add-on reads (E-M2; null until then). */
+ *  the camera housing, which the screen add-on reads (null where there is none). */
 function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: null } };
+  if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) } };
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */
@@ -931,6 +936,10 @@ async function smoke(): Promise<void> {
     mounts: runtime.stats(),
     surfaces: surfaceFacts,
     web: webFacts,
+    housing: (() => {
+      if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
+      return { addOn: screens !== undefined, notch: housingFor(screen.getPrimaryDisplay().id, screens) };
+    })(),
     captured,
   });
   if (process.env.CLOVER_SMOKE_KEEP === "1") return;

@@ -5,6 +5,7 @@
 //   out/main/browser-viewport-preload.cjs, out/renderer/browser-viewport.html
 //                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`)
 //   out/main/tray.png, @2x       the menu-bar and tray icon
+//   out/main/native/screen.node  macOS: the screen add-on (native/input/macos/screen.mm), built with clang alone
 //   out/renderer/core/           the window's core root: index.html, root.css, root.js
 //   out/renderer/layer/          what every plugin layer serves under /_clover/: React (vendor/), the UI API
 //                                (sdk-ui.js), the boot, the base styles, and the `clover` tree's bundle and styles
@@ -13,6 +14,7 @@
 // so no script names a child's path. `bun run dev:app` runs the result unpackaged.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { spawnSync } from "node:child_process";
 import type { BunPlugin } from "bun";
 
 const root = join(import.meta.dir, "..");
@@ -154,5 +156,16 @@ for (const id of modules) {
   for (const file of child?.css ?? []) css.push(`/* ${relative(repo, file)} */\n${readFileSync(file, "utf8")}`);
 }
 writeFileSync(join(layerOut, "clover.css"), css.join("\n"));
+
+// ---- The screen add-on (macOS; native/input) ----
+// Built with clang alone: the few Node-API calls it makes are declared in its own source. Where it can't be built (no
+// Xcode tools), the app does without it: no housing is known, as on Windows and Linux.
+if (process.platform === "darwin") {
+  const source = join(repo, "native", "input", "macos", "screen.mm");
+  const dest = join(out, "main", "native", "screen.node");
+  mkdirSync(dirname(dest), { recursive: true });
+  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-framework", "AppKit", "-o", dest, source], { encoding: "utf8" });
+  if (r.status !== 0) console.warn(`build: the screen add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without it`);
+}
 
 console.log(`built ${relative(root, join(out, "main"))} and ${relative(root, join(out, "renderer"))}: ${children.length} clover children found, ${modules.length} bound`);

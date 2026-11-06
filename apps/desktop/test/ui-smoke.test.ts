@@ -99,6 +99,11 @@ function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } =
     // The OS reports a process's sandbox on macOS and Windows only.
     if (process.platform !== "linux") expect(frame.sandboxed, frame.origin).toBe(true);
   }
+  // The screen add-on loads in Electron's own Node on a Mac (the build makes it there), and reads the housing or none.
+  const housing = f.housing as { addOn: boolean; notch: { width: number; height: number } | null } | undefined;
+  if (process.platform === "darwin") expect(housing?.addOn, r.output).toBe(true);
+  else expect(housing).toEqual({ addOn: false, notch: null });
+  if (housing?.notch != null) expect(housing.notch.width).toBeGreaterThan(0);
   // The frame's variables reach the layer, and the base theme's CSS dresses it (scoped by `@scope` to the part).
   expect(shell!.insetTop).toBe("45px");
   expect(shell!.sheets, r.output).toBeGreaterThanOrEqual(1);
