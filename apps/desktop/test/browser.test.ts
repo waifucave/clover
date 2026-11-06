@@ -66,7 +66,7 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     const names = new Map(Object.entries(log.constants?.logEventTypes ?? {}).map(([name, id]) => [id, name]));
     const events = log.events ?? [];
     const pacOrWpad = events.map((e) => names.get(e.type) ?? "").filter((n) => /^(PAC_FILE_DECIDER|WPAD)/.test(n));
-    const lookedUp = events.map((e) => JSON.stringify(e.params ?? {})).filter((p) => /"host":"wpad|\.bdic|gvt1\.com|dictionaries/i.test(p));
+    const lookedUp = events.map((e) => JSON.stringify(e.params ?? {})).filter((p) => /"host":"wpad|\/\/wpad[./:]|\.bdic|gvt1\.com/i.test(p));
     console.log(`net log: ${events.length} events, ${pacOrWpad.length} PAC/WPAD, ${lookedUp.length} wpad or dictionary hosts`);
     expect(events.length).toBeGreaterThan(0);
     expect(pacOrWpad).toEqual([]);
