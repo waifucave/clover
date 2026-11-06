@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { runFenceConformance } from "../../src/contracts/conformance/fence";
@@ -87,5 +87,17 @@ describe("the real fence on a real disk", () => {
     expect(f.fencedSet().find((i) => i.kind === "levels")!.path).toBe(join(clover, "levels"));
     writeFileSync(join(home, "project", "a.txt"), "x");
     expect(canonicalPath(join(root, "alias", "..", "home", "project", "a.txt"))).toBe(join(home, "project", "a.txt"));
+  });
+
+  test("a hard link to a fenced file is the fenced file: writing, deleting or moving it is refused", () => {
+    const { home, clover, fence } = make();
+    writeFileSync(join(clover, "levels", "computer.json"), "{}");
+    linkSync(join(clover, "levels", "computer.json"), join(home, "project", "innocent.json"));
+    expect(fence.check({ op: "write", path: join(home, "project", "innocent.json") })).toEqual({ allowed: false, reason: "levels", path: join(clover, "levels") });
+    expect(fence.check({ op: "delete", path: join(home, "project", "innocent.json") }).allowed).toBe(false);
+    expect(fence.check({ op: "read", path: join(home, "project", "innocent.json") })).toEqual({ allowed: true });
+    writeFileSync(join(home, "project", "a.txt"), "x");
+    linkSync(join(home, "project", "a.txt"), join(home, "project", "b.txt")); // two links, neither fenced
+    expect(fence.check({ op: "write", path: join(home, "project", "b.txt") })).toEqual({ allowed: true });
   });
 });

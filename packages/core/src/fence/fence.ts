@@ -2,8 +2,12 @@
 // computer, over its own Clover home: the fenced set laid out by layout.ts, every path resolved on this disk
 // (canonical.ts) and compared folded (fold.ts), so a link, a `..` after a link, a fenced name in another case or
 // Unicode form, or a Windows short name, trailing dot or stream suffix never leads past it, whether or not the item
-// exists yet. Any name component under the Clover home that isn't plain ASCII is refused outright.
-import { posix, win32 } from "node:path";
+// exists yet. Any name component under the Clover home that isn't plain ASCII is refused outright. A hard link is
+// another name for the same file: a write, delete or move of a file with more than one link is judged as the
+// fenced file it shares an inode with (J-M1's review), and refused outright when the fenced set holds too many
+// files to tell (fail closed).
+import { lstatSync, readdirSync, type BigIntStats } from "node:fs";
+import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
@@ -27,6 +31,9 @@ export interface CloverFenceOptions {
   /** How a path is resolved on this disk; the conformance suite's paths are fictional, so it passes its own. */
   canonical?: (path: string) => string;
 }
+
+/** How many entries of the fenced set a hard-link check walks before it refuses instead. */
+export const HARD_LINK_SCAN_LIMIT = 20_000;
 
 const osOf = (): Os => (process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux");
 
@@ -83,6 +90,10 @@ export class CloverFence implements Fence {
     for (const p of canonical) {
       if (nonAsciiUnderHome(p, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     }
+    if (op.op !== "read" && op.op !== "list" && op.op !== "stat") {
+      const linked = this.#hardLinked(canonical[0]!);
+      if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
+    }
     const { set, back } = this.#folded();
     const folded: FenceOp = op.op === "move"
       ? { op: "move", path: this.#fold(canonical[0]!), to: this.#fold(canonical[1]!) }
@@ -91,6 +102,28 @@ export class CloverFence implements Fence {
     if (v.allowed) return v;
     const item = back.get(v.path);
     return { allowed: false, reason: v.reason, path: item?.path ?? v.path };
+  }
+
+  /** The fenced item a file with more than one link shares its inode with; also every fenced item when the set
+   *  holds more files than `HARD_LINK_SCAN_LIMIT` (it can't be told, so it's refused). */
+  #hardLinked(path: string): FencedPath | null {
+    let st: BigIntStats;
+    try { st = lstatSync(path, { bigint: true }); } catch { return null; }
+    if (!st.isFile() || st.nlink < 2n) return null;
+    const key = `${st.dev}:${st.ino}`;
+    let seen = 0;
+    for (const item of this.fencedSet()) {
+      const stack = [item.path];
+      while (stack.length > 0) {
+        const at = stack.pop()!;
+        if (++seen > HARD_LINK_SCAN_LIMIT) return item;
+        let s: BigIntStats;
+        try { s = lstatSync(at, { bigint: true }); } catch { continue; }
+        if (s.isFile() && `${s.dev}:${s.ino}` === key) return item;
+        if (s.isDirectory()) { try { for (const name of readdirSync(at)) stack.push(join(at, name)); } catch { /* unreadable */ } }
+      }
+    }
+    return null;
   }
 
   touches(paths: readonly string[]): FencedPath | null {
