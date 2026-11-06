@@ -55,9 +55,27 @@ describe("the drag broker", () => {
   test("an offer: a known kind, data that fits, from a plugin that may hand it out", () => {
     expect(checkDragOffer({ type: "text/plain", data: "hi" }, new Set())).toEqual({ type: "text/plain", data: "hi" });
     expect(checkDragOffer({ type: "application/x-clover-file", data: { path: "a" } }, new Set())).toHaveProperty("error");
-    expect(checkDragOffer({ type: "application/x-clover-file", data: { path: "a" } }, new Set(["files"]))).toEqual({ type: "application/x-clover-file", data: { path: "a" } });
     expect(checkDragOffer({ type: "application/x-other", data: 1 }, new Set())).toHaveProperty("error");
     expect(checkDragOffer({ type: "text/plain", data: "x".repeat(300_000) }, new Set())).toHaveProperty("error");
+    expect(checkDragOffer({ type: "text/plain", data: { not: "text" } }, new Set())).toHaveProperty("error");
+  });
+
+  test("the core mints a file's grant: its place in the folder tree, named by the core, nothing the plugin added", () => {
+    const files = new Set(["files"]);
+    expect(checkDragOffer({ type: "application/x-clover-file", data: { path: "home/Laptop/notes/todo.md", name: "photo.png", size: 3, bytes: "AAAA" } }, files))
+      .toEqual({ type: "application/x-clover-file", data: { path: "home/Laptop/notes/todo.md", name: "todo.md" } });
+    expect(checkDragOffer({ type: "application/x-clover-file", data: "bots/alpha/memory/a.md" }, files)).toEqual({ type: "application/x-clover-file", data: { path: "bots/alpha/memory/a.md", name: "a.md" } });
+    // Not a place in the tree: a plain path, a way out, an empty segment, the tree's root itself.
+    for (const bad of ["a", "/etc/passwd", "home/Laptop/../../etc", "home//x", "home/./x", "home", "C:\\Users"]) {
+      expect(checkDragOffer({ type: "application/x-clover-file", data: { path: bad } }, files), bad).toHaveProperty("error");
+    }
+  });
+
+  test("and a message's: its session and seq", () => {
+    const read = new Set(["conversation.read"]);
+    expect(checkDragOffer({ type: "application/x-clover-message", data: { session: "s_1", seq: 4, text: "forged" } }, read)).toEqual({ type: "application/x-clover-message", data: { session: "s_1", seq: 4 } });
+    expect(checkDragOffer({ type: "application/x-clover-message", data: { session: "s 1", seq: 4 } }, read)).toHaveProperty("error");
+    expect(checkDragOffer({ type: "application/x-clover-message", data: { session: "s_1", seq: -1 } }, read)).toHaveProperty("error");
   });
 
   test("a claim: only by a plugin that may hold that kind", () => {

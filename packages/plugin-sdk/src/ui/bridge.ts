@@ -213,7 +213,10 @@ export type OpenTarget =
   | { kind: "settings"; section?: string; item?: string }
   | { kind: "bot"; bot: string };
 
-/** Data a part offers for a drag to another part, through the core (the drag broker). */
+/** Data a part offers for a drag to another part, through the core (the drag broker). Text and links are strings. A
+ *  file is its place in the folder tree (`{ path }`) and a message its `{ session, seq }`: the core mints the grant from
+ *  those alone, so the part that claims a file gets `{ path, name }` and one that claims a message `{ session, seq }`,
+ *  and reads either through its own plugin API. */
 export interface DragOffer {
   type: "text/plain" | "text/uri-list" | "application/x-clover-file" | "application/x-clover-message";
   data: unknown;

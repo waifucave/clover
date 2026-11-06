@@ -473,7 +473,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   test("drag grants: offered by a part whose plugin may hand it out, claimed once, by a part whose plugin may hold it", () => {
     const { s, shell, tab, child, item } = withFixtureFrame();
     // The fixture composer has no capabilities: plain text only.
-    expect(s.rt.dragOffer(child, item.mount, { type: "application/x-clover-file", data: { path: "a" } })).toHaveProperty("error");
+    expect(s.rt.dragOffer(child, item.mount, { type: "application/x-clover-file", data: { path: "home/Laptop/a.txt" } })).toHaveProperty("error");
     const text = s.rt.dragOffer(child, item.mount, { type: "text/plain", data: "hello" });
     expect(text).toHaveProperty("token");
     const token = (text as { token: string }).token;
@@ -483,7 +483,8 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(() => s.rt.dragOffer(child, tab.mount, { type: "text/plain", data: "x" })).toThrow();
     // The conversation (conversation.read) offers a message; the composer's plugin may not hold one.
     const convo = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
-    const msg = s.rt.dragOffer(shell.shellFrame, convo.mount, { type: "application/x-clover-message", data: { id: "m1" } }) as { token: string };
+    const msg = s.rt.dragOffer(shell.shellFrame, convo.mount, { type: "application/x-clover-message", data: { session: "s_1", seq: 3 } }) as { token: string };
+    expect(msg).toHaveProperty("token");
     expect(s.rt.dragClaim(child, item.mount, msg.token)).toHaveProperty("error");
   });
 });

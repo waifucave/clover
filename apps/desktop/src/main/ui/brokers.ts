@@ -8,9 +8,13 @@
 //   reaches a page as its bytes, never its path. Data a part offers another part (a file from the files panel, a
 //   message) goes through the core as a grant: the offering part says what it is, the core checks that the offering
 //   plugin may hand it out and hands back a single-use token for the drag's data; the part it's dropped on claims it,
-//   and gets it only if its own plugin may hold it, within a minute, once.
+//   and gets it only if its own plugin may hold it, within a minute, once. The core mints what a file or a message
+//   grant holds (E-M2): a file is a place in the folder tree, which the core checks and names itself, and a message
+//   its session and seq; nothing the offering plugin adds rides along, and no bytes do: the claiming part reads the
+//   file or the message through its own plugin API, where the daemon checks its own access.
 // Sealed card frames are outside both (E-M3).
 import type { OpenTarget } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { SessionId, TreePath } from "@waifucave/clover-protocol";
 
 export interface MenuItem {
   id?: string;
@@ -110,7 +114,39 @@ export interface DragOffer {
   data: unknown;
 }
 
-/** An offer the core accepts: a known kind, data that fits, and a plugin that may hand it out. */
+/** A file grant as the core mints it: its place in the folder tree, and its name, which the core takes from that place. */
+export interface FileGrant {
+  path: string;
+  name: string;
+}
+
+/** A message grant as the core mints it: the session and the message's seq there. */
+export interface MessageGrant {
+  session: string;
+  seq: number;
+}
+
+/** What the core grants for a file the part names: the tree path, normalised (no `.` or `..`, no empty segment), and
+ *  its last segment as the name; nothing else the part said. */
+export function mintFileGrant(data: unknown): FileGrant | { error: string } {
+  const raw = typeof data === "string" ? data : data !== null && typeof data === "object" ? (data as { path?: unknown }).path : undefined;
+  if (typeof raw !== "string") return { error: "a file is named by its place in the folder tree" };
+  const segments = raw.split("/");
+  if (segments.some((s) => s === "" || s === "." || s === ".." || s.includes("\0"))) return { error: "not a place in the folder tree" };
+  const path = segments.join("/");
+  if (!TreePath.safeParse(path).success || segments.length < 2) return { error: "not a place in the folder tree" };
+  return { path, name: segments.at(-1)! };
+}
+
+/** What the core grants for a message: its session and seq. */
+export function mintMessageGrant(data: unknown): MessageGrant | { error: string } {
+  const d = data !== null && typeof data === "object" ? (data as { session?: unknown; seq?: unknown }) : {};
+  if (!SessionId.safeParse(d.session).success || typeof d.seq !== "number" || !Number.isInteger(d.seq) || d.seq < 0) return { error: "a message is named by its session and seq" };
+  return { session: d.session as string, seq: d.seq };
+}
+
+/** An offer the core accepts: a known kind, data that fits, and a plugin that may hand it out. A file's or a
+ *  message's data is the grant the core mints for it. */
 export function checkDragOffer(raw: unknown, capabilities: ReadonlySet<string>): DragOffer | { error: string } {
   if (raw === null || typeof raw !== "object") return { error: "an offer is an object" };
   const { type, data } = raw as { type?: unknown; data?: unknown };
@@ -119,6 +155,15 @@ export function checkDragOffer(raw: unknown, capabilities: ReadonlySet<string>):
   if (needs !== null && needs !== undefined && !capabilities.has(needs)) return { error: `the offering plugin lacks ${needs}` };
   const size = JSON.stringify(data ?? null).length;
   if (size > DRAG_DATA_MAX) return { error: "the data is too large" };
+  if (type === "application/x-clover-file") {
+    const grant = mintFileGrant(data);
+    return "error" in grant ? grant : { type, data: grant };
+  }
+  if (type === "application/x-clover-message") {
+    const grant = mintMessageGrant(data);
+    return "error" in grant ? grant : { type, data: grant };
+  }
+  if (typeof data !== "string") return { error: "text and links are strings" };
   return { type, data };
 }
 
