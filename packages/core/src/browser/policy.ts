@@ -61,7 +61,7 @@ export const CDP_DENIED_METHODS: readonly string[] = [
 /** Why a call was refused, in words a bot or a person can act on. */
 export type BrowserErrorCode =
   | "bad_owner" | "no_app" | "no_tab" | "not_yours" | "needs_ok" | "held" | "url_refused" | "method_refused"
-  | "point_stale" | "stalled" | "bad_viewport" | "app_failed";
+  | "point_stale" | "stalled" | "bad_viewport" | "app_failed" | "bad_setting" | "computer_offline" | "no_computer";
 
 export class BrowserError extends Error {
   constructor(readonly code: BrowserErrorCode, message: string) {

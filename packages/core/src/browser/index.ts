@@ -2,3 +2,5 @@
 export * from "./contract";
 export * from "./policy";
 export * from "./service";
+export * from "./network";
+export * from "./proxy";

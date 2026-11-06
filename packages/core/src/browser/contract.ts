@@ -8,6 +8,7 @@
 // `headless` means "offscreen, drawing at the bots' rate" rather than "in a host window"; while a screen reader is on,
 // new bot tabs start as real views in a hidden host window instead (the hybrid). Neither changes a name.
 import type { Screenshot as ProtocolScreenshot, TabPlace, Viewport } from "@waifucave/clover-protocol";
+import type { BrowserProxySetting } from "./proxy";
 
 export {
   AGENT_VIEWPORT, BROWSER_REFUSED_SCHEMES, CDP_ALLOWED_DOMAINS, CDP_DENIED_DOMAINS, CLOVER_SCHEME_PREFIX, cdpDomainOf,
@@ -66,6 +67,14 @@ export type StreamChunk =
   | { kind: "config"; codec: StreamCodec; width: number; height: number; /** The codec string, e.g. `avc1.42E01F`. */ codecString: string }
   | { kind: "frame"; key: boolean; /** Microseconds. */ timestamp: number; data: Uint8Array }
   | { kind: "ended"; reason: "stopped" | "closed" | "failed"; message?: string };
+
+/** The browser's network settings, as the core sends them to whoever runs the tabs (`app.browser.configure`, and the
+ *  headless shell): the proxy setting (R14) and the bots whose LAN setting is on (their tabs reach private and
+ *  link-local addresses; loopback stays refused for bots, and the metadata address for everyone). */
+export interface BrowserNetworkConfig {
+  proxy: BrowserProxySetting;
+  lanBots: string[];
+}
 
 /** What the app reports back (`browser.report`). */
 export type AppTabEvent =

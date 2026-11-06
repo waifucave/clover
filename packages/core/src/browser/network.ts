@@ -7,16 +7,30 @@
 // addresses are pinned, never looked up twice.
 //
 // * A bot's tabs: no loopback, private (RFC 1918, ULA, shared CGNAT space), link-local or cloud metadata address. A
-//   per-bot setting that allows the LAN is L-M2.
+//   bot whose LAN setting is on reaches private and link-local addresses too, still never loopback.
 // * A coding session's tabs: loopback too (its dev servers), never the metadata address.
 // * A plugin's own tabs (a plugin acting as itself): as a bot's.
 // * The person's own tabs: their own network, never the metadata address.
 // * Nobody: the unspecified, multicast and reserved ranges, and this proxy's own ports.
 //
-// Plain Node, no Electron, so it is tested on its own (`test/browser-network.test.ts`). TLS stays end to end: the proxy
-// only ever joins two sockets.
+// The proxy setting (R14) chains behind the check (`proxy.ts` turns the setting into routes): the filter still resolves
+// each name itself and checks every address, then reaches the checked address either directly or through the proxy
+// the setting names for that connection, asking that proxy for the checked address (an HTTP `CONNECT ip:port`, or a
+// SOCKS request for the address), never the name. So the pinned, checked address is what the proxy connects to, and
+// the check can't be got round through it. A name this computer can't resolve isn't reached, even where only the
+// proxy could resolve it. Loopback is always reached directly.
+//
+// Each policy has three listeners, one per kind of URL (http, https, anything else: WebSockets, and whatever Chromium
+// sends to its `socks=` fallback), so the routes can follow the URL's scheme as a system proxy or PAC file does. The
+// proxy rules a session gets name all three, and never change when the setting does: the filter reads the setting
+// for each new connection.
+//
+// This file is plain Node, no Electron, and the app and the core share it: `apps/desktop/src/main/browser/network.ts`
+// is a copy of `packages/core/src/browser/network.ts`, which a test keeps identical. TLS stays end to end: the
+// filter only ever joins two sockets (or a socket and a proxy's tunnel).
 import { lookup as dnsLookup } from "node:dns/promises";
 import { createServer, connect as netConnect, isIP, type Server, type Socket } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import type { TabOwner } from "./contract";
 
 export interface AddressPolicy {
@@ -28,9 +42,16 @@ export interface AddressPolicy {
 export const BOT_POLICY: AddressPolicy = Object.freeze({ loopback: false, privateNetworks: false, linkLocal: false });
 export const SESSION_POLICY: AddressPolicy = Object.freeze({ loopback: true, privateNetworks: false, linkLocal: false });
 export const PERSON_POLICY: AddressPolicy = Object.freeze({ loopback: true, privateNetworks: true, linkLocal: true });
+/** A bot whose LAN setting is on: its LAN (private and link-local addresses), still never loopback or metadata. */
+export const BOT_LAN_POLICY: AddressPolicy = Object.freeze({ loopback: false, privateNetworks: true, linkLocal: true });
 
-export function policyFor(owner: TabOwner): AddressPolicy {
-  return owner.kind === "session" ? SESSION_POLICY : owner.kind === "user" ? PERSON_POLICY : BOT_POLICY;
+/** Which addresses an owner's tabs reach. `lanBots` holds the bots whose LAN setting is on (lane D's bot settings,
+ *  through the core's `BrowserNetworkConfig`). */
+export function policyFor(owner: TabOwner, lanBots?: ReadonlySet<string> | readonly string[]): AddressPolicy {
+  if (owner.kind === "session") return SESSION_POLICY;
+  if (owner.kind === "user") return PERSON_POLICY;
+  if (owner.kind === "bot" && lanBots !== undefined && (Array.isArray(lanBots) ? lanBots.includes(owner.bot) : (lanBots as ReadonlySet<string>).has(owner.bot))) return BOT_LAN_POLICY;
+  return BOT_POLICY;
 }
 
 export type AddressKind = "public" | "loopback" | "private" | "link-local" | "metadata" | "unspecified" | "multicast" | "reserved";
@@ -137,11 +158,29 @@ export function addressAllowed(ip: string, policy: AddressPolicy): boolean {
   }
 }
 
+/** The kind of URL a connection is for, by the listener Chromium sent it to. */
+export type UrlKind = "http" | "https" | "other";
+export const URL_KINDS: readonly UrlKind[] = ["http", "https", "other"];
+
+/** Where a connection goes after the check: straight to the checked address, or through a proxy, which is asked for
+ *  that address. */
+export type Upstream =
+  | { kind: "direct" }
+  | { kind: "http" | "https" | "socks5" | "socks4"; host: string; port: number };
+
+/** The routes to try, in order, for a connection to `host:port` (the name as the page asked for it) from a URL of
+ *  `scheme`; the proxy setting's (`proxy.ts`). An empty list refuses the connection. */
+export type UpstreamRoutes = (target: { scheme: UrlKind; host: string; port: number }) => Promise<Upstream[]>;
+
 export interface NetworkFilterOptions {
   /** Every address a name has (default: the system's resolver, all of them). */
   lookup?: (host: string) => Promise<string[]>;
-  /** Opens the connection to a checked address (default: `net.connect`). */
+  /** Opens the connection to a checked address, or to a proxy (default: `net.connect`). */
   dial?: (port: number, ip: string) => Socket;
+  /** The proxy setting's routes (R14); direct when absent. `setUpstream` changes it. */
+  upstream?: UpstreamRoutes;
+  /** How long a proxy has to answer its handshake (default 15 s). */
+  proxyTimeoutMs?: number;
   log?: (line: string) => void;
 }
 
@@ -184,31 +223,52 @@ function reply(socket: Socket, code: number): void {
   socket.write(Buffer.from([5, code, 0, 1, 0, 0, 0, 0, 0, 0]));
 }
 
-/** The filtering proxies: one SOCKS5 listener on loopback per policy, each its own port. */
+/** The filtering proxies: SOCKS5 listeners on loopback, three per policy (one per kind of URL), each its own port. */
 export class NetworkFilter {
   private readonly listeners = new Map<string, Promise<{ server: Server; port: number }>>();
   private readonly ports = new Set<number>();
   private readonly sockets = new Set<Socket>();
   private readonly lookup: (host: string) => Promise<string[]>;
   private readonly dial: (port: number, ip: string) => Socket;
+  private upstream: UpstreamRoutes | undefined;
   private closed = false;
 
   constructor(private readonly opts: NetworkFilterOptions = {}) {
     this.lookup = opts.lookup ?? (async (host) => (await dnsLookup(host, { all: true, verbatim: true })).map((a) => a.address));
     this.dial = opts.dial ?? ((port, ip) => netConnect({ port, host: ip }));
+    this.upstream = opts.upstream;
   }
 
-  /** The proxy for a policy, as Chromium's proxy rules spell it (`socks5://127.0.0.1:<port>`). */
+  /** The proxy setting's routes from now on (R14): each new connection takes them; open ones keep their path. */
+  setUpstream(routes: UpstreamRoutes | undefined): void {
+    this.upstream = routes;
+  }
+
+  /** The proxy rules for a policy, as Chromium spells them (a session's `proxyRules`, the headless shell's
+   *  `--proxy-server`): `http=socks5://127.0.0.1:<a>;https=socks5://127.0.0.1:<b>;socks=socks5://127.0.0.1:<c>`. The
+   *  `socks=` entry is the fallback for every other scheme (WebSockets included), so nothing goes direct. Stable for
+   *  the filter's life: the setting changes the routes behind them, not the rules. */
   async proxyFor(policy: AddressPolicy): Promise<string> {
+    const [http, https, other] = await Promise.all(URL_KINDS.map((k) => this.listenerFor(policy, k)));
+    return `http=${http};https=${https};socks=${other}`;
+  }
+
+  /** One listener, `socks5://127.0.0.1:<port>`: for a policy and a kind of URL. */
+  async listenerFor(policy: AddressPolicy, scheme: UrlKind): Promise<string> {
     if (this.closed) throw new Error("the browser's network filter is closed");
-    const key = `${+policy.loopback}${+policy.privateNetworks}${+policy.linkLocal}`;
+    const key = `${+policy.loopback}${+policy.privateNetworks}${+policy.linkLocal}:${scheme}`;
     let listener = this.listeners.get(key);
     if (listener === undefined) {
-      listener = this.listen(policy);
+      listener = this.listen(policy, scheme);
       this.listeners.set(key, listener);
       listener.catch(() => this.listeners.delete(key));
     }
     return `socks5://127.0.0.1:${(await listener).port}`;
+  }
+
+  /** Whether `port` on loopback is one of the filter's own listeners: a proxy setting never points at one. */
+  isOwnPort(port: number): boolean {
+    return this.ports.has(port);
   }
 
   /** The addresses to try for `host`, in the resolver's order: those the policy allows. */
@@ -236,8 +296,8 @@ export class NetworkFilter {
     return (await this.resolve(host, policy)).filter((ip) => !(classifyAddress(ip) === "loopback" && this.ports.has(port)));
   }
 
-  private listen(policy: AddressPolicy): Promise<{ server: Server; port: number }> {
-    const server = createServer((socket) => this.serve(socket, policy));
+  private listen(policy: AddressPolicy, scheme: UrlKind): Promise<{ server: Server; port: number }> {
+    const server = createServer((socket) => this.serve(socket, policy, scheme));
     return new Promise((resolve, reject) => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => {
@@ -249,7 +309,7 @@ export class NetworkFilter {
     });
   }
 
-  private serve(client: Socket, policy: AddressPolicy): void {
+  private serve(client: Socket, policy: AddressPolicy, scheme: UrlKind): void {
     this.sockets.add(client);
     client.on("error", () => undefined);
     client.on("close", () => this.sockets.delete(client));
@@ -283,50 +343,83 @@ export class NetworkFilter {
         client.removeListener("data", onData);
         client.pause();
         const rest = buf.subarray(parsed.used);
-        void this.join(client, parsed.host, parsed.port, rest, policy);
+        void this.join(client, parsed.host, parsed.port, rest, policy, scheme);
       }
     };
     client.on("data", onData);
   }
 
-  private async join(client: Socket, host: string, port: number, rest: Buffer, policy: AddressPolicy): Promise<void> {
+  private async join(client: Socket, host: string, port: number, rest: Buffer, policy: AddressPolicy, scheme: UrlKind): Promise<void> {
     const ips = await this.targets(host, port, policy);
     if (ips.length === 0) {
       reply(client, REPLY.notAllowed);
       client.end();
       return;
     }
-    let lastError: NodeJS.ErrnoException | undefined;
-    for (const ip of ips) {
-      if (client.destroyed) return;
-      const upstream = await this.connectTo(port, ip).catch((e: NodeJS.ErrnoException) => {
-        lastError = e;
-        return undefined;
+    // Loopback is always reached directly (Chromium's own rule); anything else takes the setting's routes.
+    const routes = ips.every((ip) => classifyAddress(ip) === "loopback") || this.upstream === undefined
+      ? [{ kind: "direct" } as const]
+      : await this.upstream({ scheme, host: host.startsWith("[") ? host.slice(1, -1) : host, port }).catch((e: unknown) => {
+        this.opts.log?.(`browser proxy: no route (${e instanceof Error ? e.message : String(e)})`);
+        return [] as Upstream[];
       });
-      if (upstream === undefined) continue;
-      if (client.destroyed) {
-        upstream.destroy();
+    let lastError: NodeJS.ErrnoException | undefined;
+    for (const route of routes) {
+      for (const ip of ips) {
+        if (client.destroyed) return;
+        const upstream = await (route.kind === "direct" ? this.connectTo(port, ip) : this.viaProxy(route, ip, port)).catch((e: NodeJS.ErrnoException) => {
+          lastError = e;
+          return undefined;
+        });
+        if (upstream === undefined) continue;
+        if (client.destroyed) {
+          upstream.destroy();
+          return;
+        }
+        this.sockets.add(upstream);
+        upstream.on("error", () => undefined);
+        upstream.on("close", () => {
+          this.sockets.delete(upstream);
+          client.destroy();
+        });
+        client.on("close", () => upstream.destroy());
+        client.setTimeout(0);
+        upstream.setTimeout(0);
+        reply(client, REPLY.ok);
+        if (rest.length > 0) upstream.write(rest);
+        upstream.pipe(client);
+        client.pipe(upstream);
+        client.resume();
         return;
       }
-      this.sockets.add(upstream);
-      upstream.on("error", () => undefined);
-      upstream.on("close", () => {
-        this.sockets.delete(upstream);
-        client.destroy();
-      });
-      client.on("close", () => upstream.destroy());
-      client.setTimeout(0);
-      reply(client, REPLY.ok);
-      if (rest.length > 0) upstream.write(rest);
-      upstream.pipe(client);
-      client.pipe(upstream);
-      client.resume();
-      return;
     }
     if (!client.destroyed) {
-      reply(client, lastError?.code === "ECONNREFUSED" ? REPLY.refused : REPLY.unreachable);
+      reply(client, lastError?.code === "ECONNREFUSED" ? REPLY.refused : routes.length === 0 ? REPLY.notAllowed : REPLY.unreachable);
       client.end();
     }
+  }
+
+  /** A tunnel to the checked address `ip:port` through a proxy: the proxy is asked for the address, never the name. */
+  private async viaProxy(proxy: Exclude<Upstream, { kind: "direct" }>, ip: string, port: number): Promise<Socket> {
+    const proxyIps = isIP(proxy.host) !== 0 ? [proxy.host] : await this.lookup(proxy.host).catch(() => [] as string[]);
+    const usable = proxyIps.filter((a) => !(classifyAddress(a) === "loopback" && this.ports.has(proxy.port)));
+    if (usable.length === 0) throw Object.assign(new Error(`the proxy ${proxy.host} can't be reached`), { code: "EPROXYNAME" });
+    let last: unknown;
+    for (const proxyIp of usable) {
+      let socket: Socket | undefined;
+      try {
+        socket = await this.connectTo(proxy.port, proxyIp);
+        if (proxy.kind === "https") socket = await startTls(socket, proxy.host);
+        socket.setTimeout(this.opts.proxyTimeoutMs ?? 15_000, () => socket?.destroy(Object.assign(new Error("the proxy didn't answer"), { code: "ETIMEDOUT" })));
+        await (proxy.kind === "socks5" ? socks5Connect(socket, ip, port) : proxy.kind === "socks4" ? socks4Connect(socket, ip, port) : httpConnect(socket, ip, port));
+        socket.setTimeout(0);
+        return socket;
+      } catch (e) {
+        socket?.destroy();
+        last = e;
+      }
+    }
+    throw last;
   }
 
   /** A connected socket to a checked address, or the connection's error. */
@@ -344,4 +437,105 @@ export class NetworkFilter {
       });
     });
   }
+}
+
+// The proxy handshakes (R14). Each asks for the checked address and resolves once the tunnel is open, leaving any
+// bytes the proxy sent after its answer unread on the socket.
+
+function startTls(socket: Socket, servername: string): Promise<Socket> {
+  return new Promise((resolve, reject) => {
+    const tls = tlsConnect({ socket, servername: isIP(servername) !== 0 ? undefined : servername, ALPNProtocols: ["http/1.1"] });
+    tls.once("secureConnect", () => {
+      tls.removeListener("error", reject);
+      resolve(tls as unknown as Socket);
+    });
+    tls.once("error", reject);
+  });
+}
+
+/** Reads from `socket` until `done` says it has its answer; the bytes after it go back on the socket. */
+function readAnswer(socket: Socket, done: (buf: Buffer) => number | undefined): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let buf = Buffer.alloc(0);
+    const cleanup = (): void => {
+      socket.removeListener("data", onData);
+      socket.removeListener("error", onError);
+      socket.removeListener("close", onClose);
+    };
+    const onData = (chunk: Buffer): void => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length > 16_384) {
+        cleanup();
+        reject(Object.assign(new Error("the proxy's answer is too long"), { code: "EPROXY" }));
+        return;
+      }
+      const used = done(buf);
+      if (used === undefined) return;
+      cleanup();
+      socket.pause();
+      if (used < buf.length) socket.unshift(buf.subarray(used));
+      resolve(buf.subarray(0, used));
+    };
+    const onError = (e: Error): void => {
+      cleanup();
+      reject(e);
+    };
+    const onClose = (): void => {
+      cleanup();
+      reject(Object.assign(new Error("the proxy closed the connection"), { code: "ECONNRESET" }));
+    };
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+    // A socket an earlier answer paused stays paused for a new listener: read on.
+    socket.resume();
+  });
+}
+
+function hostPort(ip: string, port: number): string {
+  return isIP(ip) === 6 ? `[${ip}]:${port}` : `${ip}:${port}`;
+}
+
+async function httpConnect(socket: Socket, ip: string, port: number): Promise<void> {
+  const target = hostPort(ip, port);
+  socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`);
+  const head = (await readAnswer(socket, (b) => {
+    const end = b.indexOf("\r\n\r\n");
+    return end < 0 ? undefined : end + 4;
+  })).toString("latin1");
+  const status = Number(/^HTTP\/1\.[01] (\d{3})/.exec(head)?.[1] ?? 0);
+  if (status !== 200) throw Object.assign(new Error(`the proxy refused the tunnel (${status || "no status"})`), { code: status === 407 ? "EPROXYAUTH" : "EPROXY" });
+}
+
+async function socks5Connect(socket: Socket, ip: string, port: number): Promise<void> {
+  socket.write(Buffer.from([5, 1, 0]));
+  const hello = await readAnswer(socket, (b) => (b.length >= 2 ? 2 : undefined));
+  if (hello[0] !== 5 || hello[1] !== 0) throw Object.assign(new Error("the SOCKS proxy wants a password, or isn't SOCKS5"), { code: "EPROXYAUTH" });
+  const p = Buffer.alloc(2);
+  p.writeUInt16BE(port);
+  let address: Buffer;
+  if (isIP(ip) === 4) address = Buffer.from([1, ...ip.split(".").map(Number)]);
+  else {
+    const g = v6Groups(ip);
+    if (g === undefined) throw Object.assign(new Error("not an address"), { code: "EPROXY" });
+    const b = Buffer.alloc(16);
+    g.forEach((x, i) => b.writeUInt16BE(x, i * 2));
+    address = Buffer.concat([Buffer.from([4]), b]);
+  }
+  socket.write(Buffer.concat([Buffer.from([5, 1, 0]), address, p]));
+  const answer = await readAnswer(socket, (b) => {
+    if (b.length < 5) return undefined;
+    const len = b[3] === 1 ? 4 : b[3] === 4 ? 16 : b[3] === 3 ? 1 + b[4]! : 0;
+    return b.length >= 4 + len + 2 ? 4 + len + 2 : undefined;
+  });
+  if (answer[1] !== 0) throw Object.assign(new Error(`the SOCKS proxy refused the connection (${answer[1]})`), { code: answer[1] === 5 ? "ECONNREFUSED" : "EPROXY" });
+}
+
+async function socks4Connect(socket: Socket, ip: string, port: number): Promise<void> {
+  if (isIP(ip) !== 4) throw Object.assign(new Error("a SOCKS4 proxy reaches IPv4 addresses only"), { code: "EPROXY" });
+  const p = Buffer.alloc(2);
+  p.writeUInt16BE(port);
+  socket.write(Buffer.concat([Buffer.from([4, 1]), p, Buffer.from(ip.split(".").map(Number)), Buffer.from([0])]));
+  const answer = await readAnswer(socket, (b) => (b.length >= 8 ? 8 : undefined));
+  if (answer[1] !== 0x5a) throw Object.assign(new Error(`the SOCKS4 proxy refused the connection (${answer[1]})`), { code: "EPROXY" });
 }

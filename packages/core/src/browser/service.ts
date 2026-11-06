@@ -14,9 +14,10 @@
 // * a tab that stopped drawing gives an error, never an old picture.
 import { randomBytes } from "node:crypto";
 import {
-  AGENT_VIEWPORT, isBrowserUrlAllowed, type AppTabCommand, type AppTabEvent, type Screenshot, type ScreenshotFormat,
-  type TabOwner, type TabPlace, type TabView, type Viewport,
+  AGENT_VIEWPORT, isBrowserUrlAllowed, type AppTabCommand, type AppTabEvent, type BrowserNetworkConfig, type Screenshot,
+  type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport,
 } from "./contract";
+import { checkProxySetting, DEFAULT_PROXY_SETTING } from "./proxy";
 import type { ApprovalRequest } from "../contracts/approval-broker";
 import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, sameOwner } from "./policy";
 
@@ -63,6 +64,8 @@ export interface AppTabPort {
   open(args: { id: string; owner: TabOwner; url?: string; place: TabPlace }): Promise<TabView>;
   command(id: string, command: AppTabCommand): Promise<unknown>;
   list(): Promise<TabView[]>;
+  /** `app.browser.configure`: the proxy setting and the bots allowed their LAN (R13, R14). */
+  configure(config: BrowserNetworkConfig): Promise<void>;
 }
 
 export type BrowserEvent =
@@ -107,8 +110,12 @@ export interface BrowserServiceOptions {
   computer: string;
   /** Lane D's session grants. Without them no session ever drives the person's own browser. */
   grants?: PersonsBrowserGrants;
-  /** The app's port, or undefined while no app runs on this computer. */
+  /** The app's port, or undefined while no app runs on this computer. Where no app runs at all (a server), the
+   *  headless shell's port (`headless/`). */
   app: () => AppTabPort | undefined;
+  /** The network settings to start with: the proxy setting (Settings' `browser.proxy`) and the bots whose LAN
+   *  setting is on (lane D's bot settings). `configure` changes them. */
+  network?: BrowserNetworkConfig;
   emit?: (event: BrowserEvent) => void;
   newId?: () => string;
   now?: () => number;
@@ -120,10 +127,29 @@ export class BrowserService {
   private readonly entries = new Map<string, Entry>();
   private readonly now: () => number;
   private readonly newId: () => string;
+  private network: BrowserNetworkConfig;
 
   constructor(private readonly opts: BrowserServiceOptions) {
     this.now = opts.now ?? Date.now;
     this.newId = opts.newId ?? (() => `tab_${randomBytes(9).toString("base64url")}`);
+    this.network = checkNetwork(opts.network ?? { proxy: DEFAULT_PROXY_SETTING, lanBots: [] });
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // The settings (R13's per-bot LAN, R14's proxy)
+  // -----------------------------------------------------------------------------------------------
+
+  /** The network settings now. */
+  get networkConfig(): BrowserNetworkConfig {
+    return { proxy: this.network.proxy, lanBots: [...this.network.lanBots] };
+  }
+
+  /** A setting changed (the daemon calls this when Settings' `browser.proxy` or a bot's LAN setting changes): the app
+   *  (or the headless shell) gets the whole set at once. Without an app it is kept, and sent when one connects. */
+  async configure(config: BrowserNetworkConfig): Promise<void> {
+    this.network = checkNetwork(config);
+    const app = this.opts.app();
+    if (app !== undefined) await app.configure(this.networkConfig).catch((e) => { throw appFailed(e); });
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -275,6 +301,8 @@ export class BrowserService {
    *  is opened again at its last address, which reloads it (§12.1). Returns the ids reopened. */
   async reconnect(): Promise<string[]> {
     const app = this.app();
+    // The settings first, so no tab reopened below connects before its proxy and LAN setting are in place.
+    await app.configure(this.networkConfig);
     const live = await app.list();
     const liveIds = new Set(live.map((t) => t.id));
     this.report(live.map((tab) => ({ kind: "changed" as const, tab })));
@@ -395,6 +423,18 @@ export class BrowserService {
       // Listeners never break the browser.
     }
   }
+}
+
+function checkNetwork(config: BrowserNetworkConfig): BrowserNetworkConfig {
+  let proxy;
+  try {
+    proxy = checkProxySetting(config.proxy);
+  } catch (e) {
+    throw new BrowserError("bad_setting", e instanceof Error ? e.message : String(e));
+  }
+  if (!Array.isArray(config.lanBots) || config.lanBots.length > 10_000) throw new BrowserError("bad_setting", "lanBots is a list of bots' ids");
+  for (const bot of config.lanBots) partitionFor({ kind: "bot", bot });
+  return { proxy, lanBots: [...new Set(config.lanBots)] };
 }
 
 function needsOk(): BrowserError {

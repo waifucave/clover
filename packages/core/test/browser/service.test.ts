@@ -1,53 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   AGENT_VIEWPORT, BrowserError, BrowserService, browserCallerOf, isBrowserUrlAllowed, partitionFor, type PersonsBrowserCard, type PersonsBrowserGrants,
-  type AppTabCommand, type AppTabPort, type BrowserEvent, type TabOwner, type TabPlace, type TabView,
+  type AppTabCommand, type AppTabPort, type BrowserEvent, type BrowserNetworkConfig, type TabOwner, type TabPlace, type TabView,
 } from "../../src/browser";
-
-/** The app's side, as a test sees it: every command recorded, tabs kept as the app would report them. */
-class FakeApp implements AppTabPort {
-  readonly commands: { id: string; command: AppTabCommand }[] = [];
-  readonly tabs = new Map<string, TabView>();
-  answers: Partial<Record<AppTabCommand["kind"], unknown>> = {};
-  fail?: Error;
-
-  async open(args: { id: string; owner: TabOwner; url?: string; place: TabPlace }): Promise<TabView> {
-    if (this.fail) throw this.fail;
-    const view: TabView = {
-      id: args.id, computer: "Studio", owner: args.owner, partition: partitionFor(args.owner), url: args.url ?? "about:blank",
-      title: "", place: args.place, viewport: { ...AGENT_VIEWPORT }, loading: args.url !== undefined, heldByUser: false,
-    };
-    this.tabs.set(args.id, view);
-    return view;
-  }
-
-  async command(id: string, command: AppTabCommand): Promise<unknown> {
-    if (this.fail) throw this.fail;
-    this.commands.push({ id, command });
-    if (command.kind === "close") this.tabs.delete(id);
-    return this.answers[command.kind] ?? null;
-  }
-
-  async list(): Promise<TabView[]> {
-    return [...this.tabs.values()];
-  }
-}
-
-/** Lane D's grants as a test plays them: the card's answer per session, and every card asked. */
-class FakeGrants implements PersonsBrowserGrants {
-  readonly held = new Set<string>();
-  readonly asked: { session: string; card: PersonsBrowserCard }[] = [];
-  answer = false;
-  has(session: string): boolean {
-    return this.held.has(session);
-  }
-  async ensure(session: string, card: PersonsBrowserCard): Promise<boolean> {
-    if (this.held.has(session)) return true;
-    this.asked.push({ session, card });
-    if (this.answer) this.held.add(session);
-    return this.answer;
-  }
-}
+import { FakeApp, FakeGrants } from "./fakes";
 
 function setup(opts: { app?: FakeApp | null; grants?: FakeGrants } = {}) {
   const app = opts.app === null ? undefined : (opts.app ?? new FakeApp());
