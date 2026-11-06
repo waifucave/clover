@@ -13,7 +13,7 @@ import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
 import { paramsFor } from "../src/rpc";
 import {
-  AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, fenceVerdict, levelAbove, noteFence,
+  AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, fenceVerdict, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
 } from "../src/common";
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
@@ -601,13 +601,12 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     const own = { scope: "acct_1", epoch: 3, holder: "desk0000000000000001" };
     expect(fenceVerdict(own, fence, false)).toBe("ok");
     expect(fenceVerdict(own, { ...fence, epoch: 2 }, true)).toBe("stale");
-    expect(fenceVerdict(own, { ...fence, epoch: 4 }, true)).toBe("ok"); // the receiver's own events catch up
+    expect(fenceVerdict(own, { ...fence, epoch: 4 }, true)).toBe("stale"); // ahead of its own records, until they catch up
     expect(fenceVerdict(own, { ...fence, holder: "desk0000000000000002" }, true)).toBe("stale"); // a split takeover
     expect(fenceVerdict(own, { ...fence, scope: "group_9" }, false)).toBe("stale"); // not its own lease's scope
     expect(fenceVerdict(undefined, fence, false)).toBe("stale");
     expect(fenceVerdict(own, undefined, false)).toBe("ok");
     expect(fenceVerdict(own, undefined, true)).toBe("missing");
-    expect(noteFence(own, { ...fence, epoch: 5, holder: "desk0000000000000002" })).toEqual({ scope: "acct_1", epoch: 5, holder: "desk0000000000000002" });
   });
 
   test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {

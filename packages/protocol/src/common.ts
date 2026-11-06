@@ -193,25 +193,22 @@ export interface FenceView {
   holder: string | null;
 }
 
-/** `ok`; `stale`: another scope (a receiver takes only its own lease's), an older epoch, or the same epoch from another
- *  holder (a split takeover, where two computers each think they won); `missing`: no token, where the receiver has
+/** `ok`; `stale`: another scope (a receiver takes only its own lease's), an epoch other than its own lease's (older,
+ *  or ahead of what its own records say), or the same epoch from another holder (a split takeover, where two computers
+ *  each think they won); `missing`: no token, where the receiver has
  *  seen tokens for its scope, so an act without one is refused. */
 export type FenceVerdict = "ok" | "stale" | "missing";
 
-/** Judges an act's token against the receiver's own lease (`own`, undefined while it has none). A newer epoch than the
- *  receiver has seen passes: its own lease events catch up, and it records the token (`noteFence`). */
+/** Judges an act's token against the receiver's own lease (`own`, undefined while it has none). The receiver's view
+ *  moves only from its own lease records, never from a token (#187's check 2): a token ahead of it is refused until
+ *  those records catch up, so a forged far-ahead epoch can't lock the real main out. */
 export function fenceVerdict(own: FenceView | undefined, token: FencingToken | undefined, seenForScope: boolean): FenceVerdict {
   if (token === undefined) return seenForScope ? "missing" : "ok";
   if (own === undefined) return "stale"; // a receiver with no lease of its own can't place a token's scope
   if (token.scope !== own.scope) return "stale";
-  if (token.epoch < own.epoch) return "stale";
-  if (token.epoch === own.epoch && own.holder !== null && token.holder !== own.holder) return "stale";
+  if (token.epoch !== own.epoch) return "stale";
+  if (own.holder !== null && token.holder !== own.holder) return "stale";
   return "ok";
-}
-
-/** The receiver's view once it accepts a token: a newer epoch moves it on. */
-export function noteFence(own: FenceView, token: FencingToken): FenceView {
-  return token.scope === own.scope && token.epoch > own.epoch ? { scope: own.scope, epoch: token.epoch, holder: token.holder } : own;
 }
 
 export const Caller = z.discriminatedUnion("kind", [
