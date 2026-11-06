@@ -36,6 +36,16 @@ export const FENCED_KINDS = [
   "plugin-data",
   /** The daemon's run folder: denied for reading too, as it is today. */
   "run-folder",
+  /** Sessions' records (`<home>/sessions/`): a bot rewriting its transcript could rewrite what the user said (lane C). */
+  "transcripts",
+  /** The usage ledger (`<home>/usage/`, lane C). */
+  "usage",
+  /** The Clover Browser's partitions, cookies and logins included (`<userData>/Partitions/`, lanes C and L): denied for
+   *  reading too. */
+  "browser-profiles",
+  /** The login item that starts the daemon at login (lane C): macOS's LaunchAgents plist and its parked copy, Linux's
+   *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */
+  "login-start",
   /** Windows and Linux: the encrypted secrets file, hidden from reads too (§8.5, §9.1). */
   "secrets-file",
   /** Windows and Linux: any file holding the secrets file's key, hidden from reads too. */
@@ -44,7 +54,7 @@ export const FENCED_KINDS = [
 export type FencedKind = (typeof FENCED_KINDS)[number];
 
 /** The items whose contents the fence hides from reads as well as writes. */
-export const READ_DENIED_KINDS: readonly FencedKind[] = ["run-folder", "secrets-file", "key-file"];
+export const READ_DENIED_KINDS: readonly FencedKind[] = ["run-folder", "browser-profiles", "secrets-file", "key-file"];
 
 export interface FencedPath {
   kind: FencedKind;

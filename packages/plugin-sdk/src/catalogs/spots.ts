@@ -156,9 +156,19 @@ export function foldTitle(title: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+/** Names only the bundled `clover` tree's plugins may have (lane G's ask): the app's own, beside the titles spots
+ *  reserve. */
+export const RESERVED_PLUGIN_NAMES: readonly string[] = ["Clover"];
+
 /** Every title some spot reserves for the `clover` tree, folded. */
 export function reservedTitles(): ReadonlySet<string> {
   return new Set(SPOTS.flatMap((s) => s.reserved?.titles ?? []).map(foldTitle));
+}
+
+/** Whether a plugin outside the `clover` tree may not be named so: it reads as a reserved title or as Clover itself. */
+export function isReservedPluginName(name: string): boolean {
+  const folded = foldTitle(name);
+  return reservedTitles().has(folded) || RESERVED_PLUGIN_NAMES.some((n) => foldTitle(n) === folded);
 }
 
 /** Whether a keyed spot's entry key covers a key: exact, or a `*` pattern after the exact ones (§5.5). */

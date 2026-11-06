@@ -223,6 +223,8 @@ describe("points and spots", () => {
     expect(named("Needs\u200B y\u043Eu")).toEqual(["name_reserved:/name"]);
     expect(named("Needs you", true)).toEqual([]);
     expect(named("Lights")).toEqual([]);
+    for (const name of ["Clover", "CL\u041EVER", "clover!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
+    expect(named("Clover", true)).toEqual([]);
     // Always-on-top surfaces are the clover tree's in 1.111.1 (R12).
     expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } })).toEqual(["ui_always_on_top:/contributes/ui/0/window/alwaysOnTop"]);
     expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } }, CLOVER)).toEqual([]);

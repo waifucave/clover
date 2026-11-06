@@ -22,6 +22,12 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   "adult-confirmation": "plugins-state/adult.json",
   "plugin-data": "plugin-data",
   "run-folder": "run",
+  transcripts: "sessions",
+  usage: "usage",
+  /** Under the app's userData folder, outside the Clover home (`userData`). */
+  "browser-profiles": null,
+  /** The OS's login item, outside the Clover home, plus macOS's parked copy in `<home>/login/`. */
+  "login-start": null,
   "secrets-file": "secrets.enc",
   "key-file": "secrets.key",
 };
@@ -34,8 +40,24 @@ export interface FakeFenceOptions {
   cloverHome: string;
   temp?: string;
   devFolders?: string[];
+  /** The app's userData folder (Electron's), which holds the browser's partitions; the OS's usual one by default. */
+  userData?: string;
   /** Replaces the fake's layout for some items. */
   layout?: Partial<Record<FencedKind, string[]>>;
+}
+
+/** The app's userData folder on each OS, under the user's home. */
+function defaultUserData(os: Os, home: string): string {
+  if (os === "macos") return `${home}/Library/Application Support/Clover`;
+  if (os === "windows") return `${home}/AppData/Roaming/Clover`;
+  return `${home}/.config/Clover`;
+}
+
+/** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
+function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
+  if (os === "macos") return [`${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`];
+  if (os === "linux") return [`${home}/.config/systemd/user/clover-core.service`];
+  return [];
 }
 
 export class FakeFence implements Fence {
@@ -43,6 +65,7 @@ export class FakeFence implements Fence {
   readonly #home: string;
   readonly #cloverHome: string;
   readonly #temp: string;
+  readonly #userData: string;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   #devFolders: string[];
   readonly #listeners = new Listeners<void>();
@@ -52,6 +75,7 @@ export class FakeFence implements Fence {
     this.#home = normalizePosix(opts.home);
     this.#cloverHome = normalizePosix(opts.cloverHome);
     this.#temp = normalizePosix(opts.temp ?? "/tmp");
+    this.#userData = normalizePosix(opts.userData ?? defaultUserData(this.os, this.#home));
     this.#devFolders = (opts.devFolders ?? []).map(normalizePosix);
     this.#layout = opts.layout ?? {};
   }
@@ -65,6 +89,8 @@ export class FakeFence implements Fence {
       const override = this.#layout[kind];
       if (override) for (const p of override) add(kind, p);
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
+      else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
+      else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     return out;

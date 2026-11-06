@@ -27,12 +27,32 @@ export const AREA_OWNERS: Record<CloverArea, string> = {
 
 const AllRoles = CLOVER_ROLES;
 
+/** A base64url nonce (no padding) of 16 to 96 bytes. */
+const Base64UrlNonce = z.string().regex(/^[A-Za-z0-9_-]+$/).refine((v) => {
+  const bytes = Math.floor((v.length * 3) / 4);
+  return v.length % 4 !== 1 && bytes >= 16 && bytes <= 96;
+}, "a base64url nonce of 16 to 96 bytes");
+
+/** What `protocol.prove`'s HMAC covers: `clover-daemon-proof\0<nonce>\0<pid>`. */
+export function daemonProofInput(nonce: string, pid: number): string {
+  return `clover-daemon-proof\0${nonce}\0${pid}`;
+}
+
 /** Methods every connection has, whatever its area. */
 export const CORE_METHODS = {
   hello: defineMethod({
     name: "protocol.hello", owner: "C", roles: AllRoles,
     params: CloverHelloParams, result: CloverHelloResult,
     doc: "The first call on every connection: the role, its token, and who the connection counts as (§3.1).",
+  }),
+  /** Before its hello, on its own connection, the app asks the daemon to prove it is this run's (lane C's S3): `proof`
+   *  is base64url HMAC-SHA256 under the run's app token over `daemonProofInput(nonce, pid)`, and `pid` the client's
+   *  pid as the daemon sees it on that connection. The app checks both (`checkDaemonProof`). */
+  prove: defineMethod({
+    name: "protocol.prove", owner: "C", roles: ["app"],
+    params: z.object({ nonce: Base64UrlNonce }),
+    result: z.object({ proof: z.string().regex(/^[A-Za-z0-9_-]{43}$/), pid: z.number().int().positive() }),
+    doc: "The daemon proves it holds this run's app token, before the app's hello.",
   }),
   eventsSubscribe: defineMethod({
     name: "events.subscribe", owner: "C", roles: ["app", "cli", "layer", "remote", "web", "peer"],

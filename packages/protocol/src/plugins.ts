@@ -155,7 +155,7 @@ export type PluginSettingView = z.infer<typeof PluginSettingView>;
 /** One of a plugin's sign-ins (§5.1 "Sign-ins"), by its place in the manifest's `auth` list. */
 export const PluginAuthView = z.object({
   index: z.number().int().min(0).max(31),
-  method: z.enum(["api-key", "oauth-pkce", "custom"]),
+  method: z.enum(["api-key", "oauth-pkce", "custom", "core"]),
   /** The secret it fills. */
   secret: utf16(64).optional(),
   state: z.enum(["signed-out", "signed-in", "expired", "refreshing", "failed"]),
@@ -251,8 +251,11 @@ const IdParams = z.object({ id: AnyPluginId });
 export const PLUGINS_METHODS = {
   pluginList: defineMethod({
     name: "plugin.list", owner: "B", roles: ["app", "cli"],
-    params: Empty, result: z.object({ plugins: z.array(PluginSummary) }),
-    doc: "Every plugin and child plugin on this computer, with its state and reason.",
+    params: Empty,
+    /** `adultConfirmed`: the user already confirmed they are 18 or older (§5.7), so Settings needn't ask again before an
+     *  adult plugin is switched on (lane F's ask). */
+    result: z.object({ plugins: z.array(PluginSummary), adultConfirmed: z.boolean() }),
+    doc: "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
   }),
   pluginGet: defineMethod({
     name: "plugin.get", owner: "B", roles: ["app", "cli"],

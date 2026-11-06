@@ -3147,6 +3147,9 @@
     "confirm": {
       "where": "both"
     },
+    "confirmCard": {
+      "where": "both"
+    },
     "t": {
       "where": "both"
     },

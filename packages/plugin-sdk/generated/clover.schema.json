@@ -115,6 +115,10 @@
             "node"
           ]
         },
+        "process": {
+          "type": "string",
+          "const": "own"
+        },
         "start": {
           "$ref": "#/$defs/__schema6"
         },
@@ -994,6 +998,31 @@
           "required": [
             "method",
             "handler"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "core"
+            },
+            "flow": {
+              "type": "string",
+              "enum": [
+                "anthropic-console",
+                "anthropic-console-oauth",
+                "xai-device"
+              ]
+            },
+            "placement": {
+              "$ref": "#/$defs/__schema21"
+            }
+          },
+          "required": [
+            "method",
+            "flow"
           ],
           "additionalProperties": false
         }

@@ -106,7 +106,10 @@ export function runFenceConformance(make: FenceFactory): void {
       const mac = fence("macos").policy();
       expect(mac.allowWrite).toEqual([HOME, "/tmp"]);
       expect(mac.denyWrite).toContain(`${CLOVER}/credentials`);
-      expect(mac.denyRead).toEqual([`${CLOVER}/run`]);
+      // The read-denied list includes the run folder; an implementation may hide more (lane C keeps `runtimes/`).
+      expect(mac.denyRead).toContain(`${CLOVER}/run`);
+      expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
+      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
       expect(mac.closedDoors).toEqual(["open", "launchctl", "osascript"]);
       expect(mac.blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES]);
       expect(mac.network).toBe("none");

@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  Caller, ChangeResult, ComputerName, DeviceId, Empty, Ok, Os, SessionId, Text, Timestamp,
+  BotId, Caller, ChangeResult, ComputerName, DeviceId, Empty, Ok, Os, SessionId, Text, Timestamp,
 } from "./common";
 import { SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -250,6 +250,25 @@ export const DEVICES_METHODS = {
     }),
     result: z.object({ result: z.unknown() }),
     doc: "Runs a method on this computer for a caller on another one: a message to a bot that thinks here, a card's answer.",
+  }),
+  linkSessionDeliver: defineMethod({
+    /** Lane H's bot relay, as a protocol method (H-M2's ask, D's review S2): another session's message, never the
+     *  user's (a user's message comes only through `peer.session.send`, with its device's signature). The receiver
+     *  takes it only from a paired computer running clover-core, and only as what it says it is; `computer` names the
+     *  sending computer, which must be the link's own peer. */
+    name: "link.session.deliver", owner: "H", roles: ["peer"],
+    params: z.object({
+      id: SessionId,
+      /** The sending computer's tree name; the receiver refuses one that isn't the link's peer. */
+      computer: ComputerName,
+      input: z.discriminatedUnion("from", [
+        z.strictObject({ from: z.literal("bot"), bot: BotId, session: SessionId, text: utf16(1_000_000) }),
+        z.strictObject({ from: z.literal("agent"), agent: utf16(128, 1), text: utf16(1_000_000) }),
+        z.strictObject({ from: z.literal("routine"), routine: utf16(128, 1), name: utf16(200), sideThread: SessionId, text: utf16(1_000_000) }),
+      ]),
+    }),
+    result: z.object({ disposition: z.enum(["turn", "interrupted", "folded", "queued", "note"]), seq: z.number().int().nonnegative() }),
+    doc: "A bot's, an agent's or a routine's message to a session that runs on this computer, from the computer that sent it.",
   }),
   peerSessionDeliver: defineMethod({
     name: "peer.session.send", owner: "D", roles: ["peer"],

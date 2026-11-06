@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import {
-  AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
+  AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent, daemonProofInput,
   PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
 import { CloverSessionEvent, SENT_AT_WINDOW_MS, SessionView, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
@@ -84,7 +84,7 @@ describe("the method table", () => {
 
   test("names are unique (the table would not build otherwise) and every area file contributes", () => {
     const total = Object.values(AREA_METHODS).reduce((n, area) => n + Object.keys(area).length, 0);
-    expect(CLOVER_METHODS.size).toBe(total + 3); // + protocol.hello, events.subscribe, events.unsubscribe
+    expect(CLOVER_METHODS.size).toBe(total + 4); // + protocol.hello, protocol.prove, events.subscribe, events.unsubscribe
     for (const area of CLOVER_AREAS) expect(Object.keys(AREA_METHODS[area]).length).toBeGreaterThan(0);
   });
 
@@ -499,7 +499,7 @@ describe("#179's review and H-M1's asks", () => {
   });
 
   test("a plugin acting as itself has a partition of its own (S1)", () => {
-    expect(params("browser.open").safeParse({ owner: { kind: "plugin", pluginId: "clover/browser-tool" } }).success).toBe(true);
+    expect(params("browser.open").safeParse({ owner: { kind: "plugin", plugin: "clover/browser-tool" } }).success).toBe(true);
   });
 
   test("F-M2's review: installs and the switch go by the OK, and a session shows its branch and changes", () => {
@@ -521,5 +521,42 @@ describe("#179's review and H-M1's asks", () => {
     expect([set.roles, set.userOnly]).toEqual([["app"], true]);
     expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(true);
     expect(set.params.safeParse({ publicKey: "not base64!", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(false);
+  });
+});
+
+describe("the stacked asks (C, L, H, F, G, A, I)", () => {
+  test("C: protocol.prove before the hello, with its nonce's bounds and its proof's input", () => {
+    const prove = CLOVER_METHODS.get("protocol.prove")!;
+    expect([prove.roles, prove.owner]).toEqual([["app"], "C"]);
+    const nonce = (bytes: number) => Buffer.alloc(bytes, 7).toString("base64url");
+    expect(prove.params.safeParse({ nonce: nonce(16) }).success).toBe(true);
+    expect(prove.params.safeParse({ nonce: nonce(96) }).success).toBe(true);
+    expect(prove.params.safeParse({ nonce: nonce(15) }).success).toBe(false);
+    expect(prove.params.safeParse({ nonce: nonce(97) }).success).toBe(false);
+    expect(prove.params.safeParse({ nonce: nonce(16) + "=" }).success).toBe(false);
+    expect(prove.result.safeParse({ proof: Buffer.alloc(32, 1).toString("base64url"), pid: 4242 }).success).toBe(true);
+    expect(daemonProofInput("abc", 12)).toBe("clover-daemon-proof\u0000abc\u000012");
+  });
+
+  test("L: a plugin's own tab owner names it as `plugin`", () => {
+    expect(CLOVER_METHODS.get("browser.open")!.params.safeParse({ owner: { kind: "plugin", plugin: "tarot" } }).success).toBe(true);
+    expect(CLOVER_METHODS.get("browser.open")!.params.safeParse({ owner: { kind: "plugin", pluginId: "tarot" } }).success).toBe(false);
+  });
+
+  test("H: link.session.deliver carries a bot's, an agent's or a routine's message, never the user's", () => {
+    const spec = CLOVER_METHODS.get("link.session.deliver")!;
+    expect(spec.roles).toEqual(["peer"]);
+    const ok = (input: unknown) => spec.params.safeParse({ id: "s_alpha", computer: "Studio", input }).success;
+    expect(ok({ from: "bot", bot: "luna", session: "s_luna", text: "hi" })).toBe(true);
+    expect(ok({ from: "agent", agent: "a_1", text: "done" })).toBe(true);
+    expect(ok({ from: "routine", routine: "daily", name: "Daily", sideThread: "s_side", text: "ran" })).toBe(true);
+    expect(ok({ from: "user", text: "pretend" })).toBe(false);
+    expect(ok({ from: "plugin", pluginId: "x", text: "x" })).toBe(false);
+    expect(spec.params.safeParse({ id: "s_alpha", input: { from: "agent", agent: "a_1", text: "done" } }).success).toBe(false);
+  });
+
+  test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {
+    expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [], adultConfirmed: true }).success).toBe(true);
+    expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [] }).success).toBe(false);
   });
 });

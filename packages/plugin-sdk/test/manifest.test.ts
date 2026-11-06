@@ -336,3 +336,33 @@ describe("JSON with comments", () => {
     expect(bad.ok).toBe(false);
   });
 });
+
+describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun process of its own", () => {
+  const issues = (m: Record<string, unknown>, bundled = false) => validateManifest(
+    { manifest: 1, ...(bundled ? {} : { id: "bedrock" }), name: "Bedrock", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, ...m },
+    bundled ? { parent: { id: "clover", namespace: "clover" }, folderName: "bedrock", bundled: true } : { folderName: "bedrock" },
+  ).issues.map((i) => `${i.code}:${i.path}`);
+  const settings = { region: { type: "string", title: "Region" } };
+
+  test("a network: host and a model's endpoint may name the plugin's settings, never its secrets", () => {
+    expect(issues({ settings, capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] })).toEqual([]);
+    expect(issues({ capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] })).toEqual(["interpolation:/capabilities/0"]);
+    expect(issues({ settings, capabilities: ["network:a.${secret:region}.amazonaws.com"] })).toEqual(["capability_unknown:/capabilities/0"]);
+    expect(issues({ settings, capabilities: ["network:${setting:region}.com"] })).toEqual(["capability_unknown:/capabilities/0"]);
+    const model = (baseUrl: string) => ({ contributes: { models: [{ provider: "bedrock", name: "Bedrock", catalog: [], auth: [], endpoint: { protocol: "openai-chat", baseUrl } }] } });
+    expect(issues({ settings, ...model("https://${setting:region}.example.com/v1") })).toEqual([]);
+    expect(issues({ settings, ...model("https://${secret:region}.example.com/v1") }).some((i) => i.startsWith("interpolation:/contributes/models/0/endpoint/baseUrl"))).toBe(true);
+    expect(issues({ ...model("https://${setting:tenant}.example.com/v1") })).toEqual(["interpolation:/contributes/models/0/endpoint/baseUrl"]);
+    const report = validateManifest({ manifest: 1, id: "bedrock", name: "Bedrock", settings, capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] }, { folderName: "bedrock" });
+    expect(report.dynamicHosts).toBe(true);
+  });
+
+  test("a sign-in the core runs is the clover tree's; a Bun host may ask for a process of its own", () => {
+    const auth = { auth: [{ method: "core", flow: "xai-device" }] };
+    expect(issues(auth)).toEqual(["auth_core_bundled_only:/auth/0/method"]);
+    expect(issues(auth, true)).toEqual([]);
+    expect(issues({ auth: [{ method: "core", flow: "somewhere-else" }] }, true).length).toBeGreaterThan(0);
+    expect(issues({ host: { entry: "host/index.ts", process: "own" } })).toEqual([]);
+    expect(issues({ host: { entry: "host/index.ts", process: "shared" } }).length).toBeGreaterThan(0);
+  });
+});

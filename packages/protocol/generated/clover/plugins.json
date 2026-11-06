@@ -3,7 +3,7 @@
   "owner": "B",
   "methods": {
     "plugin.list": {
-      "doc": "Every plugin and child plugin on this computer, with its state and reason.",
+      "doc": "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -155,10 +155,14 @@
               ],
               "additionalProperties": false
             }
+          },
+          "adultConfirmed": {
+            "type": "boolean"
           }
         },
         "required": [
-          "plugins"
+          "plugins",
+          "adultConfirmed"
         ],
         "additionalProperties": false
       }
@@ -1061,7 +1065,8 @@
                   "enum": [
                     "api-key",
                     "oauth-pkce",
-                    "custom"
+                    "custom",
+                    "core"
                   ]
                 },
                 "secret": {
@@ -3662,7 +3667,8 @@
                 "enum": [
                   "api-key",
                   "oauth-pkce",
-                  "custom"
+                  "custom",
+                  "core"
                 ]
               },
               "secret": {

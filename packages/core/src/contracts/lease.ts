@@ -16,8 +16,10 @@
 //   main that slept past its lease never acts on it. With that, 30 s and a 5 s margin are sound. Lane H adds the spec's
 //   exceptions (no other computer could take over; a live link to each one that could) in the real implementation.
 // * `release` (Hand over and quit, §3.1) lets another computer take the lease at once.
-// * Without an account there is no handshake, so taking over is the user's action (§6.4); lane H's real lease then
-//   refuses `acquire` without `{ byUser: true }`.
+// * Without an account the user's account-less devices form one group (item 85): their lease is the group's record at
+//   the handshake, which members admit one another to when they pair, so a takeover works as with an account. Only a
+//   computer that can reach neither the handshake nor the last holder over any link leaves taking over to the user
+//   (§6.4, `{ byUser: true }`).
 import type { LeaseView } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
