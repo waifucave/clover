@@ -21,8 +21,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# `packages: read`: the install takes the `@waifucave` packages from GitHub Packages, as ci.yml's does; only the
+# install step is given the token.
 permissions:
   contents: read
+  packages: read
 
 env:
   RUST_TOOLCHAIN: 1.99.1
@@ -55,6 +58,8 @@ jobs:
         run: cargo build --release --locked --manifest-path native/link/Cargo.toml
       - name: install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: the link tests over the sidecar
         working-directory: packages/core
         env:
