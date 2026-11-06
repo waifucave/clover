@@ -8,8 +8,11 @@
 //   (`session_grant`, never sent to clients), and a stopped session's grants end with it.
 // * **It is the session's own, never another's:** the grant is looked up by the session the call came from, which the
 //   core binds from the tool call (R7), never from what a plugin says.
-// * The card itself (its kind, effect and sealed fields from the built-in tables) is the asker's to build; the grant
-//   adds the session, its bot and its turn's origin, so the user's own turn waits for the answer and any other expires.
+// * **Only the user's own yes on a card grants it.** The request is always a `confirm` card, which no level or saved
+//   rule answers (the broker's rule 1), and only a decision `by: "card"` counts: a broker that says yes by level, by
+//   rule or any other way grants nothing (review B1).
+// * The card's effect and sealed fields (from the built-in tables) are the asker's to build; the grant adds the kind,
+//   the session, its bot and its turn's origin, so the user's own turn waits for the answer and any other expires.
 import type { ApprovalBroker, ApprovalDecision, ApprovalRequest } from "../contracts/approval-broker";
 import { ContractError } from "../contracts/common";
 import type { SessionRecord } from "../contracts/session-host";
@@ -22,6 +25,9 @@ export const USER_BROWSER_PARTITION_GRANT = "browser.partition.user";
 const GRANT_SCAN = 50_000;
 
 export type GrantDecision = ApprovalDecision | { allowed: true; by: "grant"; cardId?: string };
+
+/** What a grant's card is built from: everything but its kind (always `confirm`), session, bot and origin. */
+export type GrantCard = Omit<ApprovalRequest, "kind" | "session" | "bot" | "origin" | "ruleKey" | "options">;
 
 export interface SessionGrantsOptions {
   host: Pick<DurableSessionHost, "get" | "callerOf" | "turnOrigin" | "recordCore" | "history" | "length">;
@@ -44,7 +50,7 @@ export class SessionGrants {
   }
 
   /** The grant, asking the user with `card` the first time in this session. */
-  async ensure(session: string, key: string, card: Omit<ApprovalRequest, "session" | "bot" | "origin">, opts: { signal?: AbortSignal } = {}): Promise<GrantDecision> {
+  async ensure(session: string, key: string, card: GrantCard, opts: { signal?: AbortSignal } = {}): Promise<GrantDecision> {
     const view = this.#o.host.get(session);
     if (view === undefined) throw new ContractError("not_found", `no session ${session}`);
     if (view.status === "stopped" || view.status === "failed") throw new ContractError("closed", `session ${session} has ended`);
@@ -57,17 +63,19 @@ export class SessionGrants {
     const already = this.#asking.get(asking);
     if (already) return already;
     const caller = this.#o.host.callerOf(session);
+    const { ruleKey: _ruleKey, options: _options, ...rest } = card as GrantCard & Partial<Pick<ApprovalRequest, "ruleKey" | "options">>;
     const request: ApprovalRequest = {
-      ...card,
+      ...rest,
+      kind: "confirm",
       session,
       ...(caller.bot === undefined ? {} : { bot: caller.bot }),
       origin: this.#o.host.turnOrigin(session) ?? "bot",
     };
     const pending = this.#o.approvals.request(request, opts).then((decision): GrantDecision => {
-      if (decision.allowed && decision.by === "card") {
-        this.#o.host.recordCore(session, { type: "session_grant", key, ...(decision.cardId === undefined ? {} : { cardId: decision.cardId }) });
-        grants.set(key, decision.cardId);
-      }
+      // Only the user's yes on the card itself grants (review B1).
+      if (!decision.allowed || decision.by !== "card") return { ...decision, allowed: false };
+      this.#o.host.recordCore(session, { type: "session_grant", key, ...(decision.cardId === undefined ? {} : { cardId: decision.cardId }) });
+      grants.set(key, decision.cardId);
       return decision;
     }).finally(() => this.#asking.delete(asking));
     this.#asking.set(asking, pending);

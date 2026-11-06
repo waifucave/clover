@@ -9,6 +9,8 @@
 // and the reattaching of a restart's dormant sessions; `close` ends their processes when the daemon shuts down.
 import type { Level, SessionView } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
+import { ContractError } from "../contracts/common";
+import type { DeliveredInput } from "../contracts/session-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CacheTimedCompaction, type CompactionPolicy } from "../sessions/compaction";
 import { DurableSessionHost, type DurableSessionHostOptions } from "../sessions/durable-host";
@@ -16,7 +18,7 @@ import { BotGate } from "./gate";
 import { soleComputer, type MainComputer } from "./main-computer";
 import { sessionsMethods, type MethodHandler, type SessionsMethodsDeps } from "./rpc";
 import { BotService, type BotRelay, type BotServiceOptions, type DriverFactory } from "./service";
-import { botToolDefs, type AgentRows, type CoreToolDef } from "./tools";
+import { botToolDefs, SendLimiter, type AgentRows, type CoreToolDef } from "./tools";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -80,12 +82,23 @@ export interface BotSide {
 
 export function createBotSide(o: BotSideOptions): BotSide {
   const main = o.main ?? soleComputer(o.computer);
-  const gate = new BotGate({ home: o.home, main });
+  const gate = new BotGate({ home: o.home, main, ...(o.warn === undefined ? {} : { warn: o.warn }) });
+  const relay = o.relay;
   const host = new DurableSessionHost({
     home: o.home, clock: o.clock, computer: o.computer, epoch: () => main.epoch(), mayStart: (view) => gate.mayStart(view),
+    // A bot's conversation lives on the runner: what arrives here for it goes there (review S1).
+    runsHere: () => main.runsHere(),
+    ...(relay === undefined ? {} : {
+      forward: (view: SessionView, input: DeliveredInput) => {
+        const runner = main.runner();
+        if (runner === undefined || runner === o.computer) throw new ContractError("bot_asleep", `no computer runs ${view.bot ?? view.id}'s conversation now`);
+        return relay.deliver(runner, view.id, input);
+      },
+    }),
     ...(o.approvals === undefined ? {} : { approvals: o.approvals }), ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   const levelOf = o.levelOf ?? (() => undefined);
+  const limiter = new SendLimiter(() => o.clock.now());
   const agents = o.agents?.({ host, levelOf });
   const hooks = agents?.sessionHooks();
   const compaction = new CacheTimedCompaction({
@@ -104,7 +117,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
   return {
     gate, host, compaction, bots,
     ...(agents === undefined ? {} : { agents }),
-    tools: (sessionId) => botToolDefs({ host, bots, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId),
+    tools: (sessionId) => botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId),
     methods: (deps) => sessionsMethods({
       home: o.home, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
       ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
@@ -122,6 +135,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
       }
       compaction.close();
       await host.close();
+      gate.close();
     },
   };
 }

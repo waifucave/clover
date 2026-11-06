@@ -27,9 +27,10 @@
 //   * **handing them back** to a returning main (`handBack`) starts no new turn, waits for each bot's running turn to
 //     end, then gives the lease up: a bot moves between turns, never in the middle of one;
 //   * **writes memory** only while it runs the bots (the starter memories, §6.5): the others get copies (lane H).
-// * **The pause switch** (§9.2, `bots.pause`): the user's alone. On, it interrupts every bot's running turn and side
-//   thread and starts nothing new for them (messages wait); routines don't start (`runSideThread` refuses). Off, what
-//   waited runs. Background agents finish where they started, and their reports wait for their bot.
+// * **The pause switch** (§9.2, `bots.pause`; the owner's decision of November 6, it pauses everything): the user's
+//   alone. On, no new turn starts for a bot, a side thread or a background agent (messages wait), routines don't start
+//   (`runSideThread` refuses), and what runs is held at its next tool call (`mayAct`, `whenMayAct`), delegated agents
+//   included. Off, the held work goes on and what waited runs. The user's own coding sessions aren't paused.
 // * **J's placement** (`botsRunHere`, `placement`, `computerFor`): which bots this computer runs and where each runs,
 //   for the folder tree; and a session's scratch folder as a tree path (`scratchFor`), for J's MCP router.
 //
@@ -90,6 +91,9 @@ export interface BotSessionContext {
   /** Whether the session may start a tool call or a memory write now (§6.4 "Fencing the old main", §9.2): false once
    *  this computer stops running the bots or the pause switch goes on. The driver checks it before each call. */
   mayAct(): boolean;
+  /** Resolves once `mayAct` says yes: a turn the pause switch holds waits here at its next tool call, and goes on
+   *  when the user resumes (the owner's decision of November 6). Rejects when `signal` aborts. */
+  whenMayAct(signal?: AbortSignal): Promise<void>;
   /** Whether the cached prompt has expired: the turn starting now rebuilds the harness blocks (the MCP block, the
    *  devices block, the `computer` lists) without compacting (§6.1). */
   cacheCold(): boolean;
@@ -152,6 +156,9 @@ export interface SideThreadRun {
   /** The computer that holds the routine; default this one. */
   computer?: string;
 }
+
+/** How long a hand-back waits for the bots' running turns to end before it gives up (they stay here). */
+export const HAND_BACK_MAX_MS = 10 * 60_000;
 
 /** The longest result a side thread posts into the main conversation (`RoutineRunView.summary`'s cap). */
 export const SIDE_THREAD_RESULT_MAX_CHARS = 4_000;
@@ -302,20 +309,10 @@ export class BotService {
   async setPaused(paused: boolean, caller: Caller): Promise<void> {
     if (caller.kind !== "user") throw new ContractError("refused", "only the user pauses or resumes the bots", { rpc: CLOVER_ERR.NOT_THE_USER });
     if (!this.#o.gate.setPaused(paused, this.#o.clock.now())) return;
-    const host = this.#o.host;
     this.#events.emit({ type: "bots_paused", ts: this.#o.clock.now(), paused });
-    if (paused) {
-      for (const live of this.#bots.values()) {
-        for (const s of [host.get(live.mainSession), ...host.list({ bot: live.plugin.id, kind: "side-thread" })]) {
-          if (s === undefined || s.status === "stopped" || s.status === "failed") continue;
-          try {
-            await host.interrupt(s.id);
-          } catch (err) {
-            this.#warn(`pausing ${s.id}: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-      }
-    } else host.resume();
+    // Paused, what runs is held at its next tool call (the drivers read `mayAct`); resumed, it goes on, and what
+    // waited starts.
+    if (!paused) this.#o.host.resume();
     for (const live of this.#bots.values()) this.#emitBot(live);
   }
 
@@ -329,13 +326,10 @@ export class BotService {
     return this.#o.relay.sendUser(runner, live.mainSession, { message: { ...message, sentAt: input.sentAt }, device: input.device, sentAt: input.sentAt });
   }
 
-  /** Another session's message to a bot's conversation, wherever it runs: here, or relayed to the runner. */
+  /** Another session's message to a bot's conversation, wherever it runs: the host forwards it to the runner when that
+   *  is another computer (`DurableSessionHostOptions.forward`). */
   async deliverTo(id: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }> {
-    const live = this.#must(id);
-    const runner = this.#remoteRunner();
-    if (runner === undefined) return this.#o.host.deliver(live.mainSession, input);
-    if (!this.#o.relay) throw new ContractError("bot_asleep", `can't reach ${runner}, the computer running ${id}`);
-    return this.#o.relay.deliver(runner, live.mainSession, input);
+    return this.#o.host.deliver(this.#must(id).mainSession, input);
   }
 
   /** Hands the bots back to the main, which is back (§6.4 "When the main returns"): no new turn starts here, each
@@ -346,7 +340,15 @@ export class BotService {
     if (!gate.main.runsHere() || main === undefined || main === gate.main.self || gate.handingBack) return;
     gate.setHandingBack(true);
     try {
-      await this.#allIdle();
+      const idle = await Promise.race([
+        this.#allIdle().then(() => true),
+        new Promise<false>((resolve) => this.#o.clock.setTimeout(() => resolve(false), HAND_BACK_MAX_MS)),
+      ]);
+      if (!idle) {
+        // A turn still runs: the bots stay here rather than move mid-turn, and the next hand-back tries again.
+        this.#warn(`handing the bots back to ${main} gave up after ${HAND_BACK_MAX_MS / 60_000} minutes: a turn still runs here`);
+        return;
+      }
       await gate.main.release();
     } catch (err) {
       this.#warn(`handing the bots back to ${main} failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -404,7 +406,12 @@ export class BotService {
     const summary = sideThreadResult(end);
     const main = host.get(live.mainSession);
     if (main !== undefined && main.status !== "stopped" && main.status !== "failed") {
-      await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary });
+      // To the computer running the bot, wherever that is (the host forwards it, review S1).
+      try {
+        await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary });
+      } catch (err) {
+        this.#warn(`the side thread ${session}'s result didn't reach ${live.mainSession}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     await host.stop(session, "the run ended");
     return {
@@ -657,7 +664,8 @@ export class BotService {
       caller: { kind: "session", sessionId, sessionKind: kind, bot: live.plugin.id },
       current: () => this.#effective(live),
       memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
-      mayAct: () => gate.mayStart({ kind }),
+      mayAct: () => gate.mayAct({ kind }),
+      whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
     };
   }

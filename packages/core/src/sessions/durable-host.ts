@@ -79,6 +79,9 @@ export const INTERRUPT_GRACE_MS = 5_000;
 export const CLIENT_IDS_KEPT = 1_000;
 /** After the disk refused a turn's start, when it is tried again. */
 export const PUMP_RETRY_MS = 5_000;
+/** How long the user's message waits for a compaction the runtime started inside a turn before it interrupts anyway:
+ *  a runtime that said "started" and never "ended" can't hold the user back. */
+export const COMPACTION_HOLD_MAX_MS = 120_000;
 /** The meta format this host writes; a newer one stops the start. */
 export const SESSION_META_VERSION = 1;
 /** How far back from a log's end `catchUp` looks for the turn the computer before it never ended. */
@@ -103,6 +106,9 @@ export interface CompactingDriver extends SessionDriver {
 export function canCompact(driver: SessionDriver): driver is CompactingDriver {
   return typeof (driver as Partial<CompactingDriver>).compact === "function";
 }
+
+/** What `deliver` takes: every input but the user's. */
+export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "routine", "plugin", "note"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
@@ -154,6 +160,13 @@ export interface DurableSessionHostOptions {
   /** This computer's name: each turn's start names it, so a turn another computer left open is told from one a
    *  restart here cut off. */
   computer?: string;
+  /** Whether this computer runs a bot's main conversation now (the lease). An input for one it doesn't run never lands
+   *  in the local copy: `deliver` hands it to `forward` (the computer running it), and `sendUser` refuses it
+   *  (review S1). Every session is run here when left out. */
+  runsHere?: (view: SessionView) => boolean;
+  /** Delivers to the computer running a bot's main conversation (lane H's link, `peer.session.deliver`); without it,
+   *  such an input is refused `bot_asleep`. */
+  forward?: (view: SessionView, input: DeliveredInput) => Promise<{ disposition: Disposition; seq: number }>;
   warn?: (message: string) => void;
 }
 
@@ -366,6 +379,8 @@ export class DurableSessionHost implements SessionHost {
   readonly #epoch: (() => number | undefined) | undefined;
   readonly #mayStart: ((view: SessionView) => boolean) | undefined;
   readonly #computer: string | undefined;
+  readonly #runsHere: ((view: SessionView) => boolean) | undefined;
+  readonly #forward: DurableSessionHostOptions["forward"];
   readonly #warn: (message: string) => void;
   readonly #sessions = new Map<string, Hosted>();
   readonly #watchers = new Listeners<SessionView>();
@@ -379,6 +394,8 @@ export class DurableSessionHost implements SessionHost {
     this.#epoch = opts.epoch;
     this.#mayStart = opts.mayStart;
     this.#computer = opts.computer;
+    this.#runsHere = opts.runsHere;
+    this.#forward = opts.forward;
     this.#warn = opts.warn ?? (() => {});
     this.#restore();
     this.#offApprovals = opts.approvals?.watch?.(() => this.#recountCards());
@@ -450,6 +467,7 @@ export class DurableSessionHost implements SessionHost {
     if (s.meta.kind === "side-thread") throw new ContractError("refused", "a side thread takes no messages from the user");
     const seen = s.clientIds.get(input.clientMessageId);
     if (seen) return { ...seen };
+    if (!this.#runHere(s)) throw new ContractError("not_main", `this computer doesn't run ${s.meta.bot ?? id}'s conversation now; the message goes to the computer that does`);
     // The stamp is held to this computer's clock plus or minus the window before it orders or records anything, so a
     // skewed or hostile one can't jump the queue or backdate the transcript (review N5).
     const full: UserInput = { from: "user", ...structuredClone(input), sentAt: clampSentAt(input.sentAt, this.#clock.now()) };
@@ -457,9 +475,21 @@ export class DurableSessionHost implements SessionHost {
       const record = this.#record(s, { type: "input", input: full, disposition: "interrupted" });
       rememberClientId(s.clientIds, full.clientMessageId, { seq: record.seq, disposition: "interrupted" });
       enqueue(s.queue, { seq: record.seq, input: full }, true);
-      // A compaction the context forced finishes first (§6.3); the step is interrupted as it ends.
-      if (s.turnCompaction) s.interruptAfterCompaction = true;
-      else await this.#interruptStep(s);
+      // A compaction the context forced finishes first (§6.3); the step is interrupted as it ends, or after
+      // `COMPACTION_HOLD_MAX_MS` at most.
+      if (s.turnCompaction) {
+        if (!s.interruptAfterCompaction) {
+          s.interruptAfterCompaction = true;
+          const running = s.running;
+          this.#clock.setTimeout(() => {
+            if (s.running !== running || !s.interruptAfterCompaction) return;
+            this.#warn(`session ${s.meta.id}: its driver's compaction didn't end within ${COMPACTION_HOLD_MAX_MS} ms; the user's message interrupts it`);
+            s.interruptAfterCompaction = false;
+            s.turnCompaction = false;
+            void this.#interruptStep(s);
+          }, COMPACTION_HOLD_MAX_MS);
+        }
+      } else await this.#interruptStep(s);
       this.#pump(s);
       return { disposition: "interrupted", seq: record.seq };
     }
@@ -472,6 +502,14 @@ export class DurableSessionHost implements SessionHost {
    *  record's `seq`. */
   async deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }> {
     const s = this.#live(id);
+    // Never the user's: their messages come only through `sendUser` (review S2).
+    if (!DELIVERED_FROM.has((input as { from?: unknown }).from as string)) {
+      throw new ContractError("invalid", `deliver takes another session's, a routine's or a plugin's input, not "${String((input as { from?: unknown }).from).slice(0, 40)}"`);
+    }
+    if (!this.#runHere(s)) {
+      if (!this.#forward) throw new ContractError("bot_asleep", `can't reach the computer running ${s.meta.bot ?? id}'s conversation`);
+      return this.#forward(this.#viewOf(s), structuredClone(input));
+    }
     const copy = structuredClone(input);
     if (copy.from === "note" || (copy.from === "routine" && s.meta.kind === "bot")) return this.#post(s, copy);
     return this.#accept(s, copy);
@@ -479,7 +517,8 @@ export class DurableSessionHost implements SessionHost {
 
   async interrupt(id: string): Promise<void> {
     const s = this.#live(id);
-    if (s.compacting !== undefined && s.compacting.reason !== "full") s.compacting.abort.abort("interrupted");
+    // The user's interrupt stops any compaction between turns, forced ones too (their message alone doesn't).
+    s.compacting?.abort.abort("interrupted");
     if (s.running) await this.#interruptStep(s);
   }
 
@@ -645,7 +684,9 @@ export class DurableSessionHost implements SessionHost {
     const driver = s.driver;
     if (!driver || !canCompact(driver)) return "unsupported";
     if (s.compacting) return s.compacting.done;
-    if (s.running || s.releasing || !this.#gateOpen(s)) {
+    // Paused, or not this computer's to run: nothing compacts until it may start turns again.
+    if (!this.#gateOpen(s)) return "skipped";
+    if (s.running || s.releasing) {
       if (reason === "cache") return "skipped";
       return new Promise((resolve) => s.deferredCompact.push({ reason, resolve }));
     }
@@ -667,6 +708,11 @@ export class DurableSessionHost implements SessionHost {
   // -----------------------------------------------------------------------------------------------
   // Routing
   // -----------------------------------------------------------------------------------------------
+
+  /** Whether this computer runs the session: always, but for a bot's main conversation the lease puts elsewhere. */
+  #runHere(s: Hosted): boolean {
+    return s.meta.kind !== "bot" || this.#runsHere === undefined || this.#runsHere(this.#viewOf(s));
+  }
 
   #gateOpen(s: Hosted): boolean {
     return this.#mayStart === undefined || this.#mayStart(this.#viewOf(s));

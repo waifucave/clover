@@ -7,6 +7,10 @@
 //   model call (the end of the last turn, or the last compaction), and each turn restarts it.
 // * **The numbers** come from the model's cache lifetime and are settings (`policy`): the cache's life, the threshold
 //   and the lead (how long before expiry to start, enough to read the context while it is still cached).
+// * **The context's size** is `contextTokens`, agreed with lane A (review S5): the whole prompt of the turn's last
+//   main-loop call, cache reads and writes included, output not. Lane A's driver gives it on `TurnEnd.usage`, or on a
+//   runtime event of the turn; it is never taken from the turn's summed input and output, which counts each tool
+//   round's context again and leaves out the cache. A turn that gives none arms nothing.
 // * **A user message during compaction** drops a cache-timed one (the host does that) and it is tried again at the next
 //   idle moment, which is the end of the turn that message starts: the cache is warm again then.
 // * **A cold cache:** when the cache has already expired, the next turn rebuilds the system prompt's harness blocks
@@ -44,9 +48,17 @@ export interface CacheTimedCompactionOptions {
 interface Tracked {
   /** When the cache was last used. */
   lastCallAt: number;
-  /** The context's size after that call, in tokens. */
+  /** The context's size at that call, in tokens; 0 when no call said. */
   contextTokens: number;
+  /** The latest `contextTokens` a runtime event of the running turn gave. */
+  turnContext?: number;
   timer?: TimerHandle;
+}
+
+/** A `contextTokens` a record carries, if it carries one. */
+export function contextTokensOf(value: unknown): number | undefined {
+  const n = (value as { contextTokens?: unknown } | null | undefined)?.contextTokens;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 export class CacheTimedCompaction {
@@ -112,10 +124,18 @@ export class CacheTimedCompaction {
   }
 
   #apply(record: SessionRecord): void {
+    if (record.type === "turn_started") {
+      const t = this.#sessions.get(record.sessionId);
+      if (t) delete t.turnContext;
+    } else if (record.type === "driver" && contextTokensOf(record.event) !== undefined) {
+      this.#track(record.sessionId, record.ts).turnContext = contextTokensOf(record.event);
+    }
     if (record.type === "turn_ended") {
       const t = this.#track(record.sessionId, record.ts);
       t.lastCallAt = record.ts;
-      if (record.end.usage !== undefined) t.contextTokens = record.end.usage.inputTokens + record.end.usage.outputTokens;
+      // Never the summed input and output (review S5): with no `contextTokens`, nothing is known, and nothing arms.
+      t.contextTokens = contextTokensOf(record.end.usage) ?? t.turnContext ?? 0;
+      delete t.turnContext;
     } else if (isCompactionEnd(record) && record.event["outcome"] === "compacted") {
       // A compaction is a model call on the short context that follows it.
       const t = this.#track(record.sessionId, record.ts);

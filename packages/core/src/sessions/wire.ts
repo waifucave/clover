@@ -26,6 +26,7 @@
 // fields never reach it"), and of the streaming events only the reply's text is sent.
 import { CloverSessionEvent, SessionEvent, type Caller, type SessionKind } from "@waifucave/clover-protocol";
 import type { SessionRecord, TurnEnd } from "../contracts/session-host";
+import { contextTokensOf } from "./compaction";
 
 export type WireEvent = { type: string; seq: number; sessionId: string; ts: number; [key: string]: unknown };
 
@@ -159,6 +160,7 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
       return {
         type: "turn_completed", ...envelope, threadId, stopReason: turnCompletedStopReason(record.end.reason),
         inputTokens: record.end.usage?.inputTokens ?? 0, outputTokens: record.end.usage?.outputTokens ?? 0,
+        ...(contextTokensOf(record.end.usage) === undefined ? {} : { contextTokens: contextTokensOf(record.end.usage) }),
       };
     case "status":
       return undefined;

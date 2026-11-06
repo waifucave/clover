@@ -31,6 +31,31 @@ export interface CoreToolDef {
 export const SEND_MESSAGE_MAX_CHARS = 100_000;
 /** The most sessions `ListAgents` lists. */
 export const LIST_AGENTS_MAX = 200;
+/** How many messages one session may send in `SEND_WINDOW_MS`: enough for any real exchange, and two bots answering
+ *  each other forever stop within a minute. */
+export const SEND_MESSAGE_LIMIT = 20;
+export const SEND_WINDOW_MS = 60_000;
+
+/** Counts each session's sends over the last minute (shared by every session's tools). */
+export class SendLimiter {
+  readonly #now: () => number;
+  readonly #sent = new Map<string, number[]>();
+  constructor(now: () => number = Date.now) {
+    this.#now = now;
+  }
+  /** Takes one send for `session`; false when it is over the limit. */
+  take(session: string): boolean {
+    const now = this.#now();
+    const recent = (this.#sent.get(session) ?? []).filter((t) => now - t < SEND_WINDOW_MS);
+    if (recent.length >= SEND_MESSAGE_LIMIT) {
+      this.#sent.set(session, recent);
+      return false;
+    }
+    recent.push(now);
+    this.#sent.set(session, recent);
+    return true;
+  }
+}
 
 /** Lane K's background agents, as `ListAgents` lists them (the controller's ruling: one `ListAgents`, lane D's, with
  *  the agent rows from lane K): on any computer, with their status. */
@@ -43,6 +68,8 @@ export interface BotToolsDeps {
   bots: Pick<BotService, "list" | "has" | "mainSession" | "deliverTo">;
   /** Lane K's agent rows; without them, the agents are the host's own agent sessions. */
   agents?: AgentRows;
+  /** The send limit, shared by every session's tools; one of the tools' own otherwise. */
+  limiter?: SendLimiter;
 }
 
 const isEnded = (v: SessionView) => v.status === "stopped" || v.status === "failed";
@@ -104,6 +131,7 @@ export function describeSession(v: SessionView, botName: (id: string) => string 
 /** `SendMessage` and `ListAgents` for one bot session (`sessionId`: a bot's main conversation or a side thread). */
 export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[] {
   const { host, bots } = deps;
+  const limiter = deps.limiter ?? new SendLimiter();
   const botNames = () => new Map(bots.list().map((b) => [b.id, plainText(b.name)]));
   return [
     {
@@ -141,6 +169,7 @@ export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[
         const from = { sessionId, bot: caller.bot };
         if (target === sessionId) return fail(sendMessageRefusal(from, { id: target, kind: "bot", bot: caller.bot })!);
         // An agent's message reads as its own (`agent_message`); a bot's session's as the bot's.
+        if (!limiter.take(sessionId)) return fail(`You sent ${SEND_MESSAGE_LIMIT} messages in the last minute; wait before sending more. If you and another bot are answering each other, stop.`);
         const input2: DeliveredInput = caller.sessionKind === "agent"
           ? { from: "agent", agent: sessionId, text: message }
           : { from: "bot", bot: caller.bot, session: sessionId, text: message };

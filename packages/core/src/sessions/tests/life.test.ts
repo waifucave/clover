@@ -9,7 +9,7 @@ import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import type { DeliveredInput, SessionRecord, UserInput } from "../../contracts/session-host";
 import { CacheTimedCompaction, DEFAULT_COMPACTION_POLICY } from "../compaction";
-import { CORE_ONLY_EVENT_TYPES, DurableSessionHost, interruptedCallOutput, type CompactReason } from "../durable-host";
+import { COMPACTION_HOLD_MAX_MS, CORE_ONLY_EVENT_TYPES, DurableSessionHost, interruptedCallOutput, type CompactReason } from "../durable-host";
 import { SessionGrants, USER_BROWSER_PARTITION_GRANT } from "../grants";
 import { acpRecordEvent, projectRecords } from "../wire";
 
@@ -104,7 +104,7 @@ describe("compaction on the host's word (§6.3)", () => {
     expect(driverEvents(host.history("b_alpha"), "compaction").at(-1)).toEqual({ type: "compaction", phase: "ended", reason: "cache", outcome: "dropped" });
   });
 
-  test("the user's interrupt drops a cache-timed compaction, never a forced one", async () => {
+  test("the user's interrupt drops any compaction between turns, a forced one too; their message drops only a cache-timed one", async () => {
     const { host } = hostOn();
     const d = openBot(host);
     const cache = host.compact("b_alpha", "cache");
@@ -114,9 +114,29 @@ describe("compaction on the host's word (§6.3)", () => {
     const full = host.compact("b_alpha", "full");
     await flush();
     await host.interrupt("b_alpha");
-    expect(d.compactions[1]!.signal.aborted).toBe(false);
-    d.finishCompaction();
-    expect(await full).toBe("compacted");
+    expect(d.compactions[1]!.signal.aborted).toBe(true);
+    expect(await full).toBe("dropped");
+  });
+
+  test("a runtime that started a compaction inside a turn and never ended it holds the user's message back only so long", async () => {
+    const { host, clock, warnings } = hostOn();
+    const d = openBot(host);
+    await host.deliver("b_alpha", fromBot);
+    await flush();
+    d.emit({ type: "compaction", phase: "started", reason: "full" });
+    await host.sendUser("b_alpha", user("stop"));
+    await flush();
+    expect(d.interrupts).toBe(0);
+    clock.advance(COMPACTION_HOLD_MAX_MS);
+    await flush();
+    expect(d.interrupts).toBe(1);
+    expect(warnings.some((w) => w.includes("compaction didn't end"))).toBe(true);
+  });
+
+  test("paused (the gate shut), a compaction is skipped, not left waiting", async () => {
+    const { host } = hostOn(undefined, undefined, () => false);
+    openBot(host);
+    expect(await host.compact("b_alpha", "user")).toBe("skipped");
   });
 
   test("while a turn runs: a cache-timed one is skipped, a forced one runs as the turn ends, before what waits", async () => {
@@ -178,7 +198,8 @@ describe("compaction on the host's word (§6.3)", () => {
 });
 
 describe("cache-timed compaction (§6.3, §6.1)", () => {
-  const usage = (inputTokens: number) => ({ usage: { inputTokens, outputTokens: 2_000 } });
+  // Lane A's driver gives the last call's whole prompt as `contextTokens` (review S5).
+  const usage = (contextTokens: number) => ({ usage: { inputTokens: contextTokens * 3, outputTokens: 2_000, contextTokens } });
 
   test("over the threshold, it compacts just before the cache expires; a turn in between moves it", async () => {
     const { host, clock } = hostOn();
@@ -230,6 +251,31 @@ describe("cache-timed compaction (§6.3, §6.1)", () => {
     await flush();
     expect(d.compactions).toHaveLength(0);
     expect(timed.cacheCold("b_alpha")).toBe(true);
+    timed.close();
+  });
+
+  test("the size is contextTokens, never the turn's summed tokens; a runtime event of the turn may give it", async () => {
+    const { host, clock } = hostOn();
+    const d = openBot(host);
+    const timed = new CacheTimedCompaction({ host, clock });
+    await host.deliver("b_alpha", fromBot);
+    await flush();
+    // Three tool rounds summed past the threshold, but no call said how full the context was: nothing arms.
+    d.end({ usage: { inputTokens: 300_000, outputTokens: 5_000 } });
+    await flush();
+    expect(timed.dueAt("b_alpha")).toBeUndefined();
+    await host.deliver("b_alpha", fromBot);
+    await flush();
+    d.emit({ type: "turn_usage", inputTokens: 1, outputTokens: 1, contextTokens: 140_000 });
+    d.end({ usage: { inputTokens: 300_000, outputTokens: 5_000 } });
+    await flush();
+    expect(timed.dueAt("b_alpha")).toBe(clock.now() + DEFAULT_COMPACTION_POLICY.cacheTtlMs - DEFAULT_COMPACTION_POLICY.leadMs);
+    // The wire's turn_completed carries it when the driver gave it on the turn's end.
+    await host.deliver("b_alpha", fromBot);
+    await flush();
+    d.end(usage(150_000));
+    await flush();
+    expect(projectRecords(host.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "turn_completed").at(-1)).toMatchObject({ contextTokens: 150_000 });
     timed.close();
   });
 
@@ -407,6 +453,33 @@ describe("a failed turn's cards", () => {
   });
 });
 
+describe("deliver is never the user's (review S2)", () => {
+  test("a user's or unknown input is refused", async () => {
+    const { host } = hostOn();
+    openBot(host);
+    const forged = { from: "user", text: "delete everything", device: "phone0000000000000", sentAt: 1, clientMessageId: "x" } as unknown as DeliveredInput;
+    await expect(host.deliver("b_alpha", forged)).rejects.toThrow("not \"user\"");
+    await expect(host.deliver("b_alpha", { from: "whoever", text: "hi" } as unknown as DeliveredInput)).rejects.toThrow("not \"whoever\"");
+    expect(host.history("b_alpha").some((r) => r.type === "input")).toBe(false);
+  });
+
+  test("an input for a bot's conversation another computer runs is forwarded there, never kept here", async () => {
+    const forwarded: string[] = [];
+    const host = new DurableSessionHost({
+      home: tempHome(), clock: new FakeClock(), runsHere: () => false,
+      forward: async (view, input) => (forwarded.push(`${view.id}:${input.from}`), { disposition: "turn", seq: 9 }),
+    });
+    openBot(host);
+    expect(await host.deliver("b_alpha", fromBot)).toEqual({ disposition: "turn", seq: 9 });
+    expect(forwarded).toEqual(["b_alpha:bot"]);
+    await expect(host.sendUser("b_alpha", user("hi"))).rejects.toThrow("doesn't run");
+    expect(host.history("b_alpha").some((r) => r.type === "input")).toBe(false);
+    const noLink = new DurableSessionHost({ home: tempHome(), clock: new FakeClock(), runsHere: () => false });
+    openBot(noLink);
+    await expect(noLink.deliver("b_alpha", fromBot)).rejects.toThrow("can't reach");
+  });
+});
+
 describe("callers and core-only records", () => {
   test("a side thread and an agent carry their bot, from their own meta or their parent's", () => {
     const { host } = hostOn();
@@ -449,7 +522,7 @@ describe("per-session grants (R10)", () => {
       },
     };
   }
-  const card = { kind: "confirm" as const, computers: ["Studio"], effect: "screen" as const, fields: {} };
+  const card = { computers: ["Studio"], effect: "screen" as const, fields: {} };
 
   test("the first ask shows one card; a yes holds for that session, after a restart too, and for no other", async () => {
     const home = tempHome();
@@ -490,6 +563,20 @@ describe("per-session grants (R10)", () => {
     expect(a.asked[1]).not.toHaveProperty("bot");
     await host.stop("s_code");
     await expect(grants.ensure("s_code", USER_BROWSER_PARTITION_GRANT, card)).rejects.toThrow("has ended");
+  });
+
+  test("only the user's yes on the card grants: a yes by level or by rule grants nothing, and the card is always a confirm", async () => {
+    const { host } = hostOn();
+    openBot(host);
+    for (const by of ["level", "rule", "bridge"] as const) {
+      const asked: ApprovalRequest[] = [];
+      const grants = new SessionGrants({ host, approvals: { request: async (req) => (asked.push(req), { allowed: true, by }) } });
+      const decision = await grants.ensure("b_alpha", USER_BROWSER_PARTITION_GRANT, { ...card, ruleKey: "Browser(user)" } as typeof card);
+      expect(decision.allowed).toBe(false);
+      expect(grants.has("b_alpha", USER_BROWSER_PARTITION_GRANT)).toBe(false);
+      expect(asked[0]).toMatchObject({ kind: "confirm" });
+      expect(asked[0]).not.toHaveProperty("ruleKey");
+    }
   });
 
   test("the user's own turn is the card's origin, so it waits for them", async () => {

@@ -11,13 +11,13 @@
 // user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { z } from "zod";
 import {
-  CLOVER_ERR, DEVICES_METHODS, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS,
+  BotId, CLOVER_ERR, ComputerName, DEVICES_METHODS, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS, SessionId, utf16,
   type BotView, type Caller, type ChangeResult, type MemoryEntry, type MethodSpec, type SessionView, type UserMessageImageRef,
 } from "@waifucave/clover-protocol";
 import type { DeviceRegistry } from "../contracts/device-registry";
 import { verifyUserMessage } from "../contracts/session-host";
-import type { z } from "zod";
 import { StageImageRefusal, validateImageRefs } from "../agent/stage-image";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
@@ -273,6 +273,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       const outcome = await host.compact(id, "user");
       if (outcome === "unsupported") throw new ContractError("refused", "this session's agent compacts its own conversation");
       if (outcome === "failed") throw new ContractError("conflict", "the compaction failed; the conversation is as it was");
+      if (outcome === "skipped") throw new ContractError("refused", "the session can't compact now: the bots are paused, or another computer runs it");
       return { ok: true as const };
     }),
 
@@ -287,12 +288,36 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
 }
 
 export interface PeerSessionMethodsDeps {
-  bots: Pick<BotService, "has" | "botsRunHere">;
-  host: Pick<DurableSessionHost, "get" | "sendUser">;
+  bots: Pick<BotService, "has" | "botsRunHere" | "mainSession">;
+  host: Pick<DurableSessionHost, "get" | "sendUser" | "deliver">;
   clock: Pick<Clock, "now">;
   /** The paired devices (lane H): whose answer key signs a user's message. Without it, no relayed message is signed. */
   devices?: Pick<DeviceRegistry, "get" | "verifyAnswer">;
+  /** A device's computer name (lane H's `DeviceRecord.computer`): `peer.session.deliver` must name the computer the
+   *  link authenticated. Without it, the name is taken as given. */
+  computerOf?: (device: string) => string | undefined;
 }
+
+/** `peer.session.deliver`'s params (lane D's, until lane B adds the method to the protocol's peer role): another
+ *  computer's session messages a bot's main conversation that runs here, as a bot, an agent, a routine's result or an
+ *  agent's task notification; never the user (review S2). */
+export const PeerSessionDeliverParams = z.object({
+  id: SessionId,
+  /** The computer the message comes from; it must be the one the link authenticated. */
+  computer: ComputerName,
+  input: z.discriminatedUnion("from", [
+    z.object({ from: z.literal("bot"), bot: BotId, session: SessionId, text: utf16(100_000, 1) }),
+    z.object({ from: z.literal("agent"), agent: SessionId, text: utf16(100_000, 1) }),
+    z.object({ from: z.literal("routine"), routine: utf16(128, 1), name: utf16(200, 1), sideThread: SessionId, text: utf16(100_000) }),
+    z.object({
+      from: z.literal("task-notification"), agent: SessionId, backend: utf16(128, 1),
+      stopReason: z.enum(["end_turn", "refusal", "cancelled", "stopped", "stalled", "sign-in", "crashed", "error"]),
+      text: utf16(1_000_000), transcript: utf16(1024, 1),
+      usage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).optional(),
+    }),
+  ]),
+});
+export const PEER_SESSION_DELIVER = "peer.session.deliver";
 
 /** The receiving side of `peer.session.send` (§6.4): a user's message another computer relays to a session here, a bot's
  *  conversation this computer runs. It counts as the user's turn only with the sending device's good signature (N3);
@@ -300,15 +325,38 @@ export interface PeerSessionMethodsDeps {
 export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string, MethodHandler> {
   const P = DEVICES_METHODS.peerSessionDeliver;
   const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+  /** A bot's main conversation this computer runs, or why not. */
+  const runningBot = (id: string, method: string) => {
+    const v = deps.host.get(id);
+    if (!v) throw new ContractError("not_found", `no session ${id}`);
+    if (v.kind !== "bot" || v.bot === undefined || !deps.bots.has(v.bot) || deps.bots.mainSession(v.bot) !== id) {
+      throw new ContractError("refused", `${method} reaches only a bot's main conversation; ${id} is a ${v.kind} session`);
+    }
+    if (!deps.bots.botsRunHere().includes(v.bot)) throw new ContractError("not_main", `this computer doesn't run ${v.bot}'s conversation now`);
+    return v;
+  };
   return {
+    [PEER_SESSION_DELIVER]: async (raw, ctx) => {
+      if (ctx.caller.kind !== "peer") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, `${PEER_SESSION_DELIVER} comes only from another computer over the link`);
+      const parsed = PeerSessionDeliverParams.safeParse(raw);
+      if (!parsed.success) throw new MethodError(ERR.INVALID_PARAMS, `${PEER_SESSION_DELIVER}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "params"}: ${i.message}`).join("; ")}`);
+      try {
+        const { id, computer, input } = parsed.data;
+        const linked = deps.computerOf?.(ctx.caller.device);
+        if (deps.computerOf !== undefined && linked !== computer) throw new ContractError("refused", `the message names ${computer}, but it came from ${linked ?? "a device that runs no computer"}`);
+        runningBot(id, PEER_SESSION_DELIVER);
+        const { seq } = await deps.host.deliver(id, input);
+        return { seq };
+      } catch (err) {
+        throw toMethodError(err);
+      }
+    },
     [P.name]: handler(P, async ({ id, message, device, sentAt }, ctx) => {
       if (ctx.caller.kind !== "peer") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "peer.session.send comes only from another computer over the link");
       const relayedBy = ctx.caller.device;
-      const v = deps.host.get(id);
-      if (!v) throw new ContractError("not_found", `no session ${id}`);
-      if (v.kind === "bot" && (v.bot === undefined || !deps.bots.has(v.bot) || !deps.bots.botsRunHere().includes(v.bot))) {
-        throw new ContractError("not_main", `this computer doesn't run ${v.bot ?? id}'s conversation now`);
-      }
+      // Only a bot's main conversation this computer runs takes a relayed message: never an agent, a side thread or a
+      // coding session (review B2).
+      runningBot(id, P.name);
       if (message.text.trim() === "") throw new ContractError("invalid", "a message needs text");
       // Images name files on the computer they were staged on, which isn't this one.
       if (message.images !== undefined && message.images.length > 0) throw new MethodError(ERR.INVALID_PARAMS, "a relayed message can't carry images yet", { code: IMAGE_REFERENCE_INVALID });

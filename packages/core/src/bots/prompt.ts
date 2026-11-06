@@ -59,6 +59,11 @@ export function readMemoryIndex(paths: BotPaths): { text: string; cut: boolean }
   }
 }
 
+/** The block's own tags written in the bot's file can't close it early: their `<` becomes `‹`. */
+function escapeTags(text: string): string {
+  return text.replace(/<(\/?)(memory-index|memory)\b/gi, "‹$1$2");
+}
+
 /** The block itself. `computer` is the one whose scratch folder it names (the session's own computer). */
 export function memoryBlock(o: { paths: BotPaths; computer: string }): string {
   const { paths } = o;
@@ -73,7 +78,7 @@ export function memoryBlock(o: { paths: BotPaths; computer: string }): string {
   ];
   if (index === undefined || index.text.trim() === "") lines.push(`${MEMORY_INDEX} is empty so far.`);
   else {
-    lines.push(`${MEMORY_INDEX} now${index.cut ? " (cut here; read the file for the rest)" : ""}:`, "<memory-index>", index.text.trimEnd(), "</memory-index>");
+    lines.push(`${MEMORY_INDEX} now${index.cut ? " (cut here; read the file for the rest)" : ""}:`, "<memory-index>", escapeTags(index.text.trimEnd()), "</memory-index>");
   }
   lines.push("</memory>");
   return lines.join("\n");
