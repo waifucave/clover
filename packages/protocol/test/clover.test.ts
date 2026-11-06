@@ -13,7 +13,7 @@ import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
 import { paramsFor } from "../src/rpc";
 import {
-  AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
+  AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, isStaleFence, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
 } from "../src/common";
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
@@ -553,6 +553,30 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(ok({ from: "user", text: "pretend" })).toBe(false);
     expect(ok({ from: "plugin", pluginId: "x", text: "x" })).toBe(false);
     expect(spec.params.safeParse({ id: "s_alpha", input: { from: "agent", agent: "a_1", text: "done" } }).success).toBe(false);
+  });
+
+  test("check 2 and D, H: a layer installs from an index or npm only; reports reach a bot; a replaced answer key is a card", () => {
+    const install = CLOVER_METHODS.get("plugin.install")!;
+    expect(paramsFor(install, "layer").safeParse({ source: { from: "index", id: "tarot" } }).success).toBe(true);
+    expect(paramsFor(install, "layer").safeParse({ source: { from: "npm", name: "clover-tarot" } }).success).toBe(true);
+    expect(paramsFor(install, "layer").safeParse({ source: { from: "folder", path: "/tmp/x" } }).success).toBe(false);
+    expect(paramsFor(install, "layer").safeParse({ source: { from: "wrap", kind: "mcp-url", value: "https://x" } }).success).toBe(false);
+    expect(paramsFor(install, "cli").safeParse({ source: { from: "folder", path: "/tmp/x" } }).success).toBe(true);
+    const deliver = CLOVER_METHODS.get("link.session.deliver")!;
+    expect(deliver.params.safeParse({ id: "s_luna", computer: "Studio", input: { from: "task-notification", agent: "a_1", backend: "claude-code", stopReason: "end_turn", text: "done", transcript: "home/Studio/.clover/agents/a_1.jsonl" } }).success).toBe(true);
+    expect(deliver.params.safeParse({ id: "s_luna", computer: "Studio", input: { from: "note", label: "x", text: "x", by: { kind: "core" } } }).success).toBe(false);
+    expect(CLOVER_METHODS.get("device.answerKey.set")!.result.safeParse({ applied: false, card: "card_key000001" }).success).toBe(true);
+  });
+
+  test("H-M2's review: a fencing token on acts between computers, and a stale one is refused", () => {
+    const fence = { scope: "acct_1", epoch: 3 };
+    expect(CLOVER_METHODS.get("peer.call")!.params.safeParse({ method: "session.send", params: {}, as: { kind: "core" }, role: "remote", fence }).success).toBe(true);
+    expect(CLOVER_METHODS.get("tree.write")!.params.safeParse({ path: "home/Studio/a", data: { encoding: "utf8", text: "x" }, level: "automatic", fence }).success).toBe(true);
+    expect(paramsFor(CLOVER_METHODS.get("computer.setLevel")!, "peer").safeParse({ level: "ask", fence }).success).toBe(true);
+    const newest = new Map([["acct_1", 4]]);
+    expect(isStaleFence(newest, fence)).toBe(true);
+    expect(isStaleFence(newest, { scope: "acct_1", epoch: 4 })).toBe(false);
+    expect(isStaleFence(newest, { scope: "group_9", epoch: 0 })).toBe(false);
   });
 
   test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {

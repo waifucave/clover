@@ -16,7 +16,7 @@ import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { splitTreePath, transferBinding, transferChange, treeCallBinding, type TreeWatchEvent } from "../tree";
+import { splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -241,6 +241,13 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(await tree.stat("home/Studio/old.log", { as: USER })).not.toBeNull();
       await tree.move("home/Studio/old.log", "home/Laptop1/old.log", { as: USER });
       expect(await code(move())).toBe("refused"); // used, at both ends
+      // An answer for a transfer between the computers the other way round moves nothing (#179's review, check 2).
+      const swapped = transferChange(true, "home/Laptop1/old.log", "home/Studio/old.log", "Studio", "Laptop1");
+      expect(transferEndsHold(swapped.params as TreeTransferParams, (p) => tree.resolve(p))).toBe(false);
+      expect(transferEndsHold(t.params as TreeTransferParams, (p) => tree.resolve(p))).toBe(true);
+      one = await answer("Studio", swapped.method, swapped.params, "Move home/Laptop1/old.log to home/Studio/old.log", transferBinding(swapped.params as TreeTransferParams, sha256));
+      expect(await code(move())).toBe("refused");
+      expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
     });
 
     pendingOr("r1")("at ask-risky the holder's own reviewer judges a peer's change: safe runs, risky needs a bound answer (ruling R1)", async () => {

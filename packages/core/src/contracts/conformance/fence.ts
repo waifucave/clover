@@ -5,7 +5,7 @@
 // the policy a sandbox enforces.
 import { describe, expect, test } from "bun:test";
 import { type FakeFence } from "../fakes/fence";
-import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, foldName, foldPath, judge, type FencedKind } from "../fence";
+import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, foldName, foldPath, judge, windowsAlias, type FencedKind } from "../fence";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -154,6 +154,19 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(foldName("\u017F")).toBe("s");
       expect(foldName(".clover. ", "windows")).toBe(".clover");
       expect(foldPath("C:\\Users\\Me", "windows")).toBe("c:/users/me");
+    });
+
+    test("on Windows a stream or an 8.3 short name is refused wherever it is (J's rules, #179's review check 2)", () => {
+      const win = fence("windows");
+      for (const path of [`${CLOVER}/settings/settings.json::$DATA`, `${CLOVER}/settings/settings.json:x`, `${HOME}/CLOVER~1/settings/settings.json`, `${HOME}/notes~2.md`]) {
+        expect([path, win.check({ op: "write", path })]).toEqual([path, { allowed: false, reason: "alias", path }]);
+        expect(win.check({ op: "read", path }).allowed).toBe(false);
+      }
+      expect(win.check({ op: "move", path: `${HOME}/a.json`, to: `${HOME}/CLOVER~1/rules/a.json` })).toMatchObject({ reason: "alias" });
+      expect(windowsAlias("C:/Users/me/a.json")).toBeUndefined();
+      // Elsewhere a colon or a tilde is part of a name.
+      expect(fence("linux").check({ op: "write", path: `${HOME}/notes~2.md` }).allowed).toBe(true);
+      expect(fence("macos").check({ op: "write", path: `${HOME}/a:b.txt` }).allowed).toBe(true);
     });
 
     test("judge is the shared rule, usable over any set", () => {

@@ -170,6 +170,19 @@ export type ClientKind = z.infer<typeof ClientKind>;
 /** Who called (§5.4 "The caller"): the user and the client, a bot's or agent's session, a plugin by id, or the core
  *  itself (the routine engine, a hook run, compaction). The caller check (§3.1) decides between `user` and `session`
  *  for a CLI or app connection: a command started by a bot, an agent or a plugin never counts as the user. */
+/** The main computer's fencing token (H-M2's review): the lease's scope (an account's, or an account-less group's) and
+ *  its epoch. An act one computer asks of another (`peer.call`, a tree call, a level change) carries the sender's, and
+ *  the receiver refuses one older than the newest it has seen for that scope (`isStaleFence`), so a main that lost its
+ *  lease without knowing can't act through others. */
+export const FencingToken = z.object({ scope: utf16(128, 1), epoch: z.number().int().nonnegative() });
+export type FencingToken = z.infer<typeof FencingToken>;
+
+/** Whether `token` is older than the newest epoch seen for its scope; a receiver records each token it accepts. */
+export function isStaleFence(newest: ReadonlyMap<string, number>, token: FencingToken): boolean {
+  const seen = newest.get(token.scope);
+  return seen !== undefined && token.epoch < seen;
+}
+
 export const Caller = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user"), client: ClientKind, device: DeviceId.optional() }),
   z.object({ kind: z.literal("session"), sessionId: SessionId, sessionKind: SessionKind, bot: BotId.optional() }),

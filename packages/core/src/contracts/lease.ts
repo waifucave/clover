@@ -16,14 +16,23 @@
 //   main that slept past its lease never acts on it. With that, 30 s and a 5 s margin are sound. Lane H adds the spec's
 //   exceptions (no other computer could take over; a live link to each one that could) in the real implementation.
 // * `release` (Hand over and quit, §3.1) lets another computer take the lease at once.
+// * The fencing token (H-M2's review) is the lease's scope and epoch (`fencingTokenOf`). Every act a computer asks of
+//   another (`peer.call`, a tree call, a level change) carries the sender's as `fence`, and the receiver keeps the
+//   newest epoch it has seen per scope and refuses an older one (`isStaleFence`), so a main that lost its lease
+//   without knowing, asleep or cut off, can't act through the others.
 // * Without an account the user's account-less devices form one group (item 85): their lease is the group's record at
 //   the handshake, which members admit one another to when they pair, so a takeover works as with an account. Only a
 //   computer that can reach neither the handshake nor the last holder over any link leaves taking over to the user
 //   (§6.4, `{ byUser: true }`).
-import type { LeaseView } from "@waifucave/clover-protocol";
+import type { FencingToken, LeaseView } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
 export type LeaseState = LeaseView;
+
+/** The token a lease's holder puts on its acts between computers; none without a scope or a holder. */
+export function fencingTokenOf(state: LeaseState): FencingToken | undefined {
+  return state.scope !== undefined && state.holder !== null ? { scope: state.scope, epoch: state.epoch } : undefined;
+}
 
 export interface Lease {
   /** This device's id. */
