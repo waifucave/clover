@@ -332,6 +332,7 @@ describe("Clover connections (C-M1)", () => {
     const r = await c.hello("bridge", gate.token, { agentSessionId: "s-agent" });
     expect(r.result.caller).toEqual({ kind: "session", sessionId: "s-agent", sessionKind: "agent", bot: "alpha" });
     expect(gate.seen).toEqual([4242]);
+    expect(b.clover.connections().find((x) => x.role === "bridge")?.bridgeConnection).toBe(1); // K's accept's number
     expect((await c.request("bridge.tools", {})).result).toEqual({ tools: [], instructions: "hi" });
     expect((await c.request("bridge.sendMessage", { text: "done" })).result).toEqual({ ok: true });
     expect((await c.request("glossary.query", { query: "x" })).result).toEqual({ results: [], loaded: [] });

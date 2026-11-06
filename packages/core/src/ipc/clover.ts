@@ -40,6 +40,9 @@ export interface CloverConn {
   /** A plugin-host connection's verified process (review S1): handlers take the call's process from here, never
    *  from a plugin id a plugin could share. */
   readonly hostProcess?: { readonly hostProcess: "clover" | "shared" | "own"; readonly pluginId?: string };
+  /** A bridge connection's number from K's `accept` (`BridgeVerdict.connection`), for K's handlers to check
+   *  `isLive(session, connection)` on every request. */
+  readonly bridgeConnection?: number;
   /** Areas this connection subscribed to (`events.subscribe`). */
   readonly areas: Set<string>;
   /** Send the client a request from the daemon (`app.quit`, `app.show`, `pluginHost.invoke`…); its id. */
@@ -350,7 +353,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       }
       if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
       const conn: CloverConn = {
-        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}),
+        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}),
         send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
         notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
         follows: new Map(),
