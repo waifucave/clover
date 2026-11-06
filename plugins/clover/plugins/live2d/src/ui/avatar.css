@@ -1,0 +1,74 @@
+/* The Live2D avatar on a bot's stage. The canvas is see-through: the stage's own background (the theme's
+   `stage.*` tokens, or the bot's layout) shows behind the model. The avatar draws inside its own box and never past
+   it (`overflow: hidden`), so nothing of it lies over a card's sealed frames. Every colour reads a token; the fallback
+   after it is the base theme's value (`styles.test.ts` keeps the two equal). */
+
+.clvl-avatar {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+  margin: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--clover-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  color: var(--clover-stage-text, #676674);
+}
+
+.clvl-view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.clvl-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.clvl-wait,
+.clvl-error {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.clvl-portrait {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 6px var(--clover-stage-glow, #2F6FDF1F);
+}
+
+.clvl-silhouette {
+  width: 88px;
+  height: 112px;
+  border-radius: 44px 44px 20px 20px;
+  background: var(--clover-stage-glow, #2F6FDF1F);
+}
+
+.clvl-wait-line,
+.clvl-error-line {
+  max-width: 260px;
+  font-size: var(--clover-font-size-label, 13px);
+  line-height: 1.45;
+}
+
+.clvl-error-title {
+  font-size: var(--clover-font-size-control, 14px);
+  font-weight: 600;
+  color: var(--clover-color-text, #1F1F1F);
+}
