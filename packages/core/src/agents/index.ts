@@ -53,7 +53,7 @@ export { bridgeCommand, BRIDGE_MAIN_PATH } from "./bridge/main";
 export { peerPidOf } from "./bridge/peer";
 export { BRIDGE_ENV, runBridge } from "./bridge/server";
 export { BridgeTokens } from "./bridge/tokens";
-export { BRIDGE_OWN_TOOLS, GLOSSARY, SEND_MESSAGE, bridgeInstructions, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
+export { BRIDGE_OWN_TOOLS, GLOSSARY, SEND_MESSAGE, bridgeInstructions, type BridgeCallContext, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 export { AgentDriver, type AgentLogEvent } from "./driver";
 export { AgentManager, BRIDGE_SERVER_PREFIX, effectOf, promptOf, ruleKeyOf, type AgentCaller, type AgentRequest, type AgentSessionHooks } from "./manager";
 export { agentPaths } from "./paths";

@@ -5,6 +5,7 @@
 //
 // Plugin tools come from lane B's registry (B-M2: the plugins scoped to `agents` or `both`); until then the source
 // is empty, and `BridgeToolSource` is the seam it plugs into.
+import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
 
 export interface BridgeToolDef {
   name: string;
@@ -14,9 +15,21 @@ export interface BridgeToolDef {
 
 /** The plugin tools one agent session may use, and how a call runs: wherever the tool really runs, under the same
  *  approval rules as a bot's call (§9.3). */
+/** Who a bridge call runs for (the review's K-M2 item 7): a plugin tool an agent calls runs under its bot's approval
+ *  rules, at the delegation's level on its computer, with the turn's origin. */
+export interface BridgeCallContext {
+  bot?: string;
+  computer: string;
+  /** A routine's raised level the delegation runs at (§7); the computer's own level otherwise. */
+  level?: Level;
+  origin: TurnOrigin;
+  /** Withdrawn with the agent's turn. */
+  signal?: AbortSignal;
+}
+
 export interface BridgeToolSource {
   tools(sessionId: string): Promise<BridgeToolDef[]>;
-  call(sessionId: string, call: { callId: string; tool: string; input: unknown }): Promise<{ content: unknown[]; isError: boolean }>;
+  call(sessionId: string, call: { callId: string; tool: string; input: unknown }, ctx: BridgeCallContext): Promise<{ content: unknown[]; isError: boolean }>;
   /** The plugins' own instructions, which the bridge sends as its server instructions and `Glossary` also serves. */
   instructions?(sessionId: string): Promise<string>;
 }

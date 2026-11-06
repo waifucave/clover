@@ -511,7 +511,15 @@ export class AgentManager {
         const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
         return { tools: [...BRIDGE_OWN_TOOLS, ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
       },
-      call: (id, c) => source.call(id, c),
+      call: (id, c) => {
+        const e = this.#entries.get(id);
+        if (!e) return Promise.resolve({ content: [{ type: "text", text: "This agent's session has ended." }], isError: true });
+        const signal = e.driver.currentSignal();
+        return source.call(id, c, {
+          computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
+          ...(e.bot === undefined ? {} : { bot: e.bot }), ...(e.level === undefined ? {} : { level: e.level }), ...(signal ? { signal } : {}),
+        });
+      },
       sendMessage: (id, m) => this.agentMessage(id, m.text, m.to),
       glossary: (id, q) => (this.#o.glossary ? this.#o.glossary(id, q) : Promise.resolve({ results: [], loaded: [] })),
     };

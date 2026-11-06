@@ -94,6 +94,24 @@ describe("Agent", () => {
     expect(isContractError(await w.manager.agentMessage(r.sessionId, "me?", r.sessionId).catch((e: unknown) => e), "refused")).toBe(true);
   });
 
+  test("a plugin tool through the bridge runs for the delegation: its bot, computer and origin reach the tool source", async () => {
+    const seen: unknown[] = [];
+    const w = make({
+      pluginTools: {
+        tools: async () => [{ name: "Render", description: "Render a scene.", inputSchema: { type: "object" } }],
+        call: async (_s, c, ctx) => {
+          seen.push({ tool: c.tool, bot: ctx.bot, computer: ctx.computer, origin: ctx.origin, level: ctx.level, withSignal: ctx.signal !== undefined });
+          return { content: [{ type: "text", text: "rendered" }], isError: false };
+        },
+      },
+      script: [[{ mcp: { server: "$bridge", tool: "Render", input: { scene: "a" } } }, { say: "Done." }]],
+    });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(seen).toEqual([{ tool: "Render", bot: "alpha", computer: "Studio", origin: "bot", level: undefined, withSignal: true }]);
+    expect(w.report("mcp-result").map((x) => x["text"])).toEqual(["rendered"]);
+  });
+
   test("a request outside the bridge goes to a card at ask; a card's always is Clover's own rule and the agent gets allow_once", async () => {
     const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }, { say: "Built." }]] });
     await w.delegate();
