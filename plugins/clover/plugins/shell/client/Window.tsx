@@ -43,6 +43,8 @@ export interface WindowProps {
    *  in the panel, or one raised from a dialog (Settings asking for a level change or to remove a device).
    *  No dialog opens while one does, and an open one closes through `onCloseDialog`. */
   cardPending?: boolean;
+  /** The cards with no session (`WaitingCards`), in a strip under the bar. */
+  cards?: ReactNode;
   /** Closes the dialog: on Escape, and when a card arrives or is already waiting. */
   onCloseDialog?: () => void;
   /** The `status` bar at the bottom of the main column, when anything fills it (the inherited tiles, §12). */
@@ -100,7 +102,7 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
   );
 }
 
-export function Window({ sidebar, title, heading, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status }: WindowProps) {
+export function Window({ sidebar, title, heading, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, cards }: WindowProps) {
   // A dialog asked for while a card waits stays shut, and one open when a card arrives closes; either way
   // the bar says so until the card is answered.
   const [held, setHeld] = useState(false);
@@ -140,6 +142,7 @@ export function Window({ sidebar, title, heading, onTitleMenu, toggles, children
             </div>
           )}
         </header>
+        {cards}
         <div className="cl-window__body">
           <div className="cl-window__content">{children}</div>
           {side && <aside className="cl-window__side">{side}</aside>}

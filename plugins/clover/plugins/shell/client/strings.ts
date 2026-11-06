@@ -85,6 +85,12 @@ export const S = {
   get statusBar() {
     return t("clover.shell.statusBar");
   },
+  get cardsWaiting() {
+    return t("clover.shell.cardsWaiting");
+  },
+  get cardWaiting() {
+    return t("clover.shell.cardWaiting");
+  },
   get dialogHeld() {
     return t("clover.shell.dialogHeld");
   },

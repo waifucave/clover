@@ -116,6 +116,14 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     api: () => api,
     core: () => core,
     approvals,
+    // Sealed frames, as plain marks: what the core would draw.
+    sealed: {
+      Card: ({ id, children }) => <div data-sealed-card={id}>{children}</div>,
+      CardField: ({ name }) => <span data-sealed-field={name} />,
+      CardApprove: ({ option }) => <button type="button" data-sealed-button="approve">{option ?? "approve"}</button>,
+      CardDeny: ({ option }) => <button type="button" data-sealed-button="deny">{option ?? "deny"}</button>,
+      AppView: () => null,
+    },
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
     messages: {
       subscribe: (l) => {
@@ -231,6 +239,16 @@ describe("the shell", () => {
     await act(() => settle());
     expect(document.querySelector(".cl-window__dialog")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Answer the waiting card first, then open it again.");
+    // The card itself waits in the strip under the bar, in the flow above the tab: its sealed title, fields and one
+    // button per option, the deny first.
+    const strip = screen.getByRole("region", { name: "Waiting for your answer" });
+    expect(strip.parentElement?.className).toBe("cl-window__main");
+    expect(strip.querySelector('[data-sealed-card="card-level"] [data-sealed-field="title"]')).not.toBeNull();
+    expect([...strip.querySelectorAll("[data-sealed-button]")].map((b) => b.getAttribute("data-sealed-button"))).toEqual(["deny", "approve"]);
+    // A card in a session goes to that session's conversation, never here.
+    act(() => approvals.set([card("card-tool", { session: "s_alpha" })]));
+    await act(() => settle());
+    expect(screen.queryByRole("region", { name: "Waiting for your answer" })).toBeNull();
   });
 
   test("the app's commands: Settings at a section and an item over the tab, a bot's tab, a session", async () => {

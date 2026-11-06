@@ -109,8 +109,8 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(44);
-    expect(M2_SCREENS).toHaveLength(11);
+    expect(screenStories.length).toBe(45);
+    expect(M2_SCREENS).toHaveLength(12);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
     for (const story of tabScreens) {
@@ -167,7 +167,7 @@ describe("the gallery", () => {
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
-    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([21, 1, 17]);
+    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([22, 1, 17]);
     // An output opened from a bot's column shows in the right panel, read from its session's outputs folder.
     const out = root!.querySelector('[data-story="screen/bot-output-1440"] .cl-files--output');
     expect(out?.textContent).toContain("# This week in the clover repo");

@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
 import { IconEdit } from "./icons";
+import { WaitingCards } from "./Cards";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
@@ -308,6 +309,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         ) : undefined
       }
       cardPending={cardPending}
+      cards={<WaitingCards cards={cards.filter((c) => c.session === undefined)} />}
       onCloseDialog={() => (palette ? setPalette(undefined) : closeDialog())}
       status={status}
     >

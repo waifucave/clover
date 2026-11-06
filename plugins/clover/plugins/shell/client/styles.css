@@ -159,6 +159,61 @@ button.cl-window__title:hover {
   padding-top: 0;
 }
 
+/* Cards with no session: a strip under the bar, in the flow, above the tab. The tab under it starts below it, so the
+   bar's inset is the strip's alone. Nothing lies over a card, fades or moves it. */
+.cl-cards {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-s);
+  max-height: 50%;
+  overflow-y: auto;
+  padding: calc(var(--clover-plugin-clover-bar-height) + var(--clover-space-m)) var(--clover-space-xl) var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-window__main:has(> .cl-cards) .cl-window__content,
+.cl-window__main:has(> .cl-cards) .cl-window__content:has(.cl-bot-tab) {
+  --cl-inset-top: 0px;
+  padding-top: 0;
+}
+
+.cl-window__main:has(> .cl-cards) .cl-window__side {
+  padding-top: var(--clover-space-m);
+}
+
+.cl-cards__card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-surface);
+}
+
+.cl-cards__title {
+  font-weight: 600;
+}
+
+.cl-cards__field:empty {
+  display: none;
+}
+
+.cl-cards__field {
+  margin-top: var(--clover-space-xs);
+}
+
+.cl-cards__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-m);
+}
+
 /* The session column scrolls under the bar too: its cards start 12 px below it. */
 .cl-window__side {
   box-sizing: border-box;

@@ -9,7 +9,7 @@
 // opens in the panel as a live tab of its own (the owner's item 90).
 import { useState } from "react";
 import type { ConversationItem } from "../../conversation/client/types";
-import { APPROVAL_PENDING, APPROVAL_PENDING_CARD, at, BASIC, bot, GREETING, tool, user } from "../../conversation/gallery/fixtures";
+import { APPROVAL_PENDING, APPROVAL_PENDING_CARD, at, BASIC, bot, CONFIRM_CARD, GREETING, tool, user } from "../../conversation/gallery/fixtures";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
 import type { ShellStart } from "../client/Shell";
 import type { EntryComponent } from "../runtime/types";
@@ -195,6 +195,7 @@ const OWNER: { id: string; title: string; notes: string; config: ScreenConfig }[
 /** F-M2's new screens: the pages the runtime adds, and what add-ons look like. */
 const M2: { id: string; title: string; notes: string; config: ScreenConfig }[] = [
   { id: "settings-plugins", title: "Settings: the plugins and their states", notes: "Each plugin with its state (B's eight), why it is in it, the OKs it runs with in plain words, its logs and its switch.", config: { start: { route: { route: "settings", params: { section: "plugins" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
+  { id: "card-no-session", title: "A card with no session", notes: "A plugin's OK, a level change or removing a device belongs to no conversation: the shell places it in a strip under the title bar, in the flow above the tab, one sealed button per option.", config: { start: { route: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } }, cards: [waitingCard(CONFIRM_CARD)] } } },
   { id: "settings-levels", title: "Settings: each computer's level", notes: "From the computers the core knows; a pick raises a sealed card, and Settings closes for it.", config: { start: { route: { route: "settings", params: { section: "levels" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
   { id: "settings-devices", title: "Settings: devices", notes: "The devices page manages them (R3): pair one by a code, remove one, choose the main computer; each change asks on a card.", config: { start: { route: { route: "settings", params: { section: "devices" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
   { id: "settings-device-item", title: "Settings opened at a device", notes: "How the island's Devices tab opens it (lane E's useOpen, a section and an item): the Laptop's row is brought into view and marked until you move on.", config: { start: { route: { route: "settings", params: { section: "devices", item: "dev_laptop" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },

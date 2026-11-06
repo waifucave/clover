@@ -72,6 +72,8 @@
     "clover.shell.paletteTooFew.characters": "{field} needs at least {count} characters.",
     "clover.shell.paletteTooFew.items": "{field} needs at least {count} items.",
     "clover.shell.paletteTooMany.characters": "{field} takes at most {count} characters.",
-    "clover.shell.paletteTooMany.items": "{field} takes at most {count} items."
+    "clover.shell.paletteTooMany.items": "{field} takes at most {count} items.",
+    "clover.shell.cardsWaiting": "Waiting for your answer",
+    "clover.shell.cardWaiting": "A card waiting for your answer"
   }
 }
