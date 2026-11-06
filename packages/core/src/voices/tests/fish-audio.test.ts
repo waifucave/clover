@@ -112,7 +112,16 @@ async function running(opts: { key?: string; fish?: FakeFish } = {}) {
       return fish.fetch(url, init);
     },
   }));
-  const call = <R>(method: "speak" | "listen", args: unknown) => host.invoke<R>({ pluginId: PLUGIN, handler: "voice", method, args, caller: { kind: "core" } });
+  // Lane B's streaming shape: the plugin host's `stream`, its values, then its return value.
+  const call = async <R>(method: "speak" | "listen", args: unknown, input?: AsyncIterable<unknown>): Promise<{ values: { audio: Uint8Array }[]; result: R }> => {
+    const gen = host.stream<{ audio: Uint8Array }, R>({ pluginId: PLUGIN, handler: "voice", method, args, caller: { kind: "core" }, ...(input === undefined ? {} : { input }) });
+    const values: { audio: Uint8Array }[] = [];
+    for (;;) {
+      const next = await gen.next();
+      if (next.done) return { values, result: next.value };
+      values.push(next.value);
+    }
+  };
   return { registry, host, secrets, fish, asked, sent, call };
 }
 
@@ -145,11 +154,17 @@ describe("the Fish Audio plugin in the core", () => {
   test("the core calls its voice to speak and to listen; the key goes in at the core, never through the plugin", async () => {
     const { call, fish, asked, sent } = await running({ key: KEY });
     const said = "Good morning! Your first meeting is at ten.";
-    const spoken = await call<SpeakResult>("speak", { text: said, voice: VOICE });
+    const speech = await call<SpeakResult>("speak", { text: said, voice: VOICE });
+    const spoken = { ...speech.result, audio: Buffer.concat(speech.values.map((v) => v.audio)) };
     expect(spoken).toMatchObject({ model: "s2.1-pro-free", format: "pcm16-24k" });
     expect(spoken.audio.length).toBeGreaterThan(0);
     expect(spoken.audio.length % 2).toBe(0);
-    const heard = await call<ListenResult>("listen", { audio: spoken.audio, format: "pcm16-16k", language: "en" });
+    expect(spoken.bytes).toBe(spoken.audio.length);
+    // The recording comes as the call's input, as the app streams it.
+    async function* mic() {
+      yield new Uint8Array(spoken.audio);
+    }
+    const heard = (await call<ListenResult>("listen", { format: "pcm16-16k", language: "en" }, mic())).result;
     expect(heard).toMatchObject({ text: said, languageCode: "en" });
     // The plugin named its auth entry and set no key of its own; every request reached Fish with the key, and only Fish.
     expect(asked).toEqual([
