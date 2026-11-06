@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  archOf, generateRepoKey, installLines, KEYRING_FILE, releaseConfig, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey, signRelease, suiteFor,
-  uploadArgs, uploadPlan, verifyDetached, type RepoKeyStore,
+  archOf, generateRepoKey, installLines, KEYRING_FILE, ownerOnly, releaseConfig, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey, signRelease, suiteFor,
+  uploadArgs, uploadPlan, verifyDetached, verifyInRelease, verifyTree, type RepoKeyStore,
 } from "./linux-repo";
 
 const memory = (): RepoKeyStore & { items: Map<string, string> } => {
@@ -25,18 +25,31 @@ describe("the Linux repositories", () => {
     await store.set({ ...REPO_KEY_ITEM, value: k.privateKey });
     const key = await repoSigningKey(store, k.publicKey);
     await expect(repoSigningKey(store, (await generateRepoKey()).publicKey)).rejects.toThrow(/not the one in/);
-    const release = "Origin: Clover\nSuite: stable\nSHA256:\n abc 1 main/binary-amd64/Packages\n";
+    const release = new TextEncoder().encode("Origin: Clover\nSuite: stable\nSHA256:\n abc 1 main/binary-amd64/Packages\n");
     const s = await signRelease(release, key);
     expect(s.inRelease).toContain("-----BEGIN PGP SIGNED MESSAGE-----");
     expect(s.inRelease).toContain("Suite: stable");
     expect(await verifyDetached(release, s.detached, k.publicKey)).toBe(true);
-    expect(await verifyDetached(`${release}tampered`, s.detached, k.publicKey)).toBe(false);
+    expect(await verifyDetached(new TextEncoder().encode("Origin: Clover\nSuite: other\n"), s.detached, k.publicKey)).toBe(false);
+    expect(await verifyInRelease(s.inRelease, release, k.publicKey)).toBe(true);
+    // A tree with every signature checks; one missing or wrong is named.
+    const dir = mkdtempSync(join(tmpdir(), "clover-repo-tree-"));
+    mkdirSync(join(dir, "apt", "dists", "stable"), { recursive: true });
+    writeFileSync(join(dir, "apt", "dists", "stable", "Release"), release);
+    writeFileSync(join(dir, "apt", "dists", "stable", "InRelease"), s.inRelease);
+    writeFileSync(join(dir, "apt", "dists", "stable", "Release.gpg"), s.detached);
+    expect(await verifyTree(dir, k.publicKey)).toEqual([]);
+    expect(await verifyTree(dir, (await generateRepoKey()).publicKey)).toEqual(["apt/dists/stable/InRelease doesn't verify", "apt/dists/stable/Release.gpg doesn't verify"]);
+    expect(await verifyTree(mkdtempSync(join(tmpdir(), "clover-repo-empty-")), k.publicKey)).toEqual(["the tree holds no repository metadata"]);
   }, 30_000);
 
   test("suites, Release settings, and the packages' architectures", () => {
     expect(suiteFor("latest")).toBe("stable");
     expect(suiteFor("beta")).toBe("beta");
     expect(releaseConfig("beta")).toContain("APT::FTPArchive::Release::Suite=beta");
+    const cfg = releaseConfig("stable", new Date(Date.UTC(2026, 10, 6)));
+    expect(cfg).toContain("APT::FTPArchive::Release::Valid-Until=Fri, 20 Nov 2026 00:00:00 UTC");
+    expect(cfg).toContain("APT::FTPArchive::Release::Date=Fri, 06 Nov 2026 00:00:00 UTC");
     expect(archOf("clover_1.2.3_amd64.deb")).toEqual({ kind: "deb", arch: "amd64" });
     expect(archOf("clover-1.2.3.arm64.rpm")).toEqual({ kind: "rpm", arch: "aarch64" });
     expect(archOf("clover-1.2.3.x86_64.rpm")).toEqual({ kind: "rpm", arch: "x86_64" });
@@ -58,7 +71,15 @@ describe("the Linux repositories", () => {
     writeFileSync(join(dir, "apt", "dists", "stable", "InRelease"), "x");
     writeFileSync(join(dir, "clover-archive-keyring.asc"), "k");
     expect(uploadPlan(dir).map((p) => p.key)).toEqual(["apt/dists/stable/InRelease", "clover-archive-keyring.asc"]);
-    expect(uploadArgs("/f", "apt/x")).toEqual(["bunx", "wrangler", "r2", "object", "put", "clover-packages/apt/x", "--file", "/f", "--remote"]);
+    // The pinned wrangler (the root devDependency), never bunx's.
+    expect(uploadArgs("/f", "apt/x", "/r")).toEqual(["/r/node_modules/.bin/wrangler", "r2", "object", "put", "clover-packages/apt/x", "--file", "/f", "--remote"]);
+    expect((JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as { devDependencies: Record<string, string> }).devDependencies.wrangler).toBe("4.153.0");
+    expect(readFileSync(join(import.meta.dir, "linux-repo.ts"), "utf8")).not.toContain('"bunx"');
+    // The owner's steps never run in CI or off the Mac.
+    expect(ownerOnly({ CI: "true" }, "darwin")).toContain("never runs in CI");
+    expect(ownerOnly({ GITHUB_ACTIONS: "true" }, "darwin")).toContain("never runs in CI");
+    expect(ownerOnly({}, "linux")).toContain("on their Mac");
+    expect(ownerOnly({}, "darwin")).toBeUndefined();
     const src = readFileSync(join(import.meta.dir, "linux-repo.ts"), "utf8");
     expect(src).toContain('if (!rest.includes("--yes"))');
     expect(src).not.toMatch(/writeFileSync\([^)]*privateKey/);

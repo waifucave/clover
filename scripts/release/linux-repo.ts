@@ -35,9 +35,16 @@ export function suiteFor(channel: Channel): "stable" | "beta" {
   return channel === "latest" ? "stable" : "beta";
 }
 
-/** apt-ftparchive's Release settings for a suite. */
-export function releaseConfig(suite: string): string[] {
+/** How long a signed Release stays valid (the controller's ruling): apt refuses it after, so the owner re-signs and
+ *  uploads the repository within that window. */
+export const RELEASE_VALID_DAYS = 14;
+
+/** apt-ftparchive's Release settings for a suite; `now` sets Date and Valid-Until. */
+export function releaseConfig(suite: string, now: Date = new Date()): string[] {
+  const until = new Date(now.getTime() + RELEASE_VALID_DAYS * 86_400_000);
   return [
+    "-o", `APT::FTPArchive::Release::Date=${now.toUTCString().replace("GMT", "UTC")}`,
+    "-o", `APT::FTPArchive::Release::Valid-Until=${until.toUTCString().replace("GMT", "UTC")}`,
     "-o", "APT::FTPArchive::Release::Origin=Clover",
     "-o", "APT::FTPArchive::Release::Label=Clover",
     "-o", `APT::FTPArchive::Release::Suite=${suite}`,
@@ -136,16 +143,69 @@ export async function repoSigningKey(store: RepoKeyStore, committedPublic: strin
   return key;
 }
 
-/** apt's two signatures over Release: the clearsigned InRelease and the detached Release.gpg; dnf's is detached too. */
-export async function signRelease(text: string, key: openpgp.PrivateKey): Promise<{ inRelease: string; detached: string }> {
-  const inRelease = await openpgp.sign({ message: await openpgp.createCleartextMessage({ text }), signingKeys: key });
-  const detached = await openpgp.sign({ message: await openpgp.createMessage({ text }), signingKeys: key, detached: true });
+/**
+ * apt's two signatures over Release: the clearsigned InRelease (text, as apt reads it) and Release.gpg, detached over
+ * the file's exact bytes (a binary signature, not text mode); dnf's repomd.xml.asc is detached over its bytes too.
+ */
+export async function signRelease(bytes: Uint8Array, key: openpgp.PrivateKey): Promise<{ inRelease: string; detached: string }> {
+  const inRelease = await openpgp.sign({ message: await openpgp.createCleartextMessage({ text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) }), signingKeys: key });
+  const detached = await openpgp.sign({ message: await openpgp.createMessage({ binary: bytes }), signingKeys: key, detached: true, format: "armored" });
   return { inRelease: inRelease as string, detached: detached as string };
 }
 
-export async function verifyDetached(text: string, signature: string, publicKey: string): Promise<boolean> {
-  const r = await openpgp.verify({ message: await openpgp.createMessage({ text }), signature: await openpgp.readSignature({ armoredSignature: signature }), verificationKeys: await openpgp.readKey({ armoredKey: publicKey }) });
-  try { await r.signatures[0]!.verified; return true; } catch { return false; }
+export async function verifyDetached(bytes: Uint8Array, signature: string, publicKey: string): Promise<boolean> {
+  try {
+    const r = await openpgp.verify({ message: await openpgp.createMessage({ binary: bytes }), signature: await openpgp.readSignature({ armoredSignature: signature }), verificationKeys: await openpgp.readKey({ armoredKey: publicKey }) });
+    await r.signatures[0]!.verified;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a clearsigned InRelease verifies and says exactly Release's text. */
+export async function verifyInRelease(inRelease: string, release: Uint8Array, publicKey: string): Promise<boolean> {
+  try {
+    const message = await openpgp.readCleartextMessage({ cleartextMessage: inRelease });
+    const r = await openpgp.verify({ message, verificationKeys: await openpgp.readKey({ armoredKey: publicKey }) });
+    await r.signatures[0]!.verified;
+    return r.data === new TextDecoder().decode(release);
+  } catch {
+    return false;
+  }
+}
+
+/** Every signature in a signed tree, checked against the committed key; the problems (none means all good). */
+export async function verifyTree(dir: string, publicKey: string): Promise<string[]> {
+  const problems: string[] = [];
+  let checked = 0;
+  for (const suite of ["stable", "beta"]) {
+    const release = join(dir, "apt", "dists", suite, "Release");
+    if (existsSync(release)) {
+      const bytes = new Uint8Array(readFileSync(release));
+      const inRelease = join(dirname(release), "InRelease");
+      const gpg = join(dirname(release), "Release.gpg");
+      if (!existsSync(inRelease) || !(await verifyInRelease(readFileSync(inRelease, "utf8"), bytes, publicKey))) problems.push(`${relative(dir, inRelease)} doesn't verify`);
+      if (!existsSync(gpg) || !(await verifyDetached(bytes, readFileSync(gpg, "utf8"), publicKey))) problems.push(`${relative(dir, gpg)} doesn't verify`);
+      checked++;
+    }
+    for (const arch of ["x86_64", "aarch64"]) {
+      const repomd = join(dir, "rpm", suite, arch, "repodata", "repomd.xml");
+      if (!existsSync(repomd)) continue;
+      const asc = `${repomd}.asc`;
+      if (!existsSync(asc) || !(await verifyDetached(new Uint8Array(readFileSync(repomd)), readFileSync(asc, "utf8"), publicKey))) problems.push(`${relative(dir, asc)} doesn't verify`);
+      checked++;
+    }
+  }
+  if (checked === 0) problems.push("the tree holds no repository metadata");
+  return problems;
+}
+
+/** The owner's steps (sign, upload, key) run on their Mac alone: never in CI, never elsewhere. */
+export function ownerOnly(env: Record<string, string | undefined>, platform: string): string | undefined {
+  if (env.CI || env.GITHUB_ACTIONS) return "this is the owner's step, and it never runs in CI";
+  if (platform !== "darwin") return "this is the owner's step, on their Mac (the key is in its login Keychain)";
+  return undefined;
 }
 
 async function sign(dir: string, root: string): Promise<void> {
@@ -154,17 +214,18 @@ async function sign(dir: string, root: string): Promise<void> {
   for (const suite of ["stable", "beta"]) {
     const release = join(dir, "apt", "dists", suite, "Release");
     if (existsSync(release)) {
-      const s = await signRelease(readFileSync(release, "utf8"), key);
+      const s = await signRelease(new Uint8Array(readFileSync(release)), key);
       writeFileSync(join(dirname(release), "InRelease"), s.inRelease);
       writeFileSync(join(dirname(release), "Release.gpg"), s.detached);
-      if (!(await verifyDetached(readFileSync(release, "utf8"), s.detached, committed!))) throw new Error(`${release}'s signature doesn't verify`);
     }
     for (const arch of ["x86_64", "aarch64"]) {
       const repomd = join(dir, "rpm", suite, arch, "repodata", "repomd.xml");
-      if (existsSync(repomd)) writeFileSync(`${repomd}.asc`, (await signRelease(readFileSync(repomd, "utf8"), key)).detached);
+      if (existsSync(repomd)) writeFileSync(`${repomd}.asc`, (await signRelease(new Uint8Array(readFileSync(repomd)), key)).detached);
     }
   }
   copyFileSync(join(root, KEYRING_FILE), join(dir, "clover-archive-keyring.asc"));
+  const problems = await verifyTree(dir, committed!);
+  if (problems.length > 0) throw new Error(`the signatures don't verify: ${problems.join("; ")}`);
 }
 
 /** Every file of the signed tree, with its object key, for the upload. */
@@ -178,8 +239,10 @@ export function uploadPlan(dir: string): Array<{ file: string; key: string }> {
   return out;
 }
 
-export function uploadArgs(file: string, key: string): string[] {
-  return ["bunx", "wrangler", "r2", "object", "put", `${REPO_BUCKET}/${key}`, "--file", file, "--remote"];
+/** The upload of one file, with the wrangler the repo pins (the root devDependency, as the services pin it): never
+ *  whatever bunx would fetch. */
+export function uploadArgs(file: string, key: string, root: string): string[] {
+  return [join(root, "node_modules", ".bin", "wrangler"), "r2", "object", "put", `${REPO_BUCKET}/${key}`, "--file", file, "--remote"];
 }
 
 export async function main(argv: readonly string[], root: string): Promise<number> {
@@ -195,6 +258,10 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       console.log(`linux-repo: the ${suiteFor(parseChannel(value("--channel")))} repositories' metadata is in ${out} (unsigned)`);
       return 0;
     }
+    if (cmd === "sign" || cmd === "upload" || cmd === "key") {
+      const refused = ownerOnly(process.env, process.platform);
+      if (refused !== undefined) throw new Error(refused);
+    }
     if (cmd === "sign") {
       const dir = value("--dir");
       if (dir === undefined) throw new Error("sign takes --dir <dir>");
@@ -206,15 +273,19 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       const dir = value("--dir");
       if (dir === undefined) throw new Error("upload takes --dir <dir>");
       if (!existsSync(join(dir, "clover-archive-keyring.asc"))) throw new Error("the tree isn't signed: run sign first");
+      // Every signature checks against the committed key before anything leaves this Mac.
+      const committed = readFileSync(join(root, KEYRING_FILE), "utf8");
+      const bad = await verifyTree(dir, committed);
+      if (bad.length > 0) throw new Error(`not uploading: ${bad.join("; ")}`);
+      if (readFileSync(join(dir, "clover-archive-keyring.asc"), "utf8") !== committed) throw new Error("the tree's keyring is not the committed one");
       const plan = uploadPlan(dir);
-      for (const p of plan) console.log(`  ${uploadArgs(p.file, p.key).join(" ")}`);
+      for (const p of plan) console.log(`  ${uploadArgs(p.file, p.key, root).join(" ")}`);
       if (!rest.includes("--yes")) { console.log(`linux-repo: ${plan.length} files to ${REPO_BUCKET}, nothing uploaded (add --yes)`); return 0; }
-      for (const p of plan) run(uploadArgs(p.file, p.key), root);
+      for (const p of plan) run(uploadArgs(p.file, p.key, root), root);
       console.log(`linux-repo: uploaded ${plan.length} files to ${REPO_BUCKET}`);
       return 0;
     }
     if (cmd === "key") {
-      if (process.platform !== "darwin") throw new Error("the key lives in the owner's login Keychain, on their Mac");
       if (rest[0] === "--generate") {
         if (existsSync(join(root, KEYRING_FILE))) throw new Error(`${KEYRING_FILE} exists: replacing it is a key rotation`);
         if ((await repoKeychain.get(REPO_KEY_ITEM)) !== null) throw new Error("the login Keychain already holds a repository key");
