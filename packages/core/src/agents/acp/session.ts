@@ -19,7 +19,8 @@
 //   (Cursor, S5 edit 11), the backend's one record of the user's own selection (`UserSelections`) is set back when the
 //   last delegation that changed it ends, after a crash or a restart too (review 10).
 // * **Read-only** (spec §9.3 [P], item 78): an agent that acts without asking starts in its read-only mode (Cursor's
-//   `ask` or `plan`), or not at all.
+//   `ask` or `plan`), or not at all; `setReadOnly` switches it at a later turn when its computer's level changes, and
+//   back to the mode it had.
 // * **Progress** for the stall watchdog: any message from the agent, stamped on the session's clock. While a
 //   permission request waits on the user, the session is waiting on them, not stalled (review 3).
 // * **A hostile agent's limits** (review 12): at most `MAX_OPEN_ASKS` permission requests at once (more are refused
@@ -89,9 +90,10 @@ export interface OpenOptions {
   startTimeoutMs?: number;
   /** The backend's record of the user's own selections, where a choice persists (`choicePersists`). */
   selections?: { keeper: UserSelections; backend: string };
-  /** Start in this read-only mode: the config option, and its values in order of preference. The session fails
-   *  `refused` when the agent offers none of them. */
-  readOnly?: { option: string; values: readonly string[] };
+  /** The agent's read-only mode: the config option, and its values in order of preference (`READ_ONLY_MODES`). */
+  readOnlyMode?: { option: string; values: readonly string[] };
+  /** Start in the read-only mode; the session fails `refused` when the agent offers none of its values. */
+  readOnly?: boolean;
 }
 
 /** The most permission requests one agent may have open at once; more are refused without a card. */
@@ -129,6 +131,10 @@ export class AcpAgentSession implements AgentSession {
   readonly #held = new Set<string>();
   /** Permission requests waiting on their answer. */
   #asking = 0;
+  readonly #readOnlyMode: { option: string; values: readonly string[] } | undefined;
+  #readOnly = false;
+  /** The mode before the read-only one, to switch back to. */
+  #modeBefore: string | undefined;
   #permission: ((ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>) | undefined;
   #turn: Turn | undefined;
   #turnDone: Promise<unknown> | undefined;
@@ -147,6 +153,7 @@ export class AcpAgentSession implements AgentSession {
     this.#proc = opts.process;
     this.#lastProgress = opts.clock.now();
     this.#selections = opts.selections ?? { keeper: new UserSelections(), backend: "agent" };
+    this.#readOnlyMode = opts.readOnlyMode;
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -270,14 +277,8 @@ export class AcpAgentSession implements AgentSession {
       this.#agentSessionId = id;
     }
     this.#config = readConfigOptions(obj(result)?.["configOptions"]) ?? this.#config;
-    if (opts.readOnly) {
-      const option = this.#config.find((c) => c.id === opts.readOnly!.option);
-      const value = opts.readOnly.values.find((v) => option?.values.includes(v));
-      if (!option || value === undefined) {
-        throw new ContractError("refused", "this agent acts without asking and offers no read-only mode, so it can't start at read-only");
-      }
-      if (option.currentValue !== value) await this.#setOption(option.id, value);
-    }
+    await this.#setBackLeftovers();
+    if (opts.readOnly) await this.setReadOnly(true);
     if (opts.model !== undefined) await this.setConfig("model", opts.model);
     if (opts.effort !== undefined && !this.#quirks.config.effortInModel) await this.setConfig("effort", opts.effort);
     this.#state = "ready";
@@ -383,6 +384,43 @@ export class AcpAgentSession implements AgentSession {
       throw new ContractError("refused", `this agent takes no ${option} option${option === "effort" && q.effortInModel ? "; its effort is part of the model" : ""}`);
     }
     await this.#setOption(id, value);
+  }
+
+  /** A choice an earlier delegation left in the user's own settings (its process crashed before it could set it
+   *  back): set back now, before anything else (check 2's minor 4). */
+  async #setBackLeftovers(): Promise<void> {
+    if (!this.#quirks.config.choicePersists) return;
+    const { keeper, backend } = this.#selections;
+    for (const c of [...this.#config]) {
+      const user = keeper.leftover(backend, c.id, c.currentValue);
+      if (user === undefined || user === c.currentValue) {
+        if (user !== undefined) keeper.restored(backend, c.id);
+        continue;
+      }
+      const result = await this.#call("session/set_config_option", { sessionId: this.#agentSessionId, configId: c.id, value: user }, CONFIG_TIMEOUT_MS).catch(() => undefined);
+      if (result === undefined) continue;
+      keeper.restored(backend, c.id);
+      this.#config = readConfigOptions(result) ?? this.#config;
+    }
+  }
+
+  /** Switches the agent into its read-only mode, or back to the mode it had. Refused when it offers no read-only mode. */
+  async setReadOnly(on: boolean): Promise<void> {
+    if (on === this.#readOnly) return;
+    const mode = this.#readOnlyMode;
+    const option = mode ? this.#config.find((c) => c.id === mode.option) : undefined;
+    if (on) {
+      const value = mode?.values.find((v) => option?.values.includes(v));
+      if (!option || value === undefined) {
+        throw new ContractError("refused", "this agent acts without asking and offers no read-only mode, so it can't run at read-only");
+      }
+      this.#modeBefore = option.currentValue;
+      if (option.currentValue !== value) await this.#setOption(option.id, value);
+      this.#readOnly = true;
+      return;
+    }
+    if (option && this.#modeBefore !== undefined && option.currentValue !== this.#modeBefore) await this.#setOption(option.id, this.#modeBefore);
+    this.#readOnly = false;
   }
 
   async #setOption(id: string, value: string): Promise<void> {

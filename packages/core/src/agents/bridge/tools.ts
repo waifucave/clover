@@ -75,12 +75,24 @@ export const GLOSSARY: BridgeToolDef = {
   },
 };
 
-/** The bridge's own tools, always present. */
+/** The bridge's own tools for a bot's agent. */
 export const BRIDGE_OWN_TOOLS: readonly BridgeToolDef[] = [SEND_MESSAGE, GLOSSARY];
+
+/** The bridge's own tools for a session: `SendMessage` only where there is a bot to message (a coding session the
+ *  user drives has none: the user sees its every message already). */
+export function bridgeOwnTools(bot: string | undefined): readonly BridgeToolDef[] {
+  return bot === undefined ? [GLOSSARY] : BRIDGE_OWN_TOOLS;
+}
 
 /** The essentials an agent must know (S5 edit 3): who sent the work, how to report, where skills are. */
 export function bridgeInstructions(a: { bot?: string; serverName: string }): string {
-  const who = a.bot ? `the bot "${a.bot}"` : "the user";
+  if (a.bot === undefined) {
+    return [
+      "You are working with the user in Clover, in a coding session they drive.",
+      `The MCP server "${a.serverName}" gives you Glossary, to look up and load the skills and tools Clover's plugins offer you.`,
+    ].join(" ");
+  }
+  const who = `the bot "${a.bot}"`;
   return [
     `You are working on a task from ${who} in Clover, as a background agent.`,
     `Your final reply is delivered to ${who} when you finish, together with this session's transcript.`,

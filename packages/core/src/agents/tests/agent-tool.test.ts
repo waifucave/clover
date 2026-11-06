@@ -9,6 +9,7 @@ import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS } from "..
 import { advanceAndSettle } from "../../contracts/fakes/clock";
 import { FakeSessionHost } from "../../contracts/fakes/session-host";
 import { isContractError } from "../../contracts/common";
+import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
 import { AcpAgentBackend } from "../backend";
 import { BridgeEndpoint } from "../bridge/endpoint";
@@ -428,6 +429,67 @@ describe("what never runs quietly", () => {
     await w3.delegate();
     await waitFor(() => notification(w3), "the notification");
     expect(w3.report("config")).toEqual([]);
+  });
+});
+
+describe("check 2's minors", () => {
+  test("a fenced path behind 200 harmless ones is still a card at automatic, and listed first (minor 1)", async () => {
+    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit many files", paths: [] } }]] });
+    const fenced = join(w.cloverHome, "run", "x.json");
+    const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    config.script[0]![0]!.tool.paths = [...Array.from({ length: 200 }, (_, i) => `f${i}.txt`), fenced];
+    writeFileSync(w.agent.config, JSON.stringify(config));
+    await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
+    const items = (card.fields["paths"] as { items: string[] }).items;
+    expect(items[0]).toBe(fenced);
+    expect(items.at(-1)).toBe("… and 1 more");
+  });
+
+  test("a coding session's bridge offers no SendMessage, since there is no bot to message (minor 3)", async () => {
+    const w = make({ script: [[{ say: "hi" }]] });
+    const r = await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1" }, backend: "fake", prompt: "Hi.", root: "home/Studio/project1" });
+    const offered = await w.manager.bridgeHandlers().tools(r.sessionId);
+    expect(offered.tools.map((t) => t.name)).toEqual(["Glossary"]);
+    expect(offered.instructions).not.toContain("SendMessage");
+    const bot = await w.delegate();
+    expect((await w.manager.bridgeHandlers().tools(bot.sessionId)).tools.map((t) => t.name)).toEqual(["SendMessage", "Glossary"]);
+  });
+
+  test("a choice a crashed delegation left is set back as soon as the agent's next session opens (minor 4)", async () => {
+    const selections = new UserSelections();
+    const w = make({ quirks: S5_CURSOR_QUIRKS, selections, script: [[{ wait: true }]] });
+    await w.delegate("A.", { model: "fake-model-b" });
+    await waitFor(() => w.report("blocked").length === 1, "the agent to block");
+    expect(JSON.parse(readFileSync(w.agent.selection, "utf8"))).toEqual({ model: "fake-model-b" });
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGKILL");
+    await waitFor(() => notification(w), "the crash's notification");
+    expect(selections.record("fake", "model")).toEqual({ user: "fake-model-a", ours: "fake-model-b" });
+    // The next delegation (a new process, which plays this script) sets no model of its own; the user's own comes
+    // back when it opens.
+    const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: unknown[][] };
+    config.script = [[{ say: "no model asked" }]];
+    writeFileSync(w.agent.config, JSON.stringify(config));
+    await w.delegate("B.");
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(JSON.parse(readFileSync(w.agent.selection, "utf8"))).toEqual({ model: "fake-model-a" });
+    expect(selections.record("fake", "model")).toBeUndefined();
+  });
+
+  test("lowering the computer to read-only reaches a running agent at its next turn, and raising it switches back (minor 5)", async () => {
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ quirks, level: "ask", modes: ["agent", "plan", "ask"], readOnlyMode: { option: "mode", values: ["ask", "plan"] }, script: [[{ say: "one" }], [{ say: "two" }], [{ say: "three" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    expect(w.report("config")).toEqual([]);
+    w.level = "read-only";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.report("config").map((c) => [c["option"], c["value"]])).toEqual([["mode", "ask"]]);
+    w.level = "ask";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Three." });
+    await waitFor(() => w.parentInputs("task-notification").length === 3, "the third notification");
+    expect(w.report("config").map((c) => [c["option"], c["value"]])).toEqual([["mode", "ask"], ["mode", "agent"]]);
   });
 });
 

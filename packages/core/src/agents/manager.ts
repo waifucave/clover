@@ -39,7 +39,7 @@ import type { AcpStartSpec, AgentWire } from "./backend";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/endpoint";
 import { BRIDGE_ENV } from "./bridge/server";
-import { BRIDGE_OWN_TOOLS, NO_PLUGIN_TOOLS, bridgeInstructions, type BridgeToolSource } from "./bridge/tools";
+import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -56,7 +56,7 @@ export interface AgentManagerOptions {
   host: SessionHost;
   approvals: ApprovalBroker;
   tree: Pick<Tree, "resolve">;
-  fence: Pick<Fence, "checkAgentRoot" | "policy">;
+  fence: Pick<Fence, "checkAgentRoot" | "policy" | "touches">;
   /** The backends the plugins contribute (`agentBackends`); read at each start. */
   backends: () => readonly AgentBackend[];
   tokens: BridgeTokens;
@@ -270,7 +270,7 @@ export class AgentManager {
     transcript.redact(token);
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
-      serverName: this.#serverNameFor(), bridgeTools: BRIDGE_OWN_TOOLS.map((t) => t.name),
+      serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
@@ -279,6 +279,7 @@ export class AgentManager {
       start: () => this.#startAgent(entry, reattach),
       promptOf: (input) => promptOf(input),
       redact: (v) => transcript.redacted(v),
+      beforeTurn: (session) => this.#applyLevel(entry, session),
       ended: () => {
         this.#o.tokens.revoke(id);
         entry.unwatch?.();
@@ -300,6 +301,16 @@ export class AgentManager {
     return e.level ?? this.#o.levelOf?.(e.computer) ?? "read-only";
   }
 
+  /** At each turn, the computer's level as it is now (check 2's minor 5): an agent that acts without asking goes into
+   *  its read-only mode when the level dropped to read-only since it started, and back when it rose again. */
+  async #applyLevel(e: Entry, session: AgentSession): Promise<void> {
+    if (!e.backend.quirks.marks.includes("unasked-actions")) return;
+    const readOnly = this.#levelOf(e) === "read-only";
+    const s = session as { setReadOnly?: (on: boolean) => Promise<void> };
+    if (s.setReadOnly) return s.setReadOnly(readOnly);
+    if (readOnly) throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
+  }
+
   /** Before an agent launches: an agent that isn't sandboxed, or is outside its tested versions, needs the user's OK. */
   async #admit(e: Entry): Promise<void> {
     const d = await e.backend.detect();
@@ -319,7 +330,7 @@ export class AgentManager {
     await this.#admit(e);
     e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
-    e.bridgeTools = [...BRIDGE_OWN_TOOLS.map((t) => t.name), ...tools.map((t) => t.name)];
+    e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
       sessionId: e.id,
       root: e.rootPath,
@@ -400,7 +411,17 @@ export class AgentManager {
     const origin = e.driver.currentOrigin() ?? "agent";
     const signal = e.driver.currentSignal();
     // The token never reaches a card, and the fence sees each path as it really is (reviews 8 and 9).
-    const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths: agentPaths(raw.paths, e.rootPath) };
+    const resolved = agentPaths(raw.paths, e.rootPath);
+    if (resolved.over) {
+      // More paths than Clover checks: refused without a card, never let through unchecked (check 2's minor 1).
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "too-many-paths", paths: raw.paths.length });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // Every path goes to the broker; the card lists the fenced ones first.
+    const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
+    const paths = fenced.length === 0 ? resolved.paths : [...fenced, ...resolved.paths.filter((p) => !fenced.includes(p))];
+    const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths };
     const req: ApprovalRequest = {
       kind: "agent-permission",
       session: e.id,
@@ -509,7 +530,7 @@ export class AgentManager {
         const plugin = await source.tools(id).catch(() => []);
         const own = await source.instructions?.(id).catch(() => "");
         const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
-        return { tools: [...BRIDGE_OWN_TOOLS, ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
+        return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
       },
       call: (id, c) => {
         const e = this.#entries.get(id);
@@ -548,9 +569,11 @@ export function effectOf(toolKind: string): ActionEffect {
 }
 
 /** The key a card's "always" saves as Clover's own rule (S5 edit 5): a command exactly, or an MCP tool, each under the
- *  agent's backend, so an agent's rule never covers a bot's own tool of the same name, or the reverse (review 4). */
+ *  agent's backend, so an agent's rule never covers a bot's own tool of the same name, or the reverse (review 4), and
+ *  each written so no two calls share a key (check 2's minor 2). */
 export function ruleKeyOf(backend: string, ask: AgentPermissionAsk): string | undefined {
-  if (ask.mcp) return `Agent(${backend}):mcp__${ask.mcp.server}__${ask.mcp.tool}`;
+  // The server and tool as a JSON pair: `mcp__a__b__c` could be server `a__b` and tool `c`, or `a` and `b__c`.
+  if (ask.mcp) return `Agent(${backend}):mcp(${JSON.stringify([ask.mcp.server, ask.mcp.tool])})`;
   const command = (ask.rawInput as { command?: unknown } | undefined)?.command;
   if (ask.toolKind === "execute" && typeof command === "string" && command.length > 0 && command.length <= 2000) return `Agent(${backend}):Bash(${command})`;
   return undefined;
@@ -585,7 +608,11 @@ function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"
     ] },
     detail: { type: "rows", rows: [{ label: "The agent's title", value: sealedText(ask.title, 4000) }] },
   };
-  if (ask.paths.length > 0) fields["paths"] = { type: "list", items: ask.paths.slice(0, 200).map((p) => sealedText(p, 4000)) };
+  if (ask.paths.length > 0) {
+    const shown = ask.paths.slice(0, 200).map((p) => sealedText(p, 4000));
+    if (ask.paths.length > shown.length) shown.push(`… and ${ask.paths.length - shown.length} more`);
+    fields["paths"] = { type: "list", items: shown };
+  }
   return fields as ApprovalRequest["fields"];
 }
 

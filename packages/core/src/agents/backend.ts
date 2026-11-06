@@ -7,7 +7,8 @@
 //   a requirement naming the publisher's team, where the quirks name one.
 // * `start` launches one contained process per delegation in the root folder (process/launch.ts), hands it the
 //   bridge as its one stdio MCP server, and opens the ACP session (acp/session.ts). At read-only, an agent that acts
-//   without asking starts in its read-only mode (`readOnlyMode`), or `start` refuses it.
+//   without asking starts in its read-only mode (`readOnlyMode`), or `start` refuses it; the manager switches a
+//   running one at its next turn.
 // * Its own sandbox (sandbox/admission.ts): `detect` reports `sandboxed: true` only where the backend's sandbox is
 //   admitted for this OS and version, and `start` then writes the fenced set in the backend's own format into the
 //   session's setup folder. Every other agent, and one outside its tested versions, starts only after the user's OK
@@ -206,7 +207,8 @@ export class AcpAgentBackend implements AgentBackend {
       ...(wire.tap ? { tap: wire.tap } : {}),
       ...(this.#opts.clientInfo ? { clientInfo: this.#opts.clientInfo } : {}),
       selections: { keeper: this.#selections, backend: this.id },
-      ...(readOnly ? { readOnly: this.#opts.readOnlyMode! } : {}),
+      ...(this.#opts.readOnlyMode ? { readOnlyMode: this.#opts.readOnlyMode } : {}),
+      ...(readOnly ? { readOnly: true } : {}),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }

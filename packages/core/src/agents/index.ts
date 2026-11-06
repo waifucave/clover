@@ -79,7 +79,7 @@ export interface AgentsOptions {
   host: SessionHost;
   approvals: ApprovalBroker;
   tree: Pick<Tree, "resolve">;
-  fence: Pick<Fence, "checkAgentRoot" | "policy">;
+  fence: Pick<Fence, "checkAgentRoot" | "policy" | "touches">;
   clock: Clock;
   /** The backends to offer; the quirks table's by default. B-M2's registry feeds `agentBackends` here. */
   backends?: (wire: AgentManager["wire"]) => AgentBackend[];

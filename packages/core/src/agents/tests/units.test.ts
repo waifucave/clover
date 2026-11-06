@@ -14,7 +14,7 @@ import { buildAgentEnv } from "../process/launch";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
 import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
-import { agentPaths } from "../paths";
+import { MAX_CHECKED_PATHS, agentPaths } from "../paths";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
@@ -142,7 +142,10 @@ describe("the card's inputs", () => {
     expect(effectOf("execute")).toBe("execute");
     expect(effectOf("switch_mode")).toBe("other");
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "execute", title: "`ls`", rawInput: { command: "ls -la" }, options: [], paths: [] })).toBe("Agent(cursor):Bash(ls -la)");
-    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server: "blender", tool: "Render" }, options: [], paths: [] })).toBe("Agent(cursor):mcp__blender__Render");
+    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server: "blender", tool: "Render" }, options: [], paths: [] })).toBe('Agent(cursor):mcp(["blender","Render"])');
+    // No two calls share a key: `a__b` + `c` and `a` + `b__c` (check 2's minor 2).
+    const mcpKey = (server: string, tool: string) => ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server, tool }, options: [], paths: [] });
+    expect(mcpKey("a__b", "c")).not.toBe(mcpKey("a", "b__c"));
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", options: [], paths: [] })).toBeUndefined();
     expect((await promptOf({ from: "bot", bot: "alpha", session: "s", text: "go on" })).text).toBe("go on");
     expect((await promptOf({ from: "note", label: "Fish", text: "hi", by: { kind: "core" } })).text).toBe("[Fish] hi");
@@ -285,6 +288,15 @@ describe("the user's own selections (review 10)", () => {
       later.end("cursor", "model", a, false);
       later.begin("cursor", "model", b, "user-new");
       expect(later.end("cursor", "model", b, true)).toBe("user-new");
+      later.restored("cursor", "model");
+      // A session that opens finds a leftover with no holder: still Clover's value, so the user's comes back now;
+      // a value the user set since drops the record (check 2's minor 4).
+      later.begin("cursor", "model", a, "user-model");
+      later.set("cursor", "model", "bot-a");
+      later.end("cursor", "model", a, false);
+      expect(later.leftover("cursor", "model", "bot-a")).toBe("user-model");
+      expect(later.leftover("cursor", "model", "user-changed")).toBeUndefined();
+      expect(later.record("cursor", "model")).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -300,12 +312,16 @@ describe("the paths the fence sees (review 8)", () => {
       mkdirSync(root);
       mkdirSync(clover);
       symlinkSync(clover, join(root, "link"));
-      expect(agentPaths(["notes.md"], root, dir)).toEqual([join(root, "notes.md")]);
-      expect(agentPaths(["../.clover/settings"], root, dir)).toEqual([join(clover, "settings")]);
-      expect(agentPaths(["~/.clover/settings", `file://${join(root, "a b")}`], root, dir)).toEqual([join(clover, "settings"), join(root, "a b")]);
-      expect(agentPaths(["link/settings"], root, dir)).toEqual([join(root, "link", "settings"), join(clover, "settings")]);
-      expect(agentPaths(["link/new/deep.txt"], root, dir)).toEqual([join(root, "link", "new", "deep.txt"), join(clover, "new", "deep.txt")]);
-      expect(agentPaths(["", "a\0b"], root, dir)).toEqual([]);
+      expect(agentPaths(["notes.md"], root, dir).paths).toEqual([join(root, "notes.md")]);
+      expect(agentPaths(["../.clover/settings"], root, dir).paths).toEqual([join(clover, "settings")]);
+      expect(agentPaths(["~/.clover/settings", `file://${join(root, "a b")}`], root, dir).paths).toEqual([join(clover, "settings"), join(root, "a b")]);
+      expect(agentPaths(["link/settings"], root, dir).paths).toEqual([join(root, "link", "settings"), join(clover, "settings")]);
+      expect(agentPaths(["link/new/deep.txt"], root, dir).paths).toEqual([join(root, "link", "new", "deep.txt"), join(clover, "new", "deep.txt")]);
+      expect(agentPaths(["", "a\0b"], root, dir).paths).toEqual([]);
+      // Every path is checked, however many come before it; past the hard cap the request is over.
+      const many = [...Array.from({ length: 300 }, (_, i) => `f${i}.txt`), "../.clover/run/x.json"];
+      expect(agentPaths(many, root, dir).paths.at(-1)).toBe(join(clover, "run", "x.json"));
+      expect(agentPaths(Array.from({ length: MAX_CHECKED_PATHS + 1 }, (_, i) => `f${i}`), root, dir)).toEqual({ paths: [], over: true });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
