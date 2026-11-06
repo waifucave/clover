@@ -68,6 +68,9 @@ export interface GroupJoin {
   by?: string;
   bysig?: string;
   admits?: { by: string; sig: string }[];
+  /** The group this key moves from (a merge or a recovery invite): a member there keeps its vote, and the service
+   *  takes it out of that group. */
+  from?: string;
 }
 
 /** What a signed request's `sig` covers (PROTOCOL.md "Signed requests"). */

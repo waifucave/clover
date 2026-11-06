@@ -63,8 +63,12 @@ export interface GroupRecord {
   recoveredFrom?: string;
   /** A founding or a join the service hasn't taken yet (it was unreachable), signed, to send again. */
   pendingCreate?: { group: string; key: string; t: number; sig: string };
-  pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string };
+  pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string; from?: string };
 }
+
+/** How this device left a group: moved with a merge or an invite, removed by another member, or left on its own
+ *  (its revoke couldn't reach a quorum, so it started a new group). */
+export type GroupLeaving = "moved" | "removed" | "left";
 
 /** The synced keys a revoked device held, to be rotated by the user (§8.1: revoking starts a guided rotation). */
 export interface RotationRecord {
@@ -93,7 +97,7 @@ interface FileShape {
   pendingRevokes: PendingRevoke[];
   /** Groups this device left: moved out of in a merge, or was removed from by another member. It never goes back to one
    *  on its own. */
-  groupsLeft: Record<string, { at: number; how: "moved" | "removed" }>;
+  groupsLeft: Record<string, { at: number; how: GroupLeaving }>;
 }
 
 /** What a revocation still has to tell the services, kept until each confirms (devices/account-devices.ts). */
@@ -464,7 +468,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
   }
 
   /** Leaves the group record behind (merged into another, or removed from it); the next `setGroup` names the new one. */
-  leaveGroup(how: "moved" | "removed"): void {
+  leaveGroup(how: GroupLeaving): void {
     const g = this.#state.group;
     if (!g) return;
     this.#state.groupsLeft[g.id] = { at: this.#clock.now(), how };
@@ -472,7 +476,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
     this.#save();
   }
 
-  groupLeft(id: string): { at: number; how: "moved" | "removed" } | undefined {
+  groupLeft(id: string): { at: number; how: GroupLeaving } | undefined {
     const l = this.#state.groupsLeft[id];
     return l ? { ...l } : undefined;
   }

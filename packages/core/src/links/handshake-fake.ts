@@ -424,8 +424,21 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           const by = [...new Set(admits.map((a) => a.by))];
           const voters = [...g.members].filter(([, m]) => votes(m)).length;
           const voting = by.filter((k) => votes(g.members.get(k))).length;
-          g.members.set(b.key, { joinedAt: now(), votesFrom: voting >= quorumOf(voters) ? now() : now() + voteAfterMs, admittedBy: by });
-          g.changes.push({ kind: "admit", target: b.key, signers: by, at: now() });
+          let votesFrom = voting >= quorumOf(voters) ? now() : now() + voteAfterMs;
+          // A key moving from another group (a merge, a recovery invite) keeps its vote, or its wait for one, and leaves
+          // that group in the same step.
+          const fromGroup = typeof b.from === "string" ? groups.get(b.from) : undefined;
+          const before = fromGroup?.members.get(newKey);
+          if (fromGroup && before && b.from !== id) {
+            votesFrom = Math.min(votesFrom, before.votesFrom ?? votesFrom);
+            fromGroup.members.delete(newKey);
+            fromGroup.removed.set(newKey, now());
+            if (fromGroup.lease.holder === newKey) fromGroup.lease = { holder: null, epoch: fromGroup.lease.epoch, expiresAt: null };
+            if (fromGroup.members.size === 0) groups.delete(b.from as string);
+            else for (const k of fromGroup.members.keys()) push(`group:${b.from as string}`, k, { t: "members", members: memberList(fromGroup) });
+          }
+          g.members.set(newKey, { joinedAt: now(), votesFrom, admittedBy: by });
+          g.changes.push({ kind: "admit", target: newKey, signers: by, at: now() });
           for (const k of g.members.keys()) push(scope, k, { t: "members", members: memberList(g) });
           return Response.json({}, { status: 201 });
         }

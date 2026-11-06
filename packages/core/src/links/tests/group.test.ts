@@ -17,7 +17,7 @@ import { brokerCardOpener } from "../../devices/rpc";
 import { toBase64Url } from "../../identity/bytes";
 import { ed25519FromSecret } from "../../identity/keys";
 import { GroupLeaseScope } from "../../lease/scope";
-import { eligibleVoters, survivor } from "../group";
+import { eligibleVoters } from "../group";
 import { groupKeyRef, HandshakeClient, removeStatement } from "../handshake";
 import { startFakeHandshake, type FakeHandshake, type FakeHandshakeOptions } from "../handshake-fake";
 import { MemoryNetwork } from "../memory-wire";
@@ -95,7 +95,7 @@ async function answer(d: Daemon, change: string, allow: boolean, check?: (labels
 const groupOf = (d: Daemon) => d.links.registry.group()?.id;
 
 describe("merging two groups (R18)", () => {
-  test("the survivor's computer admits the other's, whose old mates follow hop by hop; the old group is gone", async () => {
+  test("only in a confirmed pairing: the host's group survives, the joiner keeps its vote, and its old mate follows by its own card, keeping its vote too", async () => {
     const hs = service();
     const net = new MemoryNetwork();
     const [a, b, c, d] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Server"), await daemon(net, hs, "Mini")];
@@ -105,17 +105,44 @@ describe("merging two groups (R18)", () => {
     const g2 = groupOf(c)!;
     expect(g1).not.toBe(g2);
     await waitFor(() => hs.groups.get(g1)?.members.size === 2 && hs.groups.get(g2)?.members.size === 2);
-    // The laptop and the server pair: their groups are two of two, so the smaller id survives.
+    const [cKey, dKey] = [c.links.registry.group()!.ownKey, d.links.registry.group()!.ownKey];
+    // The laptop hosts the server's pairing: both groups were in the words the user checked, and the laptop's survives.
     await pair(b, c);
-    const kept = survivor({ id: g1, size: 2 }, { id: g2, size: 2 });
-    const gone = kept === g1 ? g2 : g1;
-    await waitFor(() => [a, b, c, d].every((x) => groupOf(x) === kept), 15_000);
-    await waitFor(() => hs.groups.get(kept)?.members.size === 4 && !hs.groups.has(gone));
-    // Each left its old group for good, and the computers that admitted them know their keys.
-    const movers = kept === g1 ? [c, d] : [a, b];
-    for (const m of movers) expect(m.links.registry.groupLeft(gone)?.how).toBe("moved");
-    expect(b.links.registry.group()!.members[c.links.key.id]?.key).toBeDefined();
-    expect(c.links.registry.group()!.members[b.links.key.id]?.key).toBeDefined();
+    await waitFor(() => groupOf(c) === g1);
+    // The mini follows only once its own user agrees.
+    expect(groupOf(d)).toBe(g2);
+    await answer(d, "device-add", true, (labels) => labels);
+    await waitFor(() => groupOf(d) === g1);
+    await waitFor(() => hs.groups.get(g1)?.members.size === 4 && !hs.groups.has(g2));
+    // Both took their keys along and kept their votes.
+    const members = hs.groups.get(g1)!.members;
+    for (const k of [cKey, dKey]) expect(members.get(k)!.votesFrom!).toBeLessThanOrEqual(Date.now());
+    for (const m of [c, d]) expect(m.links.registry.groupLeft(g2)?.how).toBe("moved");
+    expect(b.links.registry.group()!.members[c.links.key.id]?.key).toBe(cKey);
+  }, 40_000);
+
+  test("what a paired computer says of its group moves nothing, and nobody's admit is signed for a key it didn't invite (the reviewer's probe)", async () => {
+    const hs = service();
+    const net = new MemoryNetwork();
+    const [a, b, t] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Stolen")];
+    await pair(a, b);
+    await pair(a, t);
+    const g = groupOf(a)!;
+    await waitFor(() => hs.groups.get(g)?.members.size === 3);
+    // The thief runs its own code: it claims a huge group of its own, and asks for admits for keys of its own.
+    t.links.groups!.close();
+    const link = await t.links.transport.connect(a.links.key.id);
+    await link.request("link.group.info", { group: "a-thief-group-id-xxxxx", key: "k", size: 999, account: false, recoveredFrom: null });
+    await Bun.sleep(300);
+    expect(groupOf(a)).toBe(g);
+    expect(groupOf(b)).toBe(g);
+    const { generateEd25519 } = await import("../../identity/keys");
+    const fresh = toBase64Url(generateEd25519().publicKey);
+    const refused = await link.request("link.group.admit", { group: g, key: fresh, t: t.client.now() }).catch((e: unknown) => e);
+    expect(isContractError(refused, "refused")).toBe(true);
+    // Not even its own key again: it has a live one.
+    const again = await link.request("link.group.admit", { group: g, key: t.links.registry.group()!.ownKey, t: t.client.now() }).catch((e: unknown) => e);
+    expect(isContractError(again, "refused")).toBe(true);
   }, 40_000);
 });
 

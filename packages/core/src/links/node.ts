@@ -199,6 +199,8 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     account: () => accountHash,
     ...(o.handshake ? { handshake: o.handshake } : {}),
     ...(o.rendezvous ? { rendezvous: o.rendezvous } : {}),
+    // A merge in a confirmed pairing (R18): the old group's computers are asked to follow, each by its card.
+    onMerged: (old, via) => groups?.merged(old, via),
   });
 
   // Peers learn this device's name and answer key over the link, so they can check what its app signs (lane D's relay).

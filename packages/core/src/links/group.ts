@@ -3,29 +3,31 @@
 //
 // * **Keys.** Members tell each other their group keys over the link (`link.group.info`), so the lease's holder, a
 //   member key, maps to a device on every member, not only on the one that admitted it.
-// * **Merging (R18).** Two linked computers in different groups end up in one. The group with more members survives
-//   (a tie goes to the smaller id). A computer of the other group asks its peer to admit it, joins, releases its lease
-//   in its old group if it holds it, leaves that group, and tells the computers it's linked with. Its old group's
-//   computers follow it hop by hop over their own links. A computer never goes back on its own to a group it left.
+// * **Merging (R18).** Two groups merge only inside a pairing the user confirmed: both group ids are in the transcript
+//   whose words they checked, and the host's group survives (links/pairing.ts). The joiner takes its key along, so it
+//   keeps its vote, and then invites its old group's computers (`link.group.invite`). Each asks its user with a card
+//   before it follows, takes its own key along too, and invites the computers it checked on that card, hop by hop. A
+//   computer never moves on what a peer says of its group alone, and never goes back on its own to a group it left.
 // * **Voters and the quorum (proposal 1, 2).** The keeper reads from the service who votes and from when. Removing
 //   another member takes a quorum of voters: this computer asks the other voters over the link
 //   (`link.group.cosign`), and each one asks its user with a card first. A computer never co-signs on its own.
-// * **Recovery with two voters (proposal 5).** A computer the service no longer names, though it never left, was
-//   removed by another member. It founds a new group and invites the computers it's still linked with that were in the
-//   old one (`link.group.invite`). Each asks its user with a card before it moves.
+// * **Recovery (proposal 5).** A computer the service no longer names, though it never left, was removed by another
+//   member; a computer whose revoke can't reach a quorum leaves on its own. Either founds a new group and, after a
+//   card that names each computer it would invite, invites the ones the user checked. Each asks its user in turn.
 // * **Fresh signatures.** A pair registration or group request the service never took, whose statements are past the
 //   service's 10-minute window, is signed again. The peer's half comes over the link (`link.pair.resign`,
 //   `link.group.admit`).
 //
-// Who admits: any member a paired computer asks (v1's rule). The newcomer votes at once only if a quorum admitted it,
-// and otherwise after 72 hours. So the device it paired with lets it in alone, and a thief's fresh keys don't vote.
+// Who admits: this computer signs an admit only for a computer it invited to move (with the key that computer holds
+// in the group it leaves), or to sign a pending join again (the key it paired with, not yet at the service), and never
+// for a device that already has a live key in the group. Pairing admits on its own, inside the confirmed pairing.
 import type { ApprovalRequest } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { SecretStore } from "../contracts/secret-store";
 import type { CardOpener } from "../devices/rpc";
-import type { FileDeviceRegistry, GroupRecord } from "../devices/registry";
+import type { FileDeviceRegistry, GroupLeaving, GroupRecord } from "../devices/registry";
 import { fromBase64Url, randomBytes, toBase64Url } from "../identity/bytes";
 import { ed25519FromSecret, generateEd25519, type Ed25519Key } from "../identity/keys";
 import {
@@ -87,6 +89,8 @@ export class GroupKeeper {
   /** Co-signatures asked for and declined, so a retry doesn't show the same card again: `<device>|<target key>`. */
   readonly #declined = new Set<string>();
   readonly #asking = new Map<string, Promise<{ by: string; sig: string } | undefined>>();
+  /** Computers this one invited to move into its group, with the key each brings: the only admits it signs. */
+  readonly #expected = new Map<string, { group: string; key: string }>();
   /** The keys the user chose to keep in a removal (or that they declined it), by `<group>|<member>`. */
   readonly #keeps = new Map<string, readonly string[] | "declined">();
   #closed = false;
@@ -169,7 +173,11 @@ export class GroupKeeper {
       removes.push(...results);
     }
     if (eligible.length === 0 || removes.length < need) {
-      throw new ContractError("refused", `removing it takes ${need} of your devices' agreement (${removes.length} so far)`, { need, have: removes.length });
+      // No quorum to remove it: this computer leaves instead, founds a new group and invites the others (the
+      // reviewer's fallback). The revoked device is never invited.
+      this.#log(`no quorum to remove ${name}: starting a new group`);
+      await this.#serial(() => this.#startOver(g, "left"));
+      return;
     }
     await this.#o.handshake.removeGroupMember(group, key, member, { t, removes, ...(keeps.length > 0 ? { keep: [...keeps] } : {}) });
   }
@@ -223,63 +231,79 @@ export class GroupKeeper {
     };
   }
 
+  /** A linked computer of the same group says its key. Nothing else follows from what a peer says of its group. */
   async #consider(peer: string, theirs: GroupInfo): Promise<void> {
     if (this.#closed || theirs.account || (await this.#o.signedIn())) return;
     const mine = this.#o.registry.group();
-    if (theirs.group !== null && mine?.id === theirs.group) {
-      if (theirs.key) this.#o.registry.addGroupMember(peer, theirs.key);
-      return;
-    }
-    // No group of its own here means a pairing is making or joining one; and a group the service hasn't taken yet can't
-    // be compared. Either way, this side waits.
-    if (theirs.group === null || !mine || mine.pendingCreate || mine.pendingJoin) return;
-    // Never back to a group this device left; and a group made to replace this one comes only by an invite, which its
-    // user answers.
-    if (this.#o.registry.groupLeft(theirs.group)) return;
-    if (theirs.recoveredFrom === mine.id) return;
-    if (survivor({ id: mine.id, size: sizeOf(mine) }, { id: theirs.group, size: theirs.size }) === mine.id) return;
-    this.#log(`moving to ${peer}'s group`);
-    await this.#joinVia(peer, theirs.group);
+    if (theirs.group !== null && mine?.id === theirs.group && theirs.key) this.#o.registry.addGroupMember(peer, theirs.key);
   }
 
   // ---- joining and leaving ----
 
-  /** Joins `group` with `peer`'s admit, then leaves the old group and tells the linked computers. */
-  async #joinVia(peer: string, group: string): Promise<void> {
+  /** This device moved into another group in a confirmed pairing (pairing.ts `onMerged`): its old group's computers
+   *  are invited to follow, each by its own card. */
+  merged(old: GroupRecord, via: string): void {
+    const group = this.#o.registry.group()?.id;
+    if (!group) return;
+    const devices = Object.keys(old.members).filter((d) => d !== via && this.#isComputer(d));
+    this.#inviteAll(old, group, "merge", devices);
+  }
+
+  /** Moves into `group` with `peer`'s admit, taking this computer's key along from `old` (so it keeps its vote), then
+   *  invites the computers its user checked. */
+  async #moveVia(peer: string, group: string, old: GroupRecord, reason: "merge" | "recovery", next: string[]): Promise<void> {
     const hs = this.#o.handshake;
-    const key = generateEd25519();
-    const mine = toBase64Url(key.publicKey);
+    const key = await this.#key(old);
+    if (!key) throw new ContractError("not_found", "the group's key is gone");
+    const mine = old.ownKey;
     const t = hs.now();
     const link = await this.#o.transport.connect(peer);
     const admit = await link.request<{ by: string; sig: string }>(GROUP_LINK.admit, { group, key: mine, t });
     if (typeof admit?.by !== "string" || typeof admit.sig !== "string") throw new ContractError("invalid", "a bad admit");
+    await this.#o.beforeLeave?.(old.id).catch(() => undefined);
     await this.#o.store.set(groupKeyRef(group), key.seed(), { synced: false });
     try {
-      await hs.joinGroup(group, { key: mine, t, sig: toBase64Url(key.sign(joinStatement(group, mine, t))), by: admit.by, bysig: admit.sig });
+      await hs.joinGroup(group, { key: mine, t, sig: toBase64Url(key.sign(joinStatement(group, mine, t))), by: admit.by, bysig: admit.sig, from: old.id });
     } catch (err) {
       await this.#o.store.delete(groupKeyRef(group));
       throw err;
     }
-    const old = this.#o.registry.group();
-    if (old) await this.#leave(old, "moved");
+    // The service took the key out of the old group with the join; a service that didn't takes its own removal.
+    await this.#leave(old, "moved", true);
     this.#o.registry.setGroup({ id: group, joinedAt: this.#o.clock.now(), ownKey: mine, members: { [peer]: { key: admit.by, since: this.#o.clock.now() } } });
     this.#o.onChanged?.();
     await this.#readQuiet();
     this.#tellLinked(peer);
+    this.#inviteAll(old, group, reason, next.filter((d) => d !== peer));
   }
 
-  async #leave(old: GroupRecord, how: "moved" | "removed"): Promise<void> {
+  /** Invites `devices` of `old` to move into `group`, expecting each to bring its key from `old`. */
+  #inviteAll(old: GroupRecord, group: string, reason: "merge" | "recovery", devices: string[]): void {
+    for (const device of devices) {
+      const k = old.members[device]?.key;
+      if (!k || !this.#isComputer(device)) continue;
+      this.#expected.set(device, { group, key: k });
+      void (async () => {
+        const link = await this.#o.transport.connect(device);
+        await link.request(GROUP_LINK.invite, { group, reason, from: old.id }, { timeoutMs: 24 * 3600_000 });
+      })().catch((e: unknown) => this.#log(`inviting ${device}: ${errText(e)}`));
+    }
+  }
+
+  async #leave(old: GroupRecord, how: GroupLeaving, removeSelf: boolean): Promise<void> {
     await this.#o.beforeLeave?.(old.id).catch(() => undefined);
     const key = await this.#key(old);
-    if (key && how === "moved") {
+    if (key && removeSelf) {
       try {
         await this.#o.handshake.removeGroupMember(old.id, key, old.ownKey);
       } catch (err) {
         this.#log(`leaving ${old.id}: ${errText(err)}`);
       }
     }
-    await this.#o.store.delete(groupKeyRef(old.id));
-    this.#o.registry.leaveGroup(how);
+    if (this.#o.registry.group()?.id === old.id) {
+      await this.#o.store.delete(groupKeyRef(old.id));
+      this.#o.registry.leaveGroup(how);
+    }
   }
 
   /** The other linked computers hear of the change: the old group's follow, the new group's learn the key. */
@@ -318,13 +342,16 @@ export class GroupKeeper {
     await this.#read().catch((e: unknown) => this.#log(`reading the group: ${errText(e)}`));
   }
 
-  /** The service no longer names this device, and it never left: another member removed it. With an account the
-   *  account replaces the group (proposal 6); without one this device founds a new group and invites the computers it
-   *  is still linked with (proposal 5). */
+  /** The service no longer names this device, and it never left: another member removed it. */
   async #removed(g: GroupRecord): Promise<void> {
     this.#log(`removed from group ${g.id} by another member`);
-    const invitees = Object.keys(g.members);
-    await this.#leave(g, "removed");
+    await this.#startOver(g, "removed");
+  }
+
+  /** Founds a new group in place of `old` (proposal 5; with an account, the account replaces the group, proposal 6),
+   *  then shows a card naming each computer it would invite. */
+  async #startOver(old: GroupRecord, how: "removed" | "left"): Promise<void> {
+    await this.#leave(old, how, how === "left");
     if (await this.#o.signedIn()) return;
     const hs = this.#o.handshake;
     const key = generateEd25519();
@@ -333,7 +360,7 @@ export class GroupKeeper {
     const t = hs.now();
     const create = { group: id, key: mine, t, sig: toBase64Url(key.sign(groupStatement(id, mine, t))) };
     await this.#o.store.set(groupKeyRef(id), key.seed(), { synced: false });
-    this.#o.registry.setGroup({ id, joinedAt: this.#o.clock.now(), ownKey: mine, members: {}, recoveredFrom: g.id, pendingCreate: create });
+    this.#o.registry.setGroup({ id, joinedAt: this.#o.clock.now(), ownKey: mine, members: {}, recoveredFrom: old.id, pendingCreate: create });
     try {
       await hs.createGroup(create);
       const { pendingCreate: _c, ...rest } = this.#o.registry.group()!;
@@ -344,30 +371,28 @@ export class GroupKeeper {
     this.#o.onChanged?.();
     // A card first, naming each computer it would invite, so the user can leave one out (the controller's ruling). A
     // computer the user revoked, as lost or otherwise, is never on it.
-    const computers = invitees.filter((d) => this.#isComputer(d));
-    if (computers.length > 0) void this.#inviteByCard(id, computers).catch((e: unknown) => this.#log(`inviting: ${errText(e)}`));
+    const computers = Object.keys(old.members).filter((d) => this.#isComputer(d));
+    if (computers.length > 0) void this.#inviteByCard(old, id, computers).catch((e: unknown) => this.#log(`inviting: ${errText(e)}`));
   }
 
-  async #inviteByCard(group: string, computers: string[]): Promise<void> {
+  async #inviteByCard(old: GroupRecord, group: string, computers: string[]): Promise<void> {
+    const picked = await this.#pick({
+      title: "Start a new group for your devices?",
+      detail: "This computer can't stay in your devices' group: another device removed it, or its revoke couldn't get your devices' agreement. The computers you check are asked to move with it; leave out any you don't trust.",
+    }, computers);
+    if (picked) this.#inviteAll(old, group, "recovery", picked);
+  }
+
+  /** A card with a checked box for each computer; the ones still checked when the user agrees, or undefined. */
+  async #pick(text: { title: string; detail: string }, computers: string[], change: "device-add" | "device-revoke" = "device-add"): Promise<string[] | undefined> {
     const ids = computers.map((_, i) => `c${i + 1}`);
     const answer = await this.#ask({
-      kind: "change", origin: "user", computers: [], effect: "other", change: "device-add",
-      fields: {
-        title: { type: "text", text: "Start a new group for your devices?" },
-        detail: { type: "list", items: ["Another device removed this computer from your devices' group. The computers you check are asked to move with it; leave out any you don't trust."] },
-      },
-      children: computers.map((d, i) => ({ id: ids[i]!, label: this.#o.registry.get(d)?.name ?? "a computer", checked: true })),
+      kind: "change", origin: "user", computers: [], effect: "other", change,
+      fields: { title: { type: "text", text: text.title }, detail: { type: "list", items: [text.detail] } },
+      ...(computers.length > 0 ? { children: computers.map((d, i) => ({ id: ids[i]!, label: this.#o.registry.get(d)?.name ?? "a computer", checked: true })) } : {}),
     }, { noTimeout: true });
-    if (!answer.ok) return;
-    for (const [i, device] of computers.entries()) {
-      if (!answer.checked.includes(ids[i]!) || !this.#isComputer(device)) continue;
-      void this.#invite(device, group).catch((e: unknown) => this.#log(`inviting ${device}: ${errText(e)}`));
-    }
-  }
-
-  async #invite(device: string, group: string): Promise<void> {
-    const link = await this.#o.transport.connect(device);
-    await link.request(GROUP_LINK.invite, { group, from: this.#o.registry.group()?.recoveredFrom ?? null });
+    if (!answer.ok) return undefined;
+    return computers.filter((_, i) => answer.checked.includes(ids[i]!));
   }
 
   // ---- what the others ask ----
@@ -384,6 +409,16 @@ export class GroupKeeper {
     if (Math.abs(p.t - this.#o.handshake.now()) > STATEMENT_FRESH_MS) throw new ContractError("invalid", "t is out of the service's window");
     const key = await this.#key(g);
     if (!key) throw new ContractError("not_found", "the group's key is gone");
+    // Only a computer this one invited, with the key it was expected to bring, or a pending join signed again with the
+    // key it paired with. One key per device: never one that already has a live key here.
+    const expected = this.#expected.get(from);
+    const invited = expected !== undefined && expected.group === p.group && expected.key === p.key;
+    const resign = g.members[from]?.key === p.key;
+    if (!invited && !resign) throw new ContractError("refused", "this computer didn't invite that key");
+    const live = new Set((await this.#o.handshake.readGroup(g.id, key)).members.map((m) => m.key));
+    const known = g.members[from]?.key;
+    if (live.has(p.key) || (known !== undefined && live.has(known))) throw new ContractError("refused", "that device already has a key in the group");
+    if (invited) this.#expected.delete(from);
     this.#o.registry.addGroupMember(from, p.key);
     return { by: g.ownKey, sig: toBase64Url(key.sign(admitStatement(p.group, p.key, p.t))) };
   }
@@ -420,21 +455,29 @@ export class GroupKeeper {
 
   async #invited(raw: unknown, from: string): Promise<{ joined: boolean }> {
     this.#mustBeComputer(from);
-    const p = raw as { group?: unknown } | undefined;
-    if (typeof p?.group !== "string") throw new ContractError("invalid", "link.group.invite takes a group");
+    const p = raw as { group?: unknown; reason?: unknown; from?: unknown } | undefined;
+    if (typeof p?.group !== "string" || typeof p.from !== "string" || (p.reason !== "merge" && p.reason !== "recovery")) {
+      throw new ContractError("invalid", "link.group.invite takes a group, a reason and the group left");
+    }
     if (await this.#o.signedIn()) throw new ContractError("refused", "a signed-in device keeps no group");
-    if (this.#o.registry.group()?.id === p.group) return { joined: true };
+    const mine = this.#o.registry.group();
+    if (mine?.id === p.group) return { joined: true };
     if (this.#o.registry.groupLeft(p.group)) throw new ContractError("refused", "this computer left that group");
+    // Only from a computer of this computer's own group, about leaving that group.
+    if (!mine || mine.id !== p.from || mine.members[from] === undefined) throw new ContractError("refused", "not from this computer's group");
     const asker = this.#o.registry.get(from)?.name ?? "Another computer";
-    const { ok } = await this.#ask({
-      kind: "change", origin: "user", computers: [], effect: "other", change: "device-add",
-      fields: {
-        title: { type: "text", text: `Move this computer to ${asker}'s new group?` },
-        detail: { type: "list", items: [`Another device removed ${asker} from your devices' group. Say yes only if that device was lost or stolen.`] },
-      },
-    });
-    if (!ok) throw new ContractError("refused", "the user didn't agree");
-    await this.#serial(() => this.#joinVia(from, p.group as string));
+    const others = Object.keys(mine.members).filter((d) => d !== from && this.#isComputer(d));
+    const picked = await this.#pick(p.reason === "merge"
+      ? {
+        title: `Move this computer into ${asker}'s new group?`,
+        detail: `${asker} was paired with another of your devices and moved into its group. The computers you check are asked to move too.`,
+      }
+      : {
+        title: `Move this computer to ${asker}'s new group?`,
+        detail: `${asker} can't stay in your devices' group: another device removed it, or its revoke couldn't get your devices' agreement. Say yes only if you know why. The computers you check are asked to move too.`,
+      }, others);
+    if (!picked) throw new ContractError("refused", "the user didn't agree");
+    await this.#serial(() => this.#moveVia(from, p.group as string, mine, p.reason as "merge" | "recovery", picked));
     return { joined: true };
   }
 
@@ -565,12 +608,6 @@ export class GroupKeeper {
   #log(line: string): void {
     this.#o.log?.(`[group] ${line}`);
   }
-}
-
-/** Which of two groups a merge keeps: the one with more members, a tie to the smaller id. */
-export function survivor(a: { id: string; size: number }, b: { id: string; size: number }): string {
-  if (a.size !== b.size) return a.size > b.size ? a.id : b.id;
-  return a.id < b.id ? a.id : b.id;
 }
 
 /** The voters a change to `target` counts: those who vote now, not the target, and not the keys it admitted lately

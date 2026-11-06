@@ -34,9 +34,9 @@ import type { DeviceKey } from "../identity/device-key";
 import { type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519 } from "../identity/keys";
 import {
   canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
-  PAIR_PROOF_HOST, PAIR_PROOF_JOINER, pairProof, sasWords, verifyPairProof,
+  PAIR_PROOF_HOST, PAIR_PROOF_JOINER, type PairSide, pairProof, sasWords, verifyPairProof,
 } from "../identity/sas";
-import type { FileDeviceRegistry } from "../devices/registry";
+import type { FileDeviceRegistry, GroupRecord } from "../devices/registry";
 import { decode, encode } from "./codec";
 import { FrameReader, frame } from "./frames";
 import {
@@ -139,7 +139,7 @@ export interface PairingServiceOptions {
   registry: FileDeviceRegistry;
   wire: WireEndpoint;
   clock: Pick<Clock, "now">;
-  store: Pick<SecretStore, "get" | "set">;
+  store: Pick<SecretStore, "get" | "set" | "delete">;
   /** Where this device is reached, for the QR and the code's slot. */
   selfTarget(): Omit<DialTarget, "key">;
   /** The account this device is signed in with, as an opaque hash both sides compare; null without one. */
@@ -149,6 +149,9 @@ export interface PairingServiceOptions {
   ttlMs?: number;
   /** The pair door's limits, for tests: the first frame's deadline and how many attempts run at once. */
   door?: { firstFrameMs?: number; maxAttempts?: number };
+  /** This device moved from its group into the host's in a confirmed pairing (R18): the old group's record, for the
+   *  group keeper to ask the old group's computers to follow, each by its own card. */
+  onMerged?(old: GroupRecord, via: string): void;
 }
 
 export class PairingService {
@@ -242,7 +245,7 @@ export class PairingService {
     if (!host || toBase64(conn.peerKey) !== toBase64(offer.hostKey) || (await deviceIdFor(conn.peerKey)) !== host.record.id) return this.#protocol(p);
     if (typeof w.t !== "number" || typeof w.group !== "string" || typeof w.fresh !== "boolean") return this.#protocol(p);
     if (!(w.nonce instanceof Uint8Array) || w.nonce.length !== PAIR_NONCE_BYTES) return this.#protocol(p);
-    const transcript = fullTranscript(joinerPart, sideForTranscript(host), { t: w.t, group: w.group, nonce: w.nonce });
+    const transcript = fullTranscript(joinerPart, sideForTranscript(host, false), { t: w.t, group: w.group, nonce: w.nonce });
     if (!(w.proof instanceof Uint8Array) || !verifyPairProof(p.secret, PAIR_PROOF_HOST, transcript, w.proof)) {
       this.#fail(p, "the other device doesn't hold the pairing's secret");
       conn.close(CLOSE_PROTOCOL, "bad proof");
@@ -405,7 +408,7 @@ export class PairingService {
     p.group = hostGroup ?? joiner.group ?? toBase64Url(randomBytes(16));
     p.fresh = hostGroup === null && joiner.group === null;
     p.t = Math.floor(this.#o.clock.now());
-    const transcript = fullTranscript(joinerPart, sideForTranscript(mine), { t: p.t, group: p.group, nonce: p.nonce });
+    const transcript = fullTranscript(joinerPart, sideForTranscript(mine, false), { t: p.t, group: p.group, nonce: p.nonce });
     p.peerCommit = own(h.commit);
     await this.#send(p, ["welcome", {
       v: 1, device: mine.record, pairKey: mine.pairKey, groupKey: mine.groupKey, group: p.group, fresh: p.fresh, t: p.t, account: mine.account,
@@ -523,17 +526,34 @@ export class PairingService {
       if (this.#groupExchange(p)) {
         const peerGroupKey = toBase64Url(peer.groupKey);
         if (this.#isNewcomer(p)) {
+          // A merge (R18): both groups were in the transcript the user checked, and the host's survives. This device
+          // takes its key along (`from`), so it keeps its vote, and the service moves it out of the old group.
+          const old = this.#o.registry.group();
           await this.#o.store.set(groupKeyRef(p.group!), p.groupKey.seed(), { synced: false });
           const mine = toBase64Url(p.groupKey.publicKey);
-          const join = { key: mine, t: p.t!, sig: toBase64Url(p.groupKey.sign(joinStatement(p.group!, mine, p.t!))), by: peerGroupKey, bysig: toBase64Url(p.peerConfirm!.admit!) };
-          this.#o.registry.setGroup({ id: p.group!, joinedAt: this.#o.clock.now(), ownKey: mine, members: {}, ...(this.#o.handshake ? {} : { pendingJoin: join }) });
+          const join = {
+            key: mine, t: p.t!, sig: toBase64Url(p.groupKey.sign(joinStatement(p.group!, mine, p.t!))), by: peerGroupKey, bysig: toBase64Url(p.peerConfirm!.admit!),
+            ...(old ? { from: old.id } : {}),
+          };
+          let joined = false;
           if (this.#o.handshake) {
             try {
               await this.#o.handshake.joinGroup(p.group!, join);
+              joined = true;
             } catch {
-              this.#o.registry.setGroup({ ...this.#o.registry.group()!, pendingJoin: join });
+              // Kept below with its signatures: `retryRegistrations` sends it again.
             }
           }
+          if (old) {
+            if (joined) {
+              // The service moved the key already; a service that didn't takes its own removal.
+              await this.#o.handshake!.removeGroupMember(old.id, p.groupKey, mine).catch(() => undefined);
+            }
+            if (old.id !== p.group) await this.#o.store.delete(groupKeyRef(old.id));
+            this.#o.registry.leaveGroup("moved");
+          }
+          this.#o.registry.setGroup({ id: p.group!, joinedAt: this.#o.clock.now(), ownKey: mine, members: {}, ...(joined ? {} : { pendingJoin: join }) });
+          if (old) this.#o.onMerged?.(old, peer.record.id);
         }
         this.#o.registry.addGroupMember(peer.record.id, peerGroupKey);
       }
@@ -607,12 +627,10 @@ export class PairingService {
     return mine === null || p.peer?.account === null || p.peer?.account !== mine;
   }
 
-  /** A group forms between two devices that both have no account; the lease for mixed pairs is an open question. */
+  /** A group forms between two devices that both have no account (R17). Two in different groups merge into the
+   *  host's (R18): both group ids are in the transcript whose words the user checked. */
   #groupExchange(p: Pending): boolean {
-    if (this.#o.account() !== null || p.peer?.account !== null) return false;
-    const mineGroup = this.#o.registry.group()?.id ?? null;
-    // Both already in different groups: neither moves (merging groups is H-M2's).
-    return !(mineGroup !== null && p.peer.group !== null && mineGroup !== p.peer.group);
+    return this.#o.account() === null && p.peer?.account === null;
   }
 
   #isNewcomer(p: Pending): boolean {
@@ -778,8 +796,10 @@ export class PairingService {
   }
 }
 
-function sideForTranscript(s: Side): { key: Uint8Array; record: Uint8Array; pairKey: Uint8Array; groupKey: Uint8Array } {
-  return { key: s.key, record: canonicalRecord(s.record), pairKey: s.pairKey, groupKey: s.groupKey };
+/** A side as the transcript has it. The joiner's group is its own; the host's is the group the welcome names, which
+ *  the transcript holds already (`fullTranscript`'s `group`), so a merge's two groups are both in what the user checks. */
+function sideForTranscript(s: Side, withGroup = true): PairSide {
+  return { key: s.key, record: canonicalRecord(s.record), pairKey: s.pairKey, groupKey: s.groupKey, group: withGroup ? s.group : null };
 }
 
 // ---- the short code: 15 bytes in Crockford base32, six groups of four ----
