@@ -170,6 +170,32 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/plugins/browser": {
+      "name": "@waifucave/clover-plugin-browser",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/browser-view": {
+      "name": "@waifucave/clover-plugin-browser-view",
+      "version": "0.0.0",
+      "dependencies": {
+        "lucide-react": "1.61.0",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "21.0.4",
+        "@testing-library/dom": "10.4.2",
+        "@testing-library/react": "16.3.3",
+        "@types/bun": "1.4.4",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/composer": {
       "name": "@waifucave/clover-plugin-composer",
       "version": "0.0.0",
@@ -951,6 +977,10 @@
     "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/plugins/base-theme"],
 
     "@waifucave/clover-plugin-bot-editor": ["@waifucave/clover-plugin-bot-editor@workspace:plugins/clover/plugins/bot-editor"],
+
+    "@waifucave/clover-plugin-browser": ["@waifucave/clover-plugin-browser@workspace:plugins/clover/plugins/browser"],
+
+    "@waifucave/clover-plugin-browser-view": ["@waifucave/clover-plugin-browser-view@workspace:plugins/clover/plugins/browser-view"],
 
     "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/plugins/composer"],
 
@@ -1938,6 +1968,14 @@
 
     "@waifucave/clover-plugin-bot-editor/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
 
+    "@waifucave/clover-plugin-browser-view/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
+
+    "@waifucave/clover-plugin-browser-view/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
+
+    "@waifucave/clover-plugin-browser-view/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+
+    "@waifucave/clover-plugin-browser-view/react-dom": ["react-dom@19.3.1", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.1" } }, "sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ=="],
+
     "@waifucave/clover-plugin-composer/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
     "@waifucave/clover-plugin-composer/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
@@ -2169,6 +2207,8 @@
     "@waifucave/clover-plugin-archive/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 
     "@waifucave/clover-plugin-bot-editor/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
+    "@waifucave/clover-plugin-browser-view/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 
     "@waifucave/clover-plugin-composer/react-dom/scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
 
