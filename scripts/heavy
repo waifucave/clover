@@ -6,6 +6,7 @@
 #   scripts/heavy <command> [args...]   run the command in a slot; its exit code is heavy's
 #   scripts/heavy --status              show who holds the slots
 #
+# A job runs with the checkout's pinned Bun first on PATH (scripts/pinned-bun; CLOVER_PINNED_BUN=0 turns that off).
 # HEAVY_SLOTS (default 3) sets the number of slots, HEAVY_DIR where they live (default: the user cache folder's
 # clover-heavy), HEAVY_POLL_SECONDS how often a waiting heavy looks again (default 5). A slot is a directory made
 # with mkdir (atomic), holding the pid of the heavy that took it and what it runs; a slot whose heavy is gone is
@@ -43,6 +44,15 @@ if [ "${1:-}" = "--status" ]; then
   exit 0
 fi
 [ $# -gt 0 ] || { echo "usage: heavy <command> [args...] | heavy --status" >&2; exit 2; }
+
+# The Bun the checkout you run in pins goes first on PATH, so a heavy job runs on the Bun CI tests whatever other
+# Bun the machine has: that checkout's scripts/pinned-bun fetches it on first use. A checkout without one keeps
+# PATH as it is, and so does CLOVER_PINNED_BUN=0.
+top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ "${CLOVER_PINNED_BUN:-1}" != "0" ] && [ -n "$top" ] && [ -f "$top/.bun-version" ] && [ -x "$top/scripts/pinned-bun" ]; then
+  bundir="$("$top/scripts/pinned-bun" --dir)" || { echo "heavy: no pinned Bun (above); CLOVER_PINNED_BUN=0 runs on PATH's bun" >&2; exit 1; }
+  PATH="$bundir:$PATH"; export PATH
+fi
 
 slot=""; waited=0
 while [ -z "$slot" ]; do

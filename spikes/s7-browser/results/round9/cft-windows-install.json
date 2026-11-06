@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "win32",
+    "arch": "x64",
+    "osRelease": "10.0.26100",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "posixReader": "async",
+    "seconds": 6.97
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "win64",
+        "version": "156.0.8078.80",
+        "dir": "D:\\a\\_temp\\clover-s7-home\\browsers\\cft\\156.0.8078.80\\chrome-headless-shell-win64",
+        "bin": "D:\\a\\_temp\\clover-s7-home\\browsers\\cft\\156.0.8078.80\\chrome-headless-shell-win64\\chrome-headless-shell-win64\\chrome-headless-shell.exe",
+        "reused": false,
+        "zipBytes": 125772546,
+        "unpackedBytes": 295451849,
+        "files": 288,
+        "symlinks": 0,
+        "downloadMs": 1526,
+        "extractMs": 1590,
+        "sha256": "10a77466005e7f64e00f1a75fd1ea81f4a38a60093c65fea6895843b26e60a9a",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true,
+        "binSha256": "f56585149c1b55845536f963b754bf2db5a907ef8f0cc442569690e0f70c99f8"
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [],
+      "install": {
+        "artifact": "chrome",
+        "platform": "win64",
+        "version": "156.0.8078.80",
+        "dir": "D:\\a\\_temp\\clover-s7-home\\browsers\\cft\\156.0.8078.80\\chrome-win64",
+        "bin": "D:\\a\\_temp\\clover-s7-home\\browsers\\cft\\156.0.8078.80\\chrome-win64\\chrome-win64\\chrome.exe",
+        "reused": false,
+        "zipBytes": 208152768,
+        "unpackedBytes": 460432008,
+        "files": 305,
+        "symlinks": 0,
+        "downloadMs": 1365,
+        "extractMs": 2298,
+        "sha256": "16edb57d6107bf1c48a7c149b8d78b155fe614410093796dd72441fd6640540f",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true,
+        "binSha256": "a0dfad5ef821278fd97fba81bbc485f48969e376b9c82c4301dbdcd6644ba054"
+      }
+    }
+  },
+  "assertions": [
+    {
+      "name": "the headless shell installs from its pin",
+      "ok": true,
+      "detail": "{\"verified\":true,\"reused\":false,\"errors\":[]}"
+    }
+  ]
+}

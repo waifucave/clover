@@ -1,0 +1,566 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "linux",
+    "arch": "arm64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "posixReader": "worker",
+    "seconds": 203.92
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64/chrome-headless-shell-linux-arm64/chrome-headless-shell",
+        "reused": true,
+        "zipBytes": 126679292,
+        "unpackedBytes": 290184932,
+        "files": 287,
+        "symlinks": 0,
+        "downloadMs": 767,
+        "extractMs": 992,
+        "sha256": "5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true,
+        "binSha256": "9242656bbc507a9e939a83256d3821d24732cafcd6af97a996a58cefffc14f4e"
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": true,
+          "ms": 61
+        }
+      ],
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "on",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 61,
+        "warmMs": 52,
+        "portMs": 60
+      },
+      "resize": {
+        "toViewMs": 2,
+        "backMs": 23,
+        "sameDocument": true,
+        "layouts": [
+          1280,
+          1000,
+          1280
+        ]
+      },
+      "tabs": [
+        {
+          "tab": "own window: first (background)",
+          "visibility": "visible",
+          "layout": "1280x800",
+          "intervalHz": 100.12,
+          "chainHz": 98.92,
+          "rafHz": 60.15,
+          "maxRafGapMs": 17,
+          "seconds": 5
+        },
+        {
+          "tab": "own window: second (front)",
+          "visibility": "visible",
+          "layout": "1280x800",
+          "intervalHz": 99.94,
+          "chainHz": 99.14,
+          "rafHz": 59.96,
+          "maxRafGapMs": 17,
+          "seconds": 5
+        },
+        {
+          "tab": "one window: first (background)",
+          "visibility": "visible",
+          "layout": "1280x800",
+          "intervalHz": 99.96,
+          "chainHz": 98.96,
+          "rafHz": 59.98,
+          "maxRafGapMs": 17,
+          "seconds": 5
+        },
+        {
+          "tab": "one window: second (front)",
+          "visibility": "visible",
+          "layout": "1280x800",
+          "intervalHz": 100.14,
+          "chainHz": 99.14,
+          "rafHz": 60.16,
+          "maxRafGapMs": 17,
+          "seconds": 5
+        }
+      ],
+      "screenshots": {
+        "png": {
+          "ms": {
+            "n": 8,
+            "min": 208,
+            "p50": 216,
+            "p95": 230,
+            "max": 230,
+            "mean": 218.88
+          },
+          "staleMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "bytes": {
+            "n": 8,
+            "min": 644555,
+            "p50": 658932,
+            "p95": 672034,
+            "max": 672034,
+            "mean": 659830
+          },
+          "cpuMsPerShot": 342.5
+        },
+        "jpeg": {
+          "ms": {
+            "n": 8,
+            "min": 74,
+            "p50": 80,
+            "p95": 82,
+            "max": 82,
+            "mean": 79.38
+          },
+          "staleMs": {
+            "n": 8,
+            "min": -49,
+            "p50": -48,
+            "p95": -41,
+            "max": -41,
+            "mean": -46.12
+          },
+          "bytes": {
+            "n": 8,
+            "min": 160904,
+            "p50": 166963,
+            "p95": 176814,
+            "max": 176814,
+            "mean": 168909.38
+          },
+          "cpuMsPerShot": 145
+        }
+      },
+      "screencast": {
+        "framesPerSec": 60.25,
+        "kbitPerSec": 66701.33,
+        "avgFrameBytes": 138384.51,
+        "latencyMs": {
+          "n": 78,
+          "min": 32,
+          "p50": 33,
+          "p95": 34,
+          "max": 47,
+          "mean": 32.9
+        },
+        "interFrameMs": {
+          "n": 481,
+          "min": 0,
+          "p50": 16,
+          "p95": 34,
+          "max": 50,
+          "mean": 16.66
+        },
+        "browserCpuPct": 151.11,
+        "note": "latency: from the marker's draw time to the frame's arrival at the daemon, on up to ten decoded frames a second"
+      },
+      "media": [
+        {
+          "flags": "default flags",
+          "setup": {
+            "media": "video.play ok; audio running",
+            "scrollY": 0
+          },
+          "setupMs": 42,
+          "ok": true,
+          "visibility": "visible",
+          "intervalHz": 100.16,
+          "rafHz": 59.98,
+          "mediaPlayedPerSec": 0.94,
+          "decodedFps": 28.79,
+          "audioState": "running",
+          "browserAnswersMs": 1
+        }
+      ],
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 230.1,
+            "memKind": "pss",
+            "rssMiB": 642.2,
+            "procs": 7,
+            "cpuPct": 0
+          },
+          {
+            "tabs": 1,
+            "memMiB": 269.27,
+            "memKind": "pss",
+            "rssMiB": 854.19,
+            "procs": 8,
+            "cpuPct": 2.99
+          },
+          {
+            "tabs": 2,
+            "memMiB": 298.91,
+            "memKind": "pss",
+            "rssMiB": 1056.81,
+            "procs": 9,
+            "cpuPct": 6.47
+          },
+          {
+            "tabs": 4,
+            "memMiB": 353.87,
+            "memKind": "pss",
+            "rssMiB": 1461.12,
+            "procs": 11,
+            "cpuPct": 13.68
+          },
+          {
+            "tabs": 8,
+            "memMiB": 464.46,
+            "memKind": "pss",
+            "rssMiB": 2268.73,
+            "procs": 15,
+            "cpuPct": 26.31
+          }
+        ],
+        "perIdleTabMiB": 29.3,
+        "browserBaseMiB": 230.1,
+        "fourContextsMiB": 118.33,
+        "animatedTabCpuPct": 53.8,
+        "secondBrowserBaseMiB": 106.02,
+        "secondBrowserProcs": 7,
+        "firstBrowserMiBAtThatMoment": 690.43
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [],
+      "install": {
+        "artifact": "chrome",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome",
+        "reused": true,
+        "zipBytes": 200722708,
+        "unpackedBytes": 420273649,
+        "files": 301,
+        "symlinks": 0,
+        "downloadMs": 1052,
+        "extractMs": 1392,
+        "sha256": "1f496a826c9ba4d6a5f5bf2de686145fe718528c2cc3dbeb96b5893b89653724",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true,
+        "binSha256": "814ed1914d7193bce033337823f3a05aefff1f3534867bce1740f4f235430c36"
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": true,
+          "ms": 230
+        }
+      ],
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "on",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 230,
+        "warmMs": 226,
+        "portMs": 261
+      },
+      "resize": {
+        "toViewMs": 3,
+        "backMs": 5,
+        "sameDocument": true,
+        "layouts": [
+          1280,
+          1000,
+          1280
+        ]
+      },
+      "tabs": [
+        {
+          "tab": "own window: first (background)",
+          "visibility": "visible",
+          "layout": "1280x657",
+          "intervalHz": 99.94,
+          "chainHz": 99.14,
+          "rafHz": 59.96,
+          "maxRafGapMs": 18,
+          "seconds": 5
+        },
+        {
+          "tab": "own window: second (front)",
+          "visibility": "visible",
+          "layout": "1280x657",
+          "intervalHz": 99.96,
+          "chainHz": 98.96,
+          "rafHz": 59.98,
+          "maxRafGapMs": 18,
+          "seconds": 5
+        },
+        {
+          "tab": "one window: first (background)",
+          "visibility": "hidden",
+          "layout": "1280x657",
+          "intervalHz": 1,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxRafGapMs": 0,
+          "seconds": 5
+        },
+        {
+          "tab": "one window: second (front)",
+          "visibility": "visible",
+          "layout": "1280x657",
+          "intervalHz": 99.94,
+          "chainHz": 99.14,
+          "rafHz": 59.96,
+          "maxRafGapMs": 17,
+          "seconds": 5
+        }
+      ],
+      "screenshots": {
+        "png": {
+          "ms": {
+            "n": 8,
+            "min": 192,
+            "p50": 207,
+            "p95": 216,
+            "max": 216,
+            "mean": 207.13
+          },
+          "staleMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "bytes": {
+            "n": 8,
+            "min": 513356,
+            "p50": 544100,
+            "p95": 555555,
+            "max": 555555,
+            "mean": 542204.75
+          },
+          "cpuMsPerShot": 320
+        },
+        "jpeg": {
+          "ms": {
+            "n": 8,
+            "min": 84,
+            "p50": 87,
+            "p95": 90,
+            "max": 90,
+            "mean": 87
+          },
+          "staleMs": {
+            "n": 8,
+            "min": -42,
+            "p50": -39,
+            "p95": -36,
+            "max": -36,
+            "mean": -39
+          },
+          "bytes": {
+            "n": 8,
+            "min": 138847,
+            "p50": 147514,
+            "p95": 156628,
+            "max": 156628,
+            "mean": 148391.63
+          },
+          "cpuMsPerShot": 152.5
+        }
+      },
+      "screencast": {
+        "framesPerSec": 60.38,
+        "kbitPerSec": 58057.37,
+        "avgFrameBytes": 120201.59,
+        "latencyMs": {
+          "n": 80,
+          "min": 47,
+          "p50": 48,
+          "p95": 49,
+          "max": 71,
+          "mean": 48.39
+        },
+        "interFrameMs": {
+          "n": 482,
+          "min": 2,
+          "p50": 17,
+          "p95": 28,
+          "max": 40,
+          "mean": 16.7
+        },
+        "browserCpuPct": 139.19,
+        "note": "latency: from the marker's draw time to the frame's arrival at the daemon, on up to ten decoded frames a second"
+      },
+      "media": [
+        {
+          "flags": "default flags",
+          "setup": {
+            "media": "video.play ok; audio running",
+            "scrollY": 0
+          },
+          "setupMs": 88,
+          "ok": true,
+          "visibility": "visible",
+          "intervalHz": 99.96,
+          "rafHz": 59.98,
+          "mediaPlayedPerSec": 0.95,
+          "decodedFps": 28.79,
+          "audioState": "running",
+          "browserAnswersMs": 0
+        }
+      ],
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 423.21,
+            "memKind": "pss",
+            "rssMiB": 1207.27,
+            "procs": 11,
+            "cpuPct": 1
+          },
+          {
+            "tabs": 1,
+            "memMiB": 502.5,
+            "memKind": "pss",
+            "rssMiB": 1424.75,
+            "procs": 12,
+            "cpuPct": 3.48
+          },
+          {
+            "tabs": 2,
+            "memMiB": 580.85,
+            "memKind": "pss",
+            "rssMiB": 1642.82,
+            "procs": 13,
+            "cpuPct": 6.95
+          },
+          {
+            "tabs": 4,
+            "memMiB": 656.88,
+            "memKind": "pss",
+            "rssMiB": 1999.57,
+            "procs": 15,
+            "cpuPct": 14.87
+          },
+          {
+            "tabs": 8,
+            "memMiB": 884,
+            "memKind": "pss",
+            "rssMiB": 2785.36,
+            "procs": 19,
+            "cpuPct": 28.2
+          }
+        ],
+        "perIdleTabMiB": 57.6,
+        "browserBaseMiB": 423.21,
+        "fourContextsMiB": 332.75,
+        "animatedTabCpuPct": 59.54,
+        "secondBrowserBaseMiB": 265.96,
+        "secondBrowserProcs": 10,
+        "firstBrowserMiBAtThatMoment": 3418.07
+      }
+    }
+  },
+  "assertions": [
+    {
+      "name": "the headless shell installs from its pin",
+      "ok": true,
+      "detail": "{\"verified\":true,\"reused\":true,\"errors\":[]}"
+    },
+    {
+      "name": "it starts over the native DevTools pipe",
+      "ok": true,
+      "detail": "{\"transport\":\"fdpipe\"}"
+    },
+    {
+      "name": "it runs sandboxed",
+      "ok": true,
+      "detail": "{\"sandbox\":\"on\"}"
+    },
+    {
+      "name": "no step failed",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "every tab is visible and draws (rAF above 10 Hz)",
+      "ok": true,
+      "detail": "[\"own window: first (background): visible 60.15187849720224\",\"own window: second (front): visible 59.96402158704777\",\"one window: first (background): visible 59.97600959616154\",\"one window: second (front): visible 60.163901659004594\"]"
+    },
+    {
+      "name": "screenshots and a screencast arrive, fresh",
+      "ok": true,
+      "detail": "{\"jpegDecoded\":8,\"screencastFps\":60.25}"
+    },
+    {
+      "name": "per-bot profiles are apart and survive a restart",
+      "ok": true,
+      "detail": "{\"alphaSees\":{\"cookie\":\"s7bot=alpha\",\"local\":\"alpha\"},\"betaSees\":{\"cookie\":\"s7bot=beta\",\"local\":\"beta\"},\"alphaAfterRestart\":{\"cookie\":\"s7bot=alpha\",\"local\":\"alpha\"},\"isolated\":true,\"persisted\":true,\"note\":\"--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here\"}"
+    }
+  ]
+}

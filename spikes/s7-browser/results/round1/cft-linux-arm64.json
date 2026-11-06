@@ -1,0 +1,168 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "linux",
+    "arch": "arm64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "seconds": 230.55
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: Runtime.evaluate timed out",
+        "screenshots: browser gone (Page.captureScreenshot)"
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64/chrome-headless-shell-linux-arm64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 126679292,
+        "unpackedBytes": 290184932,
+        "files": 287,
+        "symlinks": 0,
+        "downloadMs": 557,
+        "extractMs": 966,
+        "sha256": "5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "sandboxedStartError": "browser exited (SIGTRAP) during Browser.getVersion",
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: the sandboxed start failed)",
+      "start": {
+        "coldPipeMs": 1208,
+        "warmPipeMs": 32,
+        "portMs": 53,
+        "pipe": "works"
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 174.77,
+            "memKind": "pss",
+            "rssMiB": 463.01,
+            "procs": 6,
+            "cpuPct": 0
+          },
+          {
+            "tabs": 1,
+            "memMiB": 210.42,
+            "memKind": "pss",
+            "rssMiB": 590.52,
+            "procs": 7,
+            "cpuPct": 2.24
+          },
+          {
+            "tabs": 2,
+            "memMiB": 233.78,
+            "memKind": "pss",
+            "rssMiB": 710.79,
+            "procs": 8,
+            "cpuPct": 4.24
+          },
+          {
+            "tabs": 4,
+            "memMiB": 276.19,
+            "memKind": "pss",
+            "rssMiB": 946.66,
+            "procs": 10,
+            "cpuPct": 8.72
+          },
+          {
+            "tabs": 8,
+            "memMiB": 360.8,
+            "memKind": "pss",
+            "rssMiB": 1422.39,
+            "procs": 14,
+            "cpuPct": 16.91
+          }
+        ],
+        "perIdleTabMiB": 23.25,
+        "browserBaseMiB": 174.77,
+        "fourContextsMiB": 95.12,
+        "animatedTabCpuPct": 52.09,
+        "secondBrowserBaseMiB": 112.6,
+        "secondBrowserProcs": 6,
+        "firstBrowserMiBAtThatMoment": 254.51
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "tabs: Runtime.evaluate timed out",
+        "screenshots: browser exited (0) during Page.captureScreenshot",
+        "cost: Target.createTarget timed out"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome",
+        "reused": false,
+        "zipBytes": 200722708,
+        "unpackedBytes": 420273649,
+        "files": 301,
+        "symlinks": 0,
+        "downloadMs": 860,
+        "extractMs": 1360,
+        "sha256": "1f496a826c9ba4d6a5f5bf2de686145fe718528c2cc3dbeb96b5893b89653724",
+        "verified": false,
+        "trustOnFirstUse": true,
+        "serverMd5Matched": true
+      },
+      "sandboxedStartError": "browser exited (SIGABRT) during Browser.getVersion",
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: the sandboxed start failed)",
+      "start": {
+        "coldPipeMs": 266,
+        "warmPipeMs": 205,
+        "portMs": 234,
+        "pipe": "works"
+      },
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      }
+    }
+  }
+}
