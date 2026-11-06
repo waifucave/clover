@@ -131,6 +131,21 @@ describe("code, engines and platforms", () => {
     }
   });
 
+  test("a command's args schema uses only what command.run checks (F-M3's review N4)", () => {
+    const withArgs = (args: unknown) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
+      contributes: { commands: [{ name: "draw", description: "Draw", handler: "draw", args }] } });
+    const ok = withArgs({ type: "object", required: ["n"], properties: { n: { type: "integer", minimum: 1 } } });
+    expect(ok.manifest?.contributes?.commands?.length).toBe(1);
+    for (const [args, path] of [
+      [{ type: "object", properties: { n: { $ref: "#/x" } } }, "/contributes/commands/0/args/properties/n"],
+      [{ type: "string", pattern: "(" }, "/contributes/commands/0/args"],
+    ] as const) {
+      const r = withArgs(args);
+      expect(r.manifest?.contributes?.commands).toEqual([]);
+      expect(codes(r)).toContain(`error:entry:args_schema:${path}`);
+    }
+  });
+
   test("handlers need host code, components need a client module", () => {
     const r = validateManifest({ ...min(), contributes: { commands: [{ name: "draw", description: "Draw a card", handler: "draw" }] } });
     expect(r.ok).toBe(true);

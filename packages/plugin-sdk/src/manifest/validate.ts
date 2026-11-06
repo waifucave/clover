@@ -20,6 +20,7 @@ import { parseJsonc } from "../jsonc";
 import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, POINT_NAME_RE } from "./fields";
+import { checkArgsSchema } from "./args";
 import { parseInterpolation, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
@@ -747,7 +748,17 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
       return ok;
     }
-    case "commands":
+    case "commands": {
+      // A command's args schema in the subset `command.run` enforces (F-M3's review N4), or it takes no call.
+      if (e.args !== undefined) {
+        const schema = checkArgsSchema(e.args);
+        if (!schema.ok) {
+          f.error("entry", "args_schema", [...at, "args", ...schema.path.split("/").slice(1).map((seg) => seg.replace(/~1/g, "/").replace(/~0/g, "~"))], `the args schema uses \`${schema.keyword}\`, which commands don't take or isn't well formed`);
+          return false;
+        }
+      }
+      return needHost("handler");
+    }
     case "triggers":
     case "relays":
     case "notifiers":
