@@ -8,6 +8,9 @@
 // binds each document to its frame, so a layer can only resolve spots its own entries declare and only mount what the
 // core chose.
 import type { TokenValue } from "../catalogs/tokens";
+import type { StringTable } from "./strings";
+
+export * from "./strings";
 
 /** Where a part is, as the runtime tells it: the tab (its bot), the surface, the session's kind, the OS, the window's
  *  material, safe mode. */
@@ -47,6 +50,9 @@ export interface MountInfo {
   /** The document's root is a bot's tab (its bot), or is dressed by a style entry: the sheets' scopes find it so. */
   tab?: string;
   styled?: boolean;
+  /** The document's strings: its plugin's keys (`<top-level id>.…`; `clover.…` for the `clover` layer and the core),
+   *  in the user's language (§5.5). */
+  strings?: StringTable;
 }
 
 /** One sheet the core applies in a document. */
@@ -112,6 +118,7 @@ export type LayerMessage =
   | { type: "respot" }
   /** The themes' sheets for this document changed (a theme, a style entry, a part placed). */
   | { type: "sheets"; sheets: readonly ThemeSheet[] }
+  | { type: "strings"; strings: StringTable }
   /** A child frame's layer stopped; the parent shows a placeholder with a reload. */
   | { type: "child-gone"; child: string; reason: string }
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it

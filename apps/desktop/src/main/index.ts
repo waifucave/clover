@@ -115,7 +115,7 @@ async function ready(): Promise<void> {
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
 
-  runtime = new UiRuntime({ os, platform: process.platform, safeMode, log, onGone: (mount) => views.drop(mount) });
+  runtime = new UiRuntime({ os, platform: process.platform, safeMode, log, onGone: (mount) => views.drop(mount), systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale() });
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });

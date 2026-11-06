@@ -93,7 +93,7 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+const hooks: { t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -113,6 +113,7 @@ describe("the UI API in a layer", () => {
         h(ui.Spot, { name: "never-declared" }));
     const Sidebar = ({ props, entry }: { props: { route: string }; entry: { pluginId: string } }) => {
       const tokens = ui.useTokens();
+      hooks.t = ui.useT();
       const menu = ui.useMenu();
       const drag = ui.useDrag();
       const open = ui.useOpen();
@@ -247,6 +248,14 @@ describe("the UI API in a layer", () => {
     expect(ids()).toEqual(["bot:luna:m2=c{}", "user=d{}"]);
     expect(document.head.firstElementChild).toBe(link);
     link.remove();
+  });
+
+  test("strings: the core's table, in its language, kept current; a key with no string reads as itself", async () => {
+    expect(hooks.t!("clover.sidebar.files", { count: 2 })).toBe("clover.sidebar.files");
+    await act(async () => fake.emit({ type: "strings", strings: { lang: "fr", strings: { "clover.sidebar.files": { one: "{count} fichier", other: "{count} fichiers" } } } }));
+    expect(hooks.t!("clover.sidebar.files", { count: 1 })).toBe("1 fichier");
+    expect(hooks.t!("clover.sidebar.files", { count: 1200 })).toBe("1\u202f200 fichiers");
+    expect(document.documentElement.lang).toBe("fr");
   });
 
   test("props across a frame's edge: functions become markers; markers become functions", () => {

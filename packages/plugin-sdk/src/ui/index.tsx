@@ -3,9 +3,9 @@
 // bare specifier to the layer's own copy, beside React's.
 //
 // E-M1 builds `<Spot>` (inline in the same layer, a frame from the entry's own layer otherwise), the tokens hook and
-// the layer's root. Strings (`useT`, E-M2), sealed cards (`<Card>`, `useApprovals`, E-M3), MCP Apps (`<AppView>`,
-// E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are placeholders that draw nothing
-// and never fail, so components written against the declarations already run.
+// the layer's root; E-M2 the themes' sheets, strings (`useT`) and layouts. Sealed cards (`<Card>`, `useApprovals`,
+// E-M3), MCP Apps (`<AppView>`, E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are
+// placeholders that draw nothing and never fail, so components written against the declarations already run.
 import {
   Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
   type ErrorInfo, type ReactNode,
@@ -17,7 +17,8 @@ import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable } from "./bridge";
+import { EMPTY_STRINGS, translate } from "./strings";
 
 export * from "./bridge";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
@@ -178,6 +179,9 @@ interface Part {
 
 const PartContext = createContext<Part | null>(null);
 
+/** The document's strings, as the core last sent them. */
+const StringsContext = createContext<StringTable>(EMPTY_STRINGS);
+
 /** What the `clover` layer tells the core about the parts under it: the kind of session they show (`when.session`).
  *  Heard from the `clover` layer only. Not for plugins. */
 export const SpotHints = createContext<{ session?: string }>({});
@@ -225,12 +229,17 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   const [props, setProps] = useState<unknown>(() => decodeProps(info.props, (id, args) => r.bridge.callback(id, args)));
   const [tokens, setTokens] = useState(info.tokens);
   const [sheets, setSheets] = useState<readonly ThemeSheet[]>(info.sheets ?? []);
+  const [strings, setStrings] = useState<StringTable>(info.strings ?? EMPTY_STRINGS);
   const [mod, setMod] = useState<ClientModule | undefined>(() => r.modules.get(info.pluginId));
   useEffect(() => onLayerMessage((m) => {
     if (m.type === "props" && m.mount === info.mount) setProps(decodeProps(m.props, (id, args) => r.bridge.callback(id, args)));
     if (m.type === "tokens" && m.tokens[info.mount] !== undefined) setTokens(m.tokens[info.mount]!);
     if (m.type === "sheets") setSheets(m.sheets);
+    if (m.type === "strings") setStrings(m.strings);
   }), [info.mount, r]);
+  useLayoutEffect(() => {
+    document.documentElement.lang = strings.lang;
+  }, [strings.lang]);
   useLayoutEffect(() => {
     // The document is the part: its themes' sheets are scoped to it by these marks.
     const root = document.documentElement;
@@ -296,7 +305,11 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   if (component === undefined) {
     return mod === undefined && r.load !== undefined ? null : <div className="clover-part-missing" role="status">This part has no component {info.component}.</div>;
   }
-  return <EntryView part={part} component={component} props={props} />;
+  return (
+    <StringsContext.Provider value={strings}>
+      <EntryView part={part} component={component} props={props} />
+    </StringsContext.Provider>
+  );
 }
 
 /** Puts the themes' sheets in the head, after the part's own stylesheets and in the core's order (§5.5's stack: the
@@ -528,12 +541,11 @@ export function useTokens(): Readonly<Record<string, TokenValue>> {
   return usePart().tokens;
 }
 
-/** Strings from the plugin's own keys. E-M2 brings the tables; until then a key reads as itself. */
+/** Strings from the plugin's own keys (`<top-level id>.…`), in the user's language: `{name}` placeholders filled,
+ *  plural forms chosen by `count` under the language's rules. A key with no string reads as itself. */
 export function useT(): (key: string, params?: Record<string, string | number>) => string {
-  return useCallback((key: string, params?: Record<string, string | number>) => {
-    if (params === undefined) return key;
-    return key.replace(/\{(\w+)\}/g, (m, k: string) => (params[k] === undefined ? m : String(params[k])));
-  }, []);
+  const table = useContext(StringsContext);
+  return useCallback((key: string, params?: Record<string, string | number>) => translate(table, key, params), [table]);
 }
 
 /** The plugin API in this layer: only `plugin` and `t` in E-M1; the rest reaches layers with lane B's host side. */

@@ -288,6 +288,34 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
   });
 });
 
+describe("each document's strings (§5.5's translations)", () => {
+  test("the core root reads the core's own; a layer reads its plugin's keys; a new language reaches every document", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-locale-"));
+    writeFileSync(join(dir, "fr.json"), JSON.stringify({ locale: 1, lang: "fr", strings: { "clover.core.root.reload": "Recharger", "fixture-composer.send": "Envoyer" } }));
+    writeFileSync(join(dir, "en.json"), JSON.stringify({ locale: 1, lang: "en", strings: { "fixture-composer.send": "Send" } }));
+    const fixture = composerFixture().map((p) => ({ ...p, locales: [{ lang: "fr", file: "fr.json" }, { lang: "en", file: "en.json" }], assetBase: dir }));
+    const s = setup(fixture);
+    expect(s.root.strings).toMatchObject({ lang: "en", strings: { "clover.core.root.reload": "Reload" } });
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string };
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(item.url, shell.shellFrame);
+    const info = s.rt.describe(child, WIN, token);
+    expect(info.strings).toEqual({ lang: "en", strings: { "fixture-composer.send": "Send" } });
+    s.sent.length = 0;
+    s.rt.setChoices({ picks: [], lists: [], language: "fr" });
+    const to = (f: FrameRef) => s.sent.filter((x) => x.m.type === "strings" && x.to === `${f.processId}:${f.routingId}`).map((x) => (x.m as Extract<LayerMessage, { type: "strings" }>).strings);
+    expect(to(child)).toEqual([{ lang: "fr", strings: { "fixture-composer.send": "Envoyer" } }]);
+    expect(to(s.rootFrame)[0]!.strings["clover.core.root.reload"]).toBe("Recharger");
+    // Nothing changed, nothing sent.
+    s.sent.length = 0;
+    s.rt.setChoices({ picks: [], lists: [], language: "fr" });
+    expect(to(child)).toEqual([]);
+  });
+});
+
 describe("safe mode and the registry", () => {
   test("in safe mode a third-party part isn't mounted; the bundled one shows", () => {
     const s = setup(composerFixture(), { safeMode: true });

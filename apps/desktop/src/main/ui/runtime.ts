@@ -10,7 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { LayerMessage, MountContext, MountInfo, SpotItem, SpotView, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerMessage, LocaleValue, MountContext, MountInfo, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
@@ -18,6 +18,8 @@ import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Can
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
+import { StringStore, stringTable } from "./strings";
+import { CORE_STRINGS } from "./core-strings";
 
 /** A frame as Electron describes it. */
 export interface FrameRef {
@@ -73,6 +75,8 @@ interface Mount {
   allowedLayers?: readonly string[];
   /** A document: its themes' sheets as last sent. */
   sheetsKey?: string;
+  /** A document: its strings as last sent. */
+  stringsKey?: string;
 }
 
 export interface WindowInfo {
@@ -92,6 +96,12 @@ export interface RuntimeOptions {
   themes?: ThemeStore;
   /** A mount's document, or the mount itself, is gone (its native views go with it). */
   onGone?: (mount: string) => void;
+  /** The system's language, until the user picks one in Settings. */
+  systemLanguage?: string;
+  /** The core's own string tables, by language (`core-strings.ts` by default). */
+  builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
+  /** Whether a plugin's tree hash matches the official index's, for the strings of sealed cards (lane B's registry). */
+  official?: (plugin: UiPlugin) => boolean;
 }
 
 export class LayerError extends Error {
@@ -101,7 +111,12 @@ export class LayerError extends Error {
   }
 }
 
-export interface UiSettingsLike extends UiChoices, ThemeChoices {}
+export interface UiSettingsLike extends UiChoices, ThemeChoices {
+  /** The user's language (Settings); the system's until then. */
+  language?: string;
+  /** The pack the user chose for a language, by language, when two translate the same keys. */
+  packs?: Readonly<Record<string, string>>;
+}
 
 export class UiRuntime {
   private plugins: UiPlugin[] = [];
@@ -117,6 +132,8 @@ export class UiRuntime {
   private nextId = 1;
   private readonly grants = new Map<string, { offer: DragOffer; windowId: number; at: number }>();
   private readonly themes: ThemeStore;
+  private readonly strings: StringStore;
+  private readonly tables = new Map<string, StringTable>();
   private readonly now: () => number;
   private readonly token: () => string;
   private readonly log: (line: string) => void;
@@ -129,6 +146,7 @@ export class UiRuntime {
     this.log = opts.log ?? (() => {});
     this.send = opts.send ?? (() => {});
     this.themes = opts.themes ?? new ThemeStore(this.log);
+    this.strings = new StringStore(this.log);
   }
 
   get safeMode(): boolean {
@@ -147,6 +165,7 @@ export class UiRuntime {
     this.plugins = [...plugins];
     this.tree = new SpotTree(this.plugins);
     this.themes.clear();
+    this.strings.clear();
     this.changed(true);
   }
 
@@ -179,6 +198,7 @@ export class UiRuntime {
 
   /** Recomputes every mount's tokens and tells each document what changed; with `respot`, every spot resolves again. */
   private changed(respot: boolean): void {
+    this.tables.clear();
     const updates = new Map<string, Record<string, Record<string, TokenValue>>>();
     for (const m of this.mounts.values()) {
       if (m.kind === "web") continue;
@@ -192,7 +212,10 @@ export class UiRuntime {
       updates.set(doc.id, u);
     }
     for (const [docId, tokens] of updates) this.post(docId, { type: "tokens", tokens });
-    for (const m of this.mounts.values()) if (m.frame !== undefined) this.restyle(m);
+    for (const m of this.mounts.values()) if (m.frame !== undefined) {
+      this.restyle(m);
+      this.restring(m);
+    }
     if (respot) for (const m of this.mounts.values()) if (m.frame !== undefined) this.post(m.id, { type: "respot" });
   }
 
@@ -250,6 +273,40 @@ export class UiRuntime {
       if (cleaned.css !== "") out.push({ id: "user", css: cleaned.css });
     }
     return out;
+  }
+
+  /** The language the app speaks: the user's pick, else the system's. */
+  get language(): string {
+    return this.choices.language ?? this.opts.systemLanguage ?? "en";
+  }
+
+  /** A document's strings: its plugin's keys (the core root and the `clover` layer: `clover.…`). */
+  stringsFor(doc: Mount): StringTable {
+    return this.tableFor(doc.plugin?.topId ?? "clover");
+  }
+
+  private tableFor(owner: string): StringTable {
+    let t = this.tables.get(owner);
+    if (t === undefined) {
+      t = stringTable(this.strings, { plugins: this.plugins, lang: this.language, ...(this.choices.packs !== undefined ? { packs: this.choices.packs } : {}), builtIn: this.opts.builtInStrings ?? CORE_STRINGS, ...(this.opts.official !== undefined ? { official: this.opts.official } : {}) }, owner);
+      this.tables.set(owner, t);
+    }
+    return t;
+  }
+
+  /** The core's own strings in the app's language, for the main process's menus and dialogs. */
+  coreStrings(): StringTable {
+    return this.tableFor("clover");
+  }
+
+  /** Sends a document its strings when they changed. */
+  private restring(doc: Mount): void {
+    if (doc.frame === undefined || (doc.kind !== "frame" && doc.kind !== "root")) return;
+    const strings = this.stringsFor(doc);
+    const key = JSON.stringify(strings);
+    if (key === doc.stringsKey) return;
+    doc.stringsKey = key;
+    this.post(doc.id, { type: "strings", strings });
   }
 
   /** Sends a document its sheets when they changed. */
@@ -391,7 +448,9 @@ export class UiRuntime {
   describe(frame: FrameRef, windowId: number, token: string | undefined): MountInfo {
     if (token === undefined || token === "") {
       const root = this.bindRoot(frame, windowId);
-      return this.info(root);
+      const strings = this.stringsFor(root);
+      root.stringsKey = JSON.stringify(strings);
+      return { ...this.info(root), strings };
     }
     const id = this.byToken.get(token);
     const m = id === undefined ? undefined : this.mounts.get(id);
@@ -414,7 +473,9 @@ export class UiRuntime {
     this.byToken.delete(token);
     const sheets = this.sheetsFor(m);
     m.sheetsKey = JSON.stringify(sheets);
-    return { ...this.info(m), sheets };
+    const strings = this.stringsFor(m);
+    m.stringsKey = JSON.stringify(strings);
+    return { ...this.info(m), sheets, strings };
   }
 
   private context(m: Mount): MountContext {

@@ -2,7 +2,7 @@
 // `app.root` (a surface window: its one `app.surface` entry) as a frame from that plugin's own layer, and owns what
 // the core draws around it: the safe-mode banner (§5.8), the note when nothing fills the window, and the placeholder
 // with a reload when the shell's layer stops (S9: detected by the main process's census).
-import type { LayerBridge, LayerMessage, MountInfo, SpotView } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { EMPTY_STRINGS, translate, type LayerBridge, type LayerMessage, type MountInfo, type SpotView, type StringTable } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 interface RootBridge {
   frameMetrics(m: { top: number; start: number; end: number }): void;
@@ -53,6 +53,9 @@ function note(lines: string[], action?: { label: string; run: () => void }): voi
 
 let info: MountInfo;
 let shown: { mount: string; url: string } | undefined;
+let strings: StringTable = EMPTY_STRINGS;
+/** The core's own text, in the app's language (`clover.core.…`, core-strings.ts). */
+const t = (key: string, params?: Record<string, string | number>) => translate(strings, `clover.core.${key}`, params);
 
 function mount(item: { mount: string; url: string; ref: string; layer: string }): void {
   if (shown?.mount === item.mount && shown.url === item.url && stage.querySelector("iframe") !== null) return;
@@ -73,15 +76,13 @@ async function render(): Promise<void> {
   try {
     view = await bridge.resolve(info.mount, info.spot);
   } catch (err) {
-    note([`The window could not be drawn: ${err instanceof Error ? err.message : String(err)}`]);
+    note([t("root.failed", { error: err instanceof Error ? err.message : String(err) })]);
     return;
   }
   const item = view.items.find((i) => i.kind === "frame");
   if (item === undefined || item.kind !== "frame") {
     shown = undefined;
-    note(info.context.safeMode
-      ? ["Nothing fills this window, even in safe mode."]
-      : ["Nothing fills this window. A shell plugin may have been turned off or removed."], info.context.safeMode ? undefined : { label: "Restart in safe mode", run: () => root.command("restart-safe-mode") });
+    note(info.context.safeMode ? [t("root.empty-safe")] : [t("root.empty")], info.context.safeMode ? undefined : { label: t("root.restart-safe"), run: () => root.command("restart-safe-mode") });
     return;
   }
   mount(item);
@@ -96,14 +97,20 @@ function onMessage(m: LayerMessage): void {
     bridge.rectReply(m.id, b === undefined ? null : { x: b.x, y: b.y, width: b.width, height: b.height });
   }
   if (m.type === "tokens" && m.tokens[info.mount] !== undefined) applyTokens(m.tokens[info.mount]!);
+  if (m.type === "strings") {
+    strings = m.strings;
+    document.documentElement.lang = strings.lang;
+    drawBanner();
+    if (shown === undefined) void render();
+  }
   if (m.type === "child-reload" && m.child === shown?.mount) {
     const frame = stage.querySelector("iframe");
     mount({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
   }
   if (m.type === "child-gone" && m.child === shown?.mount) {
     const child = m.child;
-    note(["Clover's window stopped drawing. Its layer will start again when you reload."], {
-      label: "Reload",
+    note([t("root.stopped")], {
+      label: t("root.reload"),
       run: () => void bridge.reload(child).then((url) => {
         if (url === undefined) return;
         shown = undefined;
@@ -122,19 +129,24 @@ function reportTitlebar(): void {
   root.frameMetrics({ top: r.height, start: r.x, end: Math.max(0, window.innerWidth - (r.x + r.width)) });
 }
 
+function drawBanner(): void {
+  if (!info.context.safeMode || info.context.surface !== undefined) return;
+  banner.hidden = false;
+  banner.textContent = t("safe.banner");
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = t("safe.restart-normally");
+  b.addEventListener("click", () => root.command("restart-normally"));
+  banner.append(b);
+}
+
 async function start(): Promise<void> {
   info = await bridge.describe();
+  strings = info.strings ?? EMPTY_STRINGS;
+  document.documentElement.lang = strings.lang;
   applyTokens(info.tokens);
   document.documentElement.dataset.material = info.context.material;
-  if (info.context.safeMode && info.context.surface === undefined) {
-    banner.hidden = false;
-    banner.textContent = "Safe mode: only Clover's own plugins run.";
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = "Restart normally";
-    b.addEventListener("click", () => root.command("restart-normally"));
-    banner.append(b);
-  }
+  drawBanner();
   bridge.onMessage(onMessage);
   reportTitlebar();
   navigator.windowControlsOverlay?.addEventListener("geometrychange", reportTitlebar);
