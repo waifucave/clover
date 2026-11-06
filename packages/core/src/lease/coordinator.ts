@@ -201,7 +201,8 @@ export class LeaseCoordinator {
     }
     if (!live || k.holder !== this.#o.self) {
       try {
-        return await this.lease.acquire();
+        // With no handshake to ask, the user's own choice is the takeover (lease.ts).
+        return await this.lease.acquire(this.lease.hasScope() ? {} : { byUser: true });
       } catch (err) {
         if (!isContractError(err, "not_main")) throw err;
         return this.lease.takeOver();
