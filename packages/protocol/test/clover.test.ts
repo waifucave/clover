@@ -10,6 +10,8 @@ import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInpu
 import { Caller as CallerSchema } from "../src/common";
 import { PEER_STREAM_GRANTS } from "../src/devices";
 import { NeedsAnswer } from "../src/computers";
+import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
+import { paramsFor } from "../src/rpc";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
@@ -454,5 +456,55 @@ describe("B-M1's contract asks (lanes E, G, J, K, L)", () => {
     expect(view).toBeDefined();
     expect(CLOVER_METHODS.get("app.notify")!.result.safeParse({ shown: false }).success).toBe(true);
     expect(CLOVER_METHODS.get("app.notify.close")?.direction).toBe("from-daemon");
+  });
+});
+
+describe("#179's review and H-M1's asks", () => {
+  const params = (name: string) => CLOVER_METHODS.get(name)!.params;
+
+  test("R15's one binding names both computers, with lane J's params (F2)", () => {
+    const call = { operation: "move", from: "home/Laptop1/p", to: "home/Studio/p", source: "Laptop1", destination: "Studio" };
+    expect(TreeTransferParams.safeParse(call).success).toBe(true);
+    expect(TreeTransferParams.safeParse({ ...call, operation: "rename" }).success).toBe(false);
+    expect(TreeTransferParams.safeParse({ ...call, move: true }).success).toBe(false);
+    expect(TREE_TRANSFER).toBe("tree.transfer");
+    expect(CLOVER_METHODS.has(TREE_TRANSFER)).toBe(false); // a binding, never a method
+    expect(CallBinding.safeParse({ computer: "Studio", source: "Laptop1", method: TREE_TRANSFER, params: "a".repeat(64) }).success).toBe(true);
+  });
+
+  test("a peer's computer.setLevel can't name a computer (S3)", () => {
+    const spec = CLOVER_METHODS.get("computer.setLevel")!;
+    expect(paramsFor(spec, "peer").safeParse({ level: "automatic" }).success).toBe(true);
+    expect(paramsFor(spec, "peer").safeParse({ name: "Laptop1", level: "automatic" }).success).toBe(false);
+    expect(paramsFor(spec, "app").safeParse({ name: "Laptop1", level: "automatic" }).success).toBe(true);
+    expect(paramsFor(spec, "app").safeParse({ name: "Laptop1", level: "automatic", answer: undefined, extra: 1 }).success).toBe(false);
+    // A method without a peer variant parses the same for every role.
+    expect(paramsFor(CLOVER_METHODS.get("tree.read")!, "peer")).toBe(CLOVER_METHODS.get("tree.read")!.params);
+  });
+
+  test("the user's words from the pill reach the daemon only from the app (S2)", () => {
+    const spec = CLOVER_METHODS.get("pill.send")!;
+    expect(spec.roles).toEqual(["app"]);
+    expect(spec.userOnly).toBe(true);
+    expect(allowedMethods("layer").has("pill.send")).toBe(false);
+    for (const to of [{ bot: "alpha" }, { session: "s_alpha" }, { target: "home#lights" }]) {
+      expect([to, spec.params.safeParse({ to, text: "hi", clientMessageId: "m1" }).success]).toEqual([to, true]);
+    }
+    expect(spec.params.safeParse({ to: { bot: "alpha", session: "s_alpha" }, text: "hi", clientMessageId: "m1" }).success).toBe(false);
+  });
+
+  test("a plugin acting as itself has a partition of its own (S1)", () => {
+    expect(params("browser.open").safeParse({ owner: { kind: "plugin", pluginId: "clover/browser-tool" } }).success).toBe(true);
+  });
+
+  test("H-M1: connSeq on the link's hello, and the app's answer key", () => {
+    const hello = { protocolVersion: 1, device: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", epoch: 0, features: [] };
+    expect(params("peer.hello").safeParse({ ...hello, connSeq: 3 }).success).toBe(true);
+    expect(params("peer.hello").safeParse(hello).success).toBe(false);
+    expect(CLOVER_METHODS.get("peer.hello")!.result.safeParse({ ...hello, connSeq: 4 }).success).toBe(true);
+    const set = CLOVER_METHODS.get("device.answerKey.set")!;
+    expect([set.roles, set.userOnly]).toEqual([["app"], true]);
+    expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(true);
+    expect(set.params.safeParse({ publicKey: "not base64!", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(false);
   });
 });

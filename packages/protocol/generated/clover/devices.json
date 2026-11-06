@@ -955,6 +955,63 @@
         "additionalProperties": false
       }
     },
+    "device.answerKey.set": {
+      "doc": "Registers this desktop's app-held answer key, proved by the app's own signature.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          },
+          "held": {
+            "type": "string",
+            "enum": [
+              "secure-enclave",
+              "keystore",
+              "app-keychain",
+              "tpm",
+              "hello",
+              "none"
+            ]
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          }
+        },
+        "required": [
+          "publicKey",
+          "held",
+          "signature"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "peer.hello": {
       "doc": "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
       "owner": "H",
@@ -987,13 +1044,19 @@
               "type": "string",
               "maxLength": 64
             }
+          },
+          "connSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "protocolVersion",
           "device",
           "epoch",
-          "features"
+          "features",
+          "connSeq"
         ]
       },
       "result": {
@@ -1020,13 +1083,19 @@
               "type": "string",
               "maxLength": 64
             }
+          },
+          "connSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "protocolVersion",
           "device",
           "epoch",
-          "features"
+          "features",
+          "connSeq"
         ],
         "additionalProperties": false
       }
@@ -1339,6 +1408,12 @@
                     "type": "object",
                     "properties": {
                       "computer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63,
+                        "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                      },
+                      "source": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 63,

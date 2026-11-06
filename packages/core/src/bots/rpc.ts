@@ -21,54 +21,9 @@ import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
 import type { BotService } from "./service";
 
-/** A JSON-RPC failure with the code a client branches on. Its message never holds a secret. */
-export class MethodError extends Error {
-  constructor(readonly code: number, message: string, readonly data?: Record<string, unknown>) {
-    super(message);
-    this.name = "MethodError";
-  }
-}
-
-/** The JSON-RPC error for anything a handler throws. */
-export function toMethodError(err: unknown): MethodError {
-  if (err instanceof MethodError) return err;
-  if (isContractError(err)) {
-    const rpc = typeof err.detail?.rpc === "number" ? err.detail.rpc : undefined;
-    const code = rpc ?? RPC_ERROR_OF[err.code] ?? {
-      not_found: ERR.NOT_FOUND, invalid: ERR.INVALID_PARAMS, refused: ERR.INVALID_REQUEST, closed: ERR.INVALID_REQUEST,
-      conflict: ERR.INVALID_REQUEST, timeout: ERR.INTERNAL, cancelled: ERR.INTERNAL,
-    }[err.code as string] ?? ERR.INTERNAL;
-    return new MethodError(code, err.message, { code: err.code });
-  }
-  return new MethodError(ERR.INTERNAL, err instanceof Error ? err.message : String(err));
-}
-
-/** Who calls, and for a connection that follows sessions live, where their events go. */
-export interface MethodContext {
-  caller: Caller;
-  /** `session.attach`'s stream: the connection's sender, and the sessions it follows. */
-  stream?: { send(event: WireEvent): void; follows: Map<string, Unsubscribe> };
-}
-
-export type MethodHandler = (params: unknown, ctx: MethodContext) => Promise<unknown>;
-
-/** Wraps an implementation in the method's params check and the error mapping. */
-export function handler<S extends MethodSpec>(spec: S, impl: (params: z.output<S["params"]>, ctx: MethodContext) => Promise<z.input<S["result"]>> | z.input<S["result"]>): MethodHandler {
-  return async (raw, ctx) => {
-    const parsed = spec.params.safeParse(raw);
-    if (!parsed.success) throw new MethodError(ERR.INVALID_PARAMS, `${spec.name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "params"}: ${i.message}`).join("; ")}`);
-    try {
-      return await impl(parsed.data as z.output<S["params"]>, ctx);
-    } catch (err) {
-      throw toMethodError(err);
-    }
-  };
-}
-
-export function requireUser(ctx: MethodContext, what: string): Extract<Caller, { kind: "user" }> {
-  if (ctx.caller.kind !== "user") throw new MethodError(CLOVER_ERR.NOT_THE_USER, `only the user can ${what}`);
-  return ctx.caller;
-}
+// The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
+export { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
+import { MethodError, handler, requireUser, type MethodContext, type MethodHandler } from "../rpc/handler";
 
 export interface SessionsMethodsDeps {
   home: string;
