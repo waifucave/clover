@@ -305,6 +305,22 @@ export type SignedAnswerVerdict = "ok" | "bad-hash" | "unbound" | "mismatch" | "
  *  the destination rebuild the same card (R15). */
 export type CallCardRenderer = (call: { computer: string; method: string; params: unknown }) => CardContent | undefined;
 
+/** The calls another computer's signed answer may lift (R1, R15; J-M2's review), each with a sample call. A receiver's
+ *  `CallCardRenderer` (lane C's sealed card tables, C-M3) must render each, binding exactly that call, or the feature
+ *  fails closed with `mismatch` and never works; the approval-broker suite's card-table case checks it. */
+export const CALL_CARD_METHODS: readonly { method: string; params: unknown }[] = [
+  { method: "tree.write", params: { path: "home/Studio/notes.md", data: { encoding: "utf8", text: "x" } } },
+  { method: "tree.remove", params: { path: "home/Studio/old.log" } },
+  { method: "tree.move", params: { from: "home/Studio/a", to: "home/Studio/b" } },
+  { method: "tree.mkdir", params: { path: "home/Studio/new" } },
+  { method: "tree.symlink", params: { path: "home/Studio/link", target: "a" } },
+  { method: "tree.transfer", params: { operation: "move", from: "home/Laptop1/p", to: "home/Studio/p", source: "Laptop1", destination: "Studio" } },
+  { method: "terminal.open", params: { cwd: "home/Studio/p", cols: 80, rows: 24 } },
+  { method: "mcp.mirror", params: { server: "github", config: {} } },
+  { method: "computer.setLevel", params: { level: "automatic" } },
+  { method: "tool.run", params: { tool: "mcp__github__create_issue", input: {} } },
+];
+
 /** Whether a card's binding names this computer for this call: the one that runs it; for `tree.transfer` (R15) either
  *  end, where the params name the same two computers as the binding (`destination` is `computer`, `source` is
  *  `source`). A `source` on any other method binds nothing. */
