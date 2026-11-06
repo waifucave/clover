@@ -112,12 +112,20 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       expect(f.forCaller(main).check({ op: "move", path: `${mem("luna")}/a.md`, to: `${mem("alpha")}/a.md` }).allowed).toBe(false);
       // The rest of a bot's folder isn't memory.
       expect(f.forCaller(session("luna", "agent")).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(true);
-      // Every runner is denied every bot's memory, known or not (a bot uses its file tools for its own).
-      for (const c of [main, session(undefined, "coding")]) {
+      // Runners (J's ruling): every runner is denied every bot's memory, known or not; the owning bot's main
+      // conversation and side threads get their own back (`ownMemory`), and no other bot's.
+      for (const c of [main, session("luna", "side-thread"), session(undefined, "coding"), session("luna", "agent"), { kind: "plugin", pluginId: "tarot" } as const]) {
         const p = f.forCaller(c).policy();
         expect(p.denyRead).toContain(`${CLOVER}/bots/*/memory`);
         expect(p.denyWrite).toContain(`${CLOVER}/bots/*/memory`);
       }
+      expect(f.forCaller(main).policy().ownMemory).toBe(mem("luna"));
+      expect(f.forCaller(session("luna", "side-thread")).policy().ownMemory).toBe(mem("luna"));
+      expect(f.forCaller(session("pack/tarot", "bot")).policy().ownMemory).toBe(mem("pack--tarot"));
+      // A coding session's runner, and the bot's own agents', reach neither its memory nor any other.
+      expect(f.forCaller(session(undefined, "coding")).policy().ownMemory).toBeUndefined();
+      expect(f.forCaller(session("luna", "agent")).policy().ownMemory).toBeUndefined();
+      expect(f.forCaller({ kind: "plugin", pluginId: "tarot" }).policy().ownMemory).toBeUndefined();
       expect(f.touches([`${mem("newbot")}/a`])).toMatchObject({ kind: "bot-memory", path: mem("newbot") });
       expect(f.forCaller(main).context).toEqual({ sessionId: "s_bot", memoryOf: "luna" });
     });

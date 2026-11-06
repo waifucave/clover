@@ -109,6 +109,11 @@ export interface SandboxPolicy {
    *  its main conversation's and side threads' through their file tools (`check`), never a command runner's. */
   denyWrite: string[];
   denyRead: string[];
+  /** The runner's own bot's memory (`<home>/bots/<x>/memory`), for a runner whose caller is that bot's main
+   *  conversation or a side thread (J's ruling on #197): read and write inside it although the `bots/*` memory glob
+   *  denies it, every other bot's memory still denied, and the folder itself never deleted or moved. Absent for every
+   *  other runner (coding sessions, agents, the bot's own included, plugins). */
+  ownMemory?: string;
   /** Programs that would hand work to an unfenced process: `open`, `launchctl` and `osascript` on macOS,
    *  `systemd-run --user` on Linux, the Task Scheduler on Windows (§3.1). */
   closedDoors: string[];
@@ -208,7 +213,7 @@ export interface Fence {
   /** The fence as one caller meets it (#197's check 3, and the owner's decision on `bot-memory`). */
   forCaller(caller: Caller): CallerFence;
   /** The arrays for one command runner. The pattern items (`bot-memory`, `sessions-runtime`) are denied whoever the
-   *  runner is for. */
+   *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`). */
   policy(ctx?: FenceContext): SandboxPolicy;
   /** The set changed: a development folder was added or removed, or a plugin's data folder appeared. */
   watch(fn: () => void): Unsubscribe;

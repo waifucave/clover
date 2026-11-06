@@ -143,7 +143,7 @@ export class FakeFence implements Fence {
     return { allowed: true };
   }
 
-  policy(_ctx?: FenceContext): SandboxPolicy {
+  policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
@@ -153,6 +153,7 @@ export class FakeFence implements Fence {
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
+      ...(ctx?.memoryOf !== undefined ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
     };
   }
 
