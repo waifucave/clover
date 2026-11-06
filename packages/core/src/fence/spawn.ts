@@ -23,7 +23,11 @@ export interface FencedRun {
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
   /** Whose run it is: the fence's set and the network rule are this caller's. */
-  readonly who: { readonly sessionId: string; readonly bot?: string; readonly pluginId?: string; readonly hook?: string };
+  readonly who: {
+    readonly sessionId: string; readonly bot?: string; readonly pluginId?: string; readonly hook?: string;
+    /** The bot's own main conversation or side thread: the only runner its memory opens to. */
+    readonly botsOwnSession?: boolean;
+  };
 }
 
 /** The shell that ran the command, for the hook's record. */

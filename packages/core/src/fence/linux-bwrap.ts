@@ -16,6 +16,8 @@
 import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
+import { foldName } from "./fold";
+import type { CallerPlaces } from "./per-caller";
 
 export interface BwrapInput {
   readonly policy: SandboxPolicy;
@@ -27,6 +29,8 @@ export interface BwrapInput {
   readonly fs?: { kind(path: string): "dir" | "file" | "other" | null; list(dir: string): string[] };
   /** The fd (in the child) bwrap reads the seccomp filter from. */
   readonly seccompFd?: number;
+  /** The runner's caller (`callerPlaces`): bots' memory and the bot driver's state, after the denies. */
+  readonly caller?: CallerPlaces;
 }
 
 const realFs = {
@@ -91,6 +95,32 @@ export function bwrapArgs(input: BwrapInput): string[] {
     const k = fs.kind(r);
     if (k === "dir") a.push("--tmpfs", r, "--remount-ro", r);
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
+  }
+  // The caller's rules (`per-caller.ts`): `bots/` becomes an empty read-only tmpfs holding only what this caller may
+  // see, each bot folder's entries but `memory` read-only, and the owner's own memory writable (a mount point, so
+  // it can't be removed or moved); a bot made while the command runs isn't in it at all. The bot driver's state
+  // likewise: hidden, but the caller's own state file, read-only.
+  const c = input.caller;
+  if (c) {
+    if (fs.kind(c.bots) === "dir") {
+      a.push("--tmpfs", c.bots);
+      for (const x of fs.list(c.bots).sort()) {
+        const folder = join(c.bots, x);
+        if (fs.kind(folder) !== "dir") continue;
+        for (const e of fs.list(folder).sort()) {
+          const entry = join(folder, e);
+          if (foldName(e) === "memory") { if (c.ownMemory !== null && entry === c.ownMemory && fs.kind(entry) === "dir") a.push("--bind", entry, entry); continue; }
+          const k = fs.kind(entry);
+          if (k === "dir" || k === "file") a.push("--ro-bind", entry, entry);
+        }
+      }
+      a.push("--remount-ro", c.bots);
+    }
+    if (fs.kind(c.runtime) === "dir") {
+      a.push("--tmpfs", c.runtime);
+      if (c.ownRuntime !== null && fs.kind(c.ownRuntime) === "file") a.push("--ro-bind", c.ownRuntime, c.ownRuntime);
+      a.push("--remount-ro", c.runtime);
+    }
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
   if (policy.closedDoors.length > 0) {

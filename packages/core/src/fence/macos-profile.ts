@@ -13,6 +13,7 @@
 //     for the names that fold to ASCII (`ſ`, `ß`, the Kelvin sign) as the disk does.
 import { dirname } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
+import type { CallerPlaces } from "./per-caller";
 
 export interface MacProfileInput {
   readonly policy: SandboxPolicy;
@@ -22,6 +23,8 @@ export interface MacProfileInput {
   readonly perUserTemp?: string | null;
   /** Programs' real paths for `closedDoors` (default: where macOS keeps them). */
   readonly doorPaths?: Readonly<Record<string, readonly string[]>>;
+  /** The runner's caller (`callerPlaces`): bots' memory and the bot driver's state, after the denies. */
+  readonly caller?: CallerPlaces;
 }
 
 const DOOR_PATHS: Record<string, readonly string[]> = {
@@ -87,6 +90,18 @@ export function macFenceProfile(input: MacProfileInput): string {
   if (policy.denyWrite.length > 0) lines.push(`(deny file-write* ${policy.denyWrite.map((d) => `(subpath ${q(d)})`).join(" ")})`);
   if (policy.denyRead.length > 0) lines.push(`(deny file-read* ${policy.denyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
   if (doors.length > 0) lines.push(`(deny process-exec ${doors.map((d) => `(literal ${q(d)})`).join(" ")})`);
+  // The caller's rules (`per-caller.ts`), by pattern: every bot's memory denied both ways, every bot folder and the
+  // memory folders themselves write-denied, then the owner's own memory opened inside (never the folder itself);
+  // the bot driver's state hidden, its own state file readable.
+  const c = input.caller;
+  if (c) {
+    const b = rx(c.bots);
+    lines.push(`(deny file-read* file-write* (regex #"^${b}/[^/]+/memory(/|$)"))`);
+    lines.push(`(deny file-write* (regex #"^${b}(/[^/]+)?/?$") (regex #"^${b}/[^/]+/"))`);
+    if (c.ownMemory) lines.push(`(allow file-read* file-write* (regex #"^${rx(c.ownMemory)}/"))`, `(allow file-read* (literal ${q(c.ownMemory)}))`);
+    lines.push(`(deny file-read* file-write* (subpath ${q(c.runtime)}))`);
+    if (c.ownRuntime) lines.push(`(allow file-read* (literal ${q(c.ownRuntime)}))`);
+  }
   // No network (the daemon's socket included); `filtered` comes with the escape floor's ports.
   lines.push("(deny network*)");
   return `${lines.join("\n")}\n`;

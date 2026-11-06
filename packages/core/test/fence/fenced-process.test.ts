@@ -6,7 +6,7 @@ import { CloverFence } from "../../src/fence/fence";
 import { fencedSpawner } from "../../src/fence/fenced-process";
 import { bwrapArgs, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
-import type { FencedRunResult } from "../../src/fence/spawn";
+import type { FencedRun, FencedRunResult } from "../../src/fence/spawn";
 
 const mac = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec");
 const linuxBwrap = process.platform === "linux" && existsSync("/usr/bin/bwrap")
@@ -21,7 +21,7 @@ function world() {
   writeFileSync(join(clover, "run", "token"), "secret-ish");
   const fence = new CloverFence({ os: here, home, cloverHome: clover, temp });
   const spawner = fencedSpawner({ fence });
-  const run = (command: string) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { sessionId: "s1", bot: "luna" } });
+  const run = (command: string, who: FencedRun["who"] = { sessionId: "s1", bot: "luna" }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who });
   return { root, home, clover, temp, outside, fence, spawner, run };
 }
 
@@ -160,6 +160,39 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(unixSeen).toBe(0);
     } finally { tcp.stop(true); unix.stop(true); }
   }, 60_000);
+
+  test("bots' memory for runners: the owner's own conversations read and write it, every other runner is denied, nobody moves it", async () => {
+    const w = world();
+    const b = (...p: string[]) => join(w.clover, "bots", ...p);
+    for (const d of [b("luna", "memory"), b("luna", "agents"), b("sol", "memory"), join(w.clover, "sessions-runtime")]) mkdirSync(d, { recursive: true });
+    writeFileSync(b("luna", "memory", "MEMORY.md"), "luna's");
+    writeFileSync(b("sol", "memory", "MEMORY.md"), "sol's");
+    writeFileSync(b("luna", "agents", "t.json"), "{}");
+    writeFileSync(join(w.clover, "sessions-runtime", "s1.json"), "{}");
+    writeFileSync(join(w.clover, "sessions-runtime", "s2.json"), "{}");
+    const owner = { sessionId: "s1", bot: "luna", botsOwnSession: true };
+    expect(ok(await w.run(`cat '${b("luna", "memory", "MEMORY.md")}' && echo more >> '${b("luna", "memory", "MEMORY.md")}' && echo n > '${b("luna", "memory", "new.md")}' && ls '${b("luna", "memory")}'`, owner))).toBe(true);
+    expect(readFileSync(b("luna", "memory", "MEMORY.md"), "utf8")).toBe("luna'smore\n");
+    expect(ok(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`echo x > '${b("luna", "agents", "t.json")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`cat '${b("luna", "agents", "t.json")}'`, owner))).toBe(true); // the rest of its folder reads
+    // Its files are its own to remove; the memory folder itself stays.
+    expect(ok(await w.run(`mv '${b("luna", "memory")}' '${b("luna", "m2")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`rm -rf '${b("luna", "memory")}'`, owner))).toBe(false);
+    expect(existsSync(b("luna", "memory"))).toBe(true);
+    writeFileSync(b("luna", "memory", "MEMORY.md"), "luna'smore\n");
+    expect(ok(await w.run(`mkdir -p '${b("future", "memory")}' && echo seed > '${b("future", "memory", "MEMORY.md")}'`, owner))).toBe(false);
+    expect(existsSync(b("future"))).toBe(false);
+    expect(ok(await w.run(`cat '${join(w.clover, "sessions-runtime", "s1.json")}'`, owner))).toBe(true);
+    expect(ok(await w.run(`cat '${join(w.clover, "sessions-runtime", "s2.json")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`echo x > '${join(w.clover, "sessions-runtime", "s1.json")}'`, owner))).toBe(false);
+    // Everyone else: the user's coding session, the bot's own agent, another bot.
+    for (const who of [{ sessionId: "c1" }, { sessionId: "a1", bot: "luna" }, { sessionId: "s9", bot: "sol", botsOwnSession: true }]) {
+      expect(ok(await w.run(`cat '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(false);
+      expect(ok(await w.run(`echo x >> '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(false);
+    }
+    expect(readFileSync(b("luna", "memory", "MEMORY.md"), "utf8")).toBe("luna'smore\n");
+  }, 90_000);
 
   test("ordinary work runs: a shell pipeline, git init and commit in the project, mktemp", async () => {
     const w = world();

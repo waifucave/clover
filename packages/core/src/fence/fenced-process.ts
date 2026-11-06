@@ -13,6 +13,7 @@ import type { Os } from "@waifucave/clover-protocol";
 import type { CloverFence } from "./fence";
 import { bwrapArgs, unixSocketFilter } from "./linux-bwrap";
 import { macFenceProfile } from "./macos-profile";
+import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedSpawner } from "./spawn";
 
 export interface FencedProcessOptions {
@@ -44,7 +45,8 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       available: true,
       run: (r) => {
-        const profile = macFenceProfile({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)() });
+        const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
+        const profile = macFenceProfile({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller });
         return runCommand(r, { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
       },
     };
@@ -71,7 +73,8 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         writeFileSync(file, filter, { mode: 0o600 });
         const fd = openSync(file, "r");
         try {
-          const args = bwrapArgs({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3 });
+          const caller = callerPlaces(o.fence.cloverHome, os, { sessionId: r.who.sessionId, ...(r.who.bot !== undefined ? { bot: r.who.bot } : {}), botsOwnSession: r.who.botsOwnSession === true });
+          const args = bwrapArgs({ policy: o.fence.policy(), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller });
           return await runCommand(r, { shell: "sh", argv: [bwrap, ...args, "/bin/sh", "-c", r.command], extraFds: [fd] });
         } finally {
           closeSync(fd);
