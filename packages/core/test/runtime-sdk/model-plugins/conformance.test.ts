@@ -174,7 +174,7 @@ function keyedOver(fake: FakeServer, auth: Record<string, { value: string; place
   });
 }
 
-async function kit(subject: string, adapter: ModelAdapter, context: () => AdapterContext, model: string, extra: { ownProcess?: boolean; fakeRequests?: () => number; turn?: Record<string, unknown> } = {}) {
+async function kit(subject: string, adapter: ModelAdapter, context: () => AdapterContext, model: string, extra: { ownProcess?: boolean; signs?: boolean; fakeRequests?: () => number; turn?: Record<string, unknown> } = {}) {
   const report = await runModelAdapterConformance({
     subject,
     adapter,
@@ -182,10 +182,33 @@ async function kit(subject: string, adapter: ModelAdapter, context: () => Adapte
     turn: { model, messages: [{ role: "user", content: "hi" }], maxOutputTokens: 64, ...(extra.turn ?? {}) },
     holdingTurn: { model, messages: [{ role: "user", content: "hold" }], maxOutputTokens: 64, ...(extra.turn ?? {}) },
     ...(extra.ownProcess === true ? { ownProcess: true, fakeRequests: extra.fakeRequests! } : {}),
+    ...(extra.signs === true ? { signs: true } : {}),
   });
   expect(report.outcomes.map((o) => o.id)).toEqual(MODEL_ADAPTER_CASES.map((c) => c.id));
   if (!report.ok) throw new Error(formatConformanceReport(report, MODEL_ADAPTER_CASES));
   return report;
+}
+
+/** A plugin's `network:` hosts, as its committed manifest declares them. */
+async function declaredHosts(id: string): Promise<string[]> {
+  const manifest = (await Bun.file(join(BUNDLED_CHILDREN_DIR, modelPluginFolder(id), "clover.json")).json()) as { capabilities: string[] };
+  return manifest.capabilities.filter((c) => c.startsWith("network:")).map((c) => c.slice("network:".length));
+}
+
+/** The keyed fetch the plugin host gives a plugin: its declared hosts only, each real host answered by a loopback fake. */
+function declaredFetch(hosts: string[], routes: Record<string, FakeServer>) {
+  return createKeyedFetch({
+    hosts,
+    fetch: async (url, init) => {
+      const u = new URL(url);
+      const fake = routes[u.host];
+      if (fake === undefined) throw new Error(`no fake for ${u.host}`);
+      // The request keeps the real host it was signed for (SigV4 signs the Host header).
+      const headers = new Headers(init.headers);
+      headers.set("host", u.host);
+      return fetch(`${fake.url}${u.pathname}${u.search}`, { ...init, headers });
+    },
+  });
 }
 
 const holding = (recorded: RecordedRequest, answer: () => Response): Response => (recorded.body.includes("hold") ? stalledResponse(10_000) : answer());
@@ -268,6 +291,50 @@ describe("conformance: every code model plugin, on the model adapter interface",
       } finally {
         await proc.close();
       }
+      expect(opts.verified.length).toBeGreaterThan(0);
+    } finally {
+      await fake.close();
+    }
+  }, 30_000);
+
+  // The production path (agent SDK 0.0.65): the plugin's own adapter as its own process runs it in the plugin host,
+  // every request out through the keyed fetch on the plugin's DECLARED hosts at the provider's real endpoint, never a
+  // loopback base URL. It signs, so the kit's own-process cases apply (it sets its own credential header).
+  test("clover/model-bedrock on its declared hosts: the real regional endpoint answers, and a region it didn't declare is refused with nothing sent", async () => {
+    const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-lite-v1:0": (rec) => holding(rec, () => bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("ok"))) } });
+    try {
+      const secrets = { get: async (name: string): Promise<CredentialMaterial | null> => (name === "aws" ? { kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY } : null) };
+      const hosts = await declaredHosts("bedrock");
+      expect(hosts).toContain(`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`);
+      expect(hosts.some((h) => h.includes("*"))).toBe(false);
+      const routes = { [`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`]: fake, [`bedrock.${bedrockFake.FAKE_REGION}.amazonaws.com`]: fake };
+      const adapter = await codeAdapter("bedrock");
+      await kit("clover/model-bedrock (declared hosts)", adapter, () => ({ connection: { providerId: "bedrock", region: bedrockFake.FAKE_REGION }, fetch: declaredFetch(hosts, routes), secrets, stallTimeoutMs: 5000, log: () => {} }), "amazon.nova-lite-v1:0", { signs: true });
+      expect(fake.signatures.length).toBeGreaterThan(0);
+      expect(fake.signatures.every((s) => s.verified)).toBe(true);
+      const before = fake.requests.length;
+      const events = adapter.streamTurn({ model: "amazon.nova-lite-v1:0", messages: [{ role: "user", content: "hi" }] }, { connection: { providerId: "bedrock", region: "xx-nowhere-9" }, fetch: declaredFetch(hosts, { "bedrock-runtime.xx-nowhere-9.amazonaws.com": fake }), secrets, stallTimeoutMs: 5000, log: () => {} });
+      await expect(drainText(events)).rejects.toThrow(/host_not_declared/);
+      expect(fake.requests.length).toBe(before);
+    } finally {
+      await fake.close();
+    }
+  }, 30_000);
+
+  test("clover/model-vertex on its declared hosts: the location endpoint and Google's token endpoint, nothing else", async () => {
+    const { privateKeyPem, publicKey } = await vertexFake.generateTestKeyPair();
+    const row = sdk.models.find((m) => m.providerId === "vertex" && m.upstreamId.startsWith("gemini")) ?? sdk.models.find((m) => m.providerId === "vertex")!;
+    const opts = { publicKey, project: "clover-test-project", location: "us-central1", tokenUri: "", verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[], stream: { [row.upstreamId]: (rec: RecordedRequest) => holding(rec, () => geminiFake.geminiStreamResponse([{ parts: [{ text: "ok" }], finishReason: "STOP" }])) } };
+    const fake = await startFake({ routes: vertexFake.vertexFakeRoutes(opts) });
+    opts.tokenUri = `https://oauth2.googleapis.com${new URL(vertexFake.vertexTokenUrl(fake.url)).pathname}`;
+    try {
+      const material: CredentialMaterial = { kind: "gcp-service-account", clientEmail: "clover-test@clover-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri };
+      const secrets = { get: async (name: string): Promise<CredentialMaterial | null> => (name === "gcp-service-account" ? material : null) };
+      const hosts = await declaredHosts("vertex");
+      expect(hosts).toEqual(expect.arrayContaining(["us-central1-aiplatform.googleapis.com", "oauth2.googleapis.com"]));
+      expect(hosts.some((h) => h.includes("*"))).toBe(false);
+      const routes = { "us-central1-aiplatform.googleapis.com": fake, "oauth2.googleapis.com": fake };
+      await kit("clover/model-vertex (declared hosts)", await codeAdapter("vertex"), () => ({ connection: { providerId: "vertex", project: opts.project, location: opts.location }, fetch: declaredFetch(hosts, routes), secrets, stallTimeoutMs: 5000, log: () => {} }), row.upstreamId, { signs: true });
       expect(opts.verified.length).toBeGreaterThan(0);
     } finally {
       await fake.close();

@@ -36,7 +36,10 @@ function routedFetch(routes: Record<string, FakeServer>): (url: string, init: Re
     const u = new URL(url);
     const fake = routes[u.host];
     if (fake === undefined) throw new Error(`no fake for ${u.host}`);
-    return fetch(`${fake.url}${u.pathname}${u.search}`, init);
+    // The request keeps the real host it was made for (SigV4 signs the Host header).
+    const headers = new Headers(init.headers);
+    headers.set("host", u.host);
+    return fetch(`${fake.url}${u.pathname}${u.search}`, { ...init, headers });
   };
 }
 
@@ -172,13 +175,15 @@ describe("a code plugin's adapter, served to a session through the plugin host",
   test("Bedrock: in a process of its own, it reads its secret there and signs; the session never sees it", async () => {
     const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-lite-v1:0": [bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("hello from bedrock"))] } });
     try {
-      const { secrets, plugins, host } = await world();
+      // Its requests go out through its net.fetch on its declared hosts (agent SDK 0.0.65): the real regional host,
+      // answered by the fake, which still verifies the signature made for that host.
+      const { secrets, plugins, host } = await world({ fetch: routedFetch({ [`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`]: fake }) });
       expect(host.processOf(modelPluginId("bedrock"))).toBe("own");
       await secrets.set({ owner: { kind: "plugin", pluginId: modelPluginId("bedrock") }, name: "aws" }, JSON.stringify({ kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY }));
       await plugins.start();
       const stub = stubFor(plugins.sessionOption({ caller: { kind: "core" } })!, "winter.bedrock-converse");
       const events: ProviderEvent[] = [];
-      for await (const e of stub.streamTurn({ model: "amazon.nova-lite-v1:0", messages: [{ role: "user", content: "hi" }] }, sessionContext({ providerId: "bedrock", region: bedrockFake.FAKE_REGION, baseUrl: fake.url, local: true }))) events.push(e);
+      for await (const e of stub.streamTurn({ model: "amazon.nova-lite-v1:0", messages: [{ role: "user", content: "hi" }] }, sessionContext({ providerId: "bedrock", region: bedrockFake.FAKE_REGION }))) events.push(e);
       expect(events.filter((e) => e.type === "error")).toEqual([]);
       expect(events.map((e) => (e.type === "text_delta" ? e.text : "")).join("")).toBe("hello from bedrock");
       expect(fake.signatures.length).toBeGreaterThan(0);
