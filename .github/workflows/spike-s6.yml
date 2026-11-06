@@ -17,15 +17,48 @@ name: Spike S6 · folder-tree mounts
 # [s6-win-tsc-probe] makes the Windows speed-tsc suite run ci/windows-tsc.ps1 instead of its
 # speed matrix, and [s6-win-netvol] measures tsc on the tree mounted as a network volume.
 # Manual runs (workflow_dispatch) run on the lane branch only; every job checks the ref.
+# J-M1: on `lane/j-m1` only the `tree` job runs: the core's tree and computers tests (lane B's conformance suites
+# against the real code, and several computers on the fake link) on Linux, Windows and macOS, since ci.yml runs the
+# core suite on macOS alone. Lane M decides whether ci.yml takes it over.
 on:
   push:
-    branches: [lane/j-m0]
+    branches: [lane/j-m0, lane/j-m1]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  tree:
+    name: tree · ${{ matrix.runner }}
+    if: github.ref == 'refs/heads/lane/j-m1'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun install --frozen-lockfile
+      - name: The tree and the computers, with lane B's conformance suites
+        working-directory: packages/core
+        run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
+
   protocol:
     # The wire protocol and the holder's rules against the real file service, no mount: the fence
     # (links, case and Unicode form, Windows' trailing dots and 8.3 names), liveness, events.
