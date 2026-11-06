@@ -10,7 +10,7 @@ import { b64u, fromUtf8 } from "../src/wire/bytes";
 import { keyId } from "../src/wire/envelope";
 import { generateX25519 } from "../src/wire/hpke";
 import { CLOSE_REAUTH, CLOSE_REPLACED, hookKeyHash, PING, PONG } from "../src/wire/protocol";
-import { FakeClock, FakeService, settle } from "./fakes";
+import { FakeClock, FakeService, settle, until } from "./fakes";
 
 /** The core's key store, in memory; `unavailable` makes publicKey throw as a locked store would. */
 function testKeys(): ForwarderKeys & { unavailable: boolean; publicKeyNow(): Promise<Uint8Array> } {
@@ -418,7 +418,7 @@ describe("delivery", () => {
     t.service.socket.receive(a.frame);
     t.service.socket.receive(new Uint8Array(b.frame));
     t.service.socket.receive(new Blob([c.frame]));
-    await settle();
+    await until(() => t.deliveries.length === 3);
     expect(t.deliveries.map((d) => fromUtf8(d.request.body))).toEqual(["as buffer", "as view", "as blob"]);
   });
 });
