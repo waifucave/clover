@@ -44,40 +44,32 @@ export async function isProtectedCopy(execPath: string = process.execPath): Prom
 export { SRT_WIN_PINS, launcherPinned, authenticodeDigest, srtWinArch, srtWinPath, launcherProblem, launcherDigest, type SrtWinArch } from "./windows-launcher";
 
 /** The base prefix for the sandbox principal (Addendum 9). Windows account names are capped at 20
- *  characters, so we use `clover-sb-` (9 chars) + 8 hex chars of SHA-256(SID) = 18 chars total. */
+ *  characters, so we use `clover-sb-` (10 chars) + 8 hex chars = 18 chars total. */
 export const SANDBOX_PRINCIPAL_PREFIX = "clover-sb-";
-
-/** The dedicated sandbox principal base name (for tests and as a prefix).
- *  The actual per-user principal is `clover-sb-` + first 8 hex chars of SHA-256(user SID). */
-export function sandboxPrincipal(): string {
-  return SANDBOX_PRINCIPAL_PREFIX;
-}
 
 /** Compute the per-user principal name from a Windows SID (Addendum 9).
  *  Returns `clover-sb-` + first 8 hex characters of SHA-256(SID).
- *  This is a pure function for testing; the live version uses the current user's SID. */
+ *  This is a pure function for testing; the live name always derives from the installer's target SID. */
 export function principalNameFromSid(sid: string): string {
   const hash = createHash("sha256").update(sid).digest("hex");
   return `${SANDBOX_PRINCIPAL_PREFIX}${hash.slice(0, 8)}`;
 }
 
-/** The full principal name for the current user (Addendum 9).
- *  Uses `clover-sb-` + first 8 hex chars of SHA-256(current user's SID).
- *  The full SID is stored in the principal's description field and verified on status/remove. */
-export async function currentSandboxPrincipal(): Promise<string> {
-  const { execFileSync } = await import("node:child_process");
-  const ps = `
-    $ProgressPreference = 'SilentlyContinue'
-    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($sid)
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $hash = $sha.ComputeHash($bytes)
-    $hex = [BitConverter]::ToString($hash).Replace("-", "").ToLower()
-    $short = $hex.Substring(0, 8)
-    Write-Output "clover-sb-$short"
-  `.trim();
-  const out = execFileSync("powershell", ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true });
-  return String(out).trim();
+/** The installer's target user SID, read off our own path (should-fix: never the elevated token or env).
+ *  The installer copies us to `%ProgramFiles%\Clover Sandbox\<user SID>\clover-core.exe`, so when we run
+ *  from there our path names the user we serve — even when elevation runs as a different account. Null
+ *  when we are not running from a protected copy (dev layouts, per-user installs). */
+export function installerTargetSid(execPath: string = process.execPath): string | null {
+  const m = /Clover Sandbox[\\/](S-1-[0-9-]+)(?:[\\/]|$)/i.exec(execPath);
+  return m ? m[1]! : null;
+}
+
+/** `powershell -EncodedCommand`: run a script without interpolating it into a `-Command` string.
+ *  Paths with `$`, quotes or backticks stay inert (UTF-16LE base64, the only encoding `-EncodedCommand`
+ *  takes), so a hostile or odd profile path can never break out of the command. */
+export function psEncodedArgs(script: string): readonly string[] {
+  const b64 = Buffer.from(`\uFEFF${script}`, "utf16le").toString("base64");
+  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand", b64];
 }
 
 /** Clover's WFP sublayer: the launcher's network filters live under this GUID, not its default. */
@@ -94,8 +86,9 @@ export const SANDBOX_EXIT = { OK: 0, FAILED: 1, NOT_ELEVATED: 2, HASH_MISMATCH: 
 
 /** `srt-win install`: one elevated step provisioning the principal and its WFP filters (the launcher
  *  self-elevates via UAC; idempotent — re-running rotates the password and refreshes the filters).
- *  Loopback stays closed (the default): Bash gets no network, as on macOS and Linux. */
-export function setupArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER, principal: string = sandboxPrincipal()): readonly string[] {
+ *  Loopback stays closed (the default): Bash gets no network, as on macOS and Linux.
+ *  The principal is required: the bare prefix is not an account. */
+export function setupArgs(launcher: string, sublayer: string, principal: string): readonly string[] {
   return [launcher, "install", "--sandbox-user", principal, "--sublayer-guid", sublayer];
 }
 
@@ -107,29 +100,36 @@ export function removeArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLA
 }
 
 /** `srt-win status`: one line of JSON `{user, wfp}`; never elevates. */
-export function statusArgs(launcher: string, sublayer: string = CLOVER_WFP_SUBLAYER, principal: string = sandboxPrincipal()): readonly string[] {
+export function statusArgs(launcher: string, sublayer: string): readonly string[] {
   return [launcher, "status", "--sublayer-guid", sublayer];
 }
 
 /** `srt-win user status`: the principal's provisioning state, one object of JSON; never elevates. */
 export const USER_STATUS_ARGS: readonly string[] = ["user", "status"];
 
-/** `srt-win exec`: launch a command as the principal. `--write-restricted-token` is the brief's token;
- *  `--deny-read`/`--deny-write` are the per-launch fence; `--held-by` ties the command to the daemon so
- *  it ends with it. `--quiet` keeps broker chatter off the command's stderr. */
+/** `srt-win exec`: launch a command as the principal. `--quiet` keeps broker chatter off the command's
+ *  stderr; `--write-restricted-token` is the brief's token; `--deny-read`/`--deny-write` are the per-launch
+ *  fence; `--held-by` ties the command to the daemon so it ends with it.
+ *  `env` is REQUIRED and complete: srt-win forwards exactly these entries and nothing inherited, so the
+ *  caller passes `sandboxHomeEnv` plus proxy/CA entries and the broker's `HOME` (and any tokens in it)
+ *  can never leak into the child (should-fix). `writeRoots` names the session's persistent write roots:
+ *  each root's capability SID joins the child token's restricting SIDs, which is what lets the child write
+ *  there — and only there, among the persistent roots (measured on the VM). */
 export function execArgs(o: {
   launcher: string;
   shell: readonly string[];
   denyRead: readonly string[];
   denyWrite: readonly string[];
-  env?: Readonly<Record<string, string>>;
+  env: Readonly<Record<string, string>>;
+  writeRoots: readonly string[];
   heldBy?: number;
 }): readonly string[] {
   const a: string[] = [o.launcher, "exec", "--quiet", "--write-restricted-token"];
   for (const p of o.denyRead) a.push("--deny-read", p);
   for (const p of o.denyWrite) a.push("--deny-write", p);
+  for (const r of o.writeRoots) a.push("--write-root", r);
   if (o.heldBy !== undefined) a.push("--held-by", String(o.heldBy));
-  for (const [k, v] of Object.entries(o.env ?? {})) a.push("--env", `${k}=${v}`);
+  for (const [k, v] of Object.entries(o.env)) a.push("--env", `${k}=${v}`);
   a.push("--", ...o.shell);
   return a;
 }
@@ -148,6 +148,46 @@ export function aclRevokeArgs(o: { launcher: string; sid: string; holderPid: num
 /** The stdin document `acl grant` reads. */
 export function aclGrantInput(read: readonly string[], write: readonly string[]): string {
   return JSON.stringify({ read: [...read], write: [...write] });
+}
+
+/** A launch session's persistent roots (controller ruling 1): `acl grant --persistent` makes each `write`
+ *  path a persistent root with its own capability SID (ACEs for the sandbox group + that SID), kept when the
+ *  session ends; `denyRead`/`denyWrite` targets under a root are stamped for the group and kept with it.
+ *  `exec --write-root` then adds each root's capability SID to the child token, which is what lets the child
+ *  write there — and only there (measured on the VM: an Authenticated-Users-writable folder outside the
+ *  roots is refused). `acl revoke` does not touch persistent roots; `acl forget` at session end removes them. */
+export function sessionGrantArgs(o: { launcher: string; sid: string; holderPid: number }): readonly string[] {
+  return [o.launcher, "acl", "grant", "--holder-pid", String(o.holderPid), "--sandbox-user-sid", o.sid, "--persistent"];
+}
+
+/** The stdin document a session grant reads: allowed reads and write roots, plus denies under the roots. */
+export function sessionGrantInput(o: {
+  read: readonly string[];
+  write: readonly string[];
+  denyRead?: readonly string[];
+  denyWrite?: readonly string[];
+}): string {
+  return JSON.stringify({
+    read: [...o.read],
+    write: [...o.write],
+    ...(o.denyRead !== undefined ? { denyRead: [...o.denyRead] } : {}),
+    ...(o.denyWrite !== undefined ? { denyWrite: [...o.denyWrite] } : {}),
+  });
+}
+
+/** End a launch session: `acl revoke` drops the holder's per-session claims. */
+export function sessionRevokeArgs(o: { launcher: string; sid: string; holderPid: number }): readonly string[] {
+  return aclRevokeArgs(o);
+}
+
+/** Forget a launch session's persistent write roots (runs at session end, after revoke). */
+export function sessionForgetArgs(launcher: string): readonly string[] {
+  return [launcher, "acl", "forget", "--all"];
+}
+
+/** Restore a launch session's per-exec denies (runs at session end, after revoke). */
+export function sessionRestoreArgs(launcher: string): readonly string[] {
+  return [launcher, "acl", "restore"];
 }
 
 /** A warm-up launch: the principal's first logon creates its profile. Nothing is written. */
@@ -213,14 +253,18 @@ export function sandboxHomeEnv(profileRoot: string): { HOME: string; USERPROFILE
 /** `Set-LocalUser -Description <ownerSid>`: stamp the owning user's full SID on the principal (Addendum 9).
  *  srt-win leaves its own description; setup overwrites it right after provisioning. */
 export function setDescriptionArgs(principal: string, ownerSid: string): readonly string[] {
-  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
-    `Set-LocalUser -Name "${principal}" -Description "${ownerSid}"`];
+  return psEncodedArgs(`Set-LocalUser -Name "${principal}" -Description "${ownerSid}"`);
 }
 
 /** Read the principal's description back (works unelevated). */
 export function getDescriptionArgs(principal: string): readonly string[] {
-  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
-    `(Get-LocalUser -Name "${principal}").Description`];
+  return psEncodedArgs(`(Get-LocalUser -Name "${principal}").Description`);
+}
+
+/** Resolve a known folder without environment variables (should-fix): `System` (System32's parent),
+ *  `CommonStartup` (all-users Startup) and `CommonApplicationData` (ProgramData). */
+export function knownFolderArgs(kind: "System" | "CommonStartup" | "CommonApplicationData"): readonly string[] {
+  return psEncodedArgs(`[Environment]::GetFolderPath("${kind}")`);
 }
 
 /** Whether the principal's description names exactly this owner SID. Anything else — srt-win's default,
@@ -239,10 +283,125 @@ export function parseWhoamiSid(stdout: string): string | null {
   return null;
 }
 
+/** The explicit minimal environment every `sandbox` child spawns with (should-fix): a fixed `PATH`
+ *  plus the Windows installation variables. Notably absent: `HOME`, proxy variables and anything that
+ *  could carry a token — nothing is inherited just because a variable was forgotten. `USERPROFILE` and
+ *  `ProgramData` stay because identity-adjacent lookups may read them; the fence never trusts them. */
+export function minimalChildEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {
+    PATH: "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem",
+  };
+  for (const k of ["SystemRoot", "windir", "SystemDrive", "TEMP", "TMP", "PATHEXT", "USERPROFILE", "ProgramData"]) {
+    const v = env[k];
+    if (typeof v === "string" && v !== "") out[k] = v;
+  }
+  return out;
+}
+
 /** The three Startup folders the fence denies the principal: its own, the real user's and all users'. */
 export function startupFolders(o: { profileRoot: string; realUserProfile: string; commonStartup: string }): readonly string[] {
   const under = (root: string) => win32.join(root, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
   return [under(o.profileRoot), under(o.realUserProfile), o.commonStartup];
+}
+
+/** The install marker: our own per-user record of a completed `setup` (ruling 3). srt-win keeps one
+ *  machine-global setup record (measured: the last install wins, an uninstall orphans the rest), so Clover
+ *  keeps its own: `%ProgramData%\Clover Sandbox\markers\<owner SID>.json`, written elevated by setup,
+ *  readable by everyone. `setup --force` across owners and `remove` against another owner's marker are
+ *  refused off this record — never off the live token alone. */
+export interface InstallMarker {
+  readonly ownerSid: string;
+  readonly principal: string;
+  readonly principalSid: string | null;
+  readonly sublayer: string;
+  readonly version: 1;
+}
+
+/** Where the install marker for this owner lives. */
+export function installMarkerPath(programData: string, ownerSid: string): string {
+  return win32.join(programData, "Clover Sandbox", "markers", `${ownerSid}.json`);
+}
+
+/** Serialize a completed setup's marker. */
+export function formatInstallMarker(m: InstallMarker): string {
+  return JSON.stringify({ version: 1, ownerSid: m.ownerSid, principal: m.principal, principalSid: m.principalSid, sublayer: m.sublayer });
+}
+
+/** Parse a marker file back; null when absent or not ours. */
+export function parseInstallMarker(text: string | null): InstallMarker | null {
+  if (text === null) return null;
+  try {
+    const o = JSON.parse(text) as Record<string, unknown>;
+    if (o.version !== 1 || typeof o.ownerSid !== "string" || typeof o.principal !== "string" ||
+      typeof o.sublayer !== "string" || (o.principalSid !== null && typeof o.principalSid !== "string")) return null;
+    return { version: 1, ownerSid: o.ownerSid, principal: o.principal, principalSid: o.principalSid, sublayer: o.sublayer };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `setup` may proceed: a marker owned by another user refuses, even with `--force` (ruling 3).
+ *  A missing or corrupt marker never blocks a fresh setup. */
+export function markerAllowsSetup(marker: InstallMarker | null, ownerSid: string): { ok: true } | { ok: false; reason: string } {
+  if (marker === null) return { ok: true };
+  if (marker.ownerSid !== ownerSid) return { ok: false, reason: "Bash is set up for another user; that user must run `clover-core sandbox remove` first" };
+  return { ok: true };
+}
+
+/** Whether `remove` may proceed: the marker's account must be one of the caller's own principals (ruling 3).
+ *  A missing marker means nothing was set up here (exit 0 path); a foreign marker refuses. */
+export function markerAllowsRemove(marker: InstallMarker | null, ownerSid: string, principal: string): { ok: true } | { ok: false; reason: string } {
+  if (marker === null) return { ok: true };
+  if (marker.ownerSid !== ownerSid || marker.principal !== principal) {
+    return { ok: false, reason: "sandbox remove refused: the install belongs to another user" };
+  }
+  return { ok: true };
+}
+
+/** The exclusive launch lease (spec's "one session at a time" until the privileged component lands).
+ *  One file per principal under the owner's Clover leases dir; the holder records its PID and the last
+ *  reset. A launch refuses while a live holder exists, and refuses unless a reset ran for that principal
+ *  since its last use (ruling 4) — until the broker performs resets, Windows Bash is not admitted. */
+export interface PrincipalLease {
+  readonly holderPid: number;
+  readonly startedAt: string;
+  readonly lastResetAt: string | null;
+  readonly lastUseAt: string | null;
+}
+
+/** Where a principal's lease lives. */
+export function principalLeasePath(leasesDir: string, principal: string): string {
+  return win32.join(leasesDir, `${principal}.json`);
+}
+
+/** Parse a lease file back; null when absent or not ours. */
+export function parsePrincipalLease(text: string | null): PrincipalLease | null {
+  if (text === null) return null;
+  try {
+    const o = JSON.parse(text) as Record<string, unknown>;
+    if (typeof o.holderPid !== "number" || typeof o.startedAt !== "string" ||
+      (o.lastResetAt !== null && typeof o.lastResetAt !== "string") ||
+      (o.lastUseAt !== null && typeof o.lastUseAt !== "string")) return null;
+    return { holderPid: o.holderPid, startedAt: o.startedAt, lastResetAt: o.lastResetAt, lastUseAt: o.lastUseAt };
+  } catch {
+    return null;
+  }
+}
+
+/** Serialize a lease. */
+export function formatPrincipalLease(l: PrincipalLease): string {
+  return JSON.stringify({ holderPid: l.holderPid, startedAt: l.startedAt, lastResetAt: l.lastResetAt, lastUseAt: l.lastUseAt });
+}
+
+/** The launch gate: refuse while a live holder exists; refuse unless a reset ran since the last use.
+ *  `holderAlive` is the daemon's PID-liveness check. A missing lease is a free principal. */
+export function leaseLaunchGate(lease: PrincipalLease | null, holderAlive: (pid: number) => boolean): { ok: true } | { ok: false; reason: string } {
+  if (lease === null) return { ok: true };
+  if (holderAlive(lease.holderPid)) return { ok: false, reason: "the principal is leased by a live session" };
+  if (lease.lastUseAt !== null && (lease.lastResetAt === null || lease.lastResetAt <= lease.lastUseAt)) {
+    return { ok: false, reason: "the principal needs a reset since its last use (item 1116 is unmet on Windows)" };
+  }
+  return { ok: true };
 }
 
 /** `icacls <path> /deny *<sid>:(OI)(CI)F`: the principal can't write the Startup folder or its children.
@@ -265,10 +424,14 @@ export function icaclsRemoveDenyArgs(path: string, sid: string): readonly string
 
 /** `powershell New-Item`: create a folder, parents included, succeeding when it already exists. cmd's
  *  `mkdir` is avoided: under `Bun.spawn` its `/c` quoting breaks on spaced paths ("The filename, directory
- *  name, or volume label syntax is incorrect"), while `powershell -Command` quotes survive. */
+ *  name, or volume label syntax is incorrect"); the encoded script keeps every path inert. */
 export function mkdirArgs(path: string): readonly string[] {
-  return ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
-    `New-Item -ItemType Directory -Force -Path "${path}" | Out-Null`];
+  return psEncodedArgs(`New-Item -ItemType Directory -Force -Path "${path}" | Out-Null`);
+}
+
+/** `powershell Remove-Item`: remove a folder tree. The encoded script keeps the path inert. */
+export function removeDirArgs(path: string): readonly string[] {
+  return psEncodedArgs(`Remove-Item -Recurse -Force -Path "${path}"`);
 }
 
 /** A step of setup/remove: its argv, optional stdin, and whether its failure fails the whole run. */
@@ -291,14 +454,15 @@ export function principalResetPlan(o: {
 }): readonly SandboxStep[] {
   const profileKey = `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${o.sid}`;
   const users = o.usersRoot ?? "C:\\Users";
-  const prefix = o.principalPrefix ?? sandboxPrincipal();
+  // Scoped to the caller's own prefix (ruling 3): never match another user's `clover-sb-*` folder.
+  // Callers pass their own `principalNameFromSid(ownerSid)`; the bare prefix is not a valid scope.
+  const prefix = o.principalPrefix ?? SANDBOX_PRINCIPAL_PREFIX;
   return [
     { name: "unload-hive", argv: ["reg", "unload", `HKU\\${o.sid}`], required: false },
     { name: "remove-profile-key", argv: ["reg", "delete", profileKey, "/f"], required: true },
-    { name: "remove-profile-dir", argv: ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
-      `Remove-Item -Recurse -Force -Path "${o.profileRoot}"`], required: true },
-    { name: "remove-leftover-dirs", argv: ["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command",
-      `Get-ChildItem -Directory -Path "${users}" -Filter "${prefix}*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue`], required: false },
+    { name: "remove-profile-dir", argv: removeDirArgs(o.profileRoot), required: true },
+    { name: "remove-leftover-dirs", argv: psEncodedArgs(
+      `Get-ChildItem -Directory -Path "${users}" -Filter "${prefix}*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue`), required: false },
   ];
 }
 

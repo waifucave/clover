@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   CLOVER_WFP_SUBLAYER,
   SANDBOX_EXIT,
-  sandboxPrincipal,
+  SANDBOX_PRINCIPAL_PREFIX,
   principalNameFromSid,
   SRT_WIN_COMMIT,
   SRT_WIN_TAG,
@@ -36,6 +36,27 @@ import {
   icaclsDeleteDenyArgs,
   icaclsRemoveDenyArgs,
   mkdirArgs,
+  removeDirArgs,
+  installerTargetSid,
+  psEncodedArgs,
+  knownFolderArgs,
+  sessionGrantArgs,
+  sessionGrantInput,
+  sessionRevokeArgs,
+  sessionForgetArgs,
+  sessionRestoreArgs,
+  installMarkerPath,
+  formatInstallMarker,
+  parseInstallMarker,
+  markerAllowsSetup,
+  markerAllowsRemove,
+  principalLeasePath,
+  parsePrincipalLease,
+  formatPrincipalLease,
+  leaseLaunchGate,
+  minimalChildEnv,
+  execArgs,
+  profileQueryArgs,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -48,9 +69,9 @@ describe("the pinned launcher", () => {
 
   test("the sublayer GUID is a GUID, and the principal uses the Addendum 9 format", () => {
     expect(CLOVER_WFP_SUBLAYER).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i);
-    // Base prefix is clover-sb- (10 chars), full name with 8 hex chars = 18 chars
-    expect(sandboxPrincipal()).toBe("clover-sb-");
-    expect(sandboxPrincipal().length).toBe(10);
+    // Full name with 8 hex chars = 18 chars (fits the 20-char account limit)
+    expect(SANDBOX_PRINCIPAL_PREFIX).toBe("clover-sb-");
+    expect(SANDBOX_PRINCIPAL_PREFIX.length).toBe(10);
     // Test principalNameFromSid produces 18-char name
     const name = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1001");
     expect(name).toMatch(/^clover-sb-[0-9a-f]{8}$/);
@@ -87,15 +108,15 @@ describe("the pinned launcher", () => {
 
 describe("the sandbox command's args", () => {
   test("setup provisions the principal under Clover's sublayer, loopback closed", () => {
-    // Default uses sandboxPrincipal() base prefix; actual per-user name passed by CLI
-    const a = setupArgs("C:\\Clover\\srt-win.exe");
-    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    // The principal is required: no bare-prefix default.
+    const a = setupArgs("C:\\Clover\\srt-win.exe", CLOVER_WFP_SUBLAYER, "clover-sb-f41c96d1");
+    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-f41c96d1", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
     expect(a.join(" ")).not.toContain("allow-loopback");
   });
 
   test("remove undoes everything; status never elevates", () => {
-    expect(removeArgs("srt-win.exe")).toEqual(["srt-win.exe", "uninstall", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
-    expect(statusArgs("srt-win.exe")).toEqual(["srt-win.exe", "status", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    expect(removeArgs("srt-win.exe", CLOVER_WFP_SUBLAYER)).toEqual(["srt-win.exe", "uninstall", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    expect(statusArgs("srt-win.exe", CLOVER_WFP_SUBLAYER)).toEqual(["srt-win.exe", "status", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
   });
 
   test("install's exits map to setup's message, or none", () => {
@@ -466,8 +487,9 @@ describe("the child home environment (controller ruling 2)", () => {
 describe("the owner-SID description check (Addendum 9)", () => {
   const sid = "S-1-5-21-2049286435-129160171-2159440921-1000";
   test("stamp and read args name the principal and SID", () => {
-    expect(setDescriptionArgs("clover-sb-f41c96d1", sid).join(" ")).toContain(`-Description "${sid}"`);
-    expect(getDescriptionArgs("clover-sb-f41c96d1").join(" ")).toContain("Get-LocalUser");
+    const dec = (a: readonly string[]) => Buffer.from(a[5]!, "base64").toString("utf16le");
+    expect(dec(setDescriptionArgs("clover-sb-f41c96d1", sid))).toContain(`-Description "${sid}"`);
+    expect(dec(getDescriptionArgs("clover-sb-f41c96d1"))).toContain("Get-LocalUser");
   });
   test("only the exact SID matches", () => {
     expect(descriptionMatches(sid, sid)).toBe(true);
@@ -490,9 +512,113 @@ describe("the icacls/cmd shapes (measured on the VM)", () => {
     expect(icaclsDeleteDenyArgs("C:\\m", sid)).toEqual(["icacls", "C:\\m", "/deny", `*${sid}:(D)`]);
     expect(icaclsRemoveDenyArgs("C:\\s", sid)).toEqual(["icacls", "C:\\s", "/remove:d", `*${sid}`]);
   });
-  test("mkdir uses powershell (cmd /c quoting breaks spaced paths under Bun.spawn)", () => {
+  test("mkdir uses encoded powershell (cmd /c quoting breaks spaced paths under Bun.spawn)", () => {
     const a = mkdirArgs("C:\\Users\\x\\Startup");
-    expect(a.slice(0, 5)).toEqual(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-Command"]);
-    expect(a[5]).toContain('New-Item -ItemType Directory -Force -Path "C:\\Users\\x\\Startup"');
+    expect(a.slice(0, 5)).toEqual(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand"]);
+    expect(Buffer.from(a[5]!, "base64").toString("utf16le")).toContain('New-Item -ItemType Directory -Force -Path "C:\\Users\\x\\Startup"');
+  });
+});
+
+describe("the installer target SID (should-fix)", () => {
+  test("reads the user SID off the protected-copy path", () => {
+    expect(installerTargetSid("C:\\Program Files\\Clover Sandbox\\S-1-5-21-1-2-3-1000\\clover-core.exe")).toBe("S-1-5-21-1-2-3-1000");
+    expect(installerTargetSid("C:\\Program Files\\Clover Sandbox\\S-1-5-21-1-2-3-1000")).toBe("S-1-5-21-1-2-3-1000");
+    expect(installerTargetSid("C:\\Users\\me\\clover-core.exe")).toBeNull();
+    expect(installerTargetSid("/x/clover-core")).toBeNull();
+  });
+});
+
+describe("encoded powershell (should-fix: no -Command interpolation)", () => {
+  test("scripts round-trip through base64 UTF-16LE", () => {
+    const a = psEncodedArgs(`New-Item -Path "C:\\$x\\'q\\'" | Out-Null`);
+    expect(a.slice(0, 5)).toEqual(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand"]);
+    const raw = Buffer.from(a[5]!, "base64").toString("utf16le");
+    expect(raw).toContain(`New-Item -Path "C:\\$x\\'q\\'" | Out-Null`);
+  });
+  test("description and folder builders are encoded", () => {
+    expect(setDescriptionArgs("p", "S-1-1")[4]).toBe("-EncodedCommand");
+    expect(getDescriptionArgs("p")[4]).toBe("-EncodedCommand");
+    expect(mkdirArgs("C:\\x")[4]).toBe("-EncodedCommand");
+    expect(removeDirArgs("C:\\x")[4]).toBe("-EncodedCommand");
+    expect(knownFolderArgs("CommonStartup")[4]).toBe("-EncodedCommand");
+  });
+});
+
+describe("the launch session protocol (ruling 1)", () => {
+  const sid = "S-1-5-21-1-2-3-1025";
+  test("a session grant is persistent with write roots and kept denies", () => {
+    expect(sessionGrantArgs({ launcher: "s", sid, holderPid: 42 })).toEqual(
+      ["s", "acl", "grant", "--holder-pid", "42", "--sandbox-user-sid", sid, "--persistent"]);
+    const doc = JSON.parse(sessionGrantInput({ read: ["r"], write: ["w"], denyWrite: ["d"] }));
+    expect(doc).toEqual({ read: ["r"], write: ["w"], denyWrite: ["d"] });
+  });
+  test("exec requires env and write roots", () => {
+    const a = execArgs({ launcher: "s", shell: ["bash"], denyRead: ["dr"], denyWrite: ["dw"], env: { HOME: "h" }, writeRoots: ["w"] });
+    expect(a).toEqual(["s", "exec", "--quiet", "--write-restricted-token",
+      "--deny-read", "dr", "--deny-write", "dw", "--write-root", "w", "--env", "HOME=h", "--", "bash"]);
+  });
+  test("a session ends with revoke then forget/restore", () => {
+    expect(sessionRevokeArgs({ launcher: "s", sid, holderPid: 7 })).toEqual(
+      ["s", "acl", "revoke", "--holder-pid", "7", "--sandbox-user-sid", sid]);
+    expect(sessionForgetArgs("s")).toEqual(["s", "acl", "forget", "--all"]);
+    expect(sessionRestoreArgs("s")).toEqual(["s", "acl", "restore"]);
+  });
+});
+
+describe("the install marker (ruling 3)", () => {
+  const owner = "S-1-5-21-1-2-3-1000";
+  const m = { version: 1 as const, ownerSid: owner, principal: "clover-sb-abc", principalSid: "S-1-5-21-1-2-3-1025", sublayer: "g" };
+  test("round-trips, and rejects foreign shapes", () => {
+    expect(parseInstallMarker(formatInstallMarker(m))).toEqual(m);
+    expect(parseInstallMarker(null)).toBeNull();
+    expect(parseInstallMarker("{}")).toBeNull();
+    expect(parseInstallMarker(JSON.stringify({ ...m, version: 2 }))).toBeNull();
+  });
+  test("setup across owners is refused even with force", () => {
+    expect(markerAllowsSetup(null, owner)).toEqual({ ok: true });
+    expect(markerAllowsSetup(m, owner)).toEqual({ ok: true });
+    expect(markerAllowsSetup(m, "S-1-5-21-9")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
+  });
+  test("remove checks the marker's account is the caller's principal", () => {
+    expect(markerAllowsRemove(null, owner, "clover-sb-abc")).toEqual({ ok: true });
+    expect(markerAllowsRemove(m, owner, "clover-sb-abc")).toEqual({ ok: true });
+    expect(markerAllowsRemove(m, owner, "clover-sb-other")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
+    expect(markerAllowsRemove(m, "S-1-5-21-9", "clover-sb-abc")).toEqual({ ok: false, reason: expect.stringContaining("another user") });
+  });
+  test("the marker path scopes per owner under ProgramData", () => {
+    expect(installMarkerPath("C:\\ProgramData", owner)).toBe(`C:\\ProgramData\\Clover Sandbox\\markers\\${owner}.json`);
+  });
+});
+
+describe("the exclusive launch lease (spec one-session-at-a-time)", () => {
+  test("round-trips", () => {
+    const l = { holderPid: 42, startedAt: "t0", lastResetAt: "t1", lastUseAt: "t2" };
+    expect(parsePrincipalLease(formatPrincipalLease(l))).toEqual(l);
+    expect(parsePrincipalLease(null)).toBeNull();
+    expect(parsePrincipalLease("x")).toBeNull();
+    expect(principalLeasePath("C:\\l", "clover-sb-a")).toBe("C:\\l\\clover-sb-a.json");
+  });
+  test("the gate refuses live holders and stale resets", () => {
+    const dead = () => false;
+    const live = (pid: number) => pid === 42;
+    expect(leaseLaunchGate(null, dead)).toEqual({ ok: true });
+    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: "t2", lastUseAt: "t1" }, live))
+      .toEqual({ ok: false, reason: expect.stringContaining("live session") });
+    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: null, lastUseAt: "t1" }, dead))
+      .toEqual({ ok: false, reason: expect.stringContaining("reset") });
+    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: "t1", lastUseAt: "t1" }, dead))
+      .toEqual({ ok: false, reason: expect.stringContaining("reset") });
+    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: "t2", lastUseAt: "t1" }, dead)).toEqual({ ok: true });
+  });
+});
+
+describe("the minimal child env (should-fix)", () => {
+  test("fixed PATH, no HOME or tokens", () => {
+    const e = minimalChildEnv({ PATH: "/evil", HOME: "/h", GH_TOKEN: "x", SystemRoot: "C:\\Windows", USERPROFILE: "C:\\U", ProgramData: "C:\\P" } as NodeJS.ProcessEnv);
+    expect(e.PATH).toBe("C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem");
+    expect(e.HOME).toBeUndefined();
+    expect(e.GH_TOKEN).toBeUndefined();
+    expect(e.SystemRoot).toBe("C:\\Windows");
+    expect(e.USERPROFILE).toBe("C:\\U");
   });
 });
