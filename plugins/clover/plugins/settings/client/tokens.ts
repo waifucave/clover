@@ -5,8 +5,8 @@
 
 /** Tokens from lane B's catalog. */
 export const CATALOG_TOKENS = [
-  "color.accent",
   "color.accent.contrast",
+  "color.accent.fill",
   "color.accent.soft",
   "color.accent.text",
   "color.attention.text",
@@ -26,11 +26,13 @@ export const CATALOG_TOKENS = [
   "color.text.secondary",
   "font.line.body",
   "font.line.tight",
+  "font.mono",
   "font.sans",
   "font.size.body",
   "font.size.caption",
   "font.size.control",
   "font.size.label",
+  "font.size.title",
   "font.weight.medium",
   "font.weight.regular",
   "radius.large",
@@ -48,7 +50,7 @@ export const CATALOG_TOKENS = [
 /** The `clover` plugin's own tokens (`plugin.clover.<name>`, B's rule for a plugin's own), each a request to
  *  B for a catalog entry (listed in the PR body). */
 export const PART_TOKENS: readonly string[] = [
-
+  "plugin.clover.line.code",
 ];
 
 export const TOKENS: readonly string[] = [...CATALOG_TOKENS, ...PART_TOKENS];

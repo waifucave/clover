@@ -1,0 +1,61 @@
+{
+  "manifest": 1,
+  "name": "Bot editor",
+  "description": "Edit a bot: its name, your instructions, its model, avatar, voice, theme and layout, kept as your own layer over its plugin's.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "bots.read",
+    "approvals"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "bot-editor",
+        "component": "BotEditorEntry",
+        "declares": {
+          "avatar.packs": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": [
+                "id",
+                "file",
+                "format"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "portrait": {
+                  "type": "string"
+                },
+                "license": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "Avatar files with their format and portrait, so an avatar pack is a data plugin."
+          }
+        }
+      }
+    ]
+  }
+}

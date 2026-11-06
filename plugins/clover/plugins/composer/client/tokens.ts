@@ -7,6 +7,7 @@
 export const CATALOG_TOKENS = [
   "color.accent",
   "color.accent.contrast",
+  "color.accent.fill",
   "color.accent.soft",
   "color.accent.text",
   "color.attention.text",

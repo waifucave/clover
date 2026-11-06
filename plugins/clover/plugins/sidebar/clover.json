@@ -13,21 +13,73 @@
   },
   "capabilities": [
     "bots.read",
-    "computers.read"
+    "computers.read",
+    "conversation.read"
   ],
   "contributes": {
     "ui": [
       {
         "spot": "sidebar",
-        "component": "Sidebar",
+        "component": "SidebarEntry",
         "declares": {
           "sidebar.bot": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "selected": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "needsYou": {
+                  "type": "object",
+                  "properties": {
+                    "cards": {
+                      "type": "integer"
+                    },
+                    "questions": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "A bot's row, keyed by bot."
           },
           "sidebar.app": {
             "shape": "list",
-            "props": {}
+            "props": {},
+            "fields": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                },
+                "opens": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "App buttons; `opens` names the `main` key it shows."
           }
         }
       }
