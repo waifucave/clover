@@ -3121,6 +3121,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
+  const computerUseForClover = computerUse;
   cloverServer = createCloverServer({
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
@@ -3128,6 +3129,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     deviceId: createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32),
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
+    ...(computerUseForClover !== undefined ? { computerUse: {
+      acting: () => Promise.resolve({ running: computerUseForClover.anyActing(), session: computerUseForClover.anyActing() ? "s_cu" : undefined }),
+    } } : {}),
     log: (line) => console.error(line),
   });
   const server: IpcServer = startIpcServer({
