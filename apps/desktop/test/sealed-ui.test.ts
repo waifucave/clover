@@ -109,10 +109,10 @@ function cardRegistry(path: string): string {
 async function runApp(trust: "1" | "0", opts: { acting?: boolean } = {}): Promise<{ home: string; output: string; status: number | null }> {
   const h = home();
   const reg = cardRegistry(join(h, "reg.json"));
-  const fake = await startFakeDaemon({ home: h, cards: [{ card: CARD }], ...(opts.acting !== undefined ? { acting: opts.acting } : {}) });
-  fakes.push(fake);
-  const netlog = join(h, "net.json");
-  const app = spawn(electron(), [root, "--clover-smoke", `--log-net-log=${netlog}`], {
+  const registry = JSON.parse(readFileSync(reg, "utf8")) as { plugins?: unknown[] };
+  // The app proves itself to the daemon over `protocol.prove`: the daemon must report this app's own pid. Spawn the
+  // app first (it retries the connection), learn its pid, then start the fake daemon bound to it.
+  const app = spawn(electron(), [root, "--clover-smoke", `--log-net-log=${join(h, "net.json")}`], {
     env: env(h, trust, reg, {
       CLOVER_SMOKE_SEALED_CLICK: JSON.stringify({ cardId: CARD_ID, element: "button:allow_once" }),
       CLOVER_SMOKE_SETTLE_MS: "3000",
@@ -123,6 +123,8 @@ async function runApp(trust: "1" | "0", opts: { acting?: boolean } = {}): Promis
   let output = "";
   app.stdout?.on("data", (d) => (output += d));
   app.stderr?.on("data", (d) => (output += d));
+  const fake = await startFakeDaemon({ home: h, ui: registry.plugins, cards: [{ card: CARD }], prove: app.pid, events: [{ jsonrpc: "2.0", method: "core.event", params: { type: "card_pending", card: CARD } }], ...(opts.acting !== undefined ? { acting: opts.acting } : {}) });
+  fakes.push(fake);
   const until = async (check: () => boolean, ms: number, what: string) => {
     const end = Date.now() + ms;
     while (!check()) {
