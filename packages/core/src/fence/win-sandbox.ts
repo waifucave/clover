@@ -307,14 +307,21 @@ function stringField(o: Record<string, unknown>, k: string): string | undefined 
   return typeof o[k] === "string" ? (o[k] as string) : undefined;
 }
 
+function versionField(o: Record<string, unknown>, k: string): string | undefined {
+  const v = o[k];
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return undefined;
+}
+
 function parseUser(raw: unknown): SrtUserStatus | null {
   if (raw === null || typeof raw !== "object") return null;
   const u = raw as Record<string, unknown>;
   return {
     exists: u.exists === true,
     ...(stringField(u, "sid") !== undefined ? { sid: stringField(u, "sid") } : {}),
-    ...(u.marker_version === null || typeof u.marker_version === "string" ? { markerVersion: u.marker_version as string | null } : {}),
-    ...(stringField(u, "setup_version") !== undefined ? { setupVersion: stringField(u, "setup_version") } : {}),
+    ...(u.marker_version === null || typeof u.marker_version === "string" || typeof u.marker_version === "number" ? { markerVersion: u.marker_version === null ? null : String(u.marker_version) } : {}),
+    ...(versionField(u, "setup_version") !== undefined ? { setupVersion: versionField(u, "setup_version") } : {}),
     ...(stringField(u, "seclogon") !== undefined ? { seclogon: stringField(u, "seclogon") } : {}),
     ...(typeof u.cred_present === "boolean" ? { credPresent: u.cred_present } : {}),
     ...(typeof u.hidden_from_logon === "boolean" ? { hiddenFromLogon: u.hidden_from_logon } : {}),

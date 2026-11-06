@@ -109,6 +109,37 @@ describe("the status verdict", () => {
     expect(s.reason).toContain("isn't installed");
   });
 
+  test("numeric marker/setup versions (as srt-win reports them) match, and a pinned launcher is ready", () => {
+    // srt-win status reports marker_version/setup_version as JSON numbers; the parser must accept them.
+    // Build a minimal valid PE32+ with no certificate table (same shape as the cert-fixture helper below).
+    const buf = new ArrayBuffer(0x200);
+    const view = new DataView(buf);
+    view.setUint16(0, 0x5a4d, true);
+    view.setUint32(0x3c, 0x40, true);
+    view.setUint32(0x40, 0x00004550, true);
+    view.setUint16(0x44, 0x8664, true);
+    view.setUint16(0x54, 0xf0, true);
+    view.setUint16(0x56, 0x02, true);
+    view.setUint16(0x58, 0x20b, true);
+    view.setUint32(0xc4, 16, true);
+    const bytes = new Uint8Array(buf);
+    const dir = mkdtempSync(join(tmpdir(), "clover-srt-"));
+    const file = join(dir, "srt-win.exe");
+    writeFileSync(file, bytes);
+    const pins = { x64: authenticodeDigest(bytes), arm64: authenticodeDigest(bytes) };
+    const parse = (u: unknown) => parseSrtStatus(JSON.stringify({
+      user: u,
+      wfp: { state: "installed", filters: 4, allow_loopback: false },
+    }), { launcher: file, pins });
+    const ready = parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok" });
+    expect(ready.ready).toBe(true);
+    expect(ready.exit).toBe(SANDBOX_EXIT.OK);
+    // A marker from another build is still refused, numeric or string.
+    expect(parse({ exists: true, marker_version: 2, setup_version: 3, seclogon: "ok" }).ready).toBe(false);
+    expect(parse({ exists: true, marker_version: "2", setup_version: "3", seclogon: "ok" }).ready).toBe(false);
+    expect(parse({ exists: true, marker_version: "3", setup_version: "3", seclogon: "ok" }).ready).toBe(true);
+  });
+
   test("anything but a matching-marker, existing principal with Secondary Logon up is refused", () => {
     // Exact shapes are pinned on the VM; here the parser must fail closed on unknown shapes.
     for (const stdout of ["not json", "{}", JSON.stringify({ user: null }), JSON.stringify({ user: { exists: false } })]) {
