@@ -157,6 +157,22 @@ describe("votes", () => {
     expect(await c.group(group, fresh).lease("acquire")).toMatchObject({ holder: fresh.key, epoch: 5 });
     expect((await c.group(group, b).lease("takeover")).holder).toBe(b.key);
   });
+
+  test("a removed last holder, let back in, takes the lease only with a vote", async () => {
+    const { group, founder: a, c } = await createdGroup();
+    const [b, d] = [await signer(), await signer()];
+    await admit(c, group, b, a);
+    await admit(c, group, d, a, [b]);
+    await c.group(group, d).lease("acquire");
+    // d is removed by a quorum while holding it; the lease is free.
+    const when = Date.now();
+    await c.group(group, a).remove(d.key, { t: when, cosigners: await removal(group, d.key, when, [b]) });
+    expect((await c.group(group, a).get()).lease.holder).toBeNull();
+    // Let back in by one admitter (no quorum), d is a member that doesn't vote: no taking its old lease back.
+    await admit(c, group, d, a);
+    expect((await refusal(c.group(group, d).lease("acquire"))).code).toBe("not_voter");
+    expect(await c.group(group, b).lease("acquire")).toMatchObject({ holder: b.key });
+  });
 });
 
 describe("removing others", () => {

@@ -408,6 +408,8 @@ export class HandshakeDO extends DurableObject<Env> {
   /** Takes `key` out of the group: its sockets close and its lease ends. The caller broadcasts the members. */
   private dropMember(key: string, now: number): void {
     this.sql.exec("DELETE FROM members WHERE key = ?", key);
+    // A key that leaves is no longer the lease's last holder: let back in later, it takes the lease only with a vote.
+    if (this.metaGet("lease_last") === key) this.metaSet("lease_last", "");
     this.sql.exec("INSERT INTO removed (key, at) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET at = excluded.at", key, now);
     for (const ws of this.ctx.getWebSockets(socketTag(key))) this.closeSocket(ws, CLOSE.ended, "ended");
     if (this.leaseRow().holder === key) {
@@ -649,7 +651,9 @@ export class HandshakeDO extends DurableObject<Env> {
     const row = this.leaseRow();
     // Holding on, or refused as held anyway.
     if (row.holder !== null && row.expires > now) return false;
-    return this.metaGet("lease_last") !== member;
+    // The last holder takes its own back only while it is still a member (a removed key's mark is cleared).
+    const last = this.metaGet("lease_last");
+    return !(last && last === member && this.isMember(member));
   }
 
   private leaseCall(member: string, args: Record<string, unknown>, now: number): Reply {
