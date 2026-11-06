@@ -168,6 +168,13 @@ export class SealedFrames {
     return this.channels.get(token)?.bound;
   }
 
+  /** Binds a channel to a frame key after the page has loaded (the fallback's own window's main frame isn't known at
+   *  mint time). Fail-closed: a channel with no binding never answers. */
+  bindChannel(token: string, frameKey: string): void {
+    const ch = this.channels.get(token);
+    if (ch !== undefined) ch.bound = frameKey;
+  }
+
   /** The card a token's answer runs for, and its option's default (a button's own; the own page's pick names theirs).
    *  Past the answer's own band (an hour from the mint) or unknown: undefined. */
   private channelOf(token: string): { card: SealedCard; element: string } | undefined {

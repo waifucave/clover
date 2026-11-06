@@ -277,7 +277,14 @@ async function showFallbackCard(cardId: string): Promise<void> {
     const own = fallbacks.get(cardId);
     if (own?.win === win) fallbacks.delete(cardId);
   });
-  win.loadURL(url).then(() => { if (!win.isDestroyed()) win.showInactive(); }).catch(() => win.close());
+  // Bind the fallback's channel to its window's main frame once the page loads (B3): a plugin can't guess the
+  // window's frame ids, and a frame from another window can't answer with this token.
+  win.loadURL(url).then(() => {
+    if (win.isDestroyed()) return;
+    const main = win.webContents.mainFrame;
+    sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
+    if (!win.isDestroyed()) win.showInactive();
+  }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
 }
