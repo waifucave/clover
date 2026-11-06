@@ -26,7 +26,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 | | |
 | --- | --- |
 | **macOS 26+**, Apple silicon | The deployment target. There is no legacy compatibility path — see [rules](#rules-that-bite). |
-| **[Bun](https://bun.sh) ≥ 1.3** | The runtime. TypeScript runs directly; there is no build step in dev. |
+| **[Bun](https://bun.sh)**, the version in `.bun-version` | The runtime. TypeScript runs directly; there is no build step in dev. CI runs that version; `scripts/pinned-bun` fetches it beside any other Bun you have. |
 | **pnpm** | Orchestrates the workspaces. `bun install` is what you actually run. |
 | **A GitHub token with `read:packages`** | The `@waifucave` packages (the agent SDK's `@waifucave/clover-*` among them) are on GitHub Packages, which needs a token even to read. `bun install` takes it from `NODE_AUTH_TOKEN` (see [First build](#first-build)). |
 | **Xcode 26+** | Only if you're touching the Swift packages the iPhone app uses (`apple/WinterKit`, `apple/WinterProtocol`). |
