@@ -185,7 +185,7 @@ export interface RunningDaemon {
   /** C-M1: resolves when the pair stops on purpose (a Quit, an update, the app leaving for good): the
    *  caller then stops the daemon and exits 0. */
   pairStopped: Promise<string>;
-  /** C-M1: stop the pair (SIGTERM, `clover quit`): tell the app, wait for it, then `pairStopped`. */
+  /** C-M1: stop the pair (`clover quit`): tell the app, wait for it, then `pairStopped`. */
   quitPair(reason?: "quit" | "update"): void;
   // `remote` (SP2a Task 1): ensureTokens() already mints/returns it (auth/tokens.ts's
   // TOKEN_NAMES table, Remote Gateway SP1 Task 1) and the `tokens` object below is that SAME
@@ -3090,6 +3090,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The device id is a stand-in, stable per home, until lane H's device key (H-M1).
   let resolvePairStopped!: (why: string) => void;
   const pairStopped = new Promise<string>((r) => { resolvePairStopped = r; });
+  let stopping = false;
   let cloverServer: CloverServer | undefined;
   const pairSide: DaemonPairSide | undefined = opts.pair === false ? undefined : await startDaemonPairSide({
     runDir: dirs.runDir,
@@ -3098,8 +3099,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     execPath: process.execPath,
     env: process.env,
     tellAppQuit: (reason, ids) => cloverServer?.tellAppQuit(reason, ids),
-    // Deferred a moment, so the answer to the `pair.quit` that stopped the pair reaches its caller.
-    stopDaemon: (why) => { setTimeout(() => resolvePairStopped(why), 50); },
+    // Deferred a moment, so the answer to the `pair.quit` that stopped the pair reaches its caller;
+    // nothing when `stop()` itself stopped the pair.
+    stopDaemon: (why) => { if (!stopping) setTimeout(() => resolvePairStopped(why), 50); },
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = new SessionProcesses();
@@ -3333,7 +3335,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // this at boot and make every hot-reload assertion above it a lie.
     settings: () => settings,
     stop() {
-      pairSide?.dispose(); // no app start from here on; this run's app token goes
+      // The app is told to quit (`app.quit`, written now; no wait for it), and the pair starts nothing
+      // more: no app start from here on, and this run's app token goes.
+      stopping = true;
+      pairSide?.pair.quit("quit");
+      pairSide?.dispose();
       cloverServer?.dispose();
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
@@ -3432,12 +3438,10 @@ if (import.meta.main) {
   // the lock — which unlinks the socket. Exiting without awaiting would leave a stale socket file,
   // the exact regression the CLI's own `daemon run` handler was written to prevent.
   const shutdown = async () => { await daemon.stop(); process.exit(0); };
-  // C-M1: a signal stops the pair (the app is told and waited for), then the daemon; a second one
-  // stops at once. Logout, shutdown and `systemctl --user stop` all send SIGTERM, where the pair
-  // staying down is right; a bot signalling the daemon is the fence's to stop (C-M2).
-  let signalled = false;
-  const onSignal = () => { if (signalled) void shutdown(); else { signalled = true; daemon.quitPair("quit"); } };
+  // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0.
+  // A signal stops at once, with no wait of the daemon's own (the sender's bound is the only one):
+  // `stop()` sends the app `app.quit` first, so the pair stays down.
   void daemon.pairStopped.then(shutdown);
-  process.on("SIGTERM", onSignal);
-  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }

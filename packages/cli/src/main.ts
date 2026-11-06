@@ -1865,14 +1865,12 @@ if (import.meta.main) {
     // hands back is what releases the lock (→ unlinks the socket). `process.exit(0)` on the same
     // line would kill the process mid-drain and leave the stale socket this handler exists to avoid.
     const shutdown = async () => { await daemon.stop(); process.exit(0); };
-    // C-M1: a signal stops the pair first (the app is told and waited for, then `pairStopped`); a
-    // second signal stops at once. The pair stopping on purpose (a Quit, the app leaving for good)
-    // ends the daemon with exit 0, so its crash-only login unit leaves it down.
-    let signalled = false;
-    const onSignal = () => { if (signalled) void shutdown(); else { signalled = true; daemon.quitPair("quit"); } };
+    // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
+    // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app
+    // `app.quit` first, with no wait of the daemon's own.
     void daemon.pairStopped.then(shutdown);
-    process.on("SIGTERM", onSignal);
-    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
     break; // keeps running; the open listening socket keeps the event loop alive
   }
   case "ping": {

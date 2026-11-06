@@ -7,7 +7,7 @@ export { endpointAnswers };
 // One daemon per home, under an OS lock held for the daemon's whole life (spec §3.1; measured in
 // spike S7 §5 on all three OSes). The kernel drops the lock the instant the daemon exits or is
 // killed, so a crash never leaves the home locked, and a second daemon can never take over one that
-// is still starting (Winter's pid-file lock could).
+// is still starting (the inherited pid-file lock could).
 //   macOS, Linux: flock(LOCK_EX | LOCK_NB) on <home>/run/core.lock
 //   Windows:      <home>/run/core.lock opened with no sharing (CreateFileW, dwShareMode 0)
 //

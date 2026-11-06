@@ -10,7 +10,7 @@ import type { DaemonPlatform } from "./transport";
 /** What the per-OS probe reports about the peer process. A field is `undefined` when the probe
  *  could not determine it; the policy then fails closed (fenced), never guessing the caller safe. */
 export interface SandboxProbe {
-  /** macOS: the peer is in an App Sandbox / Seatbelt container (Winter's `sandbox-exec` fence). */
+  /** macOS: the peer is in an App Sandbox / Seatbelt container (the inherited `sandbox-exec` fence). */
   readonly sandboxedMac?: boolean;
   /** Linux: the peer is in the host's namespaces — not a bubblewrap / user-namespace sandbox. */
   readonly inHostNamespacesLinux?: boolean;

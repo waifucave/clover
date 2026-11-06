@@ -35,7 +35,7 @@ export function homePipeId(runDir: string): string {
   return createHash("sha256").update(runDir).digest("hex").slice(0, 16);
 }
 
-/** The endpoint for a home's run directory. `core.sock` under it on macOS/Linux (as Winter's was),
+/** The endpoint for a home's run directory. `core.sock` under it on macOS/Linux (as the inherited daemon's was),
  *  and `\\.\pipe\clover-core-<id>` on Windows, where `<id>` is `homePipeId(runDir)`. The profile
  *  suffix (dev) is already in the home, hence in `runDir`, so dev and dist never share an endpoint. */
 export function resolveEndpoint(runDir: string, platform: DaemonPlatform = currentPlatform()): Endpoint {
