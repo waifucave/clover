@@ -150,8 +150,6 @@ export interface CoreMethods {
   "session.changes": { params: { id: string }; result: { label: string; added: number; removed: number; files: number } | null };
   /** A coding session's diff against a base, per file with its hunks (lane D; the panel's `DiffFile` shape). */
   "session.diff": { params: { id: string; target?: string }; result: { base: string; target: string; targets: string[]; files: unknown[]; notice?: string } };
-  /** What a session made for the user to read: pages, files, images (lane D). */
-  "session.outputs": { params: { id: string; limit?: number }; result: { items: { id: string; name: string; kind: "page" | "file" | "image" }[]; more: number } };
   /** How much of the model's context a session uses (lanes A and D). */
   "session.context": { params: { id: string }; result: { used: number; tokens?: number; window?: number } | null };
   /** The MCP connectors a session has, and how many need signing in again (lane A). */

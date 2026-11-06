@@ -32,6 +32,13 @@
         "when": {
           "session": "coding"
         }
+      },
+      {
+        "spot": "panel",
+        "id": "output",
+        "key": "output",
+        "title": "Output",
+        "component": "OutputEntry"
       }
     ]
   }

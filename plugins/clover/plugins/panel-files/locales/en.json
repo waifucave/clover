@@ -19,6 +19,8 @@
     "clover.files.unfold": "Unfold {name}",
     "clover.files.match": "{path}, line {line}",
     "clover.files.title": "Files in {folder}, on {computer}",
-    "clover.files.hiddenMark": "Hidden character {code}, {name}"
+    "clover.files.hiddenMark": "Hidden character {code}, {name}",
+    "clover.files.outputOutside": "Only a session's own outputs open here.",
+    "clover.files.outputFailed": "This output couldn't be read."
   }
 }

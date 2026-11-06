@@ -22,8 +22,10 @@ function Header({ slot, children }: { slot: HTMLElement | null | undefined; chil
 
 const nameOf = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
 
-/** Whether `path` is `root` or inside it: nothing outside the session's folder is listed or read. */
-export const inside = (root: string, path: string) => path === root || path.startsWith(`${root.replace(/\/+$/, "")}/`);
+/** Whether `path` is `root` or inside it: nothing outside the session's folder is listed or read. A `..` or `.`
+ *  segment is never inside (review item 7), whatever it would resolve to. */
+export const inside = (root: string, path: string) =>
+  !path.split(/[\\/]/).some((s) => s === ".." || s === ".") && (path === root || path.startsWith(`${root.replace(/\/+$/, "")}/`));
 
 export function FilesEntry({ props }: { props: FilesEntryProps }) {
   const api = usePluginApi();

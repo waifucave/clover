@@ -36,9 +36,59 @@ interface Loaded {
   agents: Session[];
   computers: ComputerView[];
   changes?: SessionViewProps["changes"];
-  outputs?: { items: { id: string; name: string; kind: "page" | "file" | "image" }[]; more: number };
   context?: { used: number; tokens?: number; window?: number } | null;
   connectors?: { total: number; needSignIn: number };
+}
+
+/** Where a session's outputs live: its own `outputs/<session>` folder in the Clover home on its computer, read through the
+ *  tree as the user's own surface (the controller's ruling for F-M3). */
+export const outputsFolder = (s: { id: string; computer: string }) => `home/${s.computer}/.clover/outputs/${s.id}`;
+
+const PAGE = /\.(html?|md|markdown)$/i;
+const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
+const SHOWN = 4;
+
+/** A session's outputs, newest first, kept current while the folder changes. */
+function useOutputs(api: PluginApi, session: Session | undefined): { items: { id: string; name: string; kind: "page" | "file" | "image" }[] } | undefined {
+  const [items, setItems] = useState<{ id: string; name: string; kind: "page" | "file" | "image" }[] | undefined>(undefined);
+  const files = api.files;
+  const folder = session ? outputsFolder(session) : undefined;
+  useEffect(() => {
+    if (!files || !folder) return;
+    let live = true;
+    const read = () =>
+      void files.list(folder).then(
+        (list) => {
+          if (!live) return;
+          setItems(
+            list
+              .filter((f) => f.type === "file")
+              .sort((a, b) => b.modifiedAt - a.modifiedAt)
+              .map((f) => {
+                const name = f.path.split("/").pop() ?? f.path;
+                return { id: f.path, name, kind: PAGE.test(name) ? "page" : IMAGE.test(name) ? "image" : "file" };
+              }),
+          );
+        },
+        () => live && setItems([]),
+      );
+    read();
+    let stop: (() => void) | undefined;
+    void files.watch?.(folder, () => read()).then((s) => (live ? (stop = s) : s()), () => undefined);
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, [files, folder]);
+  return items ? { items } : undefined;
+}
+
+/** The outputs section's props: the newest few, Show more for the rest, each opening in the right panel. */
+function outputsProps(outputs: ReturnType<typeof useOutputs>, all: boolean, showAll: () => void, onOpen: ((path: string) => void) | undefined): Partial<SessionViewProps> {
+  if (!outputs || outputs.items.length === 0) return {};
+  const items = all ? outputs.items : outputs.items.slice(0, SHOWN);
+  const more = outputs.items.length - items.length;
+  return { outputs: { items, onOpen: (id: string) => onOpen?.(id), ...(more > 0 ? { more, onShowMore: showAll } : {}) } };
 }
 
 function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | undefined, withChanges: boolean): Loaded {
@@ -52,17 +102,15 @@ function useColumn(api: PluginApi, core: CoreClient | undefined, id: string | un
       quiet(api.conversation?.list?.()),
       quiet(api.computers?.list?.()),
       withChanges ? quiet(core?.call("session.changes", { id })) : Promise.resolve(undefined),
-      quiet(core?.call("session.outputs", { id, limit: 4 })),
       quiet(core?.call("session.context", { id })),
       quiet(core?.call("session.connectors", { id })),
-    ]).then(([session, sessions, computers, changes, outputs, context, connectors]) => {
+    ]).then(([session, sessions, computers, changes, context, connectors]) => {
       if (!live) return;
       setLoaded({
         ...(session ? { session } : {}),
         agents: (sessions ?? []).filter((s) => s.parent === id && (s.kind === "agent" || s.kind === "side-thread")),
         computers: computers ?? [],
         ...(changes ? { changes: { ...changes } } : {}),
-        ...(outputs ? { outputs } : {}),
         ...(context !== undefined ? { context } : {}),
         ...(connectors ? { connectors } : {}),
       });
@@ -83,6 +131,8 @@ export interface ColumnProps {
   /** The agent open in the panel now, and a way to open one there. */
   openAgent?: string;
   onOpenAgent?: (session: string) => void;
+  /** Opens one of the session's outputs (a tree path) in the right panel. */
+  onOpenOutput?: (path: string) => void;
   /** Where `main` goes: the shell's (a question for B, as for the sidebar). */
   navigate?: (route: { route: string; params: Record<string, string> }) => void;
 }
@@ -93,6 +143,8 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
   const core = useCore();
   const kind = props.sessionKind ?? "coding";
   const data = useColumn(api, core, props.session, kind === "coding");
+  const outputs = useOutputs(api, data.session);
+  const [allOutputs, setAllOutputs] = useState(false);
   const s = data.session;
   if (!s) return null;
   const computer = data.computers.find((c) => c.name === s.computer);
@@ -114,7 +166,7 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
       environment={environment}
       {...(data.context ? { context: contextOf(data.context)! } : {})}
       {...(data.connectors ? { connectors: data.connectors } : {})}
-      {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined, ...(data.outputs.more ? { more: data.outputs.more, onShowMore: () => undefined } : {}) } } : {})}
+      {...outputsProps(outputs, allOutputs, () => setAllOutputs(true), props.onOpenOutput)}
       {...(data.changes ? { changes: data.changes } : {})}
     />
   );
@@ -125,6 +177,8 @@ export function BotColumn({ props }: { props: ColumnProps & { bot?: { id: string
   const api = usePluginApi();
   const core = useCore();
   const data = useColumn(api, core, props.session, false);
+  const outputs = useOutputs(api, data.session);
+  const [allOutputs, setAllOutputs] = useState(false);
   if (!props.session) return null;
   return (
     <SessionView
@@ -133,7 +187,7 @@ export function BotColumn({ props }: { props: ColumnProps & { bot?: { id: string
       {...(props.onOpenAgent ? { onOpenAgent: props.onOpenAgent } : {})}
       {...(props.openAgent ? { openAgent: props.openAgent } : {})}
       {...(data.context ? { context: contextOf(data.context)! } : {})}
-      {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined } } : {})}
+      {...outputsProps(outputs, allOutputs, () => setAllOutputs(true), props.onOpenOutput)}
     />
   );
 }

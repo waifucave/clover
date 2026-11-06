@@ -60,6 +60,7 @@
     "clover.shell.paletteRemoveKey": "Remove",
     "clover.shell.paletteBot": "Bot",
     "clover.shell.paletteSession": "Agent or coding session",
-    "clover.shell.noCore": "Clover's core isn't reachable."
+    "clover.shell.noCore": "Clover's core isn't reachable.",
+    "clover.shell.output": "Output"
   }
 }

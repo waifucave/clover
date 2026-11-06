@@ -13,7 +13,8 @@
   },
   "capabilities": [
     "conversation.read",
-    "computers.read"
+    "computers.read",
+    "files"
   ],
   "contributes": {
     "locales": [

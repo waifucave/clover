@@ -19,9 +19,7 @@ export function SidebarDemo(props: Partial<SidebarProps> & { start?: SidebarRout
       account={ACCOUNT}
       onNew={noop}
       onSearch={noop}
-      onOutputs={noop}
       onPlugins={noop}
-      onMore={noop}
       onNewSession={noop}
       onCloseAgent={noop}
       onOpenSettings={noop}

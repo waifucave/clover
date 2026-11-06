@@ -173,6 +173,13 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     setAgents((a) => ({ ...a, [key]: id }));
     if (!open.includes("agent")) setOpen(toggleView(open, "agent"));
   };
+  // One of the tab's outputs, opened from its column into the right panel (`panel` keyed `output`).
+  const [outputs, setOutputs] = useState<Record<string, string | undefined>>({});
+  const output = outputs[key];
+  const openOutput = (path: string) => {
+    setOutputs((o) => ({ ...o, [key]: path }));
+    if (!open.includes("output")) setOpen(toggleView(open, "output"));
+  };
 
   // Any card this window will draw: one in a session it shows (the tab's, the agent's in the panel), or one raised
   // from a dialog (a level change, removing a device), which has no session.
@@ -193,7 +200,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
 
   // A bot's tab says whose it is (`bot`, its id: the browser shows that bot's tabs, a code session the person's own).
   const panelProps = (id: string): Record<string, unknown> =>
-    id === "agent" && agentSession
+    id === "output"
+      ? { app: id, session: tabSession, sessionKind: kind, path: output }
+      : id === "agent" && agentSession
       ? { app: id, session: agentSession.id, sessionKind: agentSession.kind, ...(botRef ? { bot: botRef.id } : {}) }
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   const views: PanelView[] = kind
@@ -201,7 +210,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         .filter((id) => id !== "session")
         .map((id) => ({
           id,
-          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id),
+          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : id === "output" ? (output?.split("/").pop() ?? S.output) : (S.views[id] ?? id),
           content: (header: HTMLElement | null, usedLast: boolean) => (
             <Spot
               name="panel"
@@ -217,8 +226,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const side: ReactNode =
     kind && open.includes("session")
       ? kind === "bot" && botRef
-        ? <Spot name="bot.side" props={{ bot: botRef, session: tabSession, sessionKind: "bot", openAgent: agent, onOpenAgent: openAgent, navigate }} />
-        : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate }} />
+        ? <Spot name="bot.side" props={{ bot: botRef, session: tabSession, sessionKind: "bot", openAgent: agent, onOpenAgent: openAgent, onOpenOutput: openOutput, navigate }} />
+        : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate, onOpenOutput: openOutput }} />
       : undefined;
 
   const toggles = kind ? (

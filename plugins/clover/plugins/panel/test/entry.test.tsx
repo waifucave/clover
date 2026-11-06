@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { computerView, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import { computerView, fakeApi, fakeCore, fakeFiles, settle } from "../../shell/runtime/testkit";
 import type { SessionView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { BotColumn, SessionColumn } from "../client/entry";
@@ -20,16 +20,27 @@ const SESSIONS = [
   s("task-1", { kind: "side-thread", parent: "s_alpha", title: "Weekly digest", status: "idle" }),
 ];
 
+const listed: string[] = [];
+
 function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void) => ReactNode) {
   const core = fakeCore({
     "session.changes": () => ({ label: "lane/f-m2", added: 120, removed: 30, files: 9 }),
-    "session.outputs": () => ({ items: [{ id: "o1", name: "Shell screens", kind: "page" }], more: 0 }),
     "session.context": () => ({ used: 0.2, tokens: 40_000, window: 200_000 }),
     "session.connectors": () => ({ total: 3, needSignIn: 1 }),
   });
   const api = fakeApi({
     conversation: { get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
     computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true })] },
+    // Each session's outputs: its own `outputs/<session>` folder in the tree.
+    files: fakeFiles({
+      list: async (path) => {
+        listed.push(path);
+        const id = path.split("/").pop()!;
+        const names = id === "code-1" ? ["shell-screens.md", "a.png", "b.csv", "c.txt", "d.txt", "e.txt"] : ["digest.md"];
+        return names.map((n, i) => ({ path: `${path}/${n}`, type: "file" as const, size: 1, modifiedAt: 100 - i, executable: false }));
+      },
+      watch: async () => () => undefined,
+    }),
   });
   const routes: unknown[] = [];
   const opened: string[] = [];
@@ -38,6 +49,16 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
 }
 
 describe("the session column", () => {
+  test("outputs come from the session's own folder, newest first; Show more lists the rest; one opens in the right panel", async () => {
+    const opened: string[] = [];
+    mount(() => <SessionColumn props={{ session: "code-1", sessionKind: "coding", onOpenOutput: (p) => opened.push(p) }} />);
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("button", { name: /Show/ }));
+    expect(screen.getByRole("button", { name: /e\.txt/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /a\.png/ }));
+    expect(opened).toEqual(["home/Studio/.clover/outputs/code-1/a.png"]);
+  });
+
   test("a coding session's: its agents, where it runs, context, connectors, outputs and changes", async () => {
     const { routes, opened } = mount((navigate, open) => <SessionColumn props={{ session: "code-1", sessionKind: "coding", navigate, onOpenAgent: open }} />);
     await act(() => settle());
@@ -46,7 +67,10 @@ describe("the session column", () => {
     expect(screen.getByText("clover · ~/projects")).toBeTruthy();
     expect(screen.getByRole("meter", { name: "20% of the context used" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "1 to sign in again" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Shell screens/ })).toBeTruthy();
+    // The newest four, then Show more; each opens in the right panel.
+    expect(listed).toContain("home/Studio/.clover/outputs/code-1");
+    expect(screen.getByRole("button", { name: /shell-screens\.md/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /e\.txt/ })).toBeNull();
     expect(screen.getByRole("button", { name: "lane/f-m2: 9 files, 120 added, 30 removed" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Lint/ }));
     fireEvent.click(screen.getByRole("button", { name: "Change" }));

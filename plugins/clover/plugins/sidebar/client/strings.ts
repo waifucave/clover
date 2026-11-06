@@ -34,14 +34,8 @@ export const S = {
   get search() {
     return t("clover.sidebar.search");
   },
-  get outputs() {
-    return t("clover.sidebar.outputs");
-  },
   get plugins() {
     return t("clover.sidebar.plugins");
-  },
-  get more() {
-    return t("clover.sidebar.more");
   },
   get bots() {
     return t("clover.sidebar.bots");

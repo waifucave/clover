@@ -279,3 +279,11 @@
   flex: none;
   color: var(--clover-color-text-muted);
 }
+
+/* An output in the right panel: an image fits the panel's width. */
+.cl-files__image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--clover-space-m) auto;
+}

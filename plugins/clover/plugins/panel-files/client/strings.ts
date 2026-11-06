@@ -6,6 +6,12 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
+  get outputOutside() {
+    return t("clover.files.outputOutside");
+  },
+  get outputFailed() {
+    return t("clover.files.outputFailed");
+  },
   get tree() {
     return t("clover.files.tree");
   },

@@ -310,10 +310,6 @@ const coreHandlers: Handlers = {
   "session.setModel": () => ({ ok: true }),
   "session.changes": ({ id }) => (SESSIONS.find((s) => s.id === id)?.kind === "coding" && SESSION_COLUMN.changes ? { label: SESSION_COLUMN.changes.label, added: SESSION_COLUMN.changes.added, removed: SESSION_COLUMN.changes.removed, files: SESSION_COLUMN.changes.files } : null),
   "session.diff": () => ({ base: "main", target: "working tree", targets: ["last commit"], files: FILES, notice: "Large files start folded. Open one to see it whole." }),
-  "session.outputs": ({ id }) =>
-    id === "s_alpha"
-      ? { items: [{ id: "b1", name: "This week in the clover repo", kind: "page" }, { id: "b2", name: "garden-beds.csv", kind: "file" }], more: 0 }
-      : { items: SESSION_COLUMN.outputs?.items ?? [], more: SESSION_COLUMN.outputs?.more ?? 0 },
   "session.context": ({ id }) => (id === "s_alpha" ? { used: 0.31, tokens: 62_000, window: 200_000 } : { used: 0.14, tokens: 28_000, window: 200_000 }),
   "session.connectors": () => ({ total: 7, needSignIn: 2 }),
   "models.catalog": () => ({ models: MODELS.models.map((m) => ({ id: m.id, label: m.label, ...(m.detail ? { provider: m.detail } : {}), efforts: MODELS.efforts ?? [] })) as never }),
@@ -326,6 +322,15 @@ const coreHandlers: Handlers = {
 
 /** A world's runtime: the bundled parts plus any extra plugins, over the mock core and API. */
 const TOKENS = {};
+
+/** A session's outputs folder (`home/<computer>/.clover/outputs/<session>`): the bot's two, the coding session's from
+ *  the panel's fixtures, newest first. */
+function OUTPUTS(path: string): { path: string; type: "file"; size: number; modifiedAt: number; executable: boolean }[] | undefined {
+  const m = /\/\.clover\/outputs\/([^/]+)$/.exec(path);
+  if (!m) return undefined;
+  const names = m[1] === "s_alpha" ? ["this-week-in-clover.md", "garden-beds.csv"] : (SESSION_COLUMN.outputs?.items ?? []).map((i) => (i.kind === "page" ? `${i.name}.md` : i.kind === "image" ? (/\.\w+$/.test(i.name) ? i.name : `${i.name}.png`) : i.name));
+  return names.map((n, i) => ({ path: `${path}/${n}`, type: "file", size: 1, modifiedAt: NOW - i * 60_000, executable: false }));
+}
 
 export function world(options: WorldOptions = {}): UiRuntime {
   const transcripts = options.transcripts ?? {};
@@ -411,7 +416,7 @@ export function world(options: WorldOptions = {}): UiRuntime {
       ...(has("files")
         ? {
             files: {
-              list: (path: string) => later((LISTING[path] ?? []).map((e) => ({ path: e.path, type: e.type, size: 1, modifiedAt: NOW, executable: false }))),
+              list: (path: string) => later(OUTPUTS(path) ?? (LISTING[path] ?? []).map((e) => ({ path: e.path, type: e.type, size: 1, modifiedAt: NOW, executable: false }))),
               readText: (path: string) => later(path === OPEN_FILE.path ? OPEN_FILE.text : ""),
               grep: () => later({ matches: [], truncated: false }),
               stat: () => later(null),

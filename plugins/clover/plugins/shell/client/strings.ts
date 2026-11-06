@@ -6,6 +6,9 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
+  get output() {
+    return t("clover.shell.output");
+  },
   get paletteBot() {
     return t("clover.shell.paletteBot");
   },

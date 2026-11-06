@@ -15,9 +15,7 @@ function setup(props: Partial<SidebarProps> = {}) {
     onOpenSettings: mock(() => undefined),
     onNew: mock(() => undefined),
     onSearch: mock(() => undefined),
-    onOutputs: mock(() => undefined),
     onPlugins: mock(() => undefined),
-    onMore: mock(() => undefined),
     onNewSession: mock((_p: string) => undefined),
     onCloseAgent: mock((_id: string) => undefined),
   };
@@ -37,9 +35,7 @@ describe("the switch and the actions", () => {
     for (const [name, fn] of [
       ["New chat", h.onNew],
       ["Search", h.onSearch],
-      ["Outputs", h.onOutputs],
       ["Plugins", h.onPlugins],
-      ["More", h.onMore],
     ] as const) {
       fireEvent.click(screen.getByRole("button", { name }));
       expect(fn).toHaveBeenCalledTimes(1);
