@@ -18,7 +18,7 @@ import {
   type UsageApi,
   type UsageRange,
 } from "../model/usage";
-import { t } from "../strings";
+import { isEnglish, language, t } from "../strings";
 import { useUsageRead } from "./data";
 import { useUsageStyles } from "./styles";
 
@@ -66,9 +66,15 @@ function LevelGlyph({ level }: { level: PlanLevel }): ReactElement | null {
   );
 }
 
+/** A day as the user's language writes it short ("Oct 29", "29 oct.", "10月29日"); English as drawn. */
 function shortDate(at: number): string {
   const d = new Date(at);
-  return `${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${d.getUTCDate()}`;
+  if (isEnglish()) return `${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${d.getUTCDate()}`;
+  try {
+    return d.toLocaleDateString(language(), { month: "short", day: "numeric", timeZone: "UTC" });
+  } catch {
+    return `${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${d.getUTCDate()}`;
+  }
 }
 
 export function UsageView(props: UsageViewProps): ReactElement {

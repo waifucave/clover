@@ -11,6 +11,8 @@ import { SealedKitContext } from "../src/ui/sealed";
 import { APPROVAL, QUESTION, SEALED } from "../src/fixtures";
 import manifest from "../clover.json" with { type: "json" };
 import * as client from "../client/index";
+import { NEEDS_YOU, isReservedTab } from "../src/model/tabs";
+import { setTranslator } from "../src/strings";
 
 /** A 1512×982 MacBook display: a 32 px menu bar and a 185×32 camera housing at the top centre. */
 const MAC_NOTCH: SurfaceEnvironment = {
@@ -264,6 +266,10 @@ describe("the Devices tab", () => {
     fireEvent.click(screen.getByText("Box").closest(".clv-row")!);
     fireEvent.click(screen.getByText("Manage devices"));
     expect(opened).toEqual(["box", undefined]);
+    // Pinned above the list, never scrolled away with it.
+    const manage = screen.getByText("Manage devices").closest(".clv-devices-manage")!;
+    expect(manage.closest(".clv-tab-scroll")).toBeNull();
+    expect(manage.nextElementSibling?.classList.contains("clv-tab-scroll")).toBe(true);
     // Without the route, no link to follow.
     container.remove();
     render(<DevicesList devices={DEVICES} now={NOW} />);
@@ -294,7 +300,7 @@ describe("the Devices tab", () => {
 describe("the entries the manifest names", () => {
   test("every component the manifest names is an export of the client entry", () => {
     for (const entry of manifest.contributes.ui) expect(typeof (client as Record<string, unknown>)[entry.component]).toBe("function");
-    expect(manifest.capabilities).toEqual(["approvals", "devices.read"]);
+    expect(manifest.capabilities).toEqual(["approvals", "bots.read", "devices.read"]);
     expect(manifest.contributes.ui.map((e) => e.spot)).toEqual(["app.surface", "island.tab"]);
   });
 
@@ -314,5 +320,29 @@ describe("the entries the manifest names", () => {
     expect(container.querySelector(".clv-surface")?.getAttribute("data-mode")).toBe("top");
     expect(windows.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Studio")).toBeTruthy();
+  });
+
+  test("the host's translator gives the island its words in the user's language; Needs you stays reserved in both", async () => {
+    const fr: Record<string, string> = { "clover.island.needsYou": "Pour vous", "clover.devices.manage": "Gérer les appareils" };
+    const host: IslandHost = {
+      environment: WINDOWS,
+      cards: [],
+      devices: { list: async () => DEVICES, watch: () => () => {} },
+      openDevices: () => {},
+      t: (key) => fr[key] ?? key,
+      reducedMotion: true,
+    };
+    render(
+      <IslandHostContext.Provider value={host}>
+        <DevicesTabEntry props={{ expanded: true }} />
+      </IslandHostContext.Provider>,
+    );
+    await act(async () => {});
+    expect(screen.getByText("Gérer les appareils")).toBeTruthy();
+    expect(NEEDS_YOU.title).toBe("Pour vous");
+    expect(isReservedTab({ id: "x", title: "Pour vous" })).toBe(true);
+    expect(isReservedTab({ id: "x", title: "Needs you" })).toBe(true);
+    setTranslator(null);
+    expect(NEEDS_YOU.title).toBe("Needs you");
   });
 });

@@ -33,6 +33,8 @@ export interface IslandSurfaceProps {
   working?: number;
   /** The `island.tab` entries after Needs you, in their order. */
   tabs?: readonly IslandTabEntry[];
+  /** The bots' names and ids: another plugin named as one gets no tab. */
+  botNames?: readonly string[];
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   host?: SurfaceHostApi;
   reducedMotion?: boolean;
@@ -105,6 +107,7 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
       cards={props.cards}
       working={props.working}
       tabs={props.tabs}
+      botNames={props.botNames}
       onAnswerQuestion={props.onAnswerQuestion}
       alwaysOpen={placement.mode === "window"}
       onRegions={onRegions}

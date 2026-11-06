@@ -17,7 +17,7 @@ const serve = async (url: string) => {
 };
 
 /** Mochi2D's view with no WebGL: what the avatar asks of it, recorded. */
-function fakeView() {
+function fakeView(hasLipSync = true) {
   const log: string[] = [];
   const params = new Map<string, number>();
   const effects = new Map<string, boolean>();
@@ -36,6 +36,7 @@ function fakeView() {
           setEffect: (name, on) => void effects.set(name, on),
           runtime: {
             setLiveLipSync: (source, mix) => {
+              if (!hasLipSync) return false;
               live.source = source;
               live.mix = mix;
               return true;
@@ -135,6 +136,24 @@ describe("Live2dAvatar", () => {
     expect(draws() - speaking).toBeGreaterThanOrEqual(28);
     expect(v.lipSync("ParamMouthOpenY", 0)).toBeGreaterThan(0.5);
     // Bright: wide, less the rounding `ou` always carries.
+    expect(v.params.get("ParamMouthForm")!).toBeGreaterThan(0.7);
+  });
+
+  test("a model Mochi2D gives no lip sync (no LipSync group) still moves its mouth, through setParameter", async () => {
+    const v = fakeView(false);
+    const clock = { t: 0 };
+    const feed = new PushedSpeech(() => clock.t);
+    const f = manualFrames();
+    render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={f.frames} speech={feed} />);
+    await settle();
+    clock.t = 10;
+    feed.push(Array.from({ length: 200 }, (_, i) => ({ t: 10 + i * 0.005, rms: 0.3, centroid: 3000 })));
+    for (let i = 0; i < 30; i++) {
+      clock.t += 1 / 60;
+      f.step(1000 / 60);
+    }
+    expect(v.live.source).toBeNull();
+    expect(v.params.get("ParamMouthOpenY")!).toBeGreaterThan(0.5);
     expect(v.params.get("ParamMouthForm")!).toBeGreaterThan(0.7);
   });
 

@@ -1,45 +1,46 @@
-// The pill's words, in locale format 1's shape (spec §5.9): keys start with `clover.`, strings use `{name}`
-// placeholders, a key may hold plural forms. Until the app's `t()` exists (lane E), this is the English
-// table and a stand-in lookup with the same rules.
+// The Dispatch pill's words. The English table is `locales/en.json` (locale format 1, spec §5.5 "Translations"), which the manifest
+// declares, so the app has it to fall back to and a language pack can translate every key. `t` asks the translator the
+// app installs (`setTranslator`: lane E's `useT()` in a part, the plugin API's `t` in a host half) and falls back to
+// English for a key it doesn't know. Keys start with `clover.`; strings use `{name}` placeholders, and a key may hold
+// plural forms, chosen by `count`.
 
-type Entry = string | { one?: string; other: string };
+import en from "../locales/en.json" with { type: "json" };
 
-export const EN: Readonly<Record<string, Entry>> = {
-  "clover.pill.name": "Dispatch pill",
-  "clover.pill.label": "Message {name}",
-  "clover.pill.placeholder": "Message {name}",
-  "clover.pill.working": "{name} is working",
-  "clover.pill.send": "Send",
-  "clover.pill.stop": "Stop",
-  "clover.pill.stopping": "Stopping…",
-  "clover.pill.voice": "Voice",
-  "clover.pill.more": "More",
-  "clover.pill.fullScreen": "Full screen",
-  "clover.pill.openInApp": "Open {name} in Clover",
-  "clover.pill.clearDraft": "Clear draft",
-  "clover.pill.target": "Choose who to message",
-  "clover.pill.targets": "Message someone else",
-  "clover.pill.asks": "{name} asks",
-  "clover.pill.aQuestion": "A question for you",
-  "clover.pill.chooseAny": "Choose any",
-  "clover.pill.typeAnswer": "Type an answer",
-  "clover.pill.somethingElse": "Something else",
-  "clover.pill.next": "Next",
-  "clover.pill.back": "Back",
-  "clover.pill.sending": "Sending…",
-  "clover.pill.childStop": "Stop {name}",
-  "clover.pill.childOpen": "Open {name}",
-  "clover.pill.childMore": { one: "1 more agent", other: "{count} more agents" },
-  "clover.pill.untitled": "Agent",
-  "clover.pill.leavePreview": "Back to the message box",
-  "clover.pill.turn": "Turn {position}",
-  "clover.pill.notSent": "That answer didn't go through. Try again.",
-  "clover.pill.update": "An update from your bot",
-};
+type Entry = string | { readonly zero?: string; readonly one?: string; readonly two?: string; readonly few?: string; readonly many?: string; readonly other: string };
 
-export function t(key: string, vars: Record<string, string | number> = {}): string {
+/** The app's translator for this plugin's keys, in the user's language: a key it has no string for reads as itself. */
+export type Translator = (key: string, params?: Record<string, string | number>) => string;
+
+/** The English table, as `locales/en.json` holds it. */
+export const EN: Readonly<Record<string, Entry>> = en.strings;
+
+let installed: Translator | null = null;
+
+/** Installs the app's translator (null: English only). Calling it again with the same one changes nothing. */
+export function setTranslator(translator: Translator | null): void {
+  installed = translator;
+}
+
+const englishPlurals = new Intl.PluralRules("en");
+
+/** A key's English string, its placeholders filled and its plural form chosen by `count`. */
+export function english(key: string, vars: Record<string, string | number> = {}): string {
   const entry = EN[key];
   if (entry === undefined) return key;
-  const text = typeof entry === "string" ? entry : vars.count === 1 && entry.one !== undefined ? entry.one : entry.other;
+  let text: string;
+  if (typeof entry === "string") text = entry;
+  else {
+    const n = typeof vars.count === "number" ? vars.count : Number(vars.count);
+    const form = Number.isFinite(n) ? englishPlurals.select(n) : "other";
+    text = entry[form] ?? entry.other;
+  }
   return text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`));
+}
+
+export function t(key: string, vars: Record<string, string | number> = {}): string {
+  if (installed) {
+    const text = installed(key, vars);
+    if (text !== key) return text;
+  }
+  return english(key, vars);
 }

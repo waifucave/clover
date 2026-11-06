@@ -119,6 +119,7 @@ export const ISLAND_CARD_SOURCES: Readonly<Record<string, CardTokenSource>> = {
   "card.approve.text": { token: "island.accept.text", fallback: "#FFFFFF" },
   "card.deny.background": { token: "island.refuse", fallback: "#FFFFFF" },
   "card.deny.text": { token: "island.refuse.text", fallback: "#000000" },
+  "card.font.family": { token: "font.sans", fallback: "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif" },
   "card.font.size": { token: "font.size.body", fallback: "15px" },
   "card.radius": { value: "0px" },
   "card.padding": { value: "0px" },
@@ -141,7 +142,9 @@ export function resolveCardTokens(sources: Readonly<Record<string, CardTokenSour
       continue;
     }
     const value = read(tokenProperty(source.token)).trim();
-    out[name] = value.length > 0 && value.length <= 300 && !UNSAFE.test(value) && quotesClosed(value) ? value : source.fallback;
+    // A theme's keywords (`system`, `auto`) are the theme engine's to resolve; one left unresolved is no colour.
+    const keyword = value === "system" || value === "auto";
+    out[name] = value.length > 0 && value.length <= 300 && !keyword && !UNSAFE.test(value) && quotesClosed(value) ? value : source.fallback;
   }
   return out;
 }
