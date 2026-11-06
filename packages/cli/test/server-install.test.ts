@@ -19,7 +19,7 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
   const removed: LoginSpec[] = [];
   const lines: string[] = [];
   const deps: ServerDeps = {
-    spec: { os, bin, home, logsDir: join(home, "logs"), profile: "default" },
+    spec: { os, bin, home, logsDir: join(home, "logs"), profile: "dist" },
     os: { register: async () => true, unregister: async () => {}, query: async () => "on" },
     run: async (argv) => {
       ran.push(argv.join(" "));

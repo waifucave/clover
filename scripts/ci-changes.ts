@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 export type CiArea =
-  | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
+  | "workspaces" | "daemon" | "app" | "packages" | "installers" | "gallery" | "typecheck" | "lockfiles"
   | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify" | "tree" | "link";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
@@ -34,7 +34,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
   // link sidecar they carry (the job installs the deb and runs its `clover`)
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/", "native/link/"],
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
+  // the macOS and Windows installers (the unsigned release build: dmg, zip, NSIS), on macOS and Windows machines: only
+  // what makes them, so a code change alone doesn't spend a macOS job on them (the app and daemon jobs build those)
+  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
@@ -85,9 +88,20 @@ export function matches(path: string, pattern: Pattern): boolean {
 }
 
 /** The areas `changed` needs. `undefined` (no diff to go on) runs every area. */
+/** Areas CI_GLOBAL doesn't turn on, but only these of its files (CI's own): the installers' release build takes a macOS
+ *  and a Windows machine for a quarter of an hour, so a lockfile or toolchain change alone doesn't run it. */
+export const NOT_GLOBAL: Readonly<Partial<Record<CiArea, readonly Pattern[]>>> = {
+  installers: [".github/workflows/ci.yml", "scripts/ci-changes.ts"],
+};
+
 export function areasFor(changed: readonly string[] | undefined): Record<CiArea, boolean> {
   const all = changed === undefined || changed.some((p) => CI_GLOBAL.some((g) => matches(p, g)));
-  return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, all || changed!.some((p) => CI_AREAS[a].some((g) => matches(p, g)))])) as Record<CiArea, boolean>;
+  const on = (a: CiArea): boolean => {
+    const global = NOT_GLOBAL[a];
+    const everything = global === undefined ? all : changed === undefined || changed.some((p) => global.some((g) => matches(p, g)));
+    return everything || changed!.some((p) => CI_AREAS[a].some((g) => matches(p, g)));
+  };
+  return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, on(a)])) as Record<CiArea, boolean>;
 }
 
 function changedSince(base: string): string[] | undefined {

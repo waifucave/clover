@@ -56,6 +56,7 @@ jobs:
       daemon: ${{ steps.areas.outputs.daemon }}
       app: ${{ steps.areas.outputs.app }}
       packages: ${{ steps.areas.outputs.packages }}
+      installers: ${{ steps.areas.outputs.installers }}
       gallery: ${{ steps.areas.outputs.gallery }}
       typecheck: ${{ steps.areas.outputs.typecheck }}
       lockfiles: ${{ steps.areas.outputs.lockfiles }}
@@ -319,9 +320,53 @@ jobs:
           CLOVER_HOME="$(mktemp -d)" clover --version
           test -x /opt/Clover/resources/daemon/clover-link
           test -f /etc/apparmor.d/clover
+          test "$(cat /opt/Clover/resources/daemon/install.json)" = '{"kind":"package"}'
           sudo apt-get remove -y -qq "$name"
+          test ! -e /opt/Clover/resources/daemon/install.json
           test ! -e /usr/bin/clover
           test ! -e /etc/apparmor.d/clover
+
+  # The macOS and Windows installers (plan §4 M-M2): the release build itself, unsigned (scripts/release/build.ts), so
+  # each PR that touches them shows they still build: the dmg and its update zip on Apple silicon, the NSIS installer
+  # on Windows, each with its update files and the daemon's own (clover-core-<version>-<target> and its update file),
+  # every one checked against the files it names. Nothing is signed, uploaded or published.
+  installers:
+    name: installers · ${{ matrix.os }} (${{ matrix.what }})
+    needs: changes
+    if: needs.changes.outputs.installers == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: mac, runner: macos-latest, what: "dmg, zip" }
+          - { os: win, runner: windows-latest, what: NSIS }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link -> target
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the installers (unsigned) and check them
+        shell: bash
+        run: |
+          bun scripts/release/build.ts --channel latest
+          ls -l apps/desktop/out/dist
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
@@ -833,7 +878,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, installers, tree, link, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

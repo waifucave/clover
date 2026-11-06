@@ -31,8 +31,18 @@ describe("ci-changes", () => {
   });
 
   test("the packages: packaging/ and the app's builder config build and open the Linux packages; an app change does too", () => {
-    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "scripts"]);
-    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
+    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "installers", "scripts"]);
+    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "installers", "typecheck", "scripts"]);
+  });
+
+  test("the installers' release build runs for what makes them and for CI's own files, never for code or a lockfile alone", () => {
+    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json", ".github/workflows/ci.yml"]) {
+      expect(areasFor([f]).installers).toBe(true);
+    }
+    for (const f of ["bun.lock", ".bun-version", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {
+      expect(areasFor([f]).installers).toBe(false);
+    }
+    expect(areasFor(undefined).installers).toBe(true);
   });
 
   test("a service's change: its tests and the typecheck", () => {
@@ -107,8 +117,9 @@ describe("ci-changes", () => {
     expect(on(["packages/cli/src/main.ts"])).not.toContain("swift");
   });
 
-  test("CI itself, the toolchain, the root manifest or a lockfile run every area; so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+  test("CI itself, the toolchain, the root manifest or a lockfile run every area (the installers only for CI itself); so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "installers"));
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
   });
 
