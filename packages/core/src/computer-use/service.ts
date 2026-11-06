@@ -1782,6 +1782,10 @@ export class ComputerV2Service {
   /** `untrusted`: the message carries the helper's own words (which may name a window), so it stays in the fence. */
   private toWireInner(ctx: RunCtx, err: unknown, msg: CallMessage): { kind: string; message: string; untrusted?: true } {
     if (isAutomationFailure(err)) return { kind: err.kind, message: err.message };
+    // Trusted: a TypeError here is the script's own mistake, in this module's words. Since Bun 1.4, fetch's network
+    // errors are TypeErrors too (`EPROTO: The TLS handshake failed…`, `UnsupportedProxyProtocol fetching "<url>"`),
+    // and those carry a page's URL; none reaches this line today, because `followRedirectsWith` turns fetch's errors
+    // into its own results and browsers.read() turns those into AutomationFailures. A new fetch site must do the same.
     if (err instanceof TypeError) return { kind: "TypeError", message: err.message };
     if (err instanceof HelperUnavailableError) {
       return { kind: "HelperUnavailable", message: `${err.message}${err.retryable ? " — try again; if it keeps failing, ask the user to check Settings → Computer Use" : ""}` };

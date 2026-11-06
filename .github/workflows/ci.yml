@@ -15,10 +15,12 @@ concurrency:
 jobs:
   # CI covers four machines (plan §3): macOS arm64, Windows x64, and Ubuntu x64 and arm64. On each it runs the
   # workspace packages' tests (the plugins' and services' among them), builds the daemon binary and builds the
-  # unsigned app, whose window the UI test then opens (CI only: no app window on a developer's screen, plan §8). The
-  # typecheck, the lockfile check, the galleries, the protocol codegen and the extension run once, on Linux. Only what
-  # needs macOS runs there: core, cli and the scripts (which need the agent runtime's darwin-arm64 binary), the Swift
-  # kits the iOS app links and the compiled-binary gates.
+  # unsigned app, whose window the UI test then opens (CI only: no app window on a developer's screen, plan §8): one
+  # job per machine. The typecheck, the lockfile check, the galleries, the protocol codegen and the extension run
+  # once, on Linux. Only what needs macOS runs there, in as few jobs as it can (the org's plan runs five macOS jobs at
+  # once): one job for core, cli, the scripts and the compiled-binary gates (which need the agent runtime's
+  # darwin-arm64 binary), and the Swift kits the iOS app links, only when apple/, the protocol's Swift, the core (whose
+  # daemon WinterKit's tests start) or the toolchain changes.
   #
   # A pull request runs only the jobs whose inputs it changes (`changes`, scripts/ci-changes.ts); the names-and-layout
   # checks always run, and `gate` is the one check branch protection needs.
@@ -83,16 +85,26 @@ jobs:
       - name: The rename's rules, the layout, the workspaces and the CI areas
         run: bun test scripts/rename/ scripts/layout.test.ts scripts/workspaces.test.ts scripts/ci-changes.test.ts
 
-  # Every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
-  # script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
-  # a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store
-  # never meets a real keyring.
-  test-workspaces:
-    name: test · workspaces (${{ matrix.target }})
+  # One job per machine (macOS arm64, Linux x64 and arm64, Windows x64), each step run only when this change needs it:
+  #  - every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
+  #    script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
+  #    a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store never
+  #    meets a real keyring.
+  #  - the daemon binary, `clover-core`, built for the machine's own target (`scripts/build-daemon.ts`: packages/cli's
+  #    compile:core with the target set), then run once with `--version` on a temp home: it prints and exits, so no
+  #    daemon starts. Unsigned on every OS; signing is M2's.
+  #  - the app (apps/desktop), built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
+  #    the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
+  #    Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
+  #    AppArmor turns them off by default).
+  # One job, not three, so a macOS runner (five at once on the org's plan) is taken once per change, not three times.
+  # A later part still runs after an earlier one fails, so one run reports all three.
+  machine:
+    name: ${{ matrix.target }} (workspaces, daemon, app)
     needs: changes
-    if: needs.changes.outputs.workspaces == 'true'
+    if: needs.changes.outputs.workspaces == 'true' || needs.changes.outputs.daemon == 'true' || needs.changes.outputs.app == 'true'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -101,6 +113,10 @@ jobs:
           - { target: linux-x64, runner: ubuntu-24.04 }
           - { target: linux-arm64, runner: ubuntu-24.04-arm }
           - { target: windows-x64, runner: windows-latest }
+    env:
+      WORKSPACES: ${{ needs.changes.outputs.workspaces }}
+      DAEMON: ${{ needs.changes.outputs.daemon }}
+      APP: ${{ needs.changes.outputs.app }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -108,110 +124,58 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - name: The private Secret Service's tools (Linux)
+      - name: The private Secret Service's tools and the display (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 xvfb xauth
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Test
-        if: runner.os != 'Linux'
+      - name: Workspaces · test
+        if: env.WORKSPACES == 'true' && runner.os != 'Linux'
         run: bun scripts/workspaces.ts run test
 
-      - name: Test (on a private Secret Service)
-        if: runner.os == 'Linux'
+      - name: Workspaces · test (on a private Secret Service)
+        if: env.WORKSPACES == 'true' && runner.os == 'Linux'
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
-  # The daemon binary, `clover-core`, built on each of the four machines for its own target
-  # (`scripts/build-daemon.ts`: packages/cli's compile:core with the target set), then run once with `--version` on
-  # a temp home: it prints and exits, so no daemon starts. Unsigned on every OS; signing is M2's.
-  daemon:
-    name: daemon · ${{ matrix.target }}
-    needs: changes
-    if: needs.changes.outputs.daemon == 'true'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: darwin-arm64, runner: macos-latest }
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-latest }
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build clover-core for ${{ matrix.target }}, and run its --version
+      - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
+        if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() && env.DAEMON == 'true' }}
         with:
           name: clover-core-${{ matrix.target }}
           path: dist/daemon/${{ matrix.target }}/
           retention-days: 5
           if-no-files-found: error
 
-  # The app (apps/desktop): built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
-  # the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
-  # Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
-  # AppArmor turns them off by default).
-  app:
-    name: app · ${{ matrix.target }}
-    needs: changes
-    if: needs.changes.outputs.app == 'true'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: darwin-arm64, runner: macos-latest }
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-latest }
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build the unsigned app
+      - name: App · build the unsigned app
+        id: app-build
+        if: ${{ !cancelled() && env.APP == 'true' }}
         run: bun run build:app
 
-      - name: The display and the sandbox (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends xvfb xauth
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: UI test
-        if: runner.os != 'Linux'
+      - name: App · UI test
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
         run: bun test test/ui-smoke.test.ts
 
-      - name: UI test (under xvfb)
-        if: runner.os == 'Linux'
+      - name: App · the sandbox (Linux)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: App · UI test (under xvfb)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
         run: xvfb-run -a bun test test/ui-smoke.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         with:
           name: clover-app-${{ matrix.target }}
           path: apps/desktop/out/dist/
@@ -329,17 +293,32 @@ jobs:
   # flip removed the dated checkout+build fallback blocks and the `versions` job they consumed;
   # each job that needs the `winter` binary now FAILS LOUDLY if the package did not install.
 
-  # core and cli run in jobs of their own (their package.json says `cloverCi.ownJob`), so the other packages'
-  # tests stay independent of the `winter` binary: a broken platform package must not hold them up.
-  #
-  # CLOVER_RUNTIME_REQUIRE_BINARY=1 is the point of the download: without it, every test that needs a
-  # real `winter` child SKIPS, and CI would go green by proving nothing.
-  test-core:
-    name: test · core
+  # The jobs that need the agent runtime's darwin-arm64 binary, as steps of ONE macOS job, each run only when this
+  # change needs it, and each still run after an earlier one fails, so one run reports them all:
+  #  - core's suite and cli's non-TUI tests (`test/*.ts` only — `test/tui/**` renders the Ink transcript through
+  #    ink-testing-library and has ~30 pre-existing failures on main; widen back to a bare `bun test` the moment that
+  #    suite is fixed). Their package.json says `cloverCi.ownJob`, so the other packages' tests stay independent of
+  #    the `winter` binary: a broken platform package must not hold them up. CLOVER_RUNTIME_REQUIRE_BINARY=1 is the
+  #    point of the binary: without it, every test that needs a real `winter` child SKIPS, and CI would go green by
+  #    proving nothing.
+  #  - the repo's own scripts' tests (`scripts/**/*.test.ts`): the layout's conventions, the build, dev and release
+  #    tools' pure halves, the held scripts, the limiter, the rename's codemod. None builds an app or starts a
+  #    daemon. `embed-runtimes.test.ts` stages the agent runtime's binary from dist/.
+  #  - the compiled-binary proofs (Winter Phase 8d, P8d-5): verify:workflow, verify:automation-worker,
+  #    verify:runtime-state, verify:fd-receiver and verify:runtimes, which resolves the `winter` binary through its
+  #    own ladder (the installed platform package first).
+  # One job, not four, so a macOS runner (five at once on the org's plan) is taken once per change.
+  macos:
+    name: macOS (core, cli, scripts, verify)
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scripts == 'true' || needs.changes.outputs.verify == 'true'
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
+    env:
+      CORE: ${{ needs.changes.outputs.core }}
+      CLI: ${{ needs.changes.outputs.cli }}
+      SCRIPTS: ${{ needs.changes.outputs.scripts }}
+      VERIFY: ${{ needs.changes.outputs.verify }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -369,64 +348,29 @@ jobs:
           cp "${{ steps.clover-package.outputs.bin }}" dist/winter
           chmod +x dist/winter
 
-      - name: Test
+      - name: Core · test
+        if: env.CORE == 'true'
         working-directory: packages/core
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
           CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
-        # Bun 1.3.14 has an intermittent use-after-free ("Segmentation fault at address 0xA", exit 133)
-        # that can crash ONE long `bun test` process (after ~7 min, ~70 Workers spawned and
-        # terminated, ~1.4 GB RSS). The suite runs as 3 sequential native shards (`bun test
-        # --shard=K/3`, so discovery is bun's own). Every shard is a fresh process in this directory:
+        # The suite runs as 3 sequential native shards (`bun test --shard=K/3`, so discovery is bun's
+        # own). They began as a guard against Bun 1.3.14's intermittent Worker use-after-free
+        # ("Segmentation fault at address 0xA", exit 133, in one long process after ~70 Workers); on
+        # 1.4.4 A-M1's dispatch soak ran 20 of 20 clean (6 of 20 crashed on 1.3.14). Memory is not why
+        # they stay: neither Bun hands a terminated Worker's resident pages back (`ps -o rss=`), and on
+        # 1.4.4 its dirty memory (phys_footprint) no longer piles up (packages/core/scripts/test-shards.ts
+        # has the numbers). They stay because a smaller process is cheaper to re-run and keeps a crash to
+        # one shard. Every shard is a fresh process in this directory:
         # same bunfig preload (per-process temp root, throwaway Keychain service), same env. The
         # script runs all shards (one that clearly crashed Bun - exit 133 or a signal, with no summary -
         # is re-run ONCE, with a ::warning::; a second crash fails), then fails the step on any non-zero or signal exit, a missing
         # "Ran N tests across M files" summary, a 0-file shard, or a file total below the glob count.
         run: bun scripts/test-shards.ts 3
 
-  # cli's non-TUI tests (`test/*.ts` only — `test/tui/**` renders the Ink transcript through
-  # ink-testing-library and has ~30 pre-existing failures on main; widen back to a bare `bun test`
-  # the moment that suite is fixed). Split out of the matrix for the same reason core is: the
-  # CloverClient round-trips create sessions, every session is a spawned `winter` child (P8b-2: no
-  # binary ⇒ a typed refusal, never a fallback), so the job downloads the built binary and REQUIRES
-  # it — without `CLOVER_RUNTIME_REQUIRE_BINARY=1` those tests would skip and CI would go green by
-  # proving nothing. protocol and plugin-sdk stay independent of the `winter` binary's build.
-  test-cli:
-    name: test · cli
-    needs: changes
-    if: needs.changes.outputs.cli == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # P9a-8: see test-core's identical block — the platform package must be installed.
-      - name: Check for the installed winter platform package (P9a-8)
-        id: clover-package
-        working-directory: packages/core
-        run: |
-          BIN=$(bun -e '
-          import { resolvePlatformPackageWinter } from "./src/runtime-sdk/executable";
-          console.log(resolvePlatformPackageWinter() ?? "");
-          ')
-          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
-          if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
-
-      - name: Use the installed platform package's winter binary (P9a-8 — the strong row-16 path)
-        run: |
-          mkdir -p dist
-          cp "${{ steps.clover-package.outputs.bin }}" dist/winter
-          chmod +x dist/winter
-
-
-      - name: Test
+      - name: CLI · test
+        if: ${{ !cancelled() && env.CLI == 'true' }}
         working-directory: packages/cli
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
@@ -434,46 +378,48 @@ jobs:
           CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
         run: bun test test/*.ts
 
-  # The repo's own scripts' tests (`scripts/**/*.test.ts`): the layout's conventions, the build, dev and release
-  # tools' pure halves, the held scripts, the limiter, the rename's codemod. None builds an app or starts a
-  # daemon. `embed-runtimes.test.ts` stages the agent runtime's binary, so this job copies it into dist/ as
-  # test-core does.
-  test-scripts:
-    name: test · scripts
-    needs: changes
-    if: needs.changes.outputs.scripts == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # P9a-8: see test-core's identical block — the platform package must be installed.
-      - name: Check for the installed winter platform package (P9a-8)
-        id: clover-package
-        working-directory: packages/core
-        run: |
-          BIN=$(bun -e '
-          import { resolvePlatformPackageWinter } from "./src/runtime-sdk/executable";
-          console.log(resolvePlatformPackageWinter() ?? "");
-          ')
-          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
-          if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
-
-      - name: Use the installed platform package's winter binary
-        run: |
-          mkdir -p dist
-          cp "${{ steps.clover-package.outputs.bin }}" dist/winter
-          chmod +x dist/winter
-
-      - name: Test
+      - name: Scripts · test
+        if: ${{ !cancelled() && env.SCRIPTS == 'true' }}
         run: bun test scripts
+
+      - name: verify:workflow
+        if: ${{ !cancelled() && env.VERIFY == 'true' }}
+        run: bun run verify:workflow
+
+      # The ComputerV2 worker is the whole binary under its own seatbelt and a `{ PATH }`-only
+      # environment: a module that throws at load there (2026-10-19, a load-time homedir()) takes
+      # every ComputerV2 call down while verify:workflow, with its own profile, still passes.
+      - name: verify:automation-worker
+        if: ${{ !cancelled() && env.VERIFY == 'true' }}
+        run: bun run verify:automation-worker
+
+      - name: verify:runtime-state
+        if: ${{ !cancelled() && env.VERIFY == 'true' }}
+        run: bun run verify:runtime-state
+
+      # N2 S7B: the Cowork native pair's packaging gate. Builds the real launcher (swift build, scratch path), embeds it with a stand-in worker into a
+      # scratch bundle (ad hoc), accepts it and proves seven refusals. Never runs either binary, never signs with a real identity.
+      - name: verify:cowork-native
+        # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
+        if: ${{ !cancelled() && env.VERIFY == 'true' && github.event_name == 'workflow_dispatch' }}
+        run: bun run verify:cowork-native
+
+      # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles clover-core and runs a temp copy's
+      # probe on a socketpair; touches no home, Keychain, daemon or launcher.
+      - name: verify:fd-receiver
+        if: ${{ !cancelled() && env.VERIFY == 'true' }}
+        run: bun run verify:fd-receiver
+
+      # WS-23 (fix round 1, minor 6): the vendored ant, pinned and checksum-verified by fetch-ant
+      # itself, so verify:runtimes exercises ant's bundle rung and its record's SHA against the pin
+      # rather than skipping them.
+      - name: Fetch the pinned ant
+        if: ${{ !cancelled() && env.VERIFY == 'true' }}
+        run: bun run scripts/fetch-ant.ts
+
+      - name: verify:runtimes
+        if: ${{ !cancelled() && env.VERIFY == 'true' }}
+        run: bun run verify:runtimes
 
   # The protocol package generates a JSON schema and the Swift round-trip fixtures. If a schema
   # change landed without re-running the generator, the tree is dirty here — which is exactly the
@@ -592,74 +538,6 @@ jobs:
         working-directory: apple/Cowork/WinterCoworkLauncher
         run: swift test --scratch-path "$RUNNER_TEMP/launcher-build-test" -Xswiftc -DWINTER_COWORK_TEST_BUILD
 
-  # Winter Phase 8d (P8d-5): the compiled-binary proofs, on the macOS runner, after the pinned
-  # `winter` binary is available — `verify:runtimes` needs it (via stageRuntimes' `winterPath`
-  # rung) exactly as `test-core`/`test-cli` do, and `verify:workflow`/`verify:runtime-state` are
-  # cheap to run alongside it in the same job rather than three separate ones.
-  verify:
-    name: verify (workflow, runtime-state, runtimes)
-    needs: changes
-    if: needs.changes.outputs.verify == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # P9a-8: `verify:runtimes` (below) resolves the `winter` binary through its OWN ladder (the installed
-      # platform package first — the strong row-16 path), so this job only makes SURE the platform
-      # package installed (the 0.0.5 pin flip removed the dated checkout+build fallback).
-      - name: Check for the installed winter platform package (P9a-8)
-        id: clover-package
-        working-directory: packages/core
-        run: |
-          BIN=$(bun -e '
-          import { resolvePlatformPackageWinter } from "./src/runtime-sdk/executable";
-          console.log(resolvePlatformPackageWinter() ?? "");
-          ')
-          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
-          if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
-
-
-      - name: verify:workflow
-        run: bun run verify:workflow
-
-      # The ComputerV2 worker is the whole binary under its own seatbelt and a `{ PATH }`-only
-      # environment: a module that throws at load there (2026-10-19, a load-time homedir()) takes
-      # every ComputerV2 call down while verify:workflow, with its own profile, still passes. The
-      # job's name is kept: it is the check the branch's rules know.
-      - name: verify:automation-worker
-        run: bun run verify:automation-worker
-
-      - name: verify:runtime-state
-        run: bun run verify:runtime-state
-
-      # N2 S7B: the Cowork native pair's packaging gate. Builds the real launcher (swift build, scratch path), embeds it with a stand-in worker into a
-      # scratch bundle (ad hoc), accepts it and proves seven refusals. Never runs either binary, never signs with a real identity.
-      - name: verify:cowork-native
-        # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
-        if: github.event_name == 'workflow_dispatch'
-        run: bun run verify:cowork-native
-
-      # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles clover-core and runs a temp copy's
-      # probe on a socketpair; touches no home, Keychain, daemon or launcher.
-      - name: verify:fd-receiver
-        run: bun run verify:fd-receiver
-
-      # WS-23 (fix round 1, minor 6): the vendored ant, pinned and checksum-verified by fetch-ant
-      # itself, so verify:runtimes exercises ant's bundle rung and its record's SHA against the pin
-      # rather than skipping them.
-      - name: Fetch the pinned ant
-        run: bun run scripts/fetch-ant.ts
-
-      - name: verify:runtimes
-        run: bun run verify:runtimes
-
   # The libkrun production-profile patch queue (apple/Cowork/WinterCoworkLibkrun): fetch the pinned upstream source archive
   # (SHA-256 checked BEFORE it is extracted; the tree is data, nothing from inside it is run), compose the queue offline and
   # assert the pinned composed hash, then run the pure-Python guard tests including the composition test. No cargo, no
@@ -725,7 +603,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, test-workspaces, daemon, app, gallery, typecheck, lockfiles, test-extension, test-core, test-cli, test-scripts, protocol-codegen, swift, verify]
+    needs: [changes, names, machine, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

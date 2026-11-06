@@ -1319,8 +1319,10 @@ export async function followRedirectsWith(startUrl: string, opts: FollowWithOpti
     for (const address of plan.addresses) {
       const connect = new URL(url.toString());
       connect.hostname = address.includes(":") ? `[${address}]` : address;
-      const init: RequestInit & { tls?: { serverName?: string }; decompress?: boolean } = {
-        method: "GET", redirect: "manual", signal: opts.signal, decompress: false,
+      // `proxy: false`: never through an environment proxy, which would make its own connection to the host and undo
+      // the pin. Bun 1.4 honours it (1.3.14 did not), and `prepare` refuses a dial a proxy would take regardless.
+      const init: RequestInit & { tls?: { serverName?: string }; decompress?: boolean; proxy?: false } = {
+        method: "GET", redirect: "manual", signal: opts.signal, decompress: false, proxy: false,
         headers: { ...opts.headers, Host: url.host },
         ...(url.protocol === "https:" && !hostIsIp ? { tls: { serverName: url.hostname } } : {}),
       };

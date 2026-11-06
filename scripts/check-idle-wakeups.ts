@@ -1,11 +1,15 @@
 #!/usr/bin/env bun
-// The daemon's IDLE cost, measured: how often an idle `clover-core` wakes the CPU (`top`'s IDLEW, in DELTA mode).
+// The daemon's IDLE cost, measured: how often an idle `clover-core` wakes the CPU.
 //
 //   bun run check:idle-wakeups            # boots an isolated daemon, settles, measures 3 × 10 s, fails over 50/s
-//   bun run check:idle-wakeups --pid N    # measures an already-running process instead (read-only: `top` only)
+//   bun run check:idle-wakeups --pid N    # measures an already-running process of yours instead (read-only)
 //
-// WHY DELTA MODE. `top`'s IDLEW column is, by default, the ABSOLUTE count since the process started — 3,962 on a
-// daemon up for 8 hours is ~0.14 wakeups/s, not 3,962/s. `-c d` makes each sample the count over its own interval.
+// THE METER. The process's own wakeup counters, read with `proc_pid_rusage` at each window's edges: `interrupt`, every
+// wakeup by an interrupt (a timer firing, I/O arriving), which the gate holds, and `package idle`, the subset that
+// woke an idle CPU package, which `top`'s IDLEW shows (and only with `-c d`; without it IDLEW counts since launch).
+// The gate used to read IDLEW, but on macOS 26 under load it read 0 for every process (measured 2026-11-05:
+// WindowServer, and a Bun process with a 5 ms timer that the interrupt counter put at 174 wakeups a second), so it
+// passed whatever the daemon did. An idle Bun process measures 1 interrupt wakeup a second.
 //
 // ISOLATION. The booted daemon runs IN a child bun process on a temp CLOVER_HOME with a FILE secret store
 // (`startDaemon({ secrets })`): every Keychain path in the daemon is gated on the profile's default home, and a
@@ -13,6 +17,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import { USAGE_INERT_ENV } from "../packages/core/src/usage/wiring";
 
 const LIMIT_PER_SECOND = 50;
@@ -22,13 +27,33 @@ const WINDOW_S = 10;
 
 const CORE = join(import.meta.dir, "..", "packages", "core", "src");
 
-/** IDLEW per interval for `pid`, over `windows` windows of `seconds` (the first, absolute, sample is dropped). */
-async function idleWakeups(pid: number, windows: number, seconds: number): Promise<number[]> {
-  const proc = Bun.spawn(["top", "-l", String(windows + 1), "-s", String(seconds), "-c", "d", "-pid", String(pid), "-stats", "pid,idlew"], { stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(proc.stdout).text();
-  await proc.exited;
-  const rows = out.split("\n").map((l) => l.trim().split(/\s+/)).filter((f) => f[0] === String(pid)).map((f) => Number(f[1]));
-  return rows.slice(1).filter((n) => Number.isFinite(n));
+/** A process's wakeup counts since it started (`proc_pid_rusage`, `RUSAGE_INFO_V0`). */
+interface Wakeups { interrupt: number; packageIdle: number }
+
+function wakeupCounter(): (pid: number) => Wakeups {
+  if (process.platform !== "darwin") throw new Error("check:idle-wakeups measures on macOS only");
+  const lib = dlopen("/usr/lib/libproc.dylib", { proc_pid_rusage: { args: [FFIType.i32, FFIType.i32, FFIType.ptr], returns: FFIType.i32 } });
+  return (pid) => {
+    // rusage_info_v0: ri_uuid[16], ri_user_time, ri_system_time, ri_pkg_idle_wkups, ri_interrupt_wkups, … (uint64s).
+    const info = new BigUint64Array(12);
+    const r = lib.symbols.proc_pid_rusage(pid, 0, ptr(info));
+    if (r !== 0) throw new Error(`proc_pid_rusage(${pid}) failed (${r}): is the process gone, or not yours?`);
+    return { packageIdle: Number(info[4]), interrupt: Number(info[5]) };
+  };
+}
+
+/** Wakeups in each of `windows` windows of `seconds`, per meter. */
+async function idleWakeups(pid: number, windows: number, seconds: number): Promise<Wakeups[]> {
+  const read = wakeupCounter();
+  const out: Wakeups[] = [];
+  let last = read(pid);
+  for (let i = 0; i < windows; i++) {
+    await Bun.sleep(seconds * 1000);
+    const now = read(pid);
+    out.push({ interrupt: now.interrupt - last.interrupt, packageIdle: now.packageIdle - last.packageIdle });
+    last = now;
+  }
+  return out;
 }
 
 async function main(): Promise<void> {
@@ -57,7 +82,8 @@ async function main(): Promise<void> {
     // developer's own Codex / Claude Code / Antigravity / OpenCode files or binaries. The gate does NOT cover the beat
     // (its 30-min and fast timers would not tick inside these 50 s anyway).
     ...USAGE_INERT_ENV });
-  const daemon = Bun.spawn(["bun", probe], { env, stdout: "pipe", stderr: "inherit" });
+  // This Bun, not the first on PATH: the daemon measured is the one the check runs on.
+  const daemon = Bun.spawn([process.execPath, probe], { env, stdout: "pipe", stderr: "inherit" });
   try {
     const reader = daemon.stdout.getReader();
     let seen = "";
@@ -78,11 +104,12 @@ async function main(): Promise<void> {
   }
 }
 
-function report(samples: number[]): void {
-  if (samples.length === 0) throw new Error("top reported nothing for the process");
-  const perSecond = samples.map((n) => n / WINDOW_S);
+function report(samples: Wakeups[]): void {
+  if (samples.length === 0) throw new Error("no samples were taken");
+  const perSecond = samples.map((w) => w.interrupt / WINDOW_S);
   const worst = Math.max(...perSecond);
-  console.log(`idle wakeups per ${WINDOW_S} s: ${samples.join(", ")} → worst ${worst.toFixed(1)}/s (limit ${LIMIT_PER_SECOND}/s)`);
+  console.log(`wakeups per ${WINDOW_S} s, interrupt: ${samples.map((w) => w.interrupt).join(", ")}; package idle (top's IDLEW): ${samples.map((w) => w.packageIdle).join(", ")}`);
+  console.log(`worst ${worst.toFixed(1)} interrupt wakeups/s (limit ${LIMIT_PER_SECOND}/s)`);
   if (worst > LIMIT_PER_SECOND) {
     console.error("FAIL: the idle daemon wakes too often");
     process.exit(1);
