@@ -37,6 +37,8 @@ export interface FakeDaemon {
   request(method: string, params: unknown): Promise<unknown[]>;
   /** Raw lines to each app connection, written at once (one chunk). */
   write(lines: readonly unknown[]): void;
+  /** Lane C's SIGTERM: `app.quit` to each app, then gone at once, without waiting for an answer. */
+  quitAndDie(): Promise<void>;
   connections(): number;
   close(): Promise<void>;
   /** Resolves when `pair.quit` was called (with its params). */
@@ -181,6 +183,11 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
       return (await ask("app.show", { what }))[0];
     },
     request: ask,
+    async quitAndDie() {
+      record(opts.home, "quit-and-die");
+      for (const s of sockets) if (authed.has(s)) send(s, { jsonrpc: "2.0", id: nextId++, method: "app.quit", params: { reason: "quit" } });
+      await stopListening();
+    },
     write(lines) {
       for (const s of sockets) if (authed.has(s)) s.write(lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
     },
@@ -216,17 +223,35 @@ async function main(argv: string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
+  if (cmd === "daemon" && sub === "check-server") {
+    // Lane C's pre-hello check: this user's daemon serves the endpoint when the fake's pid file names a live process.
+    record(home, "check-server");
+    const pidFile = join(fakeDir(home), "daemon.pid");
+    const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8")) : 0;
+    let alive = false;
+    try {
+      alive = pid > 0 && process.kill(pid, 0);
+    } catch {
+      alive = false;
+    }
+    const refuse = process.env.CLOVER_FAKE_CHECK_SERVER === "refuse";
+    process.stdout.write(`${JSON.stringify(alive && !refuse ? { ok: true, pid, userSid: "S-1-5-21-fake", image: argv[argv.indexOf("--image") + 1] ?? "" } : { ok: false, reason: refuse ? "another user's process serves the pipe" : "no daemon" })}\n`);
+    process.exitCode = alive && !refuse ? 0 : 1;
+    return;
+  }
   if (cmd === "daemon") {
     const uiFile = process.env.CLOVER_FAKE_UI;
     const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown> }) : {};
     let fake: FakeDaemon;
+    // The pid first, so `daemon check-server` already names this process when an app dials the new endpoint.
+    mkdirSync(fakeDir(home), { recursive: true });
+    writeFileSync(join(fakeDir(home), "daemon.pid"), String(process.pid));
     try {
       fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}) });
     } catch (err) {
       record(home, "listen-failed", { error: String(err) });
       process.exit(0);
     }
-    writeFileSync(join(fakeDir(home), "daemon.pid"), String(process.pid));
     record(home, "daemon-started");
     process.on("SIGTERM", () => process.exit(0));
     const q = await fake.quitRequested;

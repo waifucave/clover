@@ -2,13 +2,14 @@
 // when none answers, coming back after a crash (the OS first, the app after 3 s), Quit and Hand over and quit, the
 // daemon's own quit, the token, how the app was started, and Quit's question.
 import { afterEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
+import { parseAutostartStatus, parseServerCheck, type DaemonLauncher } from "../src/main/pair/login";
 import { Pair, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
@@ -53,7 +54,7 @@ function fakeLauncher(home: string, opts: { startDelayMs?: number } = {}): Daemo
   return l;
 }
 
-function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { onDaemonQuit?: (r: string) => void; log?: (line: string) => void } = {}): { pair: Pair; states: PairState["kind"][] } {
+function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { onDaemonQuit?: (r: string) => void; log?: (line: string) => void; checkServer?: boolean } = {}): { pair: Pair; states: PairState["kind"][] } {
   const states: PairState["kind"][] = [];
   const pair = new Pair({
     endpoint: daemonEndpoint(home),
@@ -66,6 +67,7 @@ function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { on
     onState: (s) => states.push(s.kind),
     ...(extra.onDaemonQuit ? { onDaemonQuit: extra.onDaemonQuit } : {}),
     ...(extra.log ? { log: extra.log } : {}),
+    ...(extra.checkServer ? { checkServer: true } : {}),
   });
   pairs.push(pair);
   return { pair, states };
@@ -198,6 +200,22 @@ describe("quitting", () => {
     expect(launcher.started).toBe(0);
   });
 
+  test("lane C's SIGTERM: app.quit, then the daemon is gone at once; that's no crash, and nothing restarts it", async () => {
+    const home = tempHome();
+    const fake = await startFakeDaemon({ home });
+    fakes.push(fake);
+    const launcher = fakeLauncher(home);
+    let told: string | undefined;
+    const { pair, states } = pairFor(home, launcher, { onDaemonQuit: (r) => (told = r) });
+    await pair.start();
+    await fake.quitAndDie();
+    await until(() => told !== undefined && pair.state.kind === "stopped");
+    expect(told).toBe("quit");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(states).not.toContain("reconnecting");
+    expect(launcher.started).toBe(0);
+  });
+
   test("leaving on purpose says pair.exiting first", async () => {
     const home = tempHome();
     fakes.push(await startFakeDaemon({ home }));
@@ -220,6 +238,58 @@ describe("quitting", () => {
     await pair.start();
     expect(await fake.show({ kind: "window" })).toEqual({ ok: true });
     expect(seen).toEqual([{ what: { kind: "window" } }]);
+  });
+});
+
+describe("the server check before the hello (Windows' pipes, lane C's `daemon check-server`)", () => {
+  const withCheck = (home: string, answer: { ok: true } | { ok: false; reason: string }) => {
+    const l = fakeLauncher(home) as ReturnType<typeof fakeLauncher> & { checkServer: () => Promise<typeof answer>; checks: number };
+    l.checks = 0;
+    l.checkServer = async () => {
+      l.checks++;
+      return answer;
+    };
+    return l;
+  };
+
+  test("this user's daemon: the hello goes, and the pair connects", async () => {
+    const home = tempHome();
+    fakes.push(await startFakeDaemon({ home }));
+    const launcher = withCheck(home, { ok: true });
+    const { pair } = pairFor(home, launcher, { checkServer: true });
+    await pair.start();
+    expect(pair.state.kind).toBe("connected");
+    expect(launcher.checks).toBe(1);
+  });
+
+  test("anyone else serving the endpoint gets nothing: no hello, no token", async () => {
+    const home = tempHome();
+    fakes.push(await startFakeDaemon({ home }));
+    const launcher = withCheck(home, { ok: false, reason: "another user's process serves the pipe" });
+    const { pair } = pairFor(home, launcher, { checkServer: true });
+    await pair.start();
+    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("isn't this user's daemon") });
+    expect(readCalls(home).some((c) => c.method === "protocol.hello")).toBe(false);
+  });
+
+  test("the fake binary's `daemon check-server`, as the app runs it", () => {
+    const home = tempHome();
+    const fake = join(import.meta.dir, "fake-core", "fake-daemon.ts");
+    const run = (env: Record<string, string> = {}) => spawnSync(process.execPath, [fake, "daemon", "check-server", "--json", "--image", "/x/clover-core"], { env: { ...process.env, CLOVER_HOME: home, ...env }, encoding: "utf8" });
+    expect(parseServerCheck({ ok: run().status === 0, code: run().status, out: run().stdout })).toMatchObject({ ok: false, reason: "no daemon" });
+    mkdirSync(join(home, "fake"), { recursive: true });
+    writeFileSync(join(home, "fake", "daemon.pid"), String(process.pid));
+    const ok = run();
+    expect(ok.status).toBe(0);
+    expect(JSON.parse(ok.stdout)).toMatchObject({ ok: true, pid: process.pid, image: "/x/clover-core" });
+    expect(run({ CLOVER_FAKE_CHECK_SERVER: "refuse" }).status).toBe(1);
+  });
+
+  test("the command's answer: ok only with exit 0 and ok: true", () => {
+    expect(parseServerCheck({ ok: true, code: 0, out: '{"ok":true,"pid":1,"userSid":"S-1","image":"x"}' })).toEqual({ ok: true });
+    expect(parseServerCheck({ ok: false, code: 1, out: '{"ok":false,"reason":"another user"}' })).toEqual({ ok: false, reason: "another user" });
+    expect(parseServerCheck({ ok: true, code: 0, out: "fine" })).toMatchObject({ ok: false });
+    expect(parseServerCheck({ ok: false, code: 2, out: "" })).toEqual({ ok: false, reason: "it exited with 2" });
   });
 });
 

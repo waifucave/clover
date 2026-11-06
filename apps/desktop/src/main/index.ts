@@ -164,6 +164,8 @@ function makePair(): Pair {
       return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
     },
     ...(binary !== undefined ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    // A pipe's name is in a namespace every Windows user shares: the token goes only to this user's own daemon.
+    checkServer: process.platform === "win32",
     log,
     onConnected: (client) => loadRegistry(client),
     onState: (s) => stateChanged(s),

@@ -6,8 +6,12 @@
 //   clover-core autostart status    "autostart: <state> (<unit>) [registered]", or with `--json` (proposed to C)
 //                                   { "registered": boolean, "running"?: boolean }
 //   clover-core autostart enable    registers the login item for this home (idempotent)
-//   clover-core autostart start     (proposed to C) starts the daemon through the OS now — `launchctl kickstart`,
+//   clover-core autostart start     starts the daemon through the OS now — `launchctl kickstart`,
 //                                   `systemctl --user start`, `schtasks /Run` — never as the app's child
+//   clover-core daemon check-server --json [--image <path>]
+//                                   exits 0 with `{ ok, pid, userSid, image }` when this user's daemon (that binary)
+//                                   serves the endpoint: the app's check before its hello, on Windows, where a pipe's
+//                                   name is in a namespace every user shares (lane C, C-M1)
 //
 // each with `CLOVER_HOME` and `CLOVER_PROFILE` set, exit code 0 on success. A fake binary stands in for it in the
 // tests until C-M1 lands.
@@ -29,6 +33,8 @@ export interface DaemonLauncher {
   status(): Promise<{ registered: boolean; running?: boolean } | undefined>;
   enable(): Promise<LoginResult>;
   start(): Promise<LoginResult>;
+  /** Whether this user's daemon serves the endpoint (`daemon check-server`); the reason when it doesn't. */
+  checkServer?(): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 export interface LauncherConfig {
@@ -74,7 +80,25 @@ export function cliLauncher(cfg: LauncherConfig): DaemonLauncher {
     },
     enable: () => run(cfg, ["autostart", "enable"]),
     start: () => run(cfg, ["autostart", "start"]),
+    async checkServer() {
+      const r = await run(cfg, ["daemon", "check-server", "--json", "--image", cfg.binary]);
+      return parseServerCheck(r);
+    },
   };
+}
+
+/** `daemon check-server --json`'s answer: ok only with exit 0 and `{ "ok": true }` on its last JSON line. */
+export function parseServerCheck(r: LoginResult): { ok: true } | { ok: false; reason: string } {
+  const json = r.out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
+  let parsed: { ok?: unknown; reason?: unknown } | undefined;
+  try {
+    parsed = json === undefined ? undefined : (JSON.parse(json) as { ok?: unknown; reason?: unknown });
+  } catch {
+    parsed = undefined;
+  }
+  if (r.ok && parsed?.ok === true) return { ok: true };
+  const reason = typeof parsed?.reason === "string" ? parsed.reason.slice(0, 200) : r.ok ? "it said nothing the app understands" : `it exited with ${r.code ?? "a signal"}`;
+  return { ok: false, reason };
 }
 
 export const DAEMON_BINARY_NAME = process.platform === "win32" ? "clover-core.exe" : "clover-core";

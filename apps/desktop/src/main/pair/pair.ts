@@ -57,6 +57,9 @@ export interface PairOptions {
   hello: () => HelloParamsOrUndefined;
   /** How to install and start the daemon; undefined when the app has no daemon binary (the unpackaged dev app). */
   launcher?: DaemonLauncher;
+  /** Check the server before the hello (`launcher.checkServer`): on Windows, where any user can make a pipe of that
+   *  name, the app sends its token only to this user's own daemon. */
+  checkServer?: boolean;
   dial?: (endpoint: string) => Promise<DaemonClient | undefined>;
   timing?: Partial<PairTiming>;
   now?: () => number;
@@ -139,6 +142,16 @@ export class Pair {
     const client = await (this.opts.dial ?? dialSocket)(this.opts.endpoint);
     this.refusal = undefined;
     if (client === undefined) return false;
+    if (this.opts.checkServer === true && this.opts.launcher?.checkServer !== undefined) {
+      const check = await this.opts.launcher.checkServer();
+      if (!check.ok) {
+        client.close();
+        this.refusal = `the endpoint isn't this user's daemon (${check.reason}); the app sent it nothing`;
+        this.log(`pair: ${this.refusal}`);
+        this.setState({ kind: "unavailable", reason: this.refusal });
+        return false;
+      }
+    }
     const params = await this.opts.hello();
     if (params === undefined) {
       client.close();
