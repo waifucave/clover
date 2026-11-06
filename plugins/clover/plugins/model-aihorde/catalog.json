@@ -1,0 +1,166 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "community-shared volunteer workers see prompt content: audit §5.1 says to exclude this provider from any sensitive-content floor, and nothing in the catalog can enforce that",
+        "no tool calling at all — the workers run raw text-completion backends, and upstream sets a provider-wide `unsupportedParams` of tools/tool_choice/parallel_tool_calls",
+        "latency is minutes rather than seconds and throughput is not a quota; a host that treats it like a metered API will misjudge both"
+      ]
+    },
+    "pricingBasis": "free",
+    "admission": {
+      "basis": "keyless-documented",
+      "citation": "audit:§2.2 `aihorde` / §5.1 — AI Horde's published Swagger (aihorde.net/api/swagger.json) and site (aihorde.net), retrieved 2026-09-06: security scheme is an `apikey` header (\"The API Key corresponding to a registered user\"), and the site documents connecting ANONYMOUSLY with a published default key at reduced priority. Free and crowdsourced: \"volunteers share spare computer power\". Endpoints accept an optional `Client-Agent` header — an honest client-identity field.",
+      "tier": "audit"
+    },
+    "scope": "llm",
+    "identityHeaders": {
+      "Client-Agent": "<product>:<version>:<contact>"
+    }
+  },
+  "rows": [
+    {
+      "key": "aihorde/aphrodite/TheDrummer/Cydonia-24B-v4.3",
+      "providerId": "aihorde",
+      "upstreamId": "aphrodite/TheDrummer/Cydonia-24B-v4.3",
+      "displayName": "Cydonia 24B (AI Horde)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Cydonia-24B-v4.3 at v3.8.50 (5458026c) — `contextLength`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Cydonia-24B-v4.3 at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Cydonia-24B-v4.3 at v3.8.50 (5458026c) — upstream states no `toolCalling` flag; ABSENT fails CLOSED (WS-13 §8.1: `native` is what makes a model agent-eligible, so it is never inferred from silence)",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Cydonia-24B-v4.3 at v3.8.50 (5458026c) — no `toolCalling` flag; fails closed",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "tools",
+        "tool_choice",
+        "parallel_tool_calls"
+      ],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/TheDrummer/Cydonia-24B-v4.3 (read 2026-09-27): \"<thinking> </thinking> works ... No thinking also works\" — Community finetune on a Mistral v7 Tekken base; thinking is an optional prompt-level XML-tag convention, not a documented API request parameter, so parameter/efforts are not applicable in the usual sense.",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "thedrummer/cydonia-24b-v4.3",
+      "modelFamily": "other"
+    },
+    {
+      "key": "aihorde/aphrodite/TheDrummer/Skyfall-31B-v4.2",
+      "providerId": "aihorde",
+      "upstreamId": "aphrodite/TheDrummer/Skyfall-31B-v4.2",
+      "displayName": "Skyfall 31B (AI Horde)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Skyfall-31B-v4.2 at v3.8.50 (5458026c) — `contextLength`",
+        "confidence": "declared",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Skyfall-31B-v4.2 at v3.8.50 (5458026c) — upstream states no vision/audio/video flag",
+        "confidence": "inferred",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Skyfall-31B-v4.2 at v3.8.50 (5458026c) — upstream states no `toolCalling` flag; ABSENT fails CLOSED (WS-13 §8.1: `native` is what makes a model agent-eligible, so it is never inferred from silence)",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/aihorde/index.ts#aphrodite/TheDrummer/Skyfall-31B-v4.2 at v3.8.50 (5458026c) — no `toolCalling` flag; fails closed",
+        "confidence": "unknown",
+        "observedAt": "2026-09-06T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "tools",
+        "tool_choice",
+        "parallel_tool_calls"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "thedrummer/skyfall-31b-v4.2",
+      "modelFamily": "other"
+    }
+  ]
+}

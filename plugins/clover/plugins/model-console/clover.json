@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": "Anthropic Console",
+  "description": "Anthropic Console's models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "console",
+        "name": "Anthropic Console",
+        "catalog": "catalog.json",
+        "auth": [],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.anthropic.com"
+        }
+      }
+    ]
+  }
+}

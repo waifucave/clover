@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Xiaomi MiMo API (Anthropic dialect)",
+  "description": "Xiaomi MiMo API (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "xiaomi-anthropic",
+        "name": "Xiaomi MiMo API (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Xiaomi MiMo API (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Xiaomi MiMo API (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.xiaomimimo.com/anthropic"
+        }
+      }
+    ]
+  }
+}

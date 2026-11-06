@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Z.AI GLM Coding Plan (Anthropic dialect)",
+  "description": "Z.AI GLM Coding Plan (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "zai-coding-anthropic",
+        "name": "Z.AI GLM Coding Plan (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Z.AI GLM Coding Plan (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Z.AI GLM Coding Plan (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.z.ai/api/anthropic"
+        }
+      }
+    ]
+  }
+}

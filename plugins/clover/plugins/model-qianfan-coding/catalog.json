@@ -1,0 +1,656 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`.",
+        "Baidu's Coding Plan page (https://cloud.baidu.com/doc/qianfan/s/imlg0beiu) states the plan is for interactive coding tools and NOT for scripts or backend/batch calls; its function-calling list (https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5) names none of the plan's models, so every row here is tool-less (fail-closed) until Baidu documents it."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Baidu Qianfan Coding Plan documentation, retrieved 2026-09-25: the plan's dedicated key is used against `https://qianfan.baidubce.com/v2/coding` (OpenAI) and `https://qianfan.baidubce.com/anthropic/coding` (Anthropic); billing is the plan's request quota.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "qianfan-coding/deepseek-v3.2",
+      "providerId": "qianfan-coding",
+      "upstreamId": "deepseek-v3.2",
+      "displayName": "DeepSeek V3.2 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — deepseek-v3.2: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 96000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — deepseek-v3.2: maximum input 96000 tokens (table 96k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — deepseek-v3.2: maximum output 32768 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 (read 2026-09-27): \"支持模型范围 DeepSeek系列 deepseek-v3.2 deepseek-v3.1-250821 deepseek-v3 deepseek-r1-250528\" — from Baidu's general (platform-wide) function-calling support list for this exact model id, not a Coding-Plan-specific page",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 (read 2026-09-27): \"支持模型范围 DeepSeek系列 deepseek-v3.2 deepseek-v3.1-250821 deepseek-v3 deepseek-r1-250528\" — from Baidu's general (platform-wide) function-calling support list for this exact model id, not a Coding-Plan-specific page",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://api-docs.deepseek.com/guides/thinking_mode/ (read 2026-09-27): \"Thinking mode is enabled by default, with the default effort being high; reasoning_effort accepts low/high/max, or none to disable thinking\" — this is DeepSeek's generic API reference for its reasoning_effort parameter, not a Baidu Coding-Plan-specific statement; Baidu is a reseller/host of this exact model — the maker's effort values ['none', 'low', 'high', 'max'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v3.2",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qianfan-coding/deepseek-v4-flash",
+      "providerId": "qianfan-coding",
+      "upstreamId": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — deepseek-v4-flash: context 1000000 tokens (vendor table rounds as 1000000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — deepseek-v4-flash: maximum input 1000000 tokens (table 1000k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — deepseek-v4-flash: maximum output 131072 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan page does not assert function calling per fixed model ID.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan page does not assert native tools per fixed model ID.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://api-docs.deepseek.com/guides/thinking_mode/ (read 2026-09-27): \"reasoning_effort accepts low/high/max, or none to disable thinking; default effort is high\" — generic DeepSeek API reference, not Coding-Plan-specific — the maker's effort values ['none', 'low', 'high', 'max'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qianfan-coding/deepseek-v4-pro",
+      "providerId": "qianfan-coding",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/rmh4stp0j (read 2026-09-27): \"DeepSeek-V4 DeepSeek-V4-Pro deepseek-v4-pro 1M 1M [1,131072]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/rmh4stp0j (read 2026-09-27): \"deepseek-v4-pro 1M 1M [1,131072]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no input modality beyond text for this model; text-only is the conservative reading",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"Coding Plan models configured for Claude Code\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"Coding Plan models configured for Claude Code\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "qianfan-coding/ernie-4.5-turbo-20260402",
+      "providerId": "qianfan-coding",
+      "upstreamId": "ernie-4.5-turbo-20260402",
+      "displayName": "ERNIE 4.5 Turbo 20260402 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 123000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402: maximum input 123000 tokens (table 123k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 12288,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402: maximum output 12288 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"model configured as ANTHROPIC_MODEL/SMALL_FAST_MODEL for Claude Code\" — Coding Plan overview documents this id for use as a Claude Code backing model, which requires tool use — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"model configured as ANTHROPIC_MODEL/SMALL_FAST_MODEL for Claude Code\" — Coding Plan overview documents this id for use as a Claude Code backing model, which requires tool use — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 (read 2026-09-27): \"\" — same non-thinking Turbo id as qianfan/ernie-4.5-turbo-20260402",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ernie-4.5-turbo-20260402",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-coding/glm-5",
+      "providerId": "qianfan-coding",
+      "upstreamId": "glm-5",
+      "displayName": "GLM 5 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 198000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — glm-5: context 198000 tokens (vendor table rounds as 198k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 198000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — glm-5: maximum input 198000 tokens (table 198k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — glm-5: maximum output 131072 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 (read 2026-09-27): \"支持模型范围 ... 其他 kimi-k2.5 glm-5 minimax-m2.5\" — from Baidu's general FC support list, not Coding-Plan-specific",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 (read 2026-09-27): \"支持模型范围 ... 其他 kimi-k2.5 glm-5 minimax-m2.5\" — from Baidu's general FC support list, not Coding-Plan-specific",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/api-reference/llm/chat-completion (read 2026-09-27): \"reasoning_effort Controls the model's reasoning effort level, takes effect when thinking is enabled; supported values include max (default), high, low\" — Z.ai's generic chat-completion reference, not Coding-Plan-specific; a separate top-level thinking:{type:enabled|disabled} toggle also exists — the maker's effort values ['max', 'high', 'low'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qianfan-coding/glm-5.1",
+      "providerId": "qianfan-coding",
+      "upstreamId": "glm-5.1",
+      "displayName": "GLM 5.1 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 198000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — glm-5.1: context 198000 tokens (vendor table rounds as 198k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 198000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — glm-5.1: maximum input 198000 tokens (table 198k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — glm-5.1: maximum output 131072 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"listed as a Coding Plan model usable with Claude Code / coding agents\" — not in the general FC enumeration (only glm-5 is), so relying on the coding-agent-guide door — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"listed as a Coding Plan model usable with Claude Code / coding agents\" — not in the general FC enumeration (only glm-5 is), so relying on the coding-agent-guide door — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.1 (read 2026-09-27): \"multiple thinking modes for different scenarios\" — generic Z.ai model guide — the maker's effort values ['max', 'high', 'low'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "qianfan-coding/kimi-k2.5",
+      "providerId": "qianfan-coding",
+      "upstreamId": "kimi-k2.5",
+      "displayName": "Kimi K2.5 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 (read 2026-09-27): \"支持模型范围 ... 其他 kimi-k2.5 glm-5 minimax-m2.5\" — IMPORTANT: Baidu's own general retirement record shows Kimi-K2.5 registered retiring 2026-06-11→2026-07-09 (already past), and Moonshot itself decommissioned kimi-k2.5 on 2026-08-31; yet the Coding Plan page (imlg0beiu) still lists kimi-k2.5 with a deduction coefficient today. Contradiction not r...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 (read 2026-09-27): \"支持模型范围 ... 其他 kimi-k2.5 glm-5 minimax-m2.5\" — IMPORTANT: Baidu's own general retirement record shows Kimi-K2.5 registered retiring 2026-06-11→2026-07-09 (already past), and Moonshot itself decommissioned kimi-k2.5 on 2026-08-31; yet the Coding Plan page (imlg0beiu) still lists kimi-k2.5 with a deduction coefficient today. Contradiction not r...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/moonshotai/Kimi-K2.5 (read 2026-09-27): \"Context Length 256K\" — stated as \"256K\"; Baidu is a reseller/host of this exact model per the Coding Plan model list",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/moonshotai/Kimi-K2.5 (read 2026-09-27): \"instant and thinking modes ... {'thinking': {'type': 'disabled'}}\" — enabled/disabled toggle, no named effort levels documented on the model card",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "kimi-k2.5",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "qianfan-coding/minimax-m2.5",
+      "providerId": "qianfan-coding",
+      "upstreamId": "minimax-m2.5",
+      "displayName": "MiniMax M2.5 (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-09-27): \"tools Function tool definitions ... the deprecated function_call is not supported, please use the tools parameter\" — MiniMax's own docs; also present in Baidu's general FC list (其他 ... minimax-m2.5)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-09-27): \"tools Function tool definitions ... the deprecated function_call is not supported, please use the tools parameter\" — MiniMax's own docs; also present in Baidu's general FC list (其他 ... minimax-m2.5)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://platform.minimax.io/docs/api-reference/text-openai-api (read 2026-09-27): \"reasoning_effort Accepts low, medium, high, xhigh, and max; higher levels think more thoroughly\" — MiniMax's own official API reference explicitly lists MiniMax-M2.5 in its supported-models table — the maker's effort values ['low', 'medium', 'high', 'xhigh', 'max'] describe the maker's own API, not this host's, so no vocabulary is recorded",
+          "confidence": "inferred",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "qianfan-coding/qianfan-code-latest",
+      "providerId": "qianfan-coding",
+      "upstreamId": "qianfan-code-latest",
+      "displayName": "Qianfan Code Latest (Coding Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/imlg0beiu — Coding Plan FAQ says image/video understanding is not yet supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"终端内 AI 编程助手 ... 配置为 ANTHROPIC_MODEL/SMALL_FAST_MODEL/HAIKU/SONNET/OPUS\" — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj (read 2026-09-27): \"终端内 AI 编程助手 ... 配置为 ANTHROPIC_MODEL/SMALL_FAST_MODEL/HAIKU/SONNET/OPUS\" — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qianfan-code-latest",
+      "modelFamily": "other"
+    }
+  ]
+}

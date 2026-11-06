@@ -1,0 +1,1472 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "requiresUserEndpoint": true,
+    "endpointTemplate": "https://<account-identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "the endpoint is the OPERATOR'S OWN account host and is never reviewed by Winter — it is evaluated as a user endpoint",
+        "per-token billing in Snowflake AI Credits: no USD price is catalogued"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api — Snowflake documentation, retrieved 2026-09-27: `baseURL: \"https://<account-identifier>.snowflakecomputing.com/api/v2/cortex/v1\"`; \"The Chat Completions API follows the OpenAI specification\"; `-H \"Authorization: Bearer <SNOWFLAKE_PAT>\"` with a Snowflake Programmatic Access Token (PAT); \"Tool calling is supported for OpenAI and Claude models only.\"",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "snowflake-cortex/claude-4-sonnet",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-4-sonnet",
+      "displayName": "claude-4-sonnet",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-4-sonnet",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-haiku-4-5",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-haiku-4-5",
+      "displayName": "claude-haiku-4-5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-haiku-4-5 200,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-haiku-4-5 200,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-haiku-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-opus-4-5",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-opus-4-5",
+      "displayName": "claude-opus-4-5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-5 200,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-5 200,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-opus-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-opus-4-6",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-opus-4-6",
+      "displayName": "claude-opus-4-6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-6 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-6 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-opus-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-opus-4-7",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-opus-4-7",
+      "displayName": "claude-opus-4-7",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-7 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-7 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-opus-4.7",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-opus-4-8",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-opus-4-8",
+      "displayName": "claude-opus-4-8",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-8 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-4-8 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-opus-4.8",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-opus-5",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-opus-5",
+      "displayName": "claude-opus-5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-5 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-opus-5 1,000,000 128,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-opus-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-sonnet-4-5",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-sonnet-4-5",
+      "displayName": "claude-sonnet-4-5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-sonnet-4-5 200,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-sonnet-4-5 200,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-sonnet-4.5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-sonnet-4-6",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-sonnet-4-6",
+      "displayName": "claude-sonnet-4-6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-sonnet-4-6 1,000,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-sonnet-4-6 1,000,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-sonnet-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/claude-sonnet-5",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "claude-sonnet-5",
+      "displayName": "claude-sonnet-5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-sonnet-5 1,000,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"claude-sonnet-5 1,000,000 64,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "claude-sonnet-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "snowflake-cortex/deepseek-r1",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "deepseek-r1",
+      "displayName": "deepseek-r1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-r1",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "snowflake-cortex/llama3.1-405b",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "llama3.1-405b",
+      "displayName": "llama3.1-405b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama3.1-405b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/llama3.1-70b",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "llama3.1-70b",
+      "displayName": "llama3.1-70b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"llama3.1-70b 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"llama3.1-70b 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama3.1-70b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/llama3.1-8b",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "llama3.1-8b",
+      "displayName": "llama3.1-8b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"llama3.1-8b 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"llama3.1-8b 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama3.1-8b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/llama4-maverick",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "llama4-maverick",
+      "displayName": "llama4-maverick",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"llama4-maverick 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"llama4-maverick 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "llama4-maverick",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/mistral-7b",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "mistral-7b",
+      "displayName": "mistral-7b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"mistral-7b 32,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"mistral-7b 32,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-7b",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "snowflake-cortex/mistral-large",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "mistral-large",
+      "displayName": "mistral-large",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-large",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "snowflake-cortex/mistral-large2",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "mistral-large2",
+      "displayName": "mistral-large2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"mistral-large2 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"mistral-large2 128,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mistral-large2",
+      "modelFamily": "mistral"
+    },
+    {
+      "key": "snowflake-cortex/openai-gpt-4.1",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "openai-gpt-4.1",
+      "displayName": "openai-gpt-4.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-4.1 128,000 32,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-4.1 128,000 32,000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "openai-gpt-4.1",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/openai-gpt-5",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "openai-gpt-5",
+      "displayName": "openai-gpt-5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 272000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "openai-gpt-5",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/openai-gpt-5-mini",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "openai-gpt-5-mini",
+      "displayName": "openai-gpt-5-mini",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 272000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5-mini 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5-mini 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "openai-gpt-5-mini",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/openai-gpt-5-nano",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "openai-gpt-5-nano",
+      "displayName": "openai-gpt-5-nano",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 272000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5-nano 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5-nano 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "openai-gpt-5-nano",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/openai-gpt-5.1",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "openai-gpt-5.1",
+      "displayName": "openai-gpt-5.1",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 272000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5.1 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 8192,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability (read 2026-09-27): Model restrictions table (Context window / Max output, tokens): \"openai-gpt-5.1 272,000 8,192\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "openai-gpt-5.1",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/openai-gpt-5.2",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "openai-gpt-5.2",
+      "displayName": "openai-gpt-5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "openai-gpt-5.2",
+      "modelFamily": "other"
+    },
+    {
+      "key": "snowflake-cortex/snowflake-llama-3.3-70b",
+      "providerId": "snowflake-cortex",
+      "upstreamId": "snowflake-llama-3.3-70b",
+      "displayName": "snowflake-llama-3.3-70b",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Image understanding is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api (read 2026-09-27): \"Tool calling is supported for OpenAI and Claude models only.\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "snowflake-llama-3.3-70b",
+      "modelFamily": "other"
+    }
+  ]
+}

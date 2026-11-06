@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Alibaba Cloud Coding Plan China (Anthropic dialect)",
+  "description": "Alibaba Cloud Coding Plan China (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "qwen-coding-cn-anthropic",
+        "name": "Alibaba Cloud Coding Plan China (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Alibaba Cloud Coding Plan China (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to Alibaba Cloud Coding Plan China (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://coding.dashscope.aliyuncs.com/apps/anthropic"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1877 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "google-generate-content"
+    ],
+    "authKinds": [
+      "cloud-credential-chain"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "provider-native",
+    "liveCatalogAuthority": "partial",
+    "adapterId": "winter.vertex-gemini",
+    "family": "google",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/vertex/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "native cloud (R6-16): project/location endpoints and ADC (service-account RS256 JWT exchange or an explicit access-token ref) need their own auth proof"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "cloud-credential",
+      "citation": "https://cloud.google.com/vertex-ai — the vendor's own product page as OmniRoute's product catalog records it at 5458026. The credential is the OPERATOR'S OWN GCP project via Application Default Credentials, which is why the basis is cloud-credential rather than api-key. EVIDENCE TIER: pinned-upstream — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "vertex/DeepSeek-V4-Flash",
+      "providerId": "vertex",
+      "upstreamId": "DeepSeek-V4-Flash",
+      "displayName": "DeepSeek V4 Flash (Vertex Partner)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.deepseek.com/platform/ — DeepSeek V4 supports up to 1M context (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com — DeepSeek V4 API lists a 384K maximum output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "Vertex partner registry declares text input only.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: Vertex supplies no partner output-modality declaration, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash (read 2026-09-27): \"\"features\":{\"toolCalling\":true}\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash (read 2026-09-27): \"\"features\":{\"toolCalling\":true}\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "vertex/DeepSeek-V4-Pro",
+      "providerId": "vertex",
+      "upstreamId": "DeepSeek-V4-Pro",
+      "displayName": "DeepSeek V4 Pro (Vertex Partner)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.deepseek.com/platform/ — DeepSeek V4 supports up to 1M context (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://api-docs.deepseek.com — DeepSeek V4 API lists a 384K maximum output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "Vertex partner registry declares text input only.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: Vertex supplies no partner output-modality declaration, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro (read 2026-09-27): \"\"features\":{\"toolCalling\":true}\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro (read 2026-09-27): \"\"features\":{\"toolCalling\":true}\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "vertex/GLM-5.1-FP8",
+      "providerId": "vertex",
+      "upstreamId": "GLM-5.1-FP8",
+      "displayName": "GLM-5.1 (Vertex Partner)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.1 — GLM-5.1 model documentation declares a 1M-token context window (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.z.ai/guides/llm/glm-5.1 — GLM-5.1 model documentation declares a 128K maximum output (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "Vertex partner registry declares text input only.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: Vertex supplies no partner output-modality declaration, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.1 (read 2026-09-27): \"Powerful tool invocation capabilities, enabling integration with various external toolsets\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://docs.z.ai/guides/llm/glm-5.1 (read 2026-09-27): \"Powerful tool invocation capabilities, enabling integration with various external toolsets\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.1-fp8",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "vertex/Qwen3.6-35B-A3B",
+      "providerId": "vertex",
+      "upstreamId": "Qwen3.6-35B-A3B",
+      "displayName": "Qwen3.6 35B A3B (Vertex Partner)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models — Qwen3.6-35B-A3B context is 256K (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models — Qwen3.6-35B-A3B maximum output is 64K (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "Vertex partner registry declares text input only.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: Vertex supplies no partner output-modality declaration, so text is Winter's conservative LLM default.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-35B-A3B (read 2026-09-27): \"<tool_call>\\n<function=example_function_name>\" — Google's own Vertex partner-model docs page for this model 404s and Model Garden requires sign-in; maker fallback used",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/Qwen/Qwen3.6-35B-A3B (read 2026-09-27): \"<tool_call>\\n<function=example_function_name>\" — Google's own Vertex partner-model docs page for this model 404s and Model Garden requires sign-in; maker fallback used",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-35b-a3b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "vertex/gemini-2.5-flash",
+      "providerId": "vertex",
+      "upstreamId": "gemini-2.5-flash",
+      "displayName": "Gemini 2.5 Flash (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 2.5 uses numeric thinking_budget (1..24,576), so it has no named effort vocabulary (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-2.5-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "not-required",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Gemini 2.5 will have the signature in the first part (regardless of type). It is optional to return that part.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-2.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-2.5-flash-lite",
+      "providerId": "vertex",
+      "upstreamId": "gemini-2.5-flash-lite",
+      "displayName": "Gemini 2.5 Flash-Lite (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-lite — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-lite — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 2.5 uses numeric thinking_budget (512..24,576), so it has no named effort vocabulary (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [],
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-2.5-flash-lite"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "not-required",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Gemini 2.5 will have the signature in the first part (regardless of type). It is optional to return that part.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-2.5-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-2.5-pro",
+      "providerId": "vertex",
+      "upstreamId": "gemini-2.5-pro",
+      "displayName": "Gemini 2.5 Pro (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-pro — Vertex Gemini 2.5 Pro model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-pro — Vertex Gemini 2.5 Pro model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "upstream-static",
+        "confidence": "inferred",
+        "observedAt": "2026-09-05T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "upstream-static",
+          "confidence": "inferred",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §6.1 — Vertex serves the same generateContent surface, whose summaries are `part.thought === true` parts",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §6.1 — `config.thinkingConfig.includeThoughts: true` on generateContent, the surface Vertex serves. Same evidence as `google/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-2.5-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §6.1 for own-state acceptance (a `thoughtSignature` returns to the same model on its exact part, and Vertex serves the same generateContent surface) and §2.5 for the narrowness: a shared HTTP shape is never evidence of a shared domain, so the Vertex endpoint is a different provider boundary from the Gemini API even for the same model name.",
+          "confidence": "declared",
+          "observedAt": "2026-09-05T00:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-2.5-pro",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3-flash-preview",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash Preview (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash — function calling supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash — function calling supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-flash",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3-flash-preview"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3-flash-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.1-flash-lite",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash Lite (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite — function calling supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite — function calling supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "minimal",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.1-flash-lite"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.1-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.1-pro-preview",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.1-pro-preview",
+      "displayName": "Gemini 3.1 Pro Preview (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro — custom tools and function calling supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro — custom tools and function calling supported.",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.1-pro-preview"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.1-pro-preview",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.5-flash",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 3.5 Flash effort table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.5-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.5-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.5-flash-lite",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.5-flash-lite",
+      "displayName": "Gemini 3.5 Flash-Lite (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash-lite — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash-lite — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 3.5 Flash-Lite effort table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "minimal",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.5-flash-lite"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.5-flash-lite",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.6-flash",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.6-flash",
+      "displayName": "Gemini 3.6 Flash (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-6-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-6-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 3.6 Flash effort table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "minimal",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.6-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.6-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.7-flash",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.7-flash",
+      "displayName": "Gemini 3.7 Flash (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 3.7 Flash effort table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.7-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.7-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.8-flash",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.8-flash",
+      "displayName": "Gemini 3.8 Flash (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash — model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 3.8 Flash effort table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.8-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.8-flash",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-3.8-flash-cyber",
+      "providerId": "vertex",
+      "upstreamId": "gemini-3.8-flash-cyber",
+      "displayName": "Gemini 3.8 Flash Cyber (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash-cyber — allowlisted model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash-cyber — allowlisted model card (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "The model card states function calling is not supported.",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "The model card states function calling is not supported.",
+        "confidence": "declared"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking — Gemini 3.8 Flash Cyber effort table (retrieved 2026-09-19).",
+          "confidence": "declared",
+          "observedAt": "2026-09-19T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-3.8-flash-cyber"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-3.8-flash-cyber",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemini-4-argon",
+      "providerId": "vertex",
+      "upstreamId": "gemini-4-argon",
+      "displayName": "Gemini 4 Argon (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon — Token limits \"Context window 1,048,576\" (read 2026-10-29).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon states \"Maximum output tokens 1,048,576\" (long decode); the synchronous cap is 65,536 per https://ai.google.dev/gemini-api/docs/thinking (\"Setting `max_output_tokens > 65536` with `background=False` returns a `400` error\") — this row records the synchronous cap the adapter can use.",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon — Modalities: Text Input and output; Image / Audio / Video Input only",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: this LLM adapter normalizes text only; image generation is not surfaced through its turn event contract.",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon — Function calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon — Structured output Supported",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon — Thinking Supported; levels low/medium/high, default medium per https://ai.google.dev/gemini-api/docs/thinking (\"gemini-4-argon | On (medium) | low, medium, high\")",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — thought summaries \"display intermediate reasoning steps\"; summary parts are marked `thought: true` and the underlying chain is not exposed.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinkingConfig.includeThoughts",
+            "values": [
+              "true"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerationConfig (read 2026-10-05) — `ThinkingConfig.includeThoughts`: \"If true, the model will include its thoughts in the response ... If this is true, thoughts are returned only when available.\"; https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking (read 2026-10-05) — \"Thought summaries are supported in Gemini 2.5 and later models\", and this model is in that page's thinking list. The field is a BOOLEAN, recorded as its single enabling spelling, as on `vertex/gemini-2.5-pro`.",
+          "confidence": "declared",
+          "observedAt": "2026-10-05T00:00:00Z"
+        },
+        "continuation": "opaque-provider-state",
+        "continuationDomain": {
+          "value": [
+            "vertex/gemini-4-argon"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures (read 2026-10-29): Vertex returns `thoughtSignature` on response parts and documents passing it back on the exact part; \"Gemini 3 models enforce stricter validation ... If a required thought signature is not returned when using Gemini 3 models, the model will return a 400 error.\" https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): Gemini 2.5 signatures are optional to return, Gemini 3 and 4 mandatory on function calls. The GenerateContent adapter (shared by the Gemini API and Vertex) captures each signature and replays it on its part; same-model only -- a Vertex signature is never sent to the Gemini API or the reverse. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-turn",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"Strict validation is enforced for all function calls within the current turn. (Only current turn is required; we don't validate on previous turns)\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures (read 2026-10-29): \"When using Gemini 4 and Gemini 3 models, you must pass back thought signatures during function calling, otherwise you will get a validation error (4xx status code)\"; \"Function call `FC1` in the `1.` content block is missing a `thought_signature`\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "canonicalModelId": "gemini-4-argon",
+      "modelFamily": "gemini"
+    },
+    {
+      "key": "vertex/gemma-4-31b-it",
+      "providerId": "vertex",
+      "upstreamId": "gemma-4-31b-it",
+      "displayName": "Gemma 4 31B (Vertex)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/open-models/use-gemma — Gemma 4 31B accepts text and image input (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/open-models/use-gemma — Gemma 4 31B produces text (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/google/gemma-4-31b-it (read 2026-09-27): \"built-in function-calling support\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/google/gemma-4-31b-it (read 2026-09-27): \"built-in function-calling support\"",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "experimental",
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://ai.google.dev/gemma/docs/core (read 2026-09-27): \"medium models support 256K\" — CAVEAT: the page states this for \"medium\" models generically without explicitly confirming 31B falls in that size tier",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemma-4-31b-it",
+      "modelFamily": "gemma"
+    }
+  ]
+}

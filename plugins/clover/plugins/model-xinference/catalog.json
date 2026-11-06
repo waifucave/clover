@@ -1,0 +1,33 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "local-none"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "local",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.local-openai",
+    "family": "local-openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "approved",
+      "reasons": []
+    },
+    "pricingBasis": "free",
+    "admission": {
+      "basis": "local",
+      "citation": "local",
+      "tier": "local"
+    },
+    "scope": "llm"
+  },
+  "rows": []
+}

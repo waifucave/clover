@@ -1,0 +1,33 @@
+{
+  "manifest": 1,
+  "name": "OCI Generative AI",
+  "description": "OCI Generative AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "settings": {
+    "region": {
+      "type": "string",
+      "title": "region",
+      "description": "Your OCI Generative AI region, as its endpoint names it (https://inference.generativeai.<region>.oci.oraclecloud.com/openai/v1).",
+      "required": true
+    }
+  },
+  "contributes": {
+    "models": [
+      {
+        "provider": "oci",
+        "name": "OCI Generative AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OCI Generative AI API key. Clover keeps it in your credential store and adds it to OCI Generative AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://inference.generativeai.${setting:region}.oci.oraclecloud.com/openai/v1"
+        }
+      }
+    ]
+  }
+}

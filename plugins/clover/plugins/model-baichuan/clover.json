@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Baichuan",
+  "description": "Baichuan's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "baichuan",
+        "name": "Baichuan",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Baichuan API key. Clover keeps it in your credential store and adds it to Baichuan's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.baichuan-ai.com/v1"
+        }
+      }
+    ]
+  }
+}

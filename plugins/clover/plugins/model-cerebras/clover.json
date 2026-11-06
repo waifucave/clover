@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Cerebras",
+  "description": "Cerebras's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "cerebras",
+        "name": "Cerebras",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Cerebras API key. Clover keeps it in your credential store and adds it to Cerebras's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.cerebras.ai/v1"
+        }
+      }
+    ]
+  }
+}

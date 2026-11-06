@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Morph",
+  "description": "Morph's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "morph",
+        "name": "Morph",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Morph API key. Clover keeps it in your credential store and adds it to Morph's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.morphllm.com/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,507 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`.",
+        "The key and Base URL are issued per subscription and the account region must match the cluster (https://mimo.mi.com/docs/en-US/quick-start/faq/token-plan/Team-Benefits); a key is not documented to work on another cluster's host."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://mimo.mi.com/docs/en-US/tokenplan/Token%20Plan/quick-access — Xiaomi MiMo Token Plan quick access, retrieved 2026-09-25: the Amsterdam (Europe) cluster serves OpenAI-compatible `https://token-plan-ams.xiaomimimo.com/v1` and Anthropic-compatible `https://token-plan-ams.xiaomimimo.com/anthropic`; after subscribing the user receives an exclusive `tp-` key and Base URL (\"the Base URL shall be subject to what is displayed on the Token Plan page\"); billing is the subscription plan.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "xiaomi-token-plan-eu/mimo-v2.5",
+      "providerId": "xiaomi-token-plan-eu",
+      "upstreamId": "mimo-v2.5",
+      "displayName": "MiMo V2.5 (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: 1M-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: 128K maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: input modalities text, image, video, audio",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: Structured Output capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5 — mimo-v2.5: Context Caching capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/text-generation/deep-thinking — mimo-v2.5: deep-thinking supported; thinking.type enabled/disabled; enabled by default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:52:37Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29): streamed reasoning arrives in `delta.reasoning_content` -- \"Returns the complete thinking process\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/api/chat/openai-api.md (read 2026-10-29): \"During the multi-turn tool calls process in thinking mode, the model returns a `reasoning_content` field alongside `tool_calls`. To continue the conversation, it is recommended to keep all previous `reasoning_content` in the `messages` array for each subsequent request to achieve the best performance.\" (the Deep Thinking page's 400 rule names only the v2.6 models)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/api/chat/openai-api.md (read 2026-10-29): \"During the multi-turn tool calls process in thinking mode, the model returns a `reasoning_content` field alongside `tool_calls`. To continue the conversation, it is recommended to keep all previous `reasoning_content` in the `messages` array for each subsequent request to achieve the best performance.\" (the Deep Thinking page's 400 rule names only the v2.6 models)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "xiaomi-token-plan-eu/mimo-v2.5"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://mimo.mi.com/static/docs/api/chat/openai-api.md (read 2026-10-29): \"During the multi-turn tool calls process in thinking mode, the model returns a `reasoning_content` field alongside `tool_calls`. To continue the conversation, it is recommended to keep all previous `reasoning_content` in the `messages` array for each subsequent request to achieve the best performance.\" (the Deep Thinking page's 400 rule names only the v2.6 models) Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mimo-v2.5",
+      "modelFamily": "mimo"
+    },
+    {
+      "key": "xiaomi-token-plan-eu/mimo-v2.5-pro",
+      "providerId": "xiaomi-token-plan-eu",
+      "upstreamId": "mimo-v2.5-pro",
+      "displayName": "MiMo V2.5 Pro (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: 1M-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: 128K maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: input modalities text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: Structured Output capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.5-pro — mimo-v2.5-pro: Context Caching capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/text-generation/deep-thinking — mimo-v2.5-pro: deep-thinking supported; thinking.type enabled/disabled; enabled by default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:52:37Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29): streamed reasoning arrives in `delta.reasoning_content` -- \"Returns the complete thinking process\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/api/chat/openai-api.md (read 2026-10-29): \"During the multi-turn tool calls process in thinking mode, the model returns a `reasoning_content` field alongside `tool_calls`. To continue the conversation, it is recommended to keep all previous `reasoning_content` in the `messages` array for each subsequent request to achieve the best performance.\" (the Deep Thinking page's 400 rule names only the v2.6 models)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/api/chat/openai-api.md (read 2026-10-29): \"During the multi-turn tool calls process in thinking mode, the model returns a `reasoning_content` field alongside `tool_calls`. To continue the conversation, it is recommended to keep all previous `reasoning_content` in the `messages` array for each subsequent request to achieve the best performance.\" (the Deep Thinking page's 400 rule names only the v2.6 models)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "xiaomi-token-plan-eu/mimo-v2.5-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://mimo.mi.com/static/docs/api/chat/openai-api.md (read 2026-10-29): \"During the multi-turn tool calls process in thinking mode, the model returns a `reasoning_content` field alongside `tool_calls`. To continue the conversation, it is recommended to keep all previous `reasoning_content` in the `messages` array for each subsequent request to achieve the best performance.\" (the Deep Thinking page's 400 rule names only the v2.6 models) Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mimo-v2.5-pro",
+      "modelFamily": "mimo"
+    },
+    {
+      "key": "xiaomi-token-plan-eu/mimo-v2.6-flash",
+      "providerId": "xiaomi-token-plan-eu",
+      "upstreamId": "mimo-v2.6-flash",
+      "displayName": "MiMo V2.6 Flash (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: 1M-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: 128K maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: input modalities text, image, video, audio",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: Structured Output capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-flash — mimo-v2.6-flash: Context Caching capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/text-generation/deep-thinking — mimo-v2.6-flash: deep-thinking supported; thinking.type enabled/disabled; enabled by default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:52:37Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29): streamed reasoning arrives in `delta.reasoning_content` -- \"Returns the complete thinking process\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29), for mimo-v2.6-flash / -pro / -pro-ultraspeed: \"the assistant responses passed back in all subsequent user interaction rounds that contain tool calls must completely pass back the `reasoning_content` field, otherwise the API will return a 400 error\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29), for mimo-v2.6-flash / -pro / -pro-ultraspeed: \"the assistant responses passed back in all subsequent user interaction rounds that contain tool calls must completely pass back the `reasoning_content` field, otherwise the API will return a 400 error\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "xiaomi-token-plan-eu/mimo-v2.6-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29), for mimo-v2.6-flash / -pro / -pro-ultraspeed: \"the assistant responses passed back in all subsequent user interaction rounds that contain tool calls must completely pass back the `reasoning_content` field, otherwise the API will return a 400 error\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mimo-v2.6-flash",
+      "modelFamily": "mimo"
+    },
+    {
+      "key": "xiaomi-token-plan-eu/mimo-v2.6-pro",
+      "providerId": "xiaomi-token-plan-eu",
+      "upstreamId": "mimo-v2.6-pro",
+      "displayName": "MiMo V2.6 Pro (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: 1M-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: 128K maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: input modalities text, image, video, audio",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: Tool Call(s) capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: Structured Output capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro — mimo-v2.6-pro: Context Caching capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:52:37Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/text-generation/deep-thinking — mimo-v2.6-pro: deep-thinking supported; thinking.type enabled/disabled; enabled by default",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:52:37Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29): streamed reasoning arrives in `delta.reasoning_content` -- \"Returns the complete thinking process\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29), for mimo-v2.6-flash / -pro / -pro-ultraspeed: \"the assistant responses passed back in all subsequent user interaction rounds that contain tool calls must completely pass back the `reasoning_content` field, otherwise the API will return a 400 error\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "hard-error",
+          "source": "official-doc",
+          "sourceRef": "https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29), for mimo-v2.6-flash / -pro / -pro-ultraspeed: \"the assistant responses passed back in all subsequent user interaction rounds that contain tool calls must completely pass back the `reasoning_content` field, otherwise the API will return a 400 error\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "xiaomi-token-plan-eu/mimo-v2.6-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md (read 2026-10-29), for mimo-v2.6-flash / -pro / -pro-ultraspeed: \"the assistant responses passed back in all subsequent user interaction rounds that contain tool calls must completely pass back the `reasoning_content` field, otherwise the API will return a 400 error\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "mimo-v2.6-pro",
+      "modelFamily": "mimo"
+    }
+  ]
+}
