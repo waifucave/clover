@@ -11,9 +11,10 @@ import { FileDeviceRegistry } from "../../devices/registry";
 import { SystemClock } from "../../clock/system-clock";
 import { DeviceKey } from "../../identity/device-key";
 import { PairingService } from "../pairing";
-import { followRegistry, SidecarWire } from "../sidecar-wire";
+import { followRegistry, SidecarWire, type SidecarWireOptions, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
 import { CloverLinkTransport } from "../transport";
+import { WireOffline, type WireStream } from "../wire";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
@@ -24,11 +25,11 @@ afterEach(async () => {
   stops = [];
 });
 
-async function device(name: string) {
+async function device(name: string, extra: Partial<SidecarWireOptions> = {}) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
   const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-")), key, clock, self: { name } });
-  const wire = await SidecarWire.start({ binary: BIN, key, relay: "disabled", n0Lookup: false, bind: "127.0.0.1:0" });
+  const wire = await SidecarWire.start({ binary: BIN, key, relay: "disabled", n0Lookup: false, bind: "127.0.0.1:0", ...extra });
   stops.push(() => wire.close());
   const report = await wire.settledReport();
   return { name, store, key, registry, wire, direct: report.direct };
@@ -170,7 +171,230 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     const closed = await (conn as { closed: Promise<{ code: number }> }).closed;
     expect(closed.code).toBe(2);
   }, 20_000);
+
+  test("a big transfer to a slow reader keeps what each side holds within the stream window, and the reader can answer after the writer's FIN (S6.2)", async () => {
+    const a = await device("Studio");
+    const b = await device("Laptop");
+    a.wire.allow([b.key.publicKey]);
+    b.wire.allow([a.key.publicKey]);
+    const W = STREAM_WINDOW;
+    const total = 48 * 1024 * 1024;
+    const chunk = 256 * 1024;
+    // The reader takes nothing until `go`, then takes its time: a pause after every 512 KiB.
+    let go!: () => void;
+    const started = new Promise<void>((r) => (go = r));
+    let reading = false;
+    let got = 0;
+    let since = 0;
+    const theirs = new Bun.CryptoHasher("sha256");
+    const finished = new Promise<WireStream>((resolve) => {
+      b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
+        ws.onData(async (c) => {
+          if (!reading) await started;
+          got += c.byteLength;
+          theirs.update(c);
+          since += c.byteLength;
+          if (since >= 512 * 1024) {
+            since = 0;
+            await Bun.sleep(5);
+          }
+        });
+        ws.onFin(() => resolve(ws));
+      }));
+    });
+    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "clover/link/1", timeoutMs: 5000 });
+    const s = conn.openStream(0);
+    const ours = new Bun.CryptoHasher("sha256");
+    const base = crypto.getRandomValues(new Uint8Array(chunk));
+    let written = 0;
+    const writing = (async () => {
+      for (let i = 0; written < total; i++) {
+        const c = base.slice();
+        new DataView(c.buffer).setUint32(0, i);
+        ours.update(c);
+        await s.write(c);
+        written += c.byteLength;
+      }
+      s.finish();
+    })();
+
+    // Nothing is read: the writer is held back after QUIC's stream window and a window on each side of each pipe.
+    await Bun.sleep(1500);
+    const held = written;
+    await Bun.sleep(400);
+    expect(written).toBe(held);
+    expect(held).toBeGreaterThanOrEqual(W);
+    // QUIC's stream window (1.25 MB), plus a window read into the reader's side and one queued in the writer's.
+    expect(held).toBeLessThanOrEqual(1_250_000 + 3 * W + chunk);
+    const bound = async () => {
+      const [sa, sb] = await Promise.all([a.wire.stats(), b.wire.stats()]);
+      expect(sa.core.queuedWrites).toBeLessThanOrEqual(chunk);
+      expect(sa.core.unackedWrites).toBeLessThanOrEqual(W);
+      expect(sa.sidecar.queuedWrites).toBeLessThanOrEqual(W);
+      expect(sb.sidecar.unconsumed).toBeLessThanOrEqual(W);
+      expect(sb.sidecar.outBytes).toBeLessThanOrEqual(W);
+      expect(sb.core.unconsumed).toBeLessThanOrEqual(W);
+      return { sa, sb };
+    };
+    const { sb } = await bound();
+    // The reader's whole window waits on the core's side, none of it past it.
+    expect(sb.sidecar.unconsumed + sb.core.unconsumed).toBeGreaterThan(0);
+
+    // Then it reads, slowly, and the bounds hold all the way.
+    reading = true;
+    go();
+    let sampling = true;
+    const samples = (async () => {
+      let n = 0;
+      while (sampling) {
+        await bound();
+        n++;
+        await Bun.sleep(40);
+      }
+      return n;
+    })();
+    const ws = await finished;
+    await writing;
+    sampling = false;
+    expect(await samples).toBeGreaterThan(0);
+    expect(got).toBe(written);
+    expect(theirs.digest("hex")).toBe(ours.digest("hex"));
+
+    // The writer finished; the reader's own direction is still open, and its answer gets back.
+    const answer = new Promise<number>((resolve) => {
+      let n = 0;
+      s.onData((c) => {
+        n += c.byteLength;
+      });
+      s.onFin(() => resolve(n));
+    });
+    await ws.write(new Uint8Array(3 * W).fill(1));
+    ws.finish();
+    expect(await answer).toBe(3 * W);
+  }, 90_000);
+
+  test("a reset gets through while the writer waits on a reader that takes nothing", async () => {
+    const a = await device("Studio");
+    const b = await device("Laptop");
+    a.wire.allow([b.key.publicKey]);
+    b.wire.allow([a.key.publicKey]);
+    const reset = new Promise<number>((resolve) => {
+      b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
+        ws.onData(() => new Promise<void>(() => undefined));
+        ws.onReset(resolve);
+      }));
+    });
+    const conn = await a.wire.dial({ key: b.key.publicKey, direct: b.direct }, { alpn: "clover/link/1", timeoutMs: 5000 });
+    const s = conn.openStream(0);
+    const writes: Promise<unknown>[] = [];
+    for (let i = 0; i < 32; i++) writes.push(s.write(new Uint8Array(256 * 1024)).then(() => "ok", (e: unknown) => e));
+    await Bun.sleep(500);
+    expect((await a.wire.stats()).sidecar.queuedWrites).toBeGreaterThan(0);
+    s.reset(1);
+    expect(await reset).toBe(1);
+    const settled = await Promise.all(writes);
+    expect(settled.some((r) => r instanceof WireOffline)).toBe(true);
+    // The writer let its queue go with the stream.
+    let left = -1;
+    for (let i = 0; i < 100 && left !== 0; i++) {
+      left = (await a.wire.stats()).sidecar.queuedWrites;
+      if (left !== 0) await Bun.sleep(20);
+    }
+    expect(left).toBe(0);
+  }, 20_000);
+
+  test("the controller is BBR with its window sized to each path, and control messages get through during a bulk transfer (S6.5)", async () => {
+    const where = new Map<string, DeviceLinks>();
+    const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
+    const start = async (name: string) => {
+      const l = await startDeviceLinks({
+        home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-cc-")), store: new MemorySecretStore(), clock, self: { name }, directory,
+        sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false },
+      });
+      where.set(l.key.id, l);
+      stops.push(() => l.close());
+      return l;
+    };
+    const a = await start("Studio");
+    const b = await start("Laptop");
+    await pairBoth(a, b);
+    b.transport.handle("echo", (p) => p);
+    const received = new Promise<number>((resolve) => {
+      b.transport.onStream("blob", (st) => {
+        let n = 0;
+        st.onData((c) => (n += c.byteLength));
+        st.onEnd(() => resolve(n));
+      });
+    });
+    const link = await a.transport.connect(b.key.id);
+    expect(await link.request<number>("echo", 1)).toBe(1);
+
+    const total = 96 * 1024 * 1024;
+    const piece = new Uint8Array(256 * 1024).fill(9);
+    let done = false;
+    const s = link.openStream("blob", "files");
+    const writing = (async () => {
+      for (let n = 0; n < total; n += piece.byteLength) await s.write(piece);
+      s.end();
+    })();
+    // Control requests all through the transfer.
+    const took: number[] = [];
+    const asking = (async () => {
+      while (!done) {
+        const t = performance.now();
+        expect(await link.request<number>("echo", took.length)).toBe(took.length);
+        took.push(performance.now() - t);
+        await Bun.sleep(5);
+      }
+    })();
+    // The window, mid-transfer and after: BBR's, within its floor and ceiling, and once the path's rate is known,
+    // 1.25 times its bandwidth-delay product plus the ACK aggregation seen.
+    const check = async () => {
+      const st = (await (a.wire as SidecarWire).stats()).sidecar;
+      expect(st.congestion).toBe("bbr");
+      expect(st.quic).toMatchObject({ windowGain: 1.25, windowFloor: 64 * 1024, windowCeiling: 16 * 1024 * 1024, streamWindow: 1_250_000 });
+      const paths = st.conns.flatMap((c) => c.paths);
+      const sel = paths.find((p) => p.selected === true);
+      expect(sel).toBeDefined();
+      const bbr = sel!.bbr as { mode: string; bandwidth: number; minRttNs: number; ackHeight: number; window: number; sized: number; recovery: boolean };
+      expect(bbr).not.toBeNull();
+      expect(bbr.window).toBeLessThanOrEqual(16 * 1024 * 1024);
+      if (bbr.mode === "probeBw") {
+        const bdp = (bbr.bandwidth * bbr.minRttNs) / 1e9;
+        const want = Math.min(16 * 1024 * 1024, Math.max(64 * 1024, 1.25 * bdp + bbr.ackHeight));
+        expect(Math.abs(bbr.sized - want)).toBeLessThanOrEqual(2);
+        if (!bbr.recovery) expect(bbr.window).toBeLessThanOrEqual(bbr.sized);
+      }
+      return bbr.mode;
+    };
+    const modes: string[] = [];
+    await Bun.sleep(300);
+    modes.push(await check());
+    await writing;
+    done = true;
+    await asking;
+    expect(await received).toBe(total);
+    modes.push(await check());
+    expect(modes).toContain("probeBw");
+    expect(took.length).toBeGreaterThan(3);
+    const sorted = [...took].sort((x, y) => x - y);
+    // Loopback: generous bounds, but a control message never waits for the bulk stream to drain.
+    expect(sorted[Math.floor(sorted.length / 2)]!).toBeLessThan(250);
+    expect(sorted.at(-1)!).toBeLessThan(2000);
+
+    // `cubic` keeps noq's own controller.
+    const c = await device("Cubic", { congestion: "cubic" });
+    expect((await c.wire.stats()).sidecar.congestion).toBe("cubic");
+  }, 90_000);
 });
+
+async function pairBoth(a: DeviceLinks, b: DeviceLinks): Promise<void> {
+  const view = await a.pairing.begin();
+  const joined = await b.pairing.join(view.qr!);
+  await waitFor(() => a.pairing.get(view.pairingId)?.status === "words");
+  await Promise.all([a.pairing.confirm(view.pairingId, joined.words!, { terminal: true }), b.pairing.confirm(view.pairingId, joined.words!, { terminal: true })]);
+  await waitFor(() => a.registry.get(b.key.id) !== undefined && b.registry.get(a.key.id) !== undefined);
+}
 
 async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
   const end = Date.now() + ms;

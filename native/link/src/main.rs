@@ -5,7 +5,19 @@
 //!
 //! Frames, both ways: a big-endian u32 length, then that many bytes. The first byte says what follows:
 //! * `0`: a JSON control message (`{"op": …}` from the core, `{"ev": …}` to it);
-//! * `1`: stream bytes, a big-endian u64 stream id and the data.
+//! * `1`: stream bytes, a big-endian u64 stream id and the data;
+//! * `2`: credit, a big-endian u64 stream id and a big-endian u32 byte count.
+//!
+//! Backpressure (S6.2 of H-M1's review): every stream has a window (`init`'s `window`, 2 MiB by default) each way
+//! across the pipe, so neither process buffers without bound.
+//! * Writes: the core keeps at most a window of a stream's bytes sent here and not yet taken by QUIC. Each data frame's
+//!   bytes are credited back (`2`) once `write_all` has handed them to QUIC, which waits while the peer's flow control
+//!   or the connection's send window is full; so a blocked QUIC send side stops the core's writes.
+//! * Reads: this side reads a stream from QUIC only while the core has credit for it (the window, then what the core
+//!   credits back as its reader takes the bytes). Bytes not read stay in QUIC's receive buffer, whose flow control then
+//!   holds the peer back.
+//! * The `out` channel to stdout is unbounded in type, but every byte on it is a stream's data under its credit, or a
+//!   small event.
 //!
 //! Congestion control and windows (§8.3): quinn's BBR (`bbr.rs`) by default, its window sized to 1.25 times each
 //! path's bandwidth-delay product. QUIC's flow-control windows can't do that sizing: they are set per connection
@@ -29,28 +41,34 @@ use std::{
     net::SocketAddr,
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use iroh::endpoint::{Connection, ConnectionError, ReadError, RecvStream, SendStream, VarInt};
+use iroh::endpoint::{Connection, ConnectionError, ReadError, RecvStream, SendStream, VarInt, WriteError};
 use n0_future::StreamExt;
 use serde_json::{json, Value};
 use tokio::{
     io::AsyncReadExt,
-    sync::{mpsc, Mutex},
+    sync::{mpsc, oneshot, Mutex, Semaphore},
 };
 
 const T_JSON: u8 = 0;
 const T_DATA: u8 = 1;
+const T_CREDIT: u8 = 2;
 const MAX_FRAME: usize = 16 * 1024 * 1024 + 16;
 const LINK_ALPN: &str = "clover/link/1";
 const CLOSE_UNPAIRED: u32 = 2;
 const CLOSE_REVOKED: u32 = 3;
+const RESET_ABORTED: u32 = 1;
 const RESET_CONN_LOST: u32 = 3;
+/// A stream's window across the pipe when `init` names none (the core's `STREAM_WINDOW`).
+const DEFAULT_WINDOW: usize = 2 * 1024 * 1024;
+/// The most read from QUIC at once for the core.
+const READ_CHUNK: usize = 64 * 1024;
 /// QUIC's per-stream receive window: noq's own 1.25 MB, and no more. noq 1.4.0's receive assembler keeps each
 /// full-packet chunk apart, compacts a stream holding over 2048 of them, and closes the whole connection
 /// (INTERNAL_ERROR "too many gaps in stream buffer") if over 1024 remain; a bigger window lets a reader that pauses,
@@ -66,22 +84,62 @@ const QUIC_SEND_WINDOW: u64 = bbr::WINDOW_CEILING;
 enum Out {
     Json(Value),
     Data(u64, Vec<u8>),
+    Credit(u64, u32),
 }
 
 enum StreamCmd {
     Write(Vec<u8>),
     Finish,
-    Reset(u32),
+}
+
+/// One stream: what the main loop and the control ops reach of its two tasks (one owns the send half, one the
+/// receive half).
+struct StreamEntry {
+    conn: u64,
+    cmds: mpsc::UnboundedSender<StreamCmd>,
+    /// The core's writes queued here, not yet taken by QUIC; the core keeps them under the window.
+    queued: Arc<AtomicUsize>,
+    /// Bytes the core will still take of this stream's incoming data.
+    credit: Arc<Semaphore>,
+    /// The core's reset (with its code), to each task: it doesn't wait behind queued writes. Dropping them, as a
+    /// closed connection does, ends both tasks too.
+    stop: Option<oneshot::Sender<u32>>,
+    reset: Option<oneshot::Sender<u32>>,
+}
+
+impl StreamEntry {
+    fn reset(&mut self, code: u32) {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(code);
+        }
+        if let Some(reset) = self.reset.take() {
+            let _ = reset.send(code);
+        }
+    }
+}
+
+/// The receiving halves a stream's tasks take.
+struct StreamHalves {
+    rx: mpsc::UnboundedReceiver<StreamCmd>,
+    stop: oneshot::Receiver<u32>,
+    reset: oneshot::Receiver<u32>,
+    queued: Arc<AtomicUsize>,
+    credit: Arc<Semaphore>,
+    /// The tasks still running; the last one out removes the entry, so a stream stays writable after the peer's FIN.
+    live: Arc<AtomicU8>,
 }
 
 struct Sidecar {
     ep: iroh::Endpoint,
     out: mpsc::UnboundedSender<Out>,
+    /// Stream bytes on `out` not yet written to stdout.
+    out_bytes: Arc<AtomicUsize>,
+    window: usize,
     congestion: &'static str,
     conns: Mutex<HashMap<u64, Connection>>,
     /// Codes this side closed a connection with, for its `closed` event.
     local_close: Mutex<HashMap<u64, (u32, String)>>,
-    streams: Mutex<HashMap<u64, mpsc::UnboundedSender<StreamCmd>>>,
+    streams: Mutex<HashMap<u64, StreamEntry>>,
     /// The paired devices' keys; it starts empty, so nothing gets in before the core says who may.
     allow: Mutex<HashSet<[u8; 32]>>,
     /// Revoked devices' keys: closed with "revoked", so the other side stops re-dialling.
@@ -108,6 +166,14 @@ fn unhex32(s: &str) -> Result<[u8; 32]> {
         *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).context("a key is hex")?;
     }
     Ok(out)
+}
+
+fn keys(v: &Value) -> Result<HashSet<[u8; 32]>> {
+    let mut set = HashSet::new();
+    for k in v.as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
+        set.insert(unhex32(k)?);
+    }
+    Ok(set)
 }
 
 fn is_lan(addr: &SocketAddr) -> bool {
@@ -174,13 +240,14 @@ fn paths_detail(conn: &Connection) -> Vec<Value> {
 }
 
 impl Sidecar {
-    async fn bind(init: &Value, out: mpsc::UnboundedSender<Out>) -> Result<Arc<Self>> {
+    async fn bind(init: &Value, out: mpsc::UnboundedSender<Out>, out_bytes: Arc<AtomicUsize>) -> Result<Arc<Self>> {
         let seed = unhex32(init["seed"].as_str().ok_or_else(|| anyhow!("init needs the seed"))?)?;
         let secret = iroh::SecretKey::from_bytes(&seed);
         let alpns: Vec<Vec<u8>> = init["alpns"]
             .as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.as_bytes().to_vec())).collect())
             .unwrap_or_else(|| vec![LINK_ALPN.as_bytes().to_vec()]);
+        let window = init["window"].as_u64().map(|w| w.clamp(64 * 1024, 64 * 1024 * 1024) as usize).unwrap_or(DEFAULT_WINDOW);
         let congestion = match init["congestion"].as_str() {
             None | Some("bbr") => "bbr",
             Some("cubic") => "cubic",
@@ -222,6 +289,8 @@ impl Sidecar {
         Ok(Arc::new(Sidecar {
             ep,
             out,
+            out_bytes,
+            window,
             congestion,
             conns: Mutex::new(HashMap::new()),
             local_close: Mutex::new(HashMap::new()),
@@ -241,20 +310,25 @@ impl Sidecar {
             "relay": addr.relay_urls().next().map(|u| u.to_string()),
             "bound": self.ep.bound_sockets().iter().map(|a| a.to_string()).collect::<Vec<_>>(),
             "congestion": self.congestion,
+            "window": self.window,
         })
     }
 
-    /// Registers a connection and starts its watchers: incoming streams, path changes and the close.
-    async fn adopt(self: &Arc<Self>, conn: Connection) -> u64 {
+    /// Registers a connection, tells the core (`first`, given the id), and only then starts its watchers, so the core
+    /// knows the connection before any of its streams.
+    async fn adopt(self: &Arc<Self>, conn: Connection, first: impl FnOnce(u64) -> Value) -> u64 {
         let id = self.next_conn.fetch_add(1, Ordering::Relaxed);
         self.conns.lock().await.insert(id, conn.clone());
+        emit(&self.out, first(id));
         let me = self.clone();
         let c = conn.clone();
         tokio::spawn(async move {
             while let Ok((send, recv)) = c.accept_bi().await {
                 let sid = me.next_stream.fetch_add(2, Ordering::Relaxed);
-                me.stream_tasks(sid, send, recv).await;
+                let halves = me.register(sid, id).await;
+                // The core hears of the stream before its first bytes.
                 emit(&me.out, json!({ "ev": "stream", "conn": id, "stream": sid }));
+                me.run_stream(sid, send, recv, halves);
             }
         });
         let me = self.clone();
@@ -274,6 +348,8 @@ impl Sidecar {
         tokio::spawn(async move {
             let why = conn.closed().await;
             me.conns.lock().await.remove(&id);
+            // Its streams go with it: their tasks may be waiting on the core, not on QUIC, and wouldn't see the close.
+            me.streams.lock().await.retain(|_, s| s.conn != id);
             let mine = me.local_close.lock().await.remove(&id);
             let (code, reason, local) = match (mine, why) {
                 (Some((code, reason)), _) => (code, reason, true),
@@ -288,11 +364,26 @@ impl Sidecar {
         id
     }
 
-    /// One stream: a task that owns its send half and takes the core's writes in order, and one that reads.
-    async fn stream_tasks(self: &Arc<Self>, sid: u64, send: SendStream, recv: RecvStream) {
-        let (tx, rx) = mpsc::unbounded_channel::<StreamCmd>();
-        self.streams.lock().await.insert(sid, tx);
-        self.adopt_opened(sid, send, recv, rx).await;
+    /// A stream's entry, registered before its QUIC stream is open so the core's writes queue in order.
+    async fn register(&self, sid: u64, conn: u64) -> StreamHalves {
+        let (cmds, rx) = mpsc::unbounded_channel::<StreamCmd>();
+        let (stop_tx, stop) = oneshot::channel();
+        let (reset_tx, reset) = oneshot::channel();
+        let queued = Arc::new(AtomicUsize::new(0));
+        let credit = Arc::new(Semaphore::new(self.window));
+        let live = Arc::new(AtomicU8::new(2));
+        self.streams.lock().await.insert(
+            sid,
+            StreamEntry { conn, cmds, queued: queued.clone(), credit: credit.clone(), stop: Some(stop_tx), reset: Some(reset_tx) },
+        );
+        StreamHalves { rx, stop, reset, queued, credit, live }
+    }
+
+    /// One of a stream's two tasks is done; the second removes its entry.
+    async fn task_done(&self, sid: u64, live: &AtomicU8) {
+        if live.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.streams.lock().await.remove(&sid);
+        }
     }
 
     async fn accept_loop(self: Arc<Self>) {
@@ -314,15 +405,14 @@ impl Sidecar {
                     }
                 }
                 let path = path_of(&conn);
-                let id = me.adopt(conn).await;
-                emit(&me.out, json!({ "ev": "incoming", "conn": id, "peerKey": hex(&peer), "alpn": alpn, "path": path }));
+                me.adopt(conn, |id| json!({ "ev": "incoming", "conn": id, "peerKey": hex(&peer), "alpn": alpn, "path": path })).await;
             });
         }
     }
 
     async fn dial(self: Arc<Self>, m: Value) {
         let req = m["id"].clone();
-        let result: Result<(u64, Value)> = async {
+        let result: Result<Connection> = async {
             let key = iroh::PublicKey::from_bytes(&unhex32(m["key"].as_str().unwrap_or_default())?)?;
             let alpn = m["alpn"].as_str().unwrap_or(LINK_ALPN).to_string();
             let direct_only = m["directOnly"].as_bool() == Some(true);
@@ -340,15 +430,16 @@ impl Sidecar {
                 }
             }
             let timeout = Duration::from_millis(m["timeoutMs"].as_u64().unwrap_or(10_000));
-            let conn = tokio::time::timeout(timeout, self.ep.connect(iroh::EndpointAddr::from_parts(key, addrs), alpn.as_bytes()))
+            Ok(tokio::time::timeout(timeout, self.ep.connect(iroh::EndpointAddr::from_parts(key, addrs), alpn.as_bytes()))
                 .await
-                .map_err(|_| anyhow!("no path answered in time"))??;
-            let path = path_of(&conn);
-            Ok((self.adopt(conn).await, path))
+                .map_err(|_| anyhow!("no path answered in time"))??)
         }
         .await;
         match result {
-            Ok((conn, path)) => emit(&self.out, json!({ "ev": "dialed", "id": req, "conn": conn, "path": path })),
+            Ok(conn) => {
+                let path = path_of(&conn);
+                self.adopt(conn, |id| json!({ "ev": "dialed", "id": req, "conn": id, "path": path })).await;
+            }
             Err(e) => emit(&self.out, json!({ "ev": "dialFailed", "id": req, "error": e.to_string() })),
         }
     }
@@ -359,20 +450,19 @@ impl Sidecar {
                 tokio::spawn(self.clone().dial(m));
             }
             "open" => {
-                let conn = self.conns.lock().await.get(&m["conn"].as_u64().unwrap_or(0)).cloned();
+                let cid = m["conn"].as_u64().unwrap_or(0);
+                let conn = self.conns.lock().await.get(&cid).cloned();
                 let sid = m["stream"].as_u64().unwrap_or(0);
                 let priority = m["priority"].as_i64().unwrap_or(0) as i32;
                 match conn {
                     Some(c) => {
+                        let halves = self.register(sid, cid).await;
                         let me = self.clone();
-                        // Registered before the open completes, so writes that follow queue in order.
-                        let (tx, rx) = mpsc::unbounded_channel::<StreamCmd>();
-                        self.streams.lock().await.insert(sid, tx);
                         tokio::spawn(async move {
                             match c.open_bi().await {
                                 Ok((send, recv)) => {
                                     let _ = send.set_priority(priority);
-                                    me.adopt_opened(sid, send, recv, rx).await;
+                                    me.run_stream(sid, send, recv, halves);
                                 }
                                 Err(_) => {
                                     me.streams.lock().await.remove(&sid);
@@ -384,11 +474,18 @@ impl Sidecar {
                     None => emit(&self.out, json!({ "ev": "reset", "stream": sid, "code": RESET_CONN_LOST })),
                 }
             }
-            "finish" | "reset" => {
+            "finish" => {
                 let sid = m["stream"].as_u64().unwrap_or(0);
-                if let Some(tx) = self.streams.lock().await.get(&sid) {
-                    let cmd = if m["op"] == "finish" { StreamCmd::Finish } else { StreamCmd::Reset(m["code"].as_u64().unwrap_or(1) as u32) };
-                    let _ = tx.send(cmd);
+                if let Some(s) = self.streams.lock().await.get(&sid) {
+                    let _ = s.cmds.send(StreamCmd::Finish);
+                }
+            }
+            "reset" => {
+                // Both ways at once: the send half is reset, and the reader stops the receive half.
+                let sid = m["stream"].as_u64().unwrap_or(0);
+                let code = m["code"].as_u64().unwrap_or(RESET_ABORTED as u64) as u32;
+                if let Some(s) = self.streams.lock().await.get_mut(&sid) {
+                    s.reset(code);
                 }
             }
             "close" => {
@@ -401,14 +498,8 @@ impl Sidecar {
                 }
             }
             "allow" => {
-                let mut set = HashSet::new();
-                for k in m["keys"].as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
-                    set.insert(unhex32(k)?);
-                }
-                let mut gone = HashSet::new();
-                for k in m["revoked"].as_array().into_iter().flatten().filter_map(|v| v.as_str()) {
-                    gone.insert(unhex32(k)?);
-                }
+                let set = keys(&m["keys"])?;
+                let gone = keys(&m["revoked"])?;
                 *self.allow.lock().await = set;
                 *self.revoked.lock().await = gone;
             }
@@ -433,16 +524,24 @@ impl Sidecar {
                 }));
             }
             "stats" => {
-                // Each path's congestion state (diagnostics, and the windows' tests).
+                // What this side holds for the core and for QUIC, and each path's congestion state (diagnostics and
+                // the backpressure tests).
+                let (streams, queued, unconsumed) = {
+                    let s = self.streams.lock().await;
+                    let queued: usize = s.values().map(|e| e.queued.load(Ordering::Relaxed)).sum();
+                    let unconsumed: usize = s.values().map(|e| self.window.saturating_sub(e.credit.available_permits())).sum();
+                    (s.len(), queued, unconsumed)
+                };
                 let conns: Vec<Value> = {
                     let c = self.conns.lock().await;
                     c.iter().map(|(id, conn)| json!({ "conn": id, "paths": paths_detail(conn) })).collect()
                 };
                 emit(&self.out, json!({
-                    "ev": "stats", "id": m["id"].clone(), "congestion": self.congestion,
+                    "ev": "stats", "id": m["id"].clone(), "congestion": self.congestion, "window": self.window,
                     "quic": { "streamWindow": QUIC_STREAM_WINDOW, "connWindow": QUIC_CONN_WINDOW, "sendWindow": QUIC_SEND_WINDOW,
                               "windowFloor": bbr::WINDOW_FLOOR, "windowCeiling": bbr::WINDOW_CEILING, "windowGain": bbr::WINDOW_GAIN },
-                    "conns": conns,
+                    "streams": streams, "queuedWrites": queued, "unconsumed": unconsumed,
+                    "outBytes": self.out_bytes.load(Ordering::Relaxed), "conns": conns,
                 }));
             }
             "shutdown" => return Ok(false),
@@ -451,33 +550,152 @@ impl Sidecar {
         Ok(true)
     }
 
-    async fn adopt_opened(self: &Arc<Self>, sid: u64, mut send: SendStream, mut recv: RecvStream, mut rx: mpsc::UnboundedReceiver<StreamCmd>) {
+    /// The core's bytes for a stream, under its window.
+    async fn data(&self, sid: u64, bytes: &[u8]) {
+        let mut streams = self.streams.lock().await;
+        let Some(s) = streams.get_mut(&sid) else { return };
+        let queued = s.queued.fetch_add(bytes.len(), Ordering::AcqRel) + bytes.len();
+        if queued > self.window + MAX_FRAME {
+            // The core wrote past the window: end the stream rather than buffer without bound.
+            s.queued.fetch_sub(bytes.len(), Ordering::AcqRel);
+            s.reset(RESET_ABORTED);
+            emit(&self.out, json!({ "ev": "error", "message": format!("stream {sid} was written past its window") }));
+            emit(&self.out, json!({ "ev": "reset", "stream": sid, "code": RESET_ABORTED }));
+            return;
+        }
+        let _ = s.cmds.send(StreamCmd::Write(bytes.to_vec()));
+    }
+
+    /// The core took `n` more bytes of a stream: this side may read that many more from QUIC.
+    async fn credit(&self, sid: u64, n: usize) {
+        if let Some(s) = self.streams.lock().await.get(&sid) {
+            s.credit.add_permits(n.min(self.window));
+        }
+    }
+
+    fn run_stream(self: &Arc<Self>, sid: u64, mut send: SendStream, mut recv: RecvStream, h: StreamHalves) {
+        let StreamHalves { mut rx, mut stop, mut reset, queued, credit, live } = h;
         let me = self.clone();
-        tokio::spawn(async move {
-            while let Some(cmd) = rx.recv().await {
-                let failed = match cmd {
-                    StreamCmd::Write(data) => send.write_all(&data).await.is_err(),
-                    StreamCmd::Finish => {
-                        let _ = send.finish();
-                        false
-                    }
-                    StreamCmd::Reset(code) => {
-                        let _ = send.reset(VarInt::from_u32(code));
-                        break;
-                    }
-                };
-                if failed {
-                    emit(&me.out, json!({ "ev": "reset", "stream": sid, "code": RESET_CONN_LOST }));
-                    break;
-                }
-            }
-        });
-        let me = self.clone();
+        let live_w = live.clone();
+        // The writer: the core's writes in order, each credited back once QUIC has taken it. A reset cuts in, even
+        // while a write waits on a peer that doesn't read.
         tokio::spawn(async move {
             loop {
-                match recv.read_chunk(64 * 1024).await {
+                let cmd = tokio::select! {
+                    biased;
+                    code = &mut reset => {
+                        if let Ok(code) = code {
+                            let _ = send.reset(VarInt::from_u32(code));
+                        }
+                        break;
+                    }
+                    cmd = rx.recv() => match cmd {
+                        Some(cmd) => cmd,
+                        None => break,
+                    },
+                };
+                match cmd {
+                    StreamCmd::Write(data) => {
+                        let n = data.len();
+                        let r = tokio::select! {
+                            biased;
+                            code = &mut reset => {
+                                queued.fetch_sub(n, Ordering::AcqRel);
+                                if let Ok(code) = code {
+                                    let _ = send.reset(VarInt::from_u32(code));
+                                }
+                                break;
+                            }
+                            r = send.write_all(&data) => r,
+                        };
+                        queued.fetch_sub(n, Ordering::AcqRel);
+                        match r {
+                            Ok(()) => {
+                                let _ = me.out.send(Out::Credit(sid, n as u32));
+                            }
+                            Err(e) => {
+                                let code = match e {
+                                    WriteError::Stopped(code) => u32::try_from(code.into_inner()).unwrap_or(RESET_CONN_LOST),
+                                    _ => RESET_CONN_LOST,
+                                };
+                                emit(&me.out, json!({ "ev": "reset", "stream": sid, "code": code }));
+                                break;
+                            }
+                        }
+                    }
+                    StreamCmd::Finish => {
+                        let _ = send.finish();
+                        break;
+                    }
+                }
+            }
+            // Writes still queued are dropped with the stream; they no longer count as held.
+            while let Ok(cmd) = rx.try_recv() {
+                if let StreamCmd::Write(data) = cmd {
+                    queued.fetch_sub(data.len(), Ordering::AcqRel);
+                }
+            }
+            me.task_done(sid, &live_w).await;
+        });
+        let me = self.clone();
+        // The reader: from QUIC only as far as the core's credit goes. While it waits for credit it still hears the
+        // peer's reset, which QUIC would otherwise report only at the next read.
+        tokio::spawn(async move {
+            let mut may_reset = true;
+            loop {
+                let want = tokio::select! {
+                    code = &mut stop => {
+                        if let Ok(code) = code {
+                            let _ = recv.stop(VarInt::from_u32(code));
+                        }
+                        break;
+                    }
+                    r = recv.received_reset(), if may_reset => match r {
+                        Ok(Some(code)) => {
+                            emit(&me.out, json!({ "ev": "reset", "stream": sid, "code": u32::try_from(code.into_inner()).unwrap_or(RESET_CONN_LOST) }));
+                            break;
+                        }
+                        // Everything has arrived: no reset can come now, only the core's credit matters.
+                        Ok(None) => {
+                            may_reset = false;
+                            continue;
+                        }
+                        Err(_) => {
+                            emit(&me.out, json!({ "ev": "reset", "stream": sid, "code": RESET_CONN_LOST }));
+                            break;
+                        }
+                    },
+                    p = credit.acquire() => match p {
+                        Ok(p) => {
+                            p.forget();
+                            let more = credit.available_permits().min(READ_CHUNK - 1);
+                            if more > 0 {
+                                if let Ok(p) = credit.try_acquire_many(more as u32) {
+                                    p.forget();
+                                }
+                            }
+                            1 + more
+                        }
+                        Err(_) => break,
+                    },
+                };
+                let read = tokio::select! {
+                    code = &mut stop => {
+                        if let Ok(code) = code {
+                            let _ = recv.stop(VarInt::from_u32(code));
+                        }
+                        break;
+                    }
+                    r = recv.read_chunk(want) => r,
+                };
+                match read {
                     Ok(Some(chunk)) => {
-                        let _ = me.out.send(Out::Data(sid, chunk.to_vec()));
+                        if chunk.len() < want {
+                            credit.add_permits(want - chunk.len());
+                        }
+                        me.out_bytes.fetch_add(chunk.len(), Ordering::AcqRel);
+                        // `Bytes` into a `Vec` keeps the buffer when it is the only owner.
+                        let _ = me.out.send(Out::Data(sid, chunk.into()));
                     }
                     Ok(None) => {
                         emit(&me.out, json!({ "ev": "fin", "stream": sid }));
@@ -493,7 +711,7 @@ impl Sidecar {
                     }
                 }
             }
-            me.streams.lock().await.remove(&sid);
+            me.task_done(sid, &live).await;
         });
     }
 }
@@ -512,27 +730,35 @@ async fn read_frame(input: &mut tokio::io::Stdin, buf: &mut Vec<u8>) -> Result<b
     Ok(true)
 }
 
-fn writer(mut rx: mpsc::UnboundedReceiver<Out>) {
+fn writer(mut rx: mpsc::UnboundedReceiver<Out>, out_bytes: Arc<AtomicUsize>) {
     let stdout = std::io::stdout();
     let mut w = std::io::BufWriter::with_capacity(1 << 20, stdout.lock());
     while let Some(first) = rx.blocking_recv() {
         let mut next = Some(first);
         while let Some(o) = next {
-            let body = match o {
+            let ok = match o {
                 Out::Json(v) => {
-                    let mut b = vec![T_JSON];
-                    b.extend_from_slice(v.to_string().as_bytes());
-                    b
+                    let body = v.to_string();
+                    w.write_all(&(body.len() as u32 + 1).to_be_bytes())
+                        .and_then(|_| w.write_all(&[T_JSON]))
+                        .and_then(|_| w.write_all(body.as_bytes()))
                 }
                 Out::Data(sid, data) => {
-                    let mut b = Vec::with_capacity(9 + data.len());
-                    b.push(T_DATA);
-                    b.extend_from_slice(&sid.to_be_bytes());
-                    b.extend_from_slice(&data);
-                    b
+                    let r = w
+                        .write_all(&(data.len() as u32 + 9).to_be_bytes())
+                        .and_then(|_| w.write_all(&[T_DATA]))
+                        .and_then(|_| w.write_all(&sid.to_be_bytes()))
+                        .and_then(|_| w.write_all(&data));
+                    out_bytes.fetch_sub(data.len(), Ordering::AcqRel);
+                    r
                 }
+                Out::Credit(sid, n) => w
+                    .write_all(&13u32.to_be_bytes())
+                    .and_then(|_| w.write_all(&[T_CREDIT]))
+                    .and_then(|_| w.write_all(&sid.to_be_bytes()))
+                    .and_then(|_| w.write_all(&n.to_be_bytes())),
             };
-            if w.write_all(&(body.len() as u32).to_be_bytes()).and_then(|_| w.write_all(&body)).is_err() {
+            if ok.is_err() {
                 return;
             }
             next = rx.try_recv().ok();
@@ -546,7 +772,9 @@ fn writer(mut rx: mpsc::UnboundedReceiver<Out>) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let (tx, rx) = mpsc::unbounded_channel::<Out>();
-    let writer = std::thread::spawn(move || writer(rx));
+    let out_bytes = Arc::new(AtomicUsize::new(0));
+    let writer_bytes = out_bytes.clone();
+    let writer = std::thread::spawn(move || writer(rx, writer_bytes));
     let mut input = tokio::io::stdin();
     let mut buf = Vec::new();
     // The first frame is `init`, with the seed: nothing binds before the key is here.
@@ -558,7 +786,7 @@ async fn main() -> Result<()> {
     if init["op"] != "init" {
         bail!("expected init on stdin");
     }
-    let sidecar = match Sidecar::bind(&init, tx.clone()).await {
+    let sidecar = match Sidecar::bind(&init, tx.clone(), out_bytes).await {
         Ok(s) => s,
         Err(e) => {
             emit(&tx, json!({ "ev": "error", "message": e.to_string(), "fatal": true }));
@@ -586,9 +814,12 @@ async fn main() -> Result<()> {
             }
             T_DATA if buf.len() >= 9 => {
                 let sid = u64::from_be_bytes(buf[1..9].try_into().unwrap());
-                if let Some(s) = sidecar.streams.lock().await.get(&sid) {
-                    let _ = s.send(StreamCmd::Write(buf[9..].to_vec()));
-                }
+                sidecar.data(sid, &buf[9..]).await;
+            }
+            T_CREDIT if buf.len() >= 13 => {
+                let sid = u64::from_be_bytes(buf[1..9].try_into().unwrap());
+                let n = u32::from_be_bytes(buf[9..13].try_into().unwrap()) as usize;
+                sidecar.credit(sid, n).await;
             }
             _ => {}
         }
