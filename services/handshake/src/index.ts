@@ -8,6 +8,7 @@
 //   …    /v1/groups/<group>[/…]           a group's calls, signed by a member
 //   …    /v1/accounts/self[/…]            the account channel, with the device's account token
 //   GET  /v1/socket?ticket=…              a member's WebSocket
+//   PUT|GET|DELETE /v1/rendezvous/<slot>  a short pairing code's slot (unsigned: the box is sealed under the code)
 //
 // Everything stateless is checked here, before any Durable Object is called: the route, sizes, the signature or the
 // token, and the rate limits. Nothing here logs a body, a key, a signature or a token.
@@ -33,12 +34,15 @@ import {
   SCOPE_ID_RE,
   type ScopeKind,
   SIG_RE,
+  SLOT_RE,
+  SLOT_TOKEN_RE,
 } from "../client/wire";
 import { mintTicket, readTicket, verifySignature } from "./auth";
 import type { Env } from "./env";
 import type { Call, HandshakeDO, Reply } from "./handshake-do";
 
 export { HandshakeDO } from "./handshake-do";
+export { RendezvousDO } from "./rendezvous-do";
 
 const METHODS = "GET, POST, PUT, DELETE";
 
@@ -90,6 +94,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       }
     }
     if (area === "accounts" && id === "self") return await accountCall(request, env, rest);
+    if (area === "rendezvous" && id !== undefined && SLOT_RE.test(id) && rest.length === 0) return await rendezvous(request, env, id);
     return errorResponse(404, "not_found");
   } catch (err) {
     if (err instanceof Refused) return err.response;
@@ -193,6 +198,11 @@ function ttlOf(value: unknown, max: number, fallback: number, min = 1): number {
 }
 
 function boxOf(value: unknown, kind: Kind): Uint8Array {
+  return sealedBox(value, KINDS[kind].maxBox);
+}
+
+/** A sealed box from the body: canonical base64url, not empty, at most `maxBox` bytes once decoded. */
+function sealedBox(value: unknown, maxBox: number): Uint8Array {
   if (typeof value !== "string") return refuse(400, "bad_request");
   let box: Uint8Array;
   try {
@@ -201,7 +211,7 @@ function boxOf(value: unknown, kind: Kind): Uint8Array {
     return refuse(400, "bad_request");
   }
   if (box.length === 0) return refuse(400, "bad_request");
-  if (box.length > KINDS[kind].maxBox) return refuse(413, "too_large");
+  if (box.length > maxBox) return refuse(413, "too_large");
   return box;
 }
 
@@ -334,6 +344,47 @@ async function accountCall(request: Request, env: Env, rest: string[]): Promise<
   const { op, args } = accountOp(request.method, rest, await readJson(request));
   const call: Call = { scope: "account", id: identity.account, member: identity.device, op, ...(args ? { args } : {}) };
   return finish(env, call, await stubFor(env, "account", identity.account).call(call));
+}
+
+// ---- rendezvous: a short pairing code's slot ----
+
+async function limitAddress(request: Request, env: Env): Promise<void> {
+  if (!(await env.ADDRESS_RATE.limit({ key: addressKey(request) })).success) rateLimited();
+}
+
+const slotTokenHash = async (token: string): Promise<string> => b64u(await sha256(new TextEncoder().encode(token)));
+
+async function rendezvous(request: Request, env: Env, slot: string): Promise<Response> {
+  const stub = env.RENDEZVOUS.getByName(slot);
+  const now = Date.now();
+  switch (request.method) {
+    case "PUT": {
+      await limitRegistration(request, env);
+      const body = await readJson(request);
+      const { maxTtl, maxBox } = LIMITS.rendezvous;
+      const token = body.token;
+      if (typeof token !== "string" || !SLOT_TOKEN_RE.test(token)) return errorResponse(400, "bad_request");
+      const ttl = ttlOf(body.ttl, maxTtl, maxTtl);
+      sealedBox(body.box, maxBox);
+      const result = await stub.put(body.box as string, await slotTokenHash(token), ttl, now);
+      if (!("expiresAt" in result)) return errorResponse(409, "taken");
+      return json({ slot, expiresAt: result.expiresAt }, result.status);
+    }
+    case "GET": {
+      await limitAddress(request, env);
+      const found = await stub.get(now);
+      return found ? json(found) : errorResponse(404, "not_found");
+    }
+    case "DELETE": {
+      await limitAddress(request, env);
+      const token = bearerToken(request);
+      if (!token || !SLOT_TOKEN_RE.test(token)) return errorResponse(401, "unauthorized");
+      const result = await stub.remove(await slotTokenHash(token), now);
+      if (result.status === 204) return new Response(null, { status: 204 });
+      return errorResponse(result.status, result.status === 403 ? "forbidden" : "not_found");
+    }
+  }
+  return errorResponse(405, "method_not_allowed", {}, { allow: "GET, PUT, DELETE" });
 }
 
 // ---- sockets ----

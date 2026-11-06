@@ -11,6 +11,11 @@ export const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 export const SIG_RE = /^[A-Za-z0-9_-]{86}$/;
 /** A device id in the account channel (the account token's `dev`). */
 export const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+/** A short pairing code's rendezvous slot: 5 bytes (40 bits of the code), base64url. Canonical: the last character
+ *  carries 4 bits and two zero bits. */
+export const SLOT_RE = /^[A-Za-z0-9_-]{6}[AEIMQUYcgkosw048]$/;
+/** The token that removes a rendezvous slot: 16 to 32 random bytes, base64url, chosen by the host at `PUT`. */
+export const SLOT_TOKEN_RE = /^[A-Za-z0-9_-]{22,43}$/;
 
 export type ScopeKind = "pair" | "group" | "account";
 
@@ -49,6 +54,8 @@ export const LIMITS = {
   /** The longest an account-channel socket stays open before it must be opened again with a fresh token. */
   accountSocketMaxMs: 24 * 3600_000,
   lease: { minTtl: 10, maxTtl: 300, defaultTtl: 60 },
+  /** A short code's slot: seconds it may live (a pairing lasts 10 minutes), and its sealed box's decoded bytes. */
+  rendezvous: { maxTtl: 600, maxBox: 4096 },
 } as const;
 
 export const CLOSE = {

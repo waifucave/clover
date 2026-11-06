@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // handshake.waifucave.com: the waifucave handshake (PROTOCOL.md). Pairs, groups and accounts each get a Durable
   // Object that keeps their current state only: members, the latest sealed records, briefly queued sealed messages,
-  // and the lease.
+  // and the lease. A short pairing code's slot gets one too, for its ten minutes at most.
   //
   // The top level is the local profile that the tests and `wrangler dev` use; env.production is what the first
   // deploy at the live gates would use. Nothing here has been deployed. TICKET_SECRET is never in this file: it comes
@@ -23,9 +23,12 @@
     "WEB_ORIGINS": "http://127.0.0.1:8790"
   },
   "durable_objects": {
-    "bindings": [{ "name": "HANDSHAKE", "class_name": "HandshakeDO" }]
+    "bindings": [
+      { "name": "HANDSHAKE", "class_name": "HandshakeDO" },
+      { "name": "RENDEZVOUS", "class_name": "RendezvousDO" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HandshakeDO"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HandshakeDO", "RendezvousDO"] }],
   // Each limit counts per Cloudflare location, not globally.
   "ratelimits": [
     // Pair and group registrations per client address (IPv6 by /64): the hardest limit.
@@ -50,7 +53,10 @@
         "WEB_ORIGINS": "https://clover.waifucave.com"
       },
       "durable_objects": {
-        "bindings": [{ "name": "HANDSHAKE", "class_name": "HandshakeDO" }]
+        "bindings": [
+          { "name": "HANDSHAKE", "class_name": "HandshakeDO" },
+          { "name": "RENDEZVOUS", "class_name": "RendezvousDO" }
+        ]
       },
       "ratelimits": [
         { "name": "REGISTER_RATE", "namespace_id": "73101", "simple": { "limit": 10, "period": 60 } },

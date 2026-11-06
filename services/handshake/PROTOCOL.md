@@ -229,6 +229,23 @@ The same records, messages, socket and lease, for the devices of one account. Th
   - Its records, queued messages and socket go at once, and so does its lease.
   - This service keeps nothing else about it.
 
+## Rendezvous: short pairing codes
+
+A pairing by short code (lane H, `links/pairing.ts`) needs a place where the joiner finds the host before they share anything but the code. The code carries 40 bits that name a slot here and 80 bits of secret. The host puts its key and addresses in the slot, sealed under the secret, so this service can neither read them nor swap the host's key. None of these calls is signed, since the joiner has no key the service knows yet.
+
+| Request | Body / answer |
+| :- | :- |
+| `PUT /v1/rendezvous/<slot>` | `{"box", "ttl", "token"}` → 201 `{"slot","expiresAt"}`; 200 when the same token puts it again; 409 `taken` when another token holds it |
+| `GET /v1/rendezvous/<slot>` | → 200 `{"box","expiresAt"}`, or 404 `not_found` when there is none or it has ended |
+| `DELETE /v1/rendezvous/<slot>` | `Authorization: Bearer <token>` → 204; 403 `forbidden` for another token; 404 when it's already gone |
+
+- **`slot`:** the code's 5 bytes as base64url, 7 characters; a non-canonical one is 404.
+- **`box`:** the host's offer, sealed by the client (lane H seals it as a pair box under a key from the code's secret, with the slot as its scope). At most 4096 bytes decoded.
+- **`ttl`:** seconds, 1–600 (default 600). A pairing lasts 10 minutes.
+- **`token`:** 16–32 random bytes as base64url, chosen by the host. The service keeps only its SHA-256, and only the token removes the slot early.
+- **The slot holds one box.** The first token to take it holds it until it is removed or ends; a host that gets 409 picks a new code. The service keeps nothing about a slot after it ends.
+- **The client:** `HandshakeRendezvous` (`client/rendezvous.ts`) has the `publish`, `lookup` and `remove` lane H's pairing asks for, and keeps each slot's token in memory.
+
 ## Boxes: the client-side encryption
 
 The service never opens a box. Both clients must seal them alike:
@@ -269,9 +286,9 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
 
 ## Limits
 
-- **Registration** (`POST /v1/pairs`, `POST /v1/groups`, `POST …/members`) is limited hardest: 10 a minute per client address.
+- **Registration** (`POST /v1/pairs`, `POST /v1/groups`, `POST …/members`, and a rendezvous `PUT`) is limited hardest: 10 a minute per client address.
   - IPv6 addresses are grouped by /64. IPv4 counts per address, with room for carrier-grade NAT.
-- **Everything else:** 120 requests a minute per member and scope (per device in the account channel), and signed requests 600 a minute per client address, counted before membership is known.
+- **Everything else:** 120 requests a minute per member and scope (per device in the account channel), and signed requests 600 a minute per client address, counted before membership is known. A rendezvous `GET` or `DELETE` counts toward that same 600.
 - **Each limit counts per Cloudflare location.**
 - **Sizes:**
   - bodies up to 16 KiB, and boxes up to their kind's size
@@ -279,7 +296,7 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
   - 16 queued messages per recipient
   - 32 members per group
 - **Retention:**
-  - Records and messages are kept until their `ttl` at most.
+  - Records and messages are kept until their `ttl` at most, and so is a rendezvous slot.
   - A pair's or group's membership stays until it is ended or emptied; registrations never expire.
   - The lease and a member's last `t` stay with the membership.
   - Tombstones are kept 30 days, and a group's removed keys as long as the group.

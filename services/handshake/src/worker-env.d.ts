@@ -9,7 +9,7 @@ declare global {
     }
     interface GlobalProps {
       mainModule: typeof import("./index");
-      durableNamespaces: "HandshakeDO";
+      durableNamespaces: "HandshakeDO" | "RendezvousDO";
     }
   }
 }

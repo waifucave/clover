@@ -1,7 +1,10 @@
 import type { HandshakeDO } from "./handshake-do";
+import type { RendezvousDO } from "./rendezvous-do";
 
 export interface Env {
   HANDSHAKE: DurableObjectNamespace<HandshakeDO>;
+  /** One object per short code's slot (PROTOCOL.md, "Rendezvous"). */
+  RENDEZVOUS: DurableObjectNamespace<RendezvousDO>;
   /** Pair and group registrations, per client address (IPv6 by /64): the hardest limit. */
   REGISTER_RATE: RateLimit;
   /** Signed and token calls, per member (or device) and scope. */
