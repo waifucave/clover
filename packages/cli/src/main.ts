@@ -1934,7 +1934,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
         let user: unknown = null;
         let wfp: unknown = null;
         try {
-          user = (JSON.parse(ust.out) as { user?: unknown }).user ?? null;
+          user = JSON.parse(ust.out);
         } catch { /* not ready below */ }
         const st = await run([...statusArgs(launcher, slot.sublayer)]);
         if (st.code === 0) {
