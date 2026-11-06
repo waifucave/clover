@@ -53,6 +53,11 @@ export const LEASE_LINK = {
 
 /** How many (scope, epoch) pairs a computer remembers passing on. */
 const PASSED_ON_MAX = 256;
+/** How many claims from one peer a computer passes on: a burst, then a few a second. */
+const PASS_ON_BURST = 4;
+const PASS_ON_PER_SECOND = 4;
+/** At most one read of the record per this many ms on peers' claims. */
+const CLAIM_READ_EVERY_MS = 3_000;
 
 /** After the service refused a new tenure `not_voter`, how long before trying again. */
 const NOT_VOTER_BACKOFF_MS = 60_000;
@@ -107,6 +112,10 @@ export class LeaseCoordinator {
   #takeFrom: string | undefined;
   /** The (scope, epoch) pairs already passed on, oldest first. */
   readonly #passed = new Set<string>();
+  /** Per peer, how many of its claims this computer may still pass on now. */
+  readonly #passBuckets = new Map<string, { tokens: number; at: number }>();
+  /** When a peer's claim last made this computer read the record (monotonic). */
+  #claimReadAt = Number.NEGATIVE_INFINITY;
   /** Until when (monotonic) not to try a new tenure again, after the service said this computer doesn't vote yet. */
   #notVoterUntil = Number.NEGATIVE_INFINITY;
   #handBackHook: (() => Promise<void>) | undefined;
@@ -217,16 +226,30 @@ export class LeaseCoordinator {
     this.#kick();
   }
 
-  /** A peer's hello named this epoch: if it's newer than any seen, read the record again. */
+  /** A peer named this epoch (its hello, or an announcement): a claim of a later lease. The lease holds it (past
+   *  its deadline it stops this computer acting); this computer passes it on, a few a second from each peer, so a
+   *  computer the new holder never paired with hears it too, and reads the record, at most every few seconds, so the
+   *  service's answer settles it (a false one gets that peer ignored for a TTL; check 6, L8). */
   peerEpoch(epoch: number, scope?: string, from?: string): void {
-    // Another computer holds a later lease: this one stops acting until its own renew or acquire succeeds, and passes
-    // the word on once, so a computer the new holder never paired with hears it too.
-    if (this.lease.peerEpoch(epoch, scope)) {
-      this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: not acting until the handshake says otherwise`);
-      this.#passOn(scope ?? this.lease.scopeId(), epoch, from);
-      this.#lastRead = Number.NEGATIVE_INFINITY;
-      this.#kick();
-    }
+    if (!this.lease.peerEpoch(epoch, scope, from)) return;
+    if (from === undefined || this.#passToken(from)) this.#passOn(scope ?? this.lease.scopeId(), epoch, from);
+    const mono = this.#o.clock.monotonic();
+    if (mono - this.#claimReadAt < CLAIM_READ_EVERY_MS) return;
+    this.#claimReadAt = mono;
+    this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: reading the record`);
+    void this.lease.refresh().catch(() => undefined).then(() => this.#kick());
+  }
+
+  /** One pass-on from `from`, a few a second at most (a token bucket per peer). */
+  #passToken(from: string): boolean {
+    const mono = this.#o.clock.monotonic();
+    const b = this.#passBuckets.get(from) ?? { tokens: PASS_ON_BURST, at: mono };
+    b.tokens = Math.min(PASS_ON_BURST, b.tokens + ((mono - b.at) / 1000) * PASS_ON_PER_SECOND);
+    b.at = mono;
+    this.#passBuckets.set(from, b);
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
   }
 
   /** The service showed this computer a newer epoch (its own tenure, or a read or push of another's): every live link

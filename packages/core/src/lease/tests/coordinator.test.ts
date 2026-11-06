@@ -313,6 +313,40 @@ describe("the main computer", () => {
     expect(await twoActing(w, names)).toBe(0);
   }, 30_000);
 
+  test("L8: under a stream of fake epochs from a paired computer, the holder acts on and renews only on its schedule; the fakes aren't passed on (check 6)", async () => {
+    const w = await computers(["Studio", "Laptop", "Server"], undefined, [["Studio", "Laptop"], ["Studio", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    const scope = w.n("Studio").mc.lease.scopeId();
+    const link = await w.c.devices.get("Laptop")!.transport.connect(w.id("Studio"));
+    let relayed = 0;
+    w.c.devices.get("Server")!.transport.onNotify("link.lease.epoch", () => relayed++);
+    const since = w.service.log.length;
+    let stop = false;
+    let fake = 1_000_000;
+    const stream = (async () => {
+      while (!stop) {
+        link.notify("link.lease.epoch", { scope, epoch: fake++ });
+        await Bun.sleep(5);
+      }
+    })();
+    const N = 400;
+    let acting = 0;
+    for (let i = 0; i < N; i++) {
+      await Bun.sleep(5);
+      if (w.n("Studio").mc.lease.canAct()) acting++;
+    }
+    stop = true;
+    await stream;
+    expect(acting).toBeGreaterThanOrEqual(N * 0.9);
+    // Renews stay on the schedule (one every renewEveryMs), not one per fake.
+    const renews = w.service.log.slice(since).filter((l) => l === `${w.id("Studio")} renew`).length;
+    expect(renews).toBeLessThanOrEqual(Math.ceil((N * 10) / TIMINGS.renewEveryMs) + 4);
+    // Of about 400 fakes the studio passed on a few a second at most (a burst of 4, then 4 a second, and none while
+    // the laptop is distrusted).
+    expect(relayed).toBeLessThanOrEqual(4 + Math.ceil((N * 10 * 4) / 1000));
+  }, 30_000);
+
   test("only a computer that votes starts a new tenure: a non-voter never takes over a lapse, nor is handed the lease, and a not_voter refusal stops its tries (check 3)", async () => {
     let refused = 0;
     const w = await computers(["Studio", "Laptop", "Server"], (name, scope) => {

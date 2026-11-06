@@ -55,31 +55,31 @@ describe("MainLease beyond the contract", () => {
     expect(lease.canAct()).toBe(false);
   });
 
-  test("a peer naming a newer epoch stops the holder acting until its own renew succeeds (check 3, L3)", async () => {
+  test("a peer's newer epoch is a claim: before its deadline the holder acts on; past it, acting through the exception, it stops; a claim the service disproves gets that peer ignored a TTL (checks 3 to 6)", async () => {
     const clock = new FakeClock();
     const service = new MemoryLeaseService(clock);
-    const studio = memoryLease(service, { self: "studio", clock });
+    const studio = memoryLease(service, { self: "studio", clock, mayOutlast: () => true });
     await studio.acquire();
     expect(studio.canAct()).toBe(true);
-    // Not newer: nothing changes.
-    expect(studio.peerEpoch(1)).toBe(false);
+    // Not newer, or another scope's: no claim.
+    expect(studio.peerEpoch(1, undefined, "laptop")).toBe(false);
+    expect(studio.peerEpoch(9, "group:other", "laptop")).toBe(false);
+    // A newer epoch: a claim. Before the deadline the service's word stands, and the holder acts on (check 6, L8).
+    expect(studio.peerEpoch(2, studio.scopeId(), "laptop")).toBe(true);
     expect(studio.canAct()).toBe(true);
-    // Another scope's epoch is never compared (check 4).
-    expect(studio.peerEpoch(9, "group:other")).toBe(false);
-    expect(studio.canAct()).toBe(true);
-    // Newer in this scope: another computer may hold a later lease; nothing is acted on until the service says so.
-    expect(studio.peerEpoch(2, studio.scopeId())).toBe(true);
+    // Past the deadline, acting only through the exception, the open claim stops it (L3, L4).
+    clock.advance(studio.ttlMs - studio.marginMs + 1);
     expect(studio.canAct()).toBe(false);
-    await studio.renew();
-    expect(studio.canAct()).toBe(true);
-    // A bogus epoch costs one renew and blocks nothing after it (check 5, L7): a peer's word never raises the
-    // newest epoch the service has shown, so a real epoch 2 still stops the holder.
-    expect(studio.peerEpoch(1_000_000_000)).toBe(true);
+    // A renew sent after the claim shows epoch 1: the claim was false. The holder acts again, and the laptop's claims
+    // are ignored for a TTL; another peer's still count.
     await studio.renew();
     expect(studio.canAct()).toBe(true);
     expect(studio.highestEpoch()).toBe(1);
-    expect(studio.peerEpoch(2)).toBe(true);
-    expect(studio.canAct()).toBe(false);
+    expect(studio.distrusts("laptop")).toBe(true);
+    expect(studio.peerEpoch(3, undefined, "laptop")).toBe(false);
+    expect(studio.peerEpoch(3, undefined, "server")).toBe(true);
+    clock.advance(studio.ttlMs);
+    expect(studio.distrusts("laptop")).toBe(false);
   });
 
   test("an acquire answered after a release gives the lease back instead of holding it unasked (check 3)", async () => {
