@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": "Browser",
+  "description": "The browser panel: tabs, back, forward and reload, the address bar, and the frame the Clover Browser's live view fills.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "browser"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "key": "browser",
+        "title": "Browser",
+        "component": "BrowserPanel"
+      }
+    ]
+  }
+}

@@ -769,6 +769,13 @@
   white-space: nowrap;
 }
 
+.clv-devices-manage {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 20px 4px;
+}
+
 .clv-group-title {
   display: flex;
   align-items: center;

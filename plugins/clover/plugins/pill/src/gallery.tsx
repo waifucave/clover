@@ -2,7 +2,8 @@
 // story draws still frames: the shape's spring stepped to a moment, the plume built for a moment, so a
 // picture is the same on every run.
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import type { SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "@waifucave/clover-plugin-island";
 import { emptyDraft, type PillCard, type QuestionDraft } from "./model/cards";
 import { PILL, barLook, cardSize, contentReveal, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "./model/metrics";
 import { CHILD_PALETTES, PALETTES } from "./model/plume";
@@ -10,7 +11,8 @@ import { turnPreview } from "./model/preview";
 import { springAt } from "./model/spring";
 import { t } from "./strings";
 import { AGENTS, ALPHA, APPROVAL, APPROVAL_ALWAYS, EXCHANGES, LINK, MANY_AGENTS, QUESTION, QUESTIONS, SEALED, TARGETS, THROWS } from "./fixtures";
-import { Bar, BarMenus, type BarMenu } from "./ui/Bar";
+import { Bar, BarMenus, type BarMenu, type PillTarget } from "./ui/Bar";
+import { pillTargets } from "./model/targets";
 import { CardBody } from "./ui/Card";
 import { Children } from "./ui/Children";
 import { Plume } from "./ui/Plume";
@@ -18,6 +20,8 @@ import { Preview } from "./ui/Preview";
 import { mockSealedKit } from "./mock-kit";
 import { SealedKitContext } from "./ui/sealed";
 import { Shell } from "./ui/Shell";
+import { PillSurface } from "./ui/PillSurface";
+import { pillWindow, RESTING_CANVAS } from "./model/placement";
 
 export interface Story {
   id: string;
@@ -65,22 +69,34 @@ interface BarFrameProps {
   lines?: number;
   hovered?: boolean;
   size?: Size;
+  /** Who the menu lists; the bots alone when absent. */
+  targets?: readonly PillTarget[];
 }
 
+/** The bots, then three plugins' `pill.target` entries (sample data). */
+const WITH_PLUGIN_TARGETS: readonly PillTarget[] = pillTargets(
+  TARGETS.map((t) => ({ id: t.id, name: t.name, portrait: t.portrait, color: t.color })),
+  [
+    { ref: "agents#codex", pluginId: "agents", pluginName: "Agents", id: "codex", title: "Codex" },
+    { ref: "blender#scene", pluginId: "blender", pluginName: "Blender", id: "scene", title: "Scene" },
+    { ref: "home#lights", pluginId: "home", pluginName: "Home", id: "lights", title: "Lights", order: 600 },
+  ],
+);
+
 /** The main pill showing its bar, at rest (or at `size` on its way). */
-function BarFrame({ presentation = "compact", draft = "", running = false, stopping = false, menu = null, verb, lines = 1, hovered = false, size }: BarFrameProps): ReactElement {
+function BarFrame({ presentation = "compact", draft = "", running = false, stopping = false, menu = null, verb, lines = 1, hovered = false, size, targets = TARGETS }: BarFrameProps): ReactElement {
   const target = mainSize(presentation, lines * 20 + 6);
   const look = barLook(presentation === "expanded", running, draft, false, `Message ${ALPHA.name}`, verb ?? `${ALPHA.name} is working`);
   return (
     <div className="clp-stack" style={hovered ? { transform: `scale(${1 + (PILL.compactWidth * (PILL.hoverScale - 1)) / target.width})` } : undefined}>
-      <BarMenus menu={menu} target={ALPHA} targets={TARGETS} width={(size ?? target).width} />
+      <BarMenus menu={menu} target={targets[0] ?? ALPHA} targets={targets} width={(size ?? target).width} />
       <Shell
         size={size ?? target}
         target={target}
         underlay={running ? <Plume width={PILL.compactWidth} height={PILL.pillHeight} still={{ at: PLUME_AT, throws: THROWS }} /> : undefined}
         underlayShown={look.working}
       >
-        <Bar presentation={presentation} target={ALPHA} targets={TARGETS} draft={draft} working={look.working} circle={look.circle} placeholder={look.placeholder} stopping={stopping} accessories={presentation === "expanded"} menu={menu} />
+        <Bar presentation={presentation} target={targets[0] ?? ALPHA} targets={targets} draft={draft} working={look.working} circle={look.circle} placeholder={look.placeholder} stopping={stopping} accessories={presentation === "expanded"} menu={menu} />
       </Shell>
     </div>
   );
@@ -174,18 +190,67 @@ function filmstrip(times: number[], frame: (t: number) => ReactNode, width: numb
   );
 }
 
+
+/** The bottom of a display, cropped around its centre: the OS's own bar along the bottom, and the pill's window where
+ *  `PillSurface` asks the host to put it, outlined (dashed) so the window's size shows. */
+const SURFACES: Record<"macos" | "windows" | "linux-x11" | "linux-wayland", SurfaceEnvironment> = {
+  macos: { os: "macos", display: { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 0, y: 32, width: 1512, height: 880 }, notch: null } },
+  windows: { os: "windows", display: { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1032 }, notch: null } },
+  "linux-x11": { os: "linux", session: "x11", display: { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 32, width: 1920, height: 1048 }, notch: null } },
+  "linux-wayland": { os: "linux", session: "wayland", display: { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 32, width: 1920, height: 1048 }, notch: null } },
+};
+
+function SurfaceScreen({ env, width, height, draft }: { env: SurfaceEnvironment; width: number; height: number; draft?: string }): ReactElement {
+  const [spec, setSpec] = useState<SurfaceWindowSpec>(() => pillWindow(env, RESTING_CANVAS));
+  const host = useMemo<SurfaceHostApi>(() => ({ setWindow: setSpec, setInteractiveRegions: () => {} }), []);
+  const { bounds, workArea } = env.display;
+  const cropLeft = bounds.x + bounds.width / 2 - width / 2;
+  const cropTop = bounds.y + bounds.height - height;
+  const left = Math.round(spec.bounds.x - cropLeft);
+  const top = Math.round(spec.bounds.y - cropTop);
+  const bottomBar = bounds.y + bounds.height - (workArea.y + workArea.height);
+  const wallpaper = env.os === "windows" ? "linear-gradient(160deg, #1B4F8A 0%, #6FA3D9 100%)" : env.os === "linux" ? "linear-gradient(160deg, #3C2F5C 0%, #C46A4A 100%)" : "linear-gradient(180deg, #8CA8D1 0%, #DBD4E6 100%)";
+  const framed = !spec.overlay;
+  return (
+    <SealedKitContext.Provider value={kit}>
+      <div style={{ position: "relative", width, height, overflow: "hidden", background: wallpaper }}>
+        {bottomBar > 0 && env.os === "macos" ? (
+          <div style={{ position: "absolute", left: "50%", bottom: 6, width: 420, marginLeft: -210, height: bottomBar - 12, borderRadius: 18, background: "#FFFFFF59" }} />
+        ) : null}
+        {bottomBar > 0 && env.os !== "macos" ? <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: bottomBar, background: "#202020F2" }} /> : null}
+        {framed ? (
+          // The compositor's frame around a normal window: a title bar above it.
+          <div style={{ position: "absolute", left: left - 1, top: top - 30, width: spec.bounds.width + 2, height: spec.bounds.height + 31, borderRadius: "10px 10px 0 0", background: "#2A2A2A", boxShadow: "0 8px 30px #00000066" }}>
+            <div style={{ height: 30, display: "grid", placeItems: "center", font: "600 13px system-ui, sans-serif", color: "#DDDDDD" }}>{t("clover.pill.name")}</div>
+          </div>
+        ) : (
+          <div style={{ position: "absolute", left: left - 1, top: top - 1, width: spec.bounds.width + 2, height: spec.bounds.height + 2, boxSizing: "border-box", border: "1px dashed #FFFFFFD9" }} />
+        )}
+        <div style={{ position: "absolute", left, top, background: framed ? "#000000" : undefined }}>
+          <PillSurface environment={env} host={host} target={ALPHA} targets={TARGETS} draft={draft} initialPresentation={draft ? "expanded" : undefined} reducedMotion />
+        </div>
+      </div>
+    </SealedKitContext.Provider>
+  );
+}
+
 const W = 680;
 const COMPACT: Size = { width: PILL.compactWidth, height: PILL.pillHeight };
 const NOTES = "Can you tidy the release notes before I post them?";
 const LONG = "Can you tidy the release notes before I post them? Merge the two bug-fix sections, put the Windows tray note first, and keep the tone plain: no exclamation marks, no emoji. Then show me the diff.";
 
 export const PILL_STORIES: Story[] = [
+  { id: "pill/surface-macos", title: "On macOS: the pill's window (dashed) at the bottom centre, just above the Dock, and no bigger than the pill and its shadow", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES.macos} width={W} height={200} /> },
+  { id: "pill/surface-windows", title: "On Windows: above the taskbar, the window grown with the typing pill", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES.windows} width={W} height={200} draft="Dim the lights in the studio" /> },
+  { id: "pill/surface-linux-x11", title: "On Linux (X11): the same overlay at the bottom centre of a display with no bottom panel", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES["linux-x11"]} width={W} height={200} /> },
+  { id: "pill/surface-linux-wayland", title: "On Linux (Wayland): a normal window the user moves, the pill's own size", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES["linux-wayland"]} width={W} height={200} /> },
   { id: "pill/compact", title: "Compact: who it messages, and the voice circle", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame /></Desk> },
   { id: "pill/compact-hovered", title: "Compact, under the pointer: it grows by the same few pixels as every pill", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame hovered /></Desk> },
   { id: "pill/typing", title: "Typing: the pill widens, ↗ and ⋯ float at the field's end, the circle sends", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame presentation="expanded" draft={NOTES} /></Desk> },
   { id: "pill/typing-long", title: "Typing several lines: the pill grows with them and ↗ ⋯ give way", width: W, height: 190, render: () => <Desk width={W} height={190}><BarFrame presentation="expanded" draft={LONG} lines={4} /></Desk> },
   { id: "pill/typing-more-menu", title: "Typing, with ⋯ open", width: W, height: 220, render: () => <Desk width={W} height={220}><BarFrame presentation="expanded" draft="Check the tray fix" menu="more" /></Desk> },
-  { id: "pill/targets-menu", title: "Choosing who to message: every bot is a target (pill.target)", width: W, height: 240, render: () => <Desk width={W} height={240}><BarFrame presentation="expanded" menu="targets" /></Desk> },
+  { id: "pill/targets-menu", title: "Choosing who to message: every bot is a target", width: W, height: 240, render: () => <Desk width={W} height={240}><BarFrame presentation="expanded" menu="targets" /></Desk> },
+  { id: "pill/targets-menu-plugins", title: "Choosing who to message: the bots, then the plugins' pill.target entries under a hairline", width: W, height: 360, render: () => <Desk width={W} height={360}><BarFrame presentation="expanded" menu="targets" targets={WITH_PLUGIN_TARGETS} /></Desk> },
   { id: "pill/working", title: "Working: the plume, each tool thrown out of the nozzle, the stop circle", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame running /></Desk> },
   { id: "pill/working-stopping", title: "Working, stop pressed and not yet confirmed", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame running stopping /></Desk> },
   { id: "pill/typing-over-work", title: "Typing over a running turn: the circle stays a stop, Enter steers", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame presentation="expanded" running verb="Reading the release notes…" /></Desk> },

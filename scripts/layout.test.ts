@@ -133,6 +133,13 @@ describe("the repo layout (docs/clover-layout.md)", () => {
     const exported = Object.values(shared.exports ?? {});
     expect(exported.length).toBeGreaterThan(0);
     expect(exported.filter((f) => !existsSync(join(ROOT, "services", SERVICES_SHARED, f)))).toEqual([]);
+    // A Worker's tsconfig that takes in the shared source leaves out its Bun tests (no bun:test types in a Worker).
+    for (const w of workers) {
+      const file = `services/${w}/tsconfig.json`;
+      if (!existsSync(join(ROOT, file))) continue;
+      const config = Bun.JSONC.parse(read(file)) as { include?: string[]; exclude?: string[] };
+      if ((config.include ?? []).includes(`../${SERVICES_SHARED}`)) expect(config.exclude ?? [], `${file} excludes ../${SERVICES_SHARED}/test`).toContain(`../${SERVICES_SHARED}/test`);
+    }
     const reaching = Bun.spawnSync(["git", "grep", "-lE", "from \"(\\.\\./)+(services/shared|test-harness/src)/", "--", "packages", "apps", "plugins", "scripts"], { cwd: ROOT }).stdout.toString().trim();
     expect(reaching).toBe("");
   });

@@ -30,7 +30,7 @@ import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripRect, t
 import { FLUID, fluidSeconds } from "../model/fluid";
 import { beginClosing, beginOpening, MORPH, morphSeconds, type MorphClock } from "../model/morph";
 import { IslandQueue } from "../model/queue";
-import { NEEDS_YOU, select, selectedTab, tabState, type IslandTab } from "../model/tabs";
+import { NEEDS_YOU, guestTabs, select, selectedTab, tabState, type GuestTab, type IslandTab } from "../model/tabs";
 import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
@@ -38,10 +38,10 @@ import { NeedsYou, OpenIsland } from "./OpenIsland";
 import { Strip } from "./Strip";
 import { useIslandStyles } from "./styles";
 import { WaitingPill } from "./WaitingPill";
-import type { ScreenShape } from "../model/geometry";
+import type { Rect, ScreenShape } from "../model/geometry";
 
-/** A tab beside Needs you: an `island.tab` entry, in M2. */
-export interface IslandTabEntry extends IslandTab {
+/** A tab beside Needs you: an `island.tab` entry (`guestTabs` decides how it shows). */
+export interface IslandTabEntry extends GuestTab {
   render: () => ReactNode;
 }
 
@@ -70,11 +70,20 @@ export interface IslandProps {
   working?: number;
   /** Tabs after Needs you. */
   tabs?: readonly IslandTabEntry[];
+  /** The bots' names and ids: another plugin named as one gets no tab. */
+  botNames?: readonly string[];
   /** The tab the working wing opens on; the island's current one when absent. */
   workingTab?: string;
   /** A question answered here. Resolve false (or throw) when the answer did not go through. */
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   onOpenChange?: (open: boolean) => void;
+  /** The parts that take clicks, x from the island's centre: the strip, the open island, the card on top and the
+   *  newcomer under it; and what is drawn, which adds a card on its way back into the strip. An overlay passes every
+   *  other click through to what lies below, and its window covers no more than what is drawn (the surface host). */
+  onRegions?: (regions: readonly Rect[], drawn: readonly Rect[]) => void;
+  /** Open for good, with no strip and no floating cards: the island as a normal window (Wayland), where every card
+   *  waits in Needs you. */
+  alwaysOpen?: boolean;
   reducedMotion?: boolean;
   timers?: IslandTimers;
 }
@@ -84,7 +93,8 @@ const NO_TABS: readonly IslandTabEntry[] = [];
 
 export function Island(props: IslandProps): ReactElement {
   useIslandStyles();
-  const { shape, cards, working = 0, workingTab, onAnswerQuestion, onOpenChange, reducedMotion = false } = props;
+  const { shape, cards, working = 0, workingTab, onAnswerQuestion, onOpenChange, alwaysOpen = false } = props;
+  const reducedMotion = props.reducedMotion === true || alwaysOpen;
   const timers = props.timers ?? BROWSER_TIMERS;
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const queue = useRef(new IslandQueue()).current;
@@ -98,7 +108,9 @@ export function Island(props: IslandProps): ReactElement {
   const [stripHovered, setStripHovered] = useState(false);
   const [waitingHovered, setWaitingHovered] = useState(false);
 
-  const extraTabs = props.tabs ?? NO_TABS;
+  const given = props.tabs ?? NO_TABS;
+  const botNames = props.botNames;
+  const extraTabs = useMemo(() => guestTabs(given, botNames), [given, botNames]);
   // Keyed by what the tabs are, not by the array: a parent passing a fresh array each render changes nothing.
   const tabKey = extraTabs.map(({ id, title }) => `${id}\u0000${title}`).join("\u0001");
   const tabList = useMemo(() => [NEEDS_YOU, ...extraTabs.map(({ id, title }) => ({ id, title }))], [tabKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -144,13 +156,13 @@ export function Island(props: IslandProps): ReactElement {
     return () => timers.clearTimeout(handle);
   }); // re-armed after every render, for whatever the queue now says
 
-  const isOpen = morph.openedAt !== null;
+  const isOpen = alwaysOpen || morph.openedAt !== null;
   const now = timers.now();
   const current = queue.current ? byId.get(queue.current.id) : undefined;
   const waiting = queue.waiting ? byId.get(queue.waiting.id) : undefined;
   const bornAt = current ? births.current.get(current.id) : undefined;
   const birthSeconds = bornAt === undefined ? FLUID.settle : (now - bornAt) / 1000;
-  const morphMoving = isOpen && (morph.closing !== null || morphSeconds(morph, now) < MORPH.settle);
+  const morphMoving = !alwaysOpen && isOpen && (morph.closing !== null || morphSeconds(morph, now) < MORPH.settle);
   const back = leaving.current;
   const backSeconds = back ? fluidSeconds(now, back.bornAt, back.returningAt) : 0;
   const returning = back !== null && backSeconds > 0 && !isOpen && !reducedMotion;
@@ -179,6 +191,7 @@ export function Island(props: IslandProps): ReactElement {
   );
 
   const close = useCallback(() => {
+    if (alwaysOpen) return;
     setMorph((m) => {
       if (m.openedAt === null || m.closing) return m;
       const { clock, durationMs } = beginClosing(m, timers.now());
@@ -186,7 +199,7 @@ export function Island(props: IslandProps): ReactElement {
       return clock;
     });
     onOpenChange?.(false);
-  }, [onOpenChange, reducedMotion, timers]);
+  }, [onOpenChange, reducedMotion, timers, alwaysOpen]);
 
   // Esc closes the open island.
   useEffect(() => {
@@ -283,16 +296,43 @@ export function Island(props: IslandProps): ReactElement {
     return extraTabs.find((entry) => entry.id === tab.id)?.render() ?? null;
   })();
 
-  const from = stripRect(shape, showsWings(counts)) ?? { x: -60, y: 0, width: 120, height: 0 };
+  const strip = alwaysOpen ? null : stripRect(shape, showsWings(counts));
+  const from = strip ?? { x: -60, y: 0, width: 120, height: 0 };
   const geometry = current
     ? cardGeometry(shape, { width: ISLAND.cardWidth, height: heights.current.get(current.id) ?? ESTIMATED_CARD_HEIGHT }, { rounded: true })
     : null;
 
+  // What takes clicks now. Reported when it changes, so the surface host can pass every other click through.
+  const regions: Rect[] = [];
+  if (strip) regions.push(grow(strip, ISLAND.stripGlowMargin));
+  if (isOpen) regions.push(islandRect(shape));
+  else if (current && geometry) {
+    const left = -geometry.panelSize.width / 2;
+    regions.push({ ...geometry.card, x: left + geometry.card.x });
+    if (waiting) {
+      const pill = waitingRect(geometry);
+      regions.push({ ...pill, x: left + pill.x });
+    }
+  }
+  const drawn: Rect[] = [...regions];
+  if (returning && back) {
+    const g = cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true });
+    drawn.push({ ...g.card, x: -g.panelSize.width / 2 + g.card.x });
+  }
+  const keyOf = (list: readonly Rect[]) => list.map((r) => `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`).join(";");
+  const regionKey = `${keyOf(regions)}|${keyOf(drawn)}`;
+  const onRegions = props.onRegions;
+  useEffect(() => {
+    onRegions?.(regions, drawn);
+  }, [regionKey, onRegions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="clv-island" data-open={isOpen || undefined}>
-      <span onMouseEnter={() => setStripHovered(true)} onMouseLeave={() => setStripHovered(false)}>
-        <Strip shape={shape} counts={counts} hovered={stripHovered && !isOpen} onPart={onStripPart} />
-      </span>
+      {alwaysOpen ? null : (
+        <span onMouseEnter={() => setStripHovered(true)} onMouseLeave={() => setStripHovered(false)}>
+          <Strip shape={shape} counts={counts} hovered={stripHovered && !isOpen} onPart={onStripPart} />
+        </span>
+      )}
       {returning && back ? (
         <div className="clv-returning" aria-hidden="true">
           <LiquidCard geometry={cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true })} seconds={backSeconds}>
@@ -374,4 +414,8 @@ export function Island(props: IslandProps): ReactElement {
       ) : null}
     </div>
   );
+}
+
+function grow(rect: Rect, by: number): Rect {
+  return { x: rect.x - by, y: rect.y, width: rect.width + 2 * by, height: rect.height + by };
 }

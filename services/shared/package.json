@@ -9,6 +9,8 @@
     "./account-token": "./account-token.ts",
     "./encoding": "./encoding.ts",
     "./http": "./http.ts",
+    "./jwks": "./jwks.ts",
+    "./web": "./web.ts",
     "./testing/step-limiter": "./testing/step-limiter.ts"
   },
   "scripts": {

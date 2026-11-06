@@ -51,12 +51,13 @@ export const TOKENS: readonly TokenSpec[] = [
   t("color.text.placeholder", "color", "A field's placeholder."),
   t("color.text.inverse", "color", "Text on a text-coloured fill."),
   // Accent and meaning.
-  t("color.accent", "color", "The accent: primary actions, focus, the send button. May be \"system\": the OS accent colour."),
+  t("color.accent", "color", "The accent as the OS gives it: focus, marks, a checkbox, small controls. Filled controls take `color.accent.fill`. May be \"system\": the OS accent colour."),
+  t("color.accent.fill", "color", "Filled controls: primary actions, the send button, a toggle's on state. \"system\": the accent darkened in its own hue until white text reads at 4.5:1."),
   t("color.accent.text", "color", "The accent carrying text, at 4.5:1 or more on the content plane."),
   t("color.accent.soft", "color", "A wash of the accent: a chosen chip, a highlighted mention."),
-  t("color.accent.contrast", "color", "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."),
-  t("color.accent.glyph", "color", "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."),
-  t("color.accent.ink", "color", "The theme's dark ink on an accent, where white falls short."),
+  t("color.accent.contrast", "color", "Labels and glyphs on `color.accent.fill`, at 4.5:1 or more (`auto` resolves it: white on the darkened fill)."),
+  t("color.accent.glyph", "color", "Glyphs on the raw `color.accent` (✓, a dot), at 3:1 or more (`auto` resolves it)."),
+  t("color.accent.ink", "color", "The theme's dark ink for glyphs on an accent, where white falls short of 3:1 (black where it does too)."),
   t("color.attention", "color", "Needs you: a waiting card, a question for the user."),
   t("color.attention.text", "color", "Attention carrying text."),
   t("color.danger", "color", "Errors and actions that destroy something."),
@@ -86,7 +87,6 @@ export const TOKENS: readonly TokenSpec[] = [
   t("card.padding", "dimension", "The card's inset."),
   t("card.approve.background", "color", "The approve button. May be \"system\": the OS accent colour."),
   t("card.approve.text", "color", "The approve button's label and glyph (`auto` resolves it at 4.5:1)."),
-  t("card.approve.ink", "color", "The card's dark ink on the approve button, where white falls short."),
   t("card.deny.background", "color", "The deny button."),
   t("card.deny.text", "color", "The deny button's label."),
   t("card.button.radius", "dimension", "The approve and deny buttons' corner."),
@@ -165,6 +165,7 @@ export const TOKENS: readonly TokenSpec[] = [
   t("pill.accessory", "color", "The ↗ and ⋯ circles."),
   t("pill.attention", "color", "A card's kind glyph; a child that needs you."),
   t("pill.accept", "color", "The ✓ circle on a pill card."),
+  t("pill.accept.text", "color", "The ✓ glyph on a pill card."),
   t("pill.success", "color", "A child agent that finished."),
   t("pill.danger", "color", "A child agent that failed."),
   t("pill.option", "color", "A question option's fill on a pill card."),
@@ -238,23 +239,37 @@ export const SYSTEM_ACCENT = "system";
 /** The value an ink on an accent takes to be resolved by the core. */
 export const AUTO_INK = "auto";
 
-/** The tokens that may be `"system"`. */
-export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "card.approve.background"];
+/** The tokens that may be `"system"` (lane B's `SYSTEM_ACCENT_TOKENS`): the accent, its fill, the focus ring, the approve
+ *  button and the island's and the pill's ✓ circles. */
+export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "color.accent.fill", "color.focus", "card.approve.background", "island.accept", "pill.accept"];
 
-/** Filled accent buttons with a text label (the controller's ruling, matching the reference's white-on-blue): a
- *  `"system"` value is the accent darkened in its own hue until white text reaches 4.5:1, so the label is always
- *  white. Glyph-only controls keep the plain accent and the 3:1 white-bias ink. */
-export const LABEL_FILL_TOKENS: readonly string[] = ["card.approve.background"];
+/** Filled accent controls (lane B's `SYSTEM_LABEL_FILLS`): `"system"` there is the accent darkened in its own hue until
+ *  white text reaches 4.5:1, so the label is always white, as the reference app draws it. `from` is the token whose
+ *  resolved value it darkens (`color.accent.fill` follows `color.accent` as resolved, the theme's or the OS's); without
+ *  it, the OS accent itself (`card.*` never derives from another token). `background` is what it sits on. */
+export const LABEL_FILLS: Readonly<Record<string, { readonly background: string; readonly from?: string }>> = {
+  "color.accent.fill": { background: "color.surface", from: "color.accent" },
+  "card.approve.background": { background: "card.background" },
+};
+export const LABEL_FILL_TOKENS: readonly string[] = Object.keys(LABEL_FILLS);
 
 /** The contrast white text needs on a filled button with a label. */
 export const LABEL_FLOOR = 4.5;
 
-/** Lane B's catalog values for those tokens: what a `"system"` falls back to with nothing beneath it but the
+/** What a label ink is where white falls short of 4.5:1, and a glyph ink where the theme's dark ink falls short of 3:1
+ *  too (lane B's `LABEL_INK`). */
+export const LABEL_INK = "#000000";
+
+/** Lane B's catalog values for the accent tokens: what a `"system"` falls back to with nothing beneath it but the
  *  catalog (the base theme's own case) and no OS reading. */
 export const CATALOG_ACCENTS: Readonly<Record<string, { readonly light: string; readonly dark: string }>> = {
-  // Lane F's measured control blue (a step darker under the approve button's white text in dark), asked of B.
+  // Lane F's measured control blue (a step darker under the approve button's white text in dark).
   "color.accent": { light: "#2F6FDF", dark: "#4180E3" },
+  "color.accent.fill": { light: "#2F6FDF", dark: "#3570D8" },
+  "color.focus": { light: "#2F6FDF", dark: "#4180E3" },
   "card.approve.background": { light: "#2F6FDF", dark: "#3570D8" },
+  "island.accept": { light: "#4180E3", dark: "#4180E3" },
+  "pill.accept": { light: "#4180E3", dark: "#4180E3" },
 };
 
 export interface AutoInk {
@@ -262,15 +277,18 @@ export interface AutoInk {
   readonly accent: string;
   /** What the control sits on, which an accent with alpha is flattened onto. */
   readonly background: string;
-  /** The theme's dark ink, used where white falls short. */
-  readonly darkInk: string;
+  /** A glyph ink's dark ink where white falls short, a token; a label ink takes `LABEL_INK`. */
+  readonly darkInk?: string;
   /** 3 for glyph-only controls (WCAG 1.4.11), 4.5 for text labels. */
   readonly floor: 3 | 4.5;
 }
 
-/** The inks that may be `"auto"`. */
+/** The inks that may be `"auto"` (lane B's `AUTO_INKS`). A label ink reads at 4.5:1 on its fill; a glyph ink at 3:1 on
+ *  the raw accent. */
 export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
-  "color.accent.contrast": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 4.5 },
-  "color.accent.glyph": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 3 },
-  "card.approve.text": { accent: "card.approve.background", background: "card.background", darkInk: "card.approve.ink", floor: 4.5 },
+  "color.accent.contrast": { accent: "color.accent.fill", background: "color.surface", floor: 4.5 },
+  "color.accent.glyph": { accent: "color.accent", background: "color.surface", floor: 3, darkInk: "color.accent.ink" },
+  "card.approve.text": { accent: "card.approve.background", background: "card.background", floor: 4.5 },
+  "island.accept.text": { accent: "island.accept", background: "island.surface", floor: 3, darkInk: "color.accent.ink" },
+  "pill.accept.text": { accent: "pill.accept", background: "pill.surface", floor: 3, darkInk: "color.accent.ink" },
 };
