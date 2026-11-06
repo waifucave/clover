@@ -6,6 +6,60 @@ import { translator } from "../../shell/runtime/strings";
 const t = translator(en.strings);
 
 export const S = {
+  get paletteBot() {
+    return t("clover.shell.paletteBot");
+  },
+  get paletteSession() {
+    return t("clover.shell.paletteSession");
+  },
+  get noCore() {
+    return t("clover.shell.noCore");
+  },
+  // The command palette.
+  get palette() {
+    return t("clover.shell.palette");
+  },
+  get paletteSearch() {
+    return t("clover.shell.paletteSearch");
+  },
+  get paletteResults() {
+    return t("clover.shell.paletteResults");
+  },
+  get paletteNone() {
+    return t("clover.shell.paletteNone");
+  },
+  get paletteGo() {
+    return t("clover.shell.paletteGo");
+  },
+  get paletteRun() {
+    return t("clover.shell.paletteRun");
+  },
+  get paletteBack() {
+    return t("clover.shell.paletteBack");
+  },
+  get paletteChoose() {
+    return t("clover.shell.paletteChoose");
+  },
+  paletteRequired: (field: string) => t("clover.shell.paletteRequired", { field }),
+  get paletteRequiredMark() {
+    return t("clover.shell.paletteRequiredMark");
+  },
+  paletteNumber: (field: string) => t("clover.shell.paletteNumber", { field }),
+  paletteJson: (field: string) => t("clover.shell.paletteJson", { field }),
+  paletteArgsFor: (command: string) => t("clover.shell.paletteArgsFor", { command }),
+  paletteRunning: (command: string) => t("clover.shell.paletteRunning", { command }),
+  paletteFailed: (command: string, why: string) => t("clover.shell.paletteFailed", { command, why }),
+  get palettePressKeys() {
+    return t("clover.shell.palettePressKeys");
+  },
+  paletteRebind: (command: string) => t("clover.shell.paletteRebind", { command }),
+  paletteUnbind: (command: string) => t("clover.shell.paletteUnbind", { command }),
+  get paletteChangeKey() {
+    return t("clover.shell.paletteChangeKey");
+  },
+  get paletteRemoveKey() {
+    return t("clover.shell.paletteRemoveKey");
+  },
   sessionMenu: (title: string) => t("clover.shell.sessionMenu", { title }),
   get panelToggles() {
     return t("clover.shell.panelToggles");

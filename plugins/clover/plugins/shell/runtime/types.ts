@@ -137,6 +137,8 @@ export interface CoreMethods {
   "plugin.logs": FromB<typeof Proto.PLUGINS_METHODS.pluginLogs>;
   "plugin.install": FromB<typeof Proto.PLUGINS_METHODS.pluginInstall>;
   "plugin.confirmAdult": FromB<typeof Proto.PLUGINS_METHODS.pluginConfirmAdult>;
+  "command.list": FromB<typeof Proto.PLUGINS_METHODS.commandList>;
+  "command.run": FromB<typeof Proto.PLUGINS_METHODS.commandRun>;
   "plugin.index.list": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexList>;
   "plugin.index.search": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexSearch>;
   "ui.settings": FromB<typeof Proto.APP_METHODS.uiSettings>;

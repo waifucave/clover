@@ -79,7 +79,12 @@ const ENTRIES: UiEntry[] = [
 
 async function mount(start?: ShellStart, extra: UiEntry[] = []) {
   const heard = new Set<(m: LayerCommand) => void>();
-  const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
+  const core = fakeCore({
+    "session.interrupt": () => ({ ok: true }),
+    "session.stop": () => ({ ok: true }),
+    "command.list": () => ({ commands: [{ name: "tarot.draw", pluginId: "tarot", description: "Draws a card", key: "Mod+Shift+D" }] }),
+    "command.run": () => ({ result: null }),
+  });
   const approvals = fakeApprovals();
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
@@ -170,7 +175,7 @@ describe("the shell", () => {
     const { core } = await mount({ route: { route: "agent", params: { session: "agent-1" } } });
     fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(core.calls.map((c) => [c.method, c.params])).toEqual([["session.interrupt", { id: "agent-1" }], ["session.stop", { id: "agent-1" }]]);
+    expect(core.calls.filter((c) => c.method.startsWith("session.")).map((c) => [c.method, c.params])).toEqual([["session.interrupt", { id: "agent-1" }], ["session.stop", { id: "agent-1" }]]);
     expect(toggles()).toEqual(["Session", "Browser"]);
   });
 
@@ -196,6 +201,19 @@ describe("the shell", () => {
     expect(stubText("conversation")).toContain('"session":"s_luna"');
     await command("open-session", { session: "s_alpha" });
     expect(stubText("conversation")).toContain('"session":"s_alpha"');
+  });
+
+  test("⌘K / Ctrl+K opens the command palette; a command's default key runs it while the window has the focus", async () => {
+    const { core } = await mount();
+    const mod = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+    fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ...mod });
+    expect(screen.getByRole("dialog", { name: "Commands" })).toBeTruthy();
+    expect(screen.getByText("tarot.draw")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Commands" })).toBeNull();
+    fireEvent.keyDown(document.body, { key: "D", code: "KeyD", shiftKey: true, ...mod });
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "command.run").map((c) => c.params)).toEqual([{ name: "tarot.draw" }]);
   });
 
   test("a card in a session this window doesn't show holds nothing", async () => {

@@ -8,14 +8,16 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
 import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, useLayerMessage, usePluginApi, useSpotEntries, useT } from "./sdk";
+import { Palette, paletteCommand, fieldsOf, type PaletteCommand } from "./Palette";
+import { Spot, useApprovals, useCore, useLayerMessage, usePluginApi, useSpotEntries, useT } from "./sdk";
+import { bindings, chordOf, commandFor, currentPlatform, parseChord, PALETTE_KEY, sameChord } from "./shortcuts";
 import { setTranslator } from "../runtime/strings";
 import { S } from "./strings";
 import { plain } from "../runtime/views";
@@ -106,6 +108,66 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       navigate(main ? { route: "bot", params: { bot: main.id } } : { route: "agent", params: { session: args.session } });
     }
   });
+  // The command palette (Search opens it, and ⌘K / Ctrl+K), and the plugin commands' shortcuts while this window has
+  // the focus: the user's own bindings (synced) win over a command's default key, and a core shortcut over both.
+  const core = useCore();
+  const [palette, setPalette] = useState<{ start?: string } | undefined>(undefined);
+  const [commands, setCommands] = useState<PaletteCommand[]>([]);
+  const [userKeys, setUserKeys] = useState<Record<string, string | null>>({});
+  const [defaults, setDefaults] = useState<{ name: string; key?: string }[]>([]);
+  const platform = useMemo(currentPlatform, []);
+  useEffect(() => {
+    if (!core) return;
+    const load = () =>
+      void core.call("command.list", {}).then(
+        (r) => {
+          setCommands(r.commands.map(paletteCommand));
+          setDefaults(r.commands.map((c) => ({ name: c.name, ...(c.key ? { key: c.key } : {}) })));
+        },
+        () => undefined,
+      );
+    load();
+    return core.on("commands_changed", load);
+  }, [core]);
+  useEffect(() => {
+    const store = api.storage?.synced;
+    if (!store) return;
+    const read = () => void store.get<Record<string, string | null>>("shortcuts").then((v) => setUserKeys(v ?? {}), () => undefined);
+    read();
+    return store.watch((k) => k === "shortcuts" && read());
+  }, [api]);
+  const bound = useMemo(() => bindings(defaults, userKeys, platform), [defaults, userKeys, platform]);
+  const runCommand = (name: string, args: Record<string, unknown> | undefined) =>
+    core ? core.call("command.run", { name, ...(args !== undefined ? { args } : {}) }).then(() => undefined) : Promise.reject(new Error(S.noCore));
+  const rebind = (name: string, keyText: string | null) => {
+    const next = { ...userKeys, [name]: keyText };
+    setUserKeys(next);
+    void api.storage?.synced.set("shortcuts", next).catch(() => undefined);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const chord = chordOf(e);
+      if (sameChord(parseChord(PALETTE_KEY)!, chord, platform)) {
+        e.preventDefault();
+        setPalette((p) => (p ? undefined : {}));
+        return;
+      }
+      if (palette || route?.route === "settings") return;
+      // A key with no modifier never fires while the user types.
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+      if (typing && !chord.ctrl && !chord.meta && !chord.alt) return;
+      const name = commandFor(chord, bound, platform);
+      if (!name) return;
+      e.preventDefault();
+      const c = commands.find((x) => x.name === name);
+      if (c && fieldsOf(c.args).length > 0) setPalette({ start: name });
+      else void runCommand(name, undefined).catch(() => undefined);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
   const setOpen = (next: string[]) => setPanels((p) => ({ ...p, [key]: next }));
   const openAgent = (id: string) => {
     setAgents((a) => ({ ...a, [key]: id }));
@@ -185,14 +247,32 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   return (
     <Window
       translucent={props.translucent}
-      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate }} />}
+      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, onSearch: () => setPalette({}) }} />}
       title={title}
       toggles={toggles}
       side={side}
       panel={views.length > 0 && kind ? <PanelHost kind={kind} views={views} onClose={(id) => setOpen(open.filter((v) => v !== id))} onExpand={() => undefined} /> : undefined}
-      dialog={dialog ? <Spot name="main" spotKey="settings" props={{ route: "settings", params: dialog.params, navigate, close: closeDialog }} /> : undefined}
+      dialog={
+        palette ? (
+          <Palette
+            commands={commands}
+            places={[
+              ...(bots ?? []).map((b) => ({ id: `bot:${b.id}`, title: plain(b.name), detail: S.paletteBot, go: () => navigate({ route: "bot", params: { bot: b.id } }) })),
+              ...(sessions ?? []).filter((s) => s.kind !== "bot").map((s) => ({ id: `session:${s.id}`, title: s.title ?? s.id, detail: S.paletteSession, go: () => navigate({ route: "agent", params: { session: s.id } }) })),
+            ]}
+            bound={bound}
+            platform={platform}
+            onRun={runCommand}
+            onRebind={rebind}
+            onClose={() => setPalette(undefined)}
+            {...(palette.start ? { start: palette.start } : {})}
+          />
+        ) : dialog ? (
+          <Spot name="main" spotKey="settings" props={{ route: "settings", params: dialog.params, navigate, close: closeDialog }} />
+        ) : undefined
+      }
       cardPending={cardPending}
-      onCloseDialog={closeDialog}
+      onCloseDialog={() => (palette ? setPalette(undefined) : closeDialog())}
       status={status}
     >
       {main}
