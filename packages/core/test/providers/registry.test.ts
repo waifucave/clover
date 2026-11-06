@@ -6,9 +6,9 @@
 // to `endpointFromOrigin` (`readableState: "none"` for everything) — which is exactly what silently
 // over-warned a real lossless DeepSeek -> GLM transfer before this lane existed.
 import { describe, expect, test } from "bun:test";
-import { WinterProviderResolutionError, reviewModelSwitch } from "@yanlinglabs/winter-provider-runtime";
-import type { ProviderStateRecord, SwitchReview } from "@yanlinglabs/winter-provider-runtime";
-import type { SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import { WinterProviderResolutionError, reviewModelSwitch } from "@waifucave/clover-provider-runtime";
+import type { ProviderStateRecord, SwitchReview } from "@waifucave/clover-provider-runtime";
+import type { SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 import { daemonProviderRegistry, daemonResolveEndpoint } from "../../src/providers/registry";
 
 describe("daemonProviderRegistry", () => {
@@ -76,11 +76,11 @@ describe("daemonResolveEndpoint", () => {
 // gpt -> claude prompts." `daemonResolveEndpoint()` here is the REAL, registry-backed resolver
 // (`create.ts`'s own `HandoffBarrierDeps.resolveEndpoint` injection) — never a test fixture that
 // fakes `readableState`/`continuation`. `reviewModelSwitch` is the router's OWN pure pre-flight
-// review (re-exported by `@yanlinglabs/winter-provider-runtime`, the same function
+// review (re-exported by `@waifucave/clover-provider-runtime`, the same function
 // `HandoffBarrier.reviewSwitch` calls internally per the published 0.0.5 source). Driving it
 // directly with hand-built minimal `entries`/`sidecarRecords` — rather than a full router
 // barrier/store/directory stack — is a deliberate scope choice: `SessionStoreEntry` is a loose
-// `{type, uuid?, timestamp?, [key: string]: unknown}` shape (`@yanlinglabs/winter-agent-sdk`'s own
+// `{type, uuid?, timestamp?, [key: string]: unknown}` shape (`@waifucave/clover-agent-sdk`'s own
 // declared type), and `switchFactsFor`'s ENTIRE read of it (measured against the published
 // `winter-provider-runtime` 0.0.10 source) is: walk `uuid`/`parentUuid` back from the last entry,
 // filter `type === "assistant"`, and look up sidecar records by `anchorUuid`. Building a full JSONL

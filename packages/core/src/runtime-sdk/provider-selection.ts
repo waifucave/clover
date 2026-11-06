@@ -1,6 +1,6 @@
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
-import type { ModelFamilyListing, ProviderSelection } from "@yanlinglabs/winter-agent-sdk";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import type { WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
+import type { ModelFamilyListing, ProviderSelection } from "@waifucave/clover-agent-sdk";
 import { credentialRefFor } from "./keychain";
 import { splitTag, CLOVER_TEST_PREFIX, UNSTATED_TAG, type ModelTag } from "./model-tag";
 

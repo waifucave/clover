@@ -8,14 +8,16 @@
 //
 // No child process is spawned anywhere here — no `sdk.query()`, no real `winter` binary.
 import { afterEach, describe, expect, test } from "bun:test";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import { isWinterMcpServerInstance, type Query, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import { isWinterMcpServerInstance, type Query, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { CapabilitySession } from "../src/capabilities";
-import type { RuntimeDirectoryEntry } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeDirectoryEntry } from "../src/runtime-sdk/host";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
+import { activeWinterIdentity, winterUserAgent } from "@waifucave/clover-provider-runtime";
+import { CORE_VERSION } from "../src/version";
 import { RuntimeStateUnavailableError, type RuntimeStateWiring } from "../src/runtime-state";
 import { withTempHome } from "./runtime-state/support";
 
@@ -75,33 +77,37 @@ describe("daemon boot — the Clover handle", () => {
     });
   });
 
-  test("spawnHookFor on a real daemon refuses code in the typed way when no binary is configured; chat and dispatch are embedded", async () => {
+  test("A-M1: spawnHookFor on a real daemon gives every mode the embedded host's spawn, even with the configured binary missing", async () => {
     await withTempHome(async (home) => {
       const before = process.env.CLOVER_RUNTIME_EXECUTABLE;
-      // P9a fix wave (M1 class): a dev checkout now HAS a clover on the ladder's last rung (the
-      // installed platform package), so "nothing configured" is no longer a refusal in this tree.
-      // An EXPLICIT env path that is missing on disk is the deterministic refusal (P8b-2: an explicit
-      // path is authoritative and never falls through) — the daemon's own answer, no ambient tree.
+      // An EXPLICIT env path that is missing on disk used to refuse code (`winter_executable_unavailable`,
+      // P8b-2). Since A-M1 code runs embedded like chat and dispatch (spec §3.3): no session resolves a
+      // binary, so a missing one changes nothing about where a session runs.
       process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
       try {
         const d = await boot(home);
-        // WS-23: asked of CODE — chat and dispatch run embedded and resolve no binary (below).
-        const hook = d.runtimeSdk?.spawnHookFor("code");
-        // The refusal — never a throw, and never a silent fallback to another binary.
-        expect(hook).toBeInstanceOf(Error);
-        expect((hook as { code?: string }).code).toBe("winter_executable_unavailable");
-        // ...while chat and dispatch, on the SAME daemon with the SAME missing binary, get the
-        // embedded host's spawn: the real daemon wires `embedded` into the handle.
-        for (const mode of ["chat", "dispatch"] as const) {
+        for (const mode of ["code", "chat", "dispatch"] as const) {
           const embedded = d.runtimeSdk?.spawnHookFor(mode) as { pathToClaudeCodeExecutable?: string; spawnClaudeCodeProcess?: unknown } | Error | undefined;
           expect(embedded).not.toBeInstanceOf(Error);
           expect((embedded as { spawnClaudeCodeProcess?: unknown }).spawnClaudeCodeProcess).toBeInstanceOf(Function);
+          expect((embedded as { pathToClaudeCodeExecutable?: string }).pathToClaudeCodeExecutable).toBe("clover-embedded");
         }
         expect(d.embedded.live()).toEqual([]);
       } finally {
         if (before === undefined) delete process.env.CLOVER_RUNTIME_EXECUTABLE;
         else process.env.CLOVER_RUNTIME_EXECUTABLE = before;
       }
+    });
+  });
+
+  test("A-M1: the daemon presents Clover's identity, with Clover's release, before, during and after it runs", async () => {
+    // Installed once when core loads (`process-identity.ts`) and never removed (review S1).
+    expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
+    await withTempHome(async (home) => {
+      const d = await boot(home);
+      expect(activeWinterIdentity()).toMatchObject({ product: "clover-core", codexOriginator: "clover", version: CORE_VERSION });
+      await d.stop();
+      expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
     });
   });
 

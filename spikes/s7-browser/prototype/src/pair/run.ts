@@ -1,0 +1,335 @@
+#!/usr/bin/env bun
+// Question 5: the app and daemon pair on this OS, end to end, with timings. CI only (it installs a login item and
+// starts an app).
+//   bun run src/pair/run.ts --daemon-bin=<compiled clover-core-s7> --electron=<electron executable>
+//                           --app-dir=<out/pair/app> --out=<file> [--display=:99] [--windows-app-start=task|spawn]
+// Steps: install the login item and start it as a login would → the daemon starts the app → a second daemon on the
+// same home is refused by the lock → the app crashes (and again, three times in two minutes: safe mode) → the daemon
+// crashes → the tray's Quit stops both, and they stay down → a user starts the app, which starts the daemon → the
+// daemon side's Quit stops both → the lock held by another process with no daemon answering: the daemon exits 1, and
+// comes up once the lock is free (round twelve) → uninstall.
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { release, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { takeLock } from "./lock.ts";
+import { pairNames, type PairConfig } from "./names.ts";
+import { dial } from "./ndjson.ts";
+import { alive, installAndStart, killHard, registration, startApp, uninstall, unitState, type OsResult } from "./oslaunch.ts";
+import { errorText, rounded, sleep } from "../shared/stats.ts";
+
+// GitHub Actions sets GITHUB_ACTIONS; some agent harnesses set CI=true on a developer's Mac, so CI isn't enough.
+if (process.env.GITHUB_ACTIONS !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
+  console.error("pair: refusing to run here — it installs a login item and starts an app. It runs in CI.");
+  process.exit(2);
+}
+
+function arg(name: string, fallback = ""): string {
+  const p = `--${name}=`;
+  const a = process.argv.find((x) => x.startsWith(p));
+  return a === undefined ? fallback : a.slice(p.length);
+}
+const outFile = resolve(arg("out", "out/results/pair.json"));
+const home = mkdtempSync(join(tmpdir(), "clover-s7-pair-"));
+const cfg: PairConfig = {
+  home,
+  daemonBin: resolve(arg("daemon-bin")),
+  electron: resolve(arg("electron")),
+  appDir: resolve(arg("app-dir")),
+  appGraceMs: 2000,
+  windowsAppStart: arg("windows-app-start", "task") === "spawn" ? "spawn" : "task",
+  windowsSupervise: process.argv.includes("--windows-supervise"),
+  display: arg("display") || undefined,
+};
+const n = pairNames(home);
+mkdirSync(join(home, "run"), { recursive: true });
+writeFileSync(n.configFile, JSON.stringify(cfg, null, 2));
+
+const started = Date.now();
+const log = (s: string): void => console.log(`[pair ${((Date.now() - started) / 1000).toFixed(1)}s] ${s}`);
+const steps: Array<Record<string, unknown>> = [];
+
+interface Status {
+  daemon: { pid: number; ppid: number; bootedAt: number; lock: string };
+  app: null | { pid: number; startedBy: string; safeMode: boolean; connectedAt: number; connected: boolean };
+  crashes: number[];
+  appStarts: Array<{ at: number; safeMode: boolean; reason: string; ok: boolean; how: string; out: string }>;
+}
+
+async function status(): Promise<Status | undefined> {
+  const c = await dial(n.socket, 500);
+  if (c === undefined) return undefined;
+  try {
+    await c.request("hello", { role: "test", pid: process.pid }, 1000);
+    const r = await c.request("test.status", {}, 1000);
+    return r.result as Status | undefined;
+  } finally {
+    c.close();
+  }
+}
+
+async function until<T>(f: () => Promise<T | undefined>, ms: number, every = 100): Promise<{ v?: T; ms: number }> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const v = await f().catch(() => undefined);
+    if (v !== undefined) return { v, ms: Date.now() - t0 };
+    await sleep(every);
+  }
+  return { ms: Date.now() - t0 };
+}
+
+function appEvents(since: number): Array<Record<string, unknown>> {
+  if (!existsSync(n.appLog)) return [];
+  return readFileSync(n.appLog, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>).filter((e) => Number(e.t) >= since);
+}
+
+function short(r: OsResult): Record<string, unknown> {
+  return { ok: r.ok, how: r.how, code: r.code, out: r.out.slice(0, 600) };
+}
+
+async function step(name: string, f: () => Promise<Record<string, unknown>>): Promise<void> {
+  log(`step ${name}`);
+  try {
+    const r = await f();
+    steps.push({ step: name, ...r });
+    log(`  ${JSON.stringify(rounded(r, 0)).slice(0, 600)}`);
+  } catch (e) {
+    steps.push({ step: name, error: errorText(e) });
+    log(`  ERROR ${errorText(e)}`);
+  }
+  write("running");
+}
+
+const appUp = async (notPid = 0, wantSafe?: boolean): Promise<Status | undefined> => {
+  const s = await status();
+  if (s?.app?.connected !== true || s.app.pid === notPid) return undefined;
+  if (wantSafe !== undefined && s.app.safeMode !== wantSafe) return undefined;
+  return s;
+};
+
+async function main(): Promise<void> {
+  log(`home ${home}, daemon ${cfg.daemonBin}, electron ${cfg.electron}`);
+
+  await step("login start", async () => {
+    let t0 = Date.now();
+    const install = installAndStart(cfg, n).map(short);
+    let daemon = await until(status, 20_000);
+    let windowsFallback: Record<string, unknown> | undefined;
+    if (daemon.v === undefined && process.platform === "win32") {
+      // "Run only when the user is logged on" needs an interactive session for this user; without one, try S4U
+      // (runs in session 0, no desktop) so the restart semantics can still be measured.
+      windowsFallback = { interactiveTokenFailed: short(unitState(n)), reregisteredAs: "S4U" };
+      uninstall(cfg, n);
+      t0 = Date.now();
+      windowsFallback.install = installAndStart(cfg, n, "S4U").map(short);
+      daemon = await until(status, 20_000);
+    }
+    const both = await until(() => appUp(), 30_000);
+    const tBoth = Date.now() - t0;
+    return {
+      install,
+      windowsFallback,
+      daemonUpMs: daemon.v !== undefined ? daemon.ms : undefined,
+      daemonUp: daemon.v !== undefined,
+      appConnectedMs: both.v !== undefined ? tBoth : undefined,
+      appStartedBy: both.v?.app?.startedBy,
+      appStart: both.v?.appStarts.at(-1),
+      daemonParent: both.v?.daemon.ppid,
+      registeredForLogin: short(registration(n)),
+    };
+  });
+
+  await step("second daemon on the same home", async () => {
+    const t0 = Date.now();
+    const r = spawnSync(cfg.daemonBin, ["daemon", `--home=${home}`], { encoding: "utf8", timeout: 15_000, windowsHide: true });
+    const s = await status();
+    return { exitCode: r.status, ms: Date.now() - t0, said: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().slice(-300), firstStillServing: s !== undefined };
+  });
+
+  await step("app crash", async () => {
+    const s0 = await status();
+    const pid = s0?.app?.pid ?? 0;
+    const t0 = Date.now();
+    const kill = short(killHard(pid, true));
+    const back = await until(() => appUp(pid), 30_000);
+    return { killed: pid, kill, restartedMs: back.v !== undefined ? back.ms : undefined, newPid: back.v?.app?.pid, startedBy: back.v?.app?.startedBy, safeMode: back.v?.app?.safeMode, how: back.v?.appStarts.at(-1)?.how, eventsSinceKill: appEvents(t0).map((e) => e.event) };
+  });
+
+  await step("app crash loop → safe mode", async () => {
+    const rounds: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 2; i++) {
+      const s0 = await status();
+      const pid = s0?.app?.pid ?? 0;
+      killHard(pid, true);
+      const back = await until(() => appUp(pid), 45_000);
+      rounds.push({ killed: pid, restartedMs: back.v !== undefined ? back.ms : undefined, safeMode: back.v?.app?.safeMode, crashesInDaemon: back.v?.crashes.length });
+    }
+    return { rounds, thirdRestartInSafeMode: rounds[1]?.safeMode === true };
+  });
+
+  const daemonCrash = async (osAlone: boolean): Promise<Record<string, unknown>> => {
+    const noKick = join(home, "run", "no-kick");
+    if (osAlone) writeFileSync(noKick, "the runner measures the OS's own restart");
+    try {
+      const s0 = await status();
+      const dpid = s0?.daemon.pid ?? 0;
+      const apid = s0?.app?.pid ?? 0;
+      const t0 = Date.now();
+      const kill = short(killHard(dpid, false));
+      const back = await until(async () => { const s = await status(); return s !== undefined && s.daemon.pid !== dpid ? s : undefined; }, osAlone ? 150_000 : 60_000, 200);
+      if (osAlone && back.v === undefined) {
+        // the OS did not restart it: let the app do it, so the run goes on
+        rmSync(noKick, { force: true });
+      }
+      const reconnected = await until(() => appUp(), 60_000);
+      const ev = appEvents(t0);
+      const kicked = ev.find((e) => e.event === "start-daemon");
+      return {
+        killed: dpid, kill, daemonBackMs: back.v !== undefined ? back.ms : undefined, newDaemonPid: back.v?.daemon.pid,
+        appSurvived: alive(apid), appPidAfter: reconnected.v?.app?.pid, samePid: reconnected.v?.app?.pid === apid,
+        appStartedTheDaemon: kicked !== undefined ? { atMs: Number(kicked.t) - t0, ok: kicked.ok, how: kicked.how } : false,
+        appEvents: ev.map((e) => `${Number(e.t) - t0}ms ${String(e.event)}`),
+        unit: short(unitState(n)),
+      };
+    } finally {
+      rmSync(noKick, { force: true });
+    }
+  };
+  await step("daemon crash, restarted by the OS alone", () => daemonCrash(true));
+  await step("daemon crash, the app helps after 3 s", () => daemonCrash(false));
+
+  await step("tray Quit stops both, and they stay down", async () => {
+    const s0 = await status();
+    const dpid = s0?.daemon.pid ?? 0, apid = s0?.app?.pid ?? 0;
+    const c = await dial(n.socket);
+    await c?.request("hello", { role: "test", pid: process.pid });
+    const t0 = Date.now();
+    const fwd = await c?.request("test.trayQuit", {});
+    c?.close();
+    const down = await until(async () => (!alive(dpid) && !alive(apid) && (await status()) === undefined ? true : undefined), 15_000);
+    let restarted = false;
+    for (let i = 0; i < 12; i++) { await sleep(1000); if ((await status()) !== undefined) { restarted = true; break; } }
+    return { forwarded: fwd?.result, bothDownMs: down.v ? down.ms : undefined, restartedWithin12s: restarted, appEvents: appEvents(t0).map((e) => String(e.event)), unit: short(unitState(n)) };
+  });
+
+  await step("a user starts the app → it starts the daemon", async () => {
+    const t0 = Date.now();
+    const r = short(startApp(cfg, n, true));
+    const both = await until(() => appUp(), 45_000);
+    const ev = appEvents(t0);
+    return { start: r, bothUpMs: both.v !== undefined ? both.ms : undefined, startedBy: both.v?.app?.startedBy, appStartedTheDaemon: ev.filter((e) => e.event === "start-daemon").map((e) => ({ ok: e.ok, how: e.how, out: e.out })), appEvents: ev.map((e) => String(e.event)) };
+  });
+
+  await step("the daemon side's Quit stops both", async () => {
+    const s0 = await status();
+    const dpid = s0?.daemon.pid ?? 0, apid = s0?.app?.pid ?? 0;
+    const c = await dial(n.socket);
+    await c?.request("hello", { role: "test", pid: process.pid });
+    await c?.request("test.quitDaemon", {});
+    c?.close();
+    const down = await until(async () => (!alive(dpid) && !alive(apid) ? true : undefined), 15_000);
+    let restarted = false;
+    for (let i = 0; i < 8; i++) { await sleep(1000); if ((await status()) !== undefined) { restarted = true; break; } }
+    return { bothDownMs: down.v ? down.ms : undefined, restartedWithin8s: restarted };
+  });
+
+  // Round twelve (the re-check's gap): the lock held by a process that is not a daemon — a virus scanner opening the
+  // file at login, say — and nothing answering on the socket. The daemon must exit non-zero, so its login item
+  // starts it again, and come up once the lock is free.
+  await step("a held lock, no daemon answering", async () => {
+    const held = await takeLock(n.lockFile);
+    if ("busy" in held) return { error: `the runner could not take the lock: ${held.detail}` };
+    const t0 = Date.now();
+    let r: ReturnType<typeof spawnSync>;
+    try {
+      r = spawnSync(cfg.daemonBin, ["daemon", `--home=${home}`], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+    } finally {
+      held.release();
+    }
+    const exitMs = Date.now() - t0;
+    const said = `${String(r.stdout ?? "")}${String(r.stderr ?? "")}`;
+    // the lock is free now: the next start comes up, and is then quit (both halves)
+    const child = spawn(cfg.daemonBin, ["daemon", `--home=${home}`], { detached: true, stdio: "ignore", windowsHide: true });
+    child.unref();
+    const up = await until(status, 15_000);
+    let stopped: boolean | undefined;
+    if (up.v !== undefined) {
+      const dpid = up.v.daemon.pid;
+      const c = await dial(n.socket);
+      await c?.request("hello", { role: "test", pid: process.pid });
+      await c?.request("test.quitDaemon", {});
+      c?.close();
+      stopped = (await until(async () => (!alive(dpid) && (await status()) === undefined ? true : undefined), 15_000)).v === true;
+    } else if (child.pid !== undefined) {
+      killHard(child.pid, false);
+    }
+    return {
+      exitCode: r.status, signal: r.signal, exitMs,
+      saidNoAnswer: said.includes("no daemon answers"), saidStayedHeld: said.includes("stayed held"),
+      said: said.trim().split("\n").slice(-2).join(" | ").slice(-400),
+      nextStartUpMs: up.v !== undefined ? up.ms : undefined, nextStartStopped: stopped,
+    };
+  });
+}
+
+interface Assertion { name: string; ok: boolean; detail: string }
+let assertions: Assertion[] = [];
+
+/** The pair's promises (spec §3.1), checked against this run's steps (round eight). */
+function assertAll(): Assertion[] {
+  const a: Assertion[] = [];
+  const add = (name: string, ok: boolean, detail: unknown): void => { a.push({ name, ok, detail: JSON.stringify(detail) }); };
+  const st = (name: string): Record<string, any> | undefined => steps.find((x) => x.step === name) as Record<string, any> | undefined;
+  const login = st("login start");
+  add("the login item starts the daemon, and the daemon the app", login?.daemonUp === true && typeof login?.appConnectedMs === "number" && login.appConnectedMs < 30_000, { daemonUpMs: login?.daemonUpMs, appConnectedMs: login?.appConnectedMs, error: login?.error });
+  const second = st("second daemon on the same home");
+  add("a second daemon is refused and exits 0", second?.exitCode === 0 && second?.firstStillServing === true, { exitCode: second?.exitCode, firstStillServing: second?.firstStillServing });
+  const crash = st("app crash");
+  add("a crashed app is back within 6 s", typeof crash?.restartedMs === "number" && crash.restartedMs < 6000, { restartedMs: crash?.restartedMs });
+  const loop = st("app crash loop → safe mode");
+  add("the start after the third crash in two minutes is in safe mode", loop?.thirdRestartInSafeMode === true, { rounds: loop?.rounds });
+  const osAlone = st("daemon crash, restarted by the OS alone");
+  const restartsAlone = process.platform !== "win32" || cfg.windowsSupervise === true;
+  if (restartsAlone) add("a crashed daemon is back within 5 s without the app's help", typeof osAlone?.daemonBackMs === "number" && osAlone.daemonBackMs < 5000, { daemonBackMs: osAlone?.daemonBackMs });
+  else add("Task Scheduler alone does not restart a killed task (the finding the supervisor answers)", osAlone?.daemonBackMs === undefined, { daemonBackMs: osAlone?.daemonBackMs });
+  const helped = st("daemon crash, the app helps after 3 s");
+  add("a crashed daemon is back within 10 s, and the app lives on", typeof helped?.daemonBackMs === "number" && helped.daemonBackMs < 10_000 && helped?.samePid === true, { daemonBackMs: helped?.daemonBackMs, samePid: helped?.samePid });
+  const tray = st("tray Quit stops both, and they stay down");
+  add("the tray's Quit stops both, and nothing restarts them", typeof tray?.bothDownMs === "number" && tray?.restartedWithin12s === false, { bothDownMs: tray?.bothDownMs, restarted: tray?.restartedWithin12s });
+  const user = st("a user starts the app → it starts the daemon");
+  add("a user's start of the app brings up both within 10 s", typeof user?.bothUpMs === "number" && user.bothUpMs < 10_000, { bothUpMs: user?.bothUpMs });
+  const quit = st("the daemon side's Quit stops both");
+  add("the daemon side's Quit stops both, and nothing restarts them", typeof quit?.bothDownMs === "number" && quit?.restartedWithin8s === false, { bothDownMs: quit?.bothDownMs, restarted: quit?.restartedWithin8s });
+  const held = st("a held lock, no daemon answering");
+  add("with its lock held by another process and no daemon answering, the daemon exits 1 within 15 s, and comes up once the lock is free",
+    held?.exitCode === 1 && typeof held?.exitMs === "number" && held.exitMs < 15_000 && held?.saidStayedHeld === true && typeof held?.nextStartUpMs === "number",
+    { exitCode: held?.exitCode, exitMs: held?.exitMs, saidStayedHeld: held?.saidStayedHeld, nextStartUpMs: held?.nextStartUpMs, error: held?.error });
+  return a;
+}
+
+function write(state: string): void {
+  mkdirSync(dirname(outFile), { recursive: true });
+  const daemonLog = existsSync(join(n.logsDir, "daemon.log")) ? readFileSync(join(n.logsDir, "daemon.log"), "utf8").split("\n").slice(-80) : [];
+  writeFileSync(outFile, JSON.stringify(rounded({
+    meta: { state, platform: process.platform, arch: process.arch, osRelease: release(), seconds: (Date.now() - started) / 1000, names: n, windowsAppStart: cfg.windowsAppStart, windowsSupervise: cfg.windowsSupervise === true },
+    steps,
+    assertions,
+    daemonLog,
+  }, 0), null, 2));
+}
+
+try {
+  await main();
+} finally {
+  log("uninstall");
+  const u = uninstall(cfg, n).map(short);
+  steps.push({ step: "uninstall", results: u });
+  // anything left (the runner never leaves a process behind)
+  for (const e of appEvents(0)) if (typeof e.pid === "number" && alive(e.pid)) killHard(e.pid, true);
+  assertions = assertAll();
+  for (const x of assertions) log(`${x.ok ? "PASS" : "FAIL"} ${x.name}: ${x.detail.slice(0, 300)}`);
+  write("done");
+  rmSync(home, { recursive: true, force: true });
+  log("done");
+}
+process.exit(assertions.some((x) => !x.ok) ? 1 : 0);

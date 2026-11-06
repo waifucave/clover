@@ -35,7 +35,7 @@ import { dirname, join, resolve } from "node:path";
 import { buildWinter } from "./build-winter";
 import { RUNTIME_BUNDLE_LAYOUT, type VersionsJson } from "../packages/core/src/runtime-sdk/bundle-layout";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
-import { REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "../packages/core/src/runtime-sdk/versions";
+import { CODING_AGENT_BINARY_VERSION, REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "../packages/core/src/runtime-sdk/versions";
 
 /** `RUNTIME_BUNDLE_LAYOUT` entries are spelled relative to the bundle's `runtimes/` root
  *  (`dirname(execPath)`-relative); `--out` here IS that root, so the caller-facing paths are the
@@ -165,8 +165,9 @@ export async function stageRuntimes(opts: StageRuntimesOpts): Promise<StageRunti
     const resolveWinterPackage = opts.resolveWinterPackage ?? resolveInstalledWinterPackage;
     const pkg = resolveWinterPackage();
     if (pkg !== undefined) {
-      if (pkg.version !== REQUIRED_WINTER_AGENT_SDK) {
-        throw new Error(`stage-runtimes: the installed platform package is winter ${pkg.version} but this build is pinned to ${REQUIRED_WINTER_AGENT_SDK} — a mixed pair is not the pinned artifact`);
+      // A-M1: the staged binary is the coding agent, on its own pin (CODING_AGENT_BINARY_VERSION), not the SDK's.
+      if (pkg.version !== CODING_AGENT_BINARY_VERSION) {
+        throw new Error(`stage-runtimes: the installed platform package is winter ${pkg.version} but this build is pinned to ${CODING_AGENT_BINARY_VERSION} — a mixed pair is not the pinned artifact`);
       }
       const checkWinterMachO = opts.checkWinterMachO ?? assertMachOArm64;
       checkWinterMachO(pkg.binPath);

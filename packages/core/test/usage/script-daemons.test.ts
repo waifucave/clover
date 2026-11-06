@@ -24,7 +24,7 @@ const DAEMON_LAUNCH = [
   /["']daemon["']\s*,\s*["']run["']/,
   /\bbuilt\.daemon\b/,
   /["']__(?:runtime-state|embedded)-probe["']/,
-  /\[\s*["']bun["']\s*,\s*probe\s*\]/,
+  /\[\s*(?:["']bun["']|process\.execPath)\s*,\s*probe\s*\]/,
 ];
 /** …unless it runs a client route of the daemon binary (a socket client, no daemon of its own) or a plain tool that
  *  only names a probe route (`grep -ac __runtime-state-probe <binary>`). */

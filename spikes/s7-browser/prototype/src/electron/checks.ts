@@ -1,0 +1,878 @@
+// Questions 1 and 2 (and 3, when the same checks run under Wayland): moving tabs between hidden and shown, hidden
+// tabs' throttling, pictures of hidden tabs, and what tabs cost.
+import { cpuBetween, memTotals, sample } from "./metrics.ts";
+import { AGENT_W, onWayland, placeAvailable, SHOWN_W, TabHost, type CaptureResult, type HeadlessPlace, type Place, type Snapshot, type Tab } from "./tabs.ts";
+import { errorText, rate, sleep, summarize, waitFor } from "../shared/stats.ts";
+import type { SpikeServer } from "../shared/server.ts";
+
+type Log = (line: string) => void;
+
+const PROBE = "/pages/probe.html?scenario=probe";
+
+// --- rates between two snapshots -------------------------------------------------------------------------------------
+
+export interface Rates {
+  seconds: number;
+  intervalHz: number;
+  chainHz: number;
+  rafHz: number;
+  maxIntervalGapMs: number;
+  maxChainGapMs: number;
+  maxRafGapMs: number;
+  visibility: string;
+  layout: string;
+  /** IntersectionObserver and ResizeObserver callbacks per second (the probe changes its element twice a second). */
+  ioHz: number;
+  roHz: number;
+  mediaPlayedPerSec?: number;
+  decodedFps?: number;
+  paused?: boolean;
+  audioState?: string;
+  audioTimePerSec?: number;
+}
+
+export function rates(a: Snapshot, b: Snapshot): Rates {
+  const r: Rates = {
+    seconds: (b.now - a.now) / 1000,
+    intervalHz: rate(a.interval.n, a.now, b.interval.n, b.now),
+    chainHz: rate(a.chain.n, a.now, b.chain.n, b.now),
+    rafHz: rate(a.raf.n, a.now, b.raf.n, b.now),
+    maxIntervalGapMs: b.interval.maxGap,
+    maxChainGapMs: b.chain.maxGap,
+    maxRafGapMs: b.raf.maxGap,
+    visibility: b.visibility,
+    layout: `${b.innerWidth}x${b.innerHeight}`,
+    ioHz: rate(a.observers?.io ?? 0, a.now, b.observers?.io ?? 0, b.now),
+    roHz: rate(a.observers?.ro ?? 0, a.now, b.observers?.ro ?? 0, b.now),
+  };
+  if (a.media !== null && b.media !== null) {
+    r.mediaPlayedPerSec = (b.media.played - a.media.played) / r.seconds;
+    r.decodedFps = (b.media.decodedFrames - a.media.decodedFrames) / r.seconds;
+    r.paused = b.media.paused;
+    r.audioState = b.media.audioState;
+    r.audioTimePerSec = (b.media.audioTime - a.media.audioTime) / r.seconds;
+  }
+  return r;
+}
+
+// --- Q1: hidden <-> shown without a reload --------------------------------------------------------------------------
+
+export interface MoveCycle {
+  toShown: { resizeMs?: number; visibleMs?: number; firstRafMs?: number; freshPictureMs?: number; pictureWidth?: number; layout?: string };
+  toHidden: { resizeMs?: number; hiddenMs?: number; layoutAfter?: string; fitMs?: number; layoutFitted?: string };
+  shownRates?: Rates;
+  hiddenRates?: Rates;
+}
+
+export interface MoveResult {
+  place: string;
+  fit: boolean;
+  ok: boolean;
+  reloaded: boolean;
+  checks: Record<string, boolean | string | number>;
+  cycles: MoveCycle[];
+  timing: Record<string, ReturnType<typeof summarize>>;
+  layout: { hidden: string; shown: string };
+  initialRates?: Rates;
+  error?: string;
+}
+
+async function waitLayout(host: TabHost, tab: Tab, width: number, ms: number): Promise<Snapshot | undefined> {
+  return waitFor(async () => {
+    const s = await host.snapshot(tab);
+    return s.innerWidth === width ? s : undefined;
+  }, ms, 20);
+}
+
+/**
+ * Move one tab hidden → shown → hidden `cycles` times. With `fit`, a hidden tab is held at the agent's 1280x800 by a
+ * device-metrics override (cleared while it is shown), since a hidden view does not follow its bounds.
+ */
+export async function moveCheck(host: TabHost, server: SpikeServer, place: HeadlessPlace, log: Log, opts: { cycles?: number; fit?: boolean } = {}): Promise<MoveResult> {
+  const cycles = opts.cycles ?? 4;
+  const fit = opts.fit === true;
+  const result: MoveResult = { place, fit, ok: false, reloaded: false, checks: {}, cycles: [], timing: {}, layout: { hidden: "", shown: "" } };
+  let tab: Tab | undefined;
+  try {
+    tab = await host.create({ place, partition: "persist:bot-move", throttling: false, path: `${PROBE}&media=1` });
+    const setup = await host.exec<{ media: string; scrollY: number }>(tab, `window.__s7.setup({ field: "typed before moving", scroll: 1234, media: true })`, 10_000);
+    result.checks.mediaStart = setup.media;
+    if (fit) await host.fit(tab);
+    await sleep(1500);
+    const s0 = await host.snapshot(tab);
+    await host.exec(tab, "window.__s7.resetGaps()");
+    await sleep(2000);
+    const s0b = await host.snapshot(tab);
+    result.initialRates = rates(s0, s0b);
+    result.layout.hidden = `${s0.innerWidth}x${s0.innerHeight}@${s0.dpr}`;
+    const loadsAfterSetup = tab.loads;
+    const navsAfterSetup = tab.navigations;
+    const snaps: Snapshot[] = [s0, s0b];
+    for (let i = 0; i < cycles; i++) {
+      const c: MoveCycle = { toShown: {}, toHidden: {} };
+      // to shown
+      const t0 = Date.now();
+      host.show(tab);
+      if (fit) await host.unfit(tab);
+      // the first picture drawn after the move at the shown size, polled from the moment of the move
+      const pic = await waitFor(async () => {
+        const r = await host.capture(tab!, "capturePage", SHOWN_W, 2000);
+        return r.ok && r.staleMs !== undefined && r.askedAt - r.staleMs >= t0 && r.width >= SHOWN_W ? r : undefined;
+      }, 4000, 10);
+      if (pic !== undefined) { c.toShown.freshPictureMs = Date.now() - t0; c.toShown.pictureWidth = pic.width; }
+      const shownSnap = await waitLayout(host, tab, SHOWN_W, 5000);
+      const nowSnap = shownSnap ?? (await host.snapshot(tab));
+      c.toShown.layout = `${nowSnap.innerWidth}x${nowSnap.innerHeight}`;
+      const tr = nowSnap.events.find((e) => e.t >= t0 && e.kind === "resize");
+      if (tr !== undefined) c.toShown.resizeMs = tr.t - t0;
+      result.layout.shown = `${nowSnap.innerWidth}x${nowSnap.innerHeight}@${nowSnap.dpr}`;
+      const raf = await waitFor(async () => { const v = await host.exec<number>(tab!, `window.__s7.rafAfter(${t0})`); return v > 0 ? v : undefined; }, 3000, 25);
+      if (raf !== undefined) c.toShown.firstRafMs = raf - t0;
+      const vis = await host.exec<number>(tab, `window.__s7.eventAfter(${t0}, "visibility", "visible")`);
+      if (vis > 0) c.toShown.visibleMs = vis - t0;
+      await host.exec(tab, "window.__s7.resetGaps()");
+      const sa = await host.snapshot(tab);
+      await sleep(1500);
+      const sb = await host.snapshot(tab);
+      c.shownRates = rates(sa, sb);
+      snaps.push(sa, sb);
+      // back to hidden: does the page come back to the agent's 1280x800 by itself?
+      const t1 = Date.now();
+      host.hide(tab);
+      const back = await waitLayout(host, tab, AGENT_W, 1500);
+      const after = back ?? (await host.snapshot(tab));
+      c.toHidden.layoutAfter = `${after.innerWidth}x${after.innerHeight}`;
+      const trh = after.events.find((e) => e.t >= t1 && e.kind === "resize");
+      if (back !== undefined && trh !== undefined) c.toHidden.resizeMs = trh.t - t1;
+      if (fit) {
+        const tf = Date.now();
+        await host.fit(tab);
+        const fitted = await waitLayout(host, tab, AGENT_W, 3000);
+        if (fitted !== undefined) c.toHidden.fitMs = Date.now() - tf;
+        c.toHidden.layoutFitted = fitted === undefined ? "not fitted in 3 s" : `${fitted.innerWidth}x${fitted.innerHeight}`;
+      }
+      const hid = await host.exec<number>(tab, `window.__s7.eventAfter(${t1}, "visibility", "hidden")`);
+      if (hid > 0) c.toHidden.hiddenMs = hid - t1;
+      await host.exec(tab, "window.__s7.resetGaps()");
+      const ha = await host.snapshot(tab);
+      await sleep(2000);
+      const hb = await host.snapshot(tab);
+      c.hiddenRates = rates(ha, hb);
+      snaps.push(ha, hb);
+      result.cycles.push(c);
+      log(`  move ${place}${fit ? " (fit)" : ""} cycle ${i + 1}: fresh picture ${c.toShown.freshPictureMs ?? "-"} ms, first rAF ${c.toShown.firstRafMs ?? "-"} ms, shown ${c.toShown.layout}; hidden again ${c.toHidden.layoutAfter}${fit ? `, fitted ${c.toHidden.layoutFitted} in ${c.toHidden.fitMs ?? "-"} ms` : ""}; hidden rAF ${c.hiddenRates.rafHz.toFixed(1)} Hz`);
+    }
+    const last = snaps[snaps.length - 1]!;
+    const first = snaps[0]!;
+    result.reloaded = snaps.some((s) => s.token !== first.token) || tab.loads !== loadsAfterSetup || tab.navigations !== navsAfterSetup;
+    result.checks.sameDocument = !result.reloaded;
+    result.checks.navigationsDuringMoves = tab.navigations - navsAfterSetup;
+    result.checks.loadsDuringMoves = tab.loads - loadsAfterSetup;
+    result.checks.fieldKept = snaps.every((s) => s.field === "typed before moving");
+    result.checks.sessionStorageKept = snaps.every((s) => s.session === "typed before moving");
+    result.checks.scrollKept = snaps.every((s) => s.scrollY === 1234);
+    result.checks.scrollSeen = snaps.map((s) => s.scrollY).filter((v, i, a) => a.indexOf(v) === i).join(",");
+    result.checks.sseOpensPage = last.sse.opens;
+    result.checks.sseOpensServer = server.sseOpens(tab.id);
+    result.checks.sseErrors = last.sse.errors;
+    result.checks.sseGaps = last.sse.gaps;
+    result.checks.sseKept = last.sse.opens === 1 && server.sseOpens(tab.id) === 1;
+    result.checks.layoutBackToAgentSize = result.cycles.every((c) => c.toHidden.layoutAfter === `${AGENT_W}x800`);
+    if (first.media !== null && last.media !== null) {
+      const wall = (last.now - first.now) / 1000;
+      result.checks.mediaPlayedPerSec = Number(((last.media.played - first.media.played) / wall).toFixed(3));
+      result.checks.mediaPausedAtEnd = last.media.paused;
+      result.checks.mediaPauseEvents = last.media.pauses;
+      result.checks.mediaDecodedFps = Number(((last.media.decodedFrames - first.media.decodedFrames) / wall).toFixed(2));
+      result.checks.audioState = last.media.audioState;
+      result.checks.mediaKept = !last.media.paused && (last.media.played - first.media.played) / wall > 0.9;
+    }
+    result.checks.processGone = tab.gone.join(",") || "none";
+    const pick = (f: (c: MoveCycle) => number | undefined) => summarize(result.cycles.map(f).filter((v): v is number => v !== undefined));
+    result.timing = {
+      showResizeMs: pick((c) => c.toShown.resizeMs),
+      showFirstRafMs: pick((c) => c.toShown.firstRafMs),
+      showVisibleEventMs: pick((c) => c.toShown.visibleMs),
+      showFreshPictureMs: pick((c) => c.toShown.freshPictureMs),
+      hideResizeMs: pick((c) => c.toHidden.resizeMs),
+      hideFitMs: pick((c) => c.toHidden.fitMs),
+      hideHiddenEventMs: pick((c) => c.toHidden.hiddenMs),
+    };
+    result.ok = !result.reloaded && result.checks.fieldKept === true && result.checks.sseKept === true;
+  } catch (e) {
+    result.error = errorText(e);
+    log(`  move ${place}: ERROR ${result.error}`);
+  } finally {
+    if (tab !== undefined) await host.close(tab);
+  }
+  return result;
+}
+
+// --- Q2a: throttling of hidden tabs -----------------------------------------------------------------------------------
+
+export interface ThrottleRow {
+  config: string;
+  place: Place;
+  throttling: boolean;
+  media: boolean;
+  rates?: Rates;
+  rendererCpuPct?: number;
+  allCpuPct?: number;
+  pumpFps?: number;
+  /** Where the cover window ended up, for covered configs. */
+  cover?: string;
+  error?: string;
+}
+
+async function measureTab(host: TabHost, tab: Tab, seconds: number): Promise<{ rates: Rates; cpu: number; all: number; pumpFps?: number }> {
+  await host.exec(tab, "window.__s7.resetGaps()");
+  const a = await host.snapshot(tab);
+  const p0 = tab.pumpFrames;
+  const ma = sample();
+  await sleep(seconds * 1000);
+  const b = await host.snapshot(tab);
+  const mb = sample();
+  const cpu = cpuBetween(ma, mb);
+  return { rates: rates(a, b), cpu: cpu.byPid[String(tab.wc.getOSProcessId())] ?? Number.NaN, all: cpu.total, pumpFps: tab.pumping ? (tab.pumpFrames - p0) / seconds : undefined };
+}
+
+interface ThrottleConfig { config: string; place: Place; throttling: boolean; media?: boolean; pump?: boolean; toggle?: boolean; cover?: boolean; onTop?: boolean }
+
+export async function throttleCheck(host: TabHost, log: Log): Promise<ThrottleRow[]> {
+  const rows: ThrottleRow[] = [];
+  const configs: ThrottleConfig[] = [
+    { config: "shown (reference)", place: "shown", throttling: true },
+    { config: "detached, throttling on (default)", place: "detached", throttling: true },
+    { config: "detached, throttling off", place: "detached", throttling: false },
+    { config: "never-shown window, throttling on (default)", place: "ownHiddenWindow", throttling: true },
+    { config: "never-shown window, throttling off", place: "ownHiddenWindow", throttling: false },
+    { config: "never-shown window, on, then setBackgroundThrottling(false)", place: "ownHiddenWindow", throttling: true, toggle: true },
+    { config: "never-shown window, throttling off + frame pump", place: "ownHiddenWindow", throttling: false, pump: true },
+    { config: "detached, throttling off + frame pump", place: "detached", throttling: false, pump: true },
+    { config: "invisible shown window, throttling off", place: "invisibleWindow", throttling: false },
+    { config: "1x1 shown window, throttling off", place: "tinyWindow", throttling: false },
+    // a real desktop: the user's windows cover the host window (round three)
+    { config: "1x1 shown window, covered by another window", place: "tinyWindow", throttling: false, cover: true },
+    { config: "1x1 shown window kept above a cover window (always on top)", place: "tinyWindow", throttling: false, cover: true, onTop: true },
+    { config: "invisible shown window, covered by another window", place: "invisibleWindow", throttling: false, cover: true },
+    // the controls (round eight): with throttling ON, a host Chromium counts as hidden or covered turns "hidden" and
+    // slows to 1 Hz; with it off, Electron reports "visible" whatever Chromium thinks
+    { config: "1x1 shown window, throttling on (control)", place: "tinyWindow", throttling: true },
+    { config: "1x1 shown window, throttling on, covered by another window (control)", place: "tinyWindow", throttling: true, cover: true },
+    { config: "invisible shown window, throttling on, covered by another window (control)", place: "invisibleWindow", throttling: true, cover: true },
+    { config: "osr window 30 fps, throttling off", place: "osr", throttling: false },
+    { config: "osr view (no window) 30 fps, throttling off", place: "osrView", throttling: false },
+    // a page playing sound is exempt from Chrome's background throttling whatever the setting: measured apart
+    { config: "never-shown window, throttling on, playing media", place: "ownHiddenWindow", throttling: true, media: true },
+    { config: "never-shown window, throttling off, playing media", place: "ownHiddenWindow", throttling: false, media: true },
+    { config: "detached, throttling off, playing media", place: "detached", throttling: false, media: true },
+  ];
+  for (const c of configs) {
+    const row: ThrottleRow = { config: c.config, place: c.place, throttling: c.throttling && c.toggle !== true, media: c.media === true };
+    if (!placeAvailable(c.place)) { row.error = "not possible here"; rows.push(row); continue; }
+    let tab: Tab | undefined;
+    try {
+      tab = await host.create({ place: c.place, partition: `bot-throttle-${rows.length}`, throttling: c.throttling, onTop: c.onTop, path: `${PROBE}&sse=0${c.media ? "&media=1" : ""}` });
+      if (c.media) await host.exec(tab, `window.__s7.setup({ media: true })`, 10_000);
+      if (c.cover) row.cover = host.cover(tab);
+      if (c.toggle) { await sleep(1500); tab.wc.setBackgroundThrottling(false); }
+      if (c.pump) host.startPump(tab);
+      await sleep(2000);
+      const m = await measureTab(host, tab, 5);
+      row.rates = m.rates;
+      row.rendererCpuPct = m.cpu;
+      row.allCpuPct = m.all;
+      row.pumpFps = m.pumpFps;
+      log(`  throttle ${c.config}: interval ${m.rates.intervalHz.toFixed(1)} Hz, chain ${m.rates.chainHz.toFixed(1)} Hz, rAF ${m.rates.rafHz.toFixed(1)} Hz, ${m.rates.visibility}${c.media ? `, media x${(m.rates.mediaPlayedPerSec ?? 0).toFixed(2)} ${(m.rates.decodedFps ?? 0).toFixed(0)} fps` : ""}${m.pumpFps !== undefined ? `, pump ${m.pumpFps.toFixed(0)} fps` : ""}, renderer ${m.cpu.toFixed(1)}%`);
+    } catch (e) {
+      row.error = errorText(e);
+      log(`  throttle ${c.config}: ERROR ${row.error}`);
+    } finally {
+      host.uncover();
+      if (tab !== undefined) await host.close(tab);
+    }
+    rows.push(row);
+  }
+
+  // Two tabs in ONE never-shown window, one with throttling off: is the switch per tab, or per window?
+  {
+    let a: Tab | undefined, b: Tab | undefined;
+    try {
+      a = await host.create({ place: "hiddenWindow", partition: "bot-shared-a", throttling: false, path: `${PROBE}&sse=0` });
+      b = await host.create({ place: "hiddenWindow", partition: "bot-shared-b", throttling: true, path: `${PROBE}&sse=0` });
+      await sleep(2000);
+      await host.exec(a, "window.__s7.resetGaps()");
+      await host.exec(b, "window.__s7.resetGaps()");
+      const [a0, b0] = [await host.snapshot(a), await host.snapshot(b)];
+      await sleep(5000);
+      const [a1, b1] = [await host.snapshot(a), await host.snapshot(b)];
+      rows.push({ config: "one never-shown window: tab A, throttling off", place: "hiddenWindow", throttling: false, media: false, rates: rates(a0, a1) });
+      rows.push({ config: "one never-shown window: tab B, throttling on", place: "hiddenWindow", throttling: true, media: false, rates: rates(b0, b1) });
+    } catch (e) {
+      rows.push({ config: "one never-shown window", place: "hiddenWindow", throttling: false, media: false, error: errorText(e) });
+    } finally {
+      if (a !== undefined) await host.close(a);
+      if (b !== undefined) await host.close(b);
+    }
+  }
+  return rows;
+}
+
+// --- Q2b: pictures of hidden tabs -------------------------------------------------------------------------------------
+
+export interface CaptureRow {
+  place: Place;
+  throttling: boolean;
+  pump: boolean;
+  /** "covered": an opaque window over the host window (round three). */
+  variant?: string;
+  method: string;
+  tries: number;
+  ok: number;
+  decoded: number;
+  ms: ReturnType<typeof summarize>;
+  staleMs: ReturnType<typeof summarize>;
+  size: string;
+  errors: string[];
+  /** visibilitychange events the page saw during the captures. */
+  visibilityEvents: string[];
+  /** All the app's CPU, ms per picture (main, GPU and renderer together; the page's own animation included). */
+  cpuMsPerPicture?: number;
+  /** beginFrameSubscription / paint: frames per second delivered while there. */
+  framesPerSec?: number;
+  /** Round nine: scaling a capturePage picture in the display's pixels to the agent's 1280x800, plus JPEG (ms). */
+  scaleMs?: ReturnType<typeof summarize>;
+  /** Round nine: the view's bounds, its window's content bounds and the page's layout, when the captures began. */
+  geometry?: string;
+}
+
+const empty = summarize([]);
+
+export async function captureCheck(host: TabHost, log: Log): Promise<CaptureRow[]> {
+  const rows: CaptureRow[] = [];
+  const places: Array<{ place: Place; throttling: boolean; pump?: boolean; cover?: boolean; fit?: boolean }> = [
+    { place: "shown", throttling: true },
+    { place: "detached", throttling: false },
+    { place: "hiddenWindow", throttling: false },
+    { place: "hiddenWindow", throttling: false, pump: true },
+    { place: "invisibleWindow", throttling: false },
+    { place: "tinyWindow", throttling: false },
+    { place: "tinyWindow", throttling: false, cover: true },
+    // the agent's 1280x800 at a device scale factor of 1 by CDP override, whatever the display's (round eight)
+    { place: "tinyWindow", throttling: false, fit: true },
+    { place: "osr", throttling: false },
+    { place: "osrView", throttling: false },
+  ];
+  for (const p of places) {
+    const label = { place: p.place, throttling: p.throttling, pump: p.pump === true, ...(p.cover === true ? { variant: "covered" } : p.fit === true ? { variant: "fit 1280x800 at 1x" } : {}) };
+    if (!placeAvailable(p.place)) { rows.push({ ...label, method: "-", tries: 0, ok: 0, decoded: 0, ms: empty, staleMs: empty, size: "-", errors: ["not possible here"], visibilityEvents: [] }); continue; }
+    let tab: Tab | undefined;
+    try {
+      tab = await host.create({ place: p.place, partition: `bot-capture-${rows.length}`, throttling: p.throttling, path: "/pages/probe.html?scenario=anim&sse=0" });
+      if (p.pump) host.startPump(tab);
+      if (p.cover) log(`  capture ${p.place} ${host.cover(tab)}`);
+      if (p.fit) await host.fit(tab);
+      await sleep(1500);
+      const snap = await host.snapshot(tab);
+      const box = (b: { x: number; y: number; width: number; height: number } | undefined): string => (b === undefined ? "-" : `${b.x},${b.y} ${b.width}x${b.height}`);
+      const geometry = `view ${box(tab.view?.getBounds())} in content ${box(tab.win?.getContentBounds())}; page ${snap.innerWidth}x${snap.innerHeight} at ${snap.dpr ?? "?"}x`;
+      const osr = p.place === "osr" || p.place === "osrView";
+      const methods = osr ? ["osrPaint", "capturePage", "cdpJpeg"] : ["capturePageHidden", "capturePage", "cdpJpeg", "frameSub", ...(p.place === "shown" ? ["cdpPng"] : [])];
+      for (const method of methods) {
+        const tries = 6;
+        const results: CaptureResult[] = [];
+        const t0 = Date.now();
+        const m0 = sample();
+        let timeouts = 0;
+        for (let i = 0; i < tries; i++) {
+          const r = await host.capture(tab, method, snap.innerWidth, 5000);
+          results.push(r);
+          if (r.error?.includes("timed out")) timeouts++;
+          if (timeouts >= 2) break; // two timeouts: it isn't going to work here
+          await sleep(100);
+        }
+        const m1 = sample();
+        const spent = cpuBetween(m0, m1);
+        const after = await host.snapshot(tab);
+        const vis = after.events.filter((e) => e.t >= t0 && e.kind === "visibility").map((e) => `${e.t - t0}:${e.detail}`);
+        const good = results.filter((r) => r.ok);
+        const row: CaptureRow = {
+          ...label,
+          method,
+          tries: results.length,
+          ok: good.length,
+          decoded: results.filter((r) => r.staleMs !== undefined).length,
+          ms: summarize(good.map((r) => r.ms)),
+          staleMs: summarize(results.map((r) => r.staleMs ?? Number.NaN)),
+          size: good.length > 0 ? `${good[0]!.width}x${good[0]!.height}` : "-",
+          errors: [...new Set(results.map((r) => r.error).filter((e): e is string => e !== undefined))],
+          visibilityEvents: vis,
+          cpuMsPerPicture: ((spent.total / 100) * spent.seconds * 1000) / results.length,
+          ...(good.some((r) => r.scaleMs !== undefined) ? { scaleMs: summarize(good.map((r) => r.scaleMs ?? Number.NaN)) } : {}),
+          geometry,
+        };
+        rows.push(row);
+        log(`  capture ${p.place}${p.pump ? "+pump" : ""}/${method}: ${row.ok}/${row.tries} ok, ${row.decoded} decoded, p50 ${row.ms.p50} ms, stale p50 ${row.staleMs.p50} ms, ${row.size}${row.errors.length ? ` errors: ${row.errors.join("; ")}` : ""}`);
+      }
+      // frames delivered while in this place: a frame subscription (views) or paint events (OSR)
+      if (osr) {
+        const n0 = tab.paints;
+        await sleep(2000);
+        rows.push({ ...label, method: "paint events", tries: 0, ok: 0, decoded: 0, ms: empty, staleMs: empty, size: "-", errors: [], visibilityEvents: [], framesPerSec: (tab.paints - n0) / 2 });
+      } else {
+        host.stopPump(tab);
+        let frames = 0;
+        tab.wc.beginFrameSubscription(false, () => { frames++; });
+        await sleep(2000);
+        tab.wc.endFrameSubscription();
+        rows.push({ ...label, method: "beginFrameSubscription", tries: 0, ok: 0, decoded: 0, ms: empty, staleMs: empty, size: "-", errors: [], visibilityEvents: [], framesPerSec: frames / 2 });
+        log(`  capture ${p.place}/beginFrameSubscription: ${(frames / 2).toFixed(1)} frames/s`);
+      }
+    } catch (e) {
+      rows.push({ ...label, method: "setup", tries: 0, ok: 0, decoded: 0, ms: empty, staleMs: empty, size: "-", errors: [errorText(e)], visibilityEvents: [] });
+      log(`  capture ${p.place}: ERROR ${errorText(e)}`);
+    } finally {
+      host.uncover();
+      if (tab !== undefined) await host.close(tab);
+    }
+  }
+  return rows;
+}
+
+// --- Q2c: what tabs cost ----------------------------------------------------------------------------------------------
+
+export interface CostStep {
+  tabs: number;
+  memBest: number;
+  memKind: string;
+  memRss: number;
+  cpuPct: number;
+  cpuByType: Record<string, number>;
+  procs: number;
+}
+
+export interface CostResult {
+  idle: CostStep[];
+  perIdleTabMiB?: number;
+  perIdleTabCpuPct?: number;
+  animated: Array<{ config: string; cpuPct: number; rendererPct: number; gpuPct: number; rafHz?: number }>;
+  partitions: { samePartitionMiB?: number; ownPartitionsMiB?: number };
+  /** Quiet pages (no rAF loop) working in one shared 1x1 host: the idle cost of a tab that draws. */
+  host?: { steps: CostStep[]; perTabMiB: number; perTabCpuPct: number };
+  error?: string;
+}
+
+export async function costStep(tabs: number, settleMs = 3000, windowMs = 4000): Promise<CostStep> {
+  await sleep(settleMs);
+  const mem = memTotals(sample(true));
+  const a = sample();
+  await sleep(windowMs);
+  const b = sample();
+  const cpu = cpuBetween(a, b);
+  return { tabs, memBest: mem.best, memKind: mem.bestKind, memRss: mem.rss, cpuPct: cpu.total, cpuByType: cpu.byType, procs: mem.procs };
+}
+
+export async function costCheck(host: TabHost, log: Log): Promise<CostResult> {
+  const result: CostResult = { idle: [], animated: [], partitions: {} };
+  const tabs: Tab[] = [];
+  try {
+    host.host(); // the hidden host window exists before the baseline
+    result.idle.push(await costStep(0));
+    for (const target of [1, 2, 4, 8]) {
+      while (tabs.length < target) {
+        tabs.push(await host.create({ place: "hiddenWindow", partition: `persist:bot-cost-${tabs.length}`, throttling: false, path: "/pages/probe.html?scenario=static&sse=0" }));
+      }
+      const step = await costStep(target);
+      result.idle.push(step);
+      log(`  cost ${target} idle hidden tabs: ${(step.memBest / 1048576).toFixed(0)} MiB (${step.memKind}), cpu ${step.cpuPct.toFixed(1)}%, ${step.procs} processes`);
+    }
+    const first = result.idle[0]!, last = result.idle[result.idle.length - 1]!;
+    result.perIdleTabMiB = (last.memBest - first.memBest) / last.tabs / 1048576;
+    result.perIdleTabCpuPct = (last.cpuPct - first.cpuPct) / last.tabs;
+    for (const t of tabs.splice(0)) await host.close(t);
+
+    // same partition vs own partitions, 4 tabs each
+    const base = await costStep(0, 3000, 1000);
+    for (let i = 0; i < 4; i++) tabs.push(await host.create({ place: "hiddenWindow", partition: "persist:bot-cost-shared", throttling: false, path: "/pages/probe.html?scenario=static&sse=0" }));
+    const same = await costStep(4, 3000, 1000);
+    for (const t of tabs.splice(0)) await host.close(t);
+    const base2 = await costStep(0, 3000, 1000);
+    for (let i = 0; i < 4; i++) tabs.push(await host.create({ place: "hiddenWindow", partition: `persist:bot-cost-own-${i}`, throttling: false, path: "/pages/probe.html?scenario=static&sse=0" }));
+    const own = await costStep(4, 3000, 1000);
+    for (const t of tabs.splice(0)) await host.close(t);
+    result.partitions = { samePartitionMiB: (same.memBest - base.memBest) / 1048576, ownPartitionsMiB: (own.memBest - base2.memBest) / 1048576 };
+    log(`  cost 4 tabs: one partition +${result.partitions.samePartitionMiB?.toFixed(0)} MiB, own partitions +${result.partitions.ownPartitionsMiB?.toFixed(0)} MiB`);
+
+    // working tabs that sit still: a quiet page (no rAF loop) in one shared 1x1 host, which draws (round eight)
+    const hostBase = await costStep(0, 3000, 2000);
+    const hostSteps: CostStep[] = [hostBase];
+    for (const target of [1, 4, 8]) {
+      while (tabs.length < target) tabs.push(await host.create({ place: "sharedTinyWindow", partition: `persist:bot-cost-host-${tabs.length}`, throttling: false, path: "/pages/probe.html?scenario=idle&sse=0" }));
+      const step = await costStep(target);
+      hostSteps.push(step);
+      log(`  cost ${target} quiet tabs in the host: ${(step.memBest / 1048576).toFixed(0)} MiB, cpu ${step.cpuPct.toFixed(1)}%`);
+    }
+    const hLast = hostSteps[hostSteps.length - 1]!;
+    result.host = { steps: hostSteps, perTabMiB: (hLast.memBest - hostBase.memBest) / hLast.tabs / 1048576, perTabCpuPct: (hLast.cpuPct - hostBase.cpuPct) / hLast.tabs };
+    for (const t of tabs.splice(0)) await host.close(t);
+
+    // an animated tab in each place: what keeping its frames coming costs
+    const anim: Array<{ config: string; place: Place; throttling: boolean; pump?: boolean }> = [
+      { config: "animated, shown", place: "shown", throttling: true },
+      { config: "animated, never-shown window, throttling off", place: "ownHiddenWindow", throttling: false },
+      { config: "animated, never-shown window, throttling on", place: "ownHiddenWindow", throttling: true },
+      { config: "animated, never-shown window, throttling off + frame pump", place: "ownHiddenWindow", throttling: false, pump: true },
+      { config: "animated, invisible shown window", place: "invisibleWindow", throttling: false },
+      { config: "animated, 1x1 shown window", place: "tinyWindow", throttling: false },
+      { config: "animated, osr 30 fps", place: "osr", throttling: false },
+    ];
+    for (const c of anim) {
+      if (!placeAvailable(c.place)) continue;
+      const t = await host.create({ place: c.place, partition: "persist:bot-cost-anim", throttling: c.throttling, path: "/pages/probe.html?scenario=anim&sse=0" });
+      if (c.pump) host.startPump(t);
+      await sleep(2000);
+      const s0 = await host.snapshot(t);
+      const a = sample();
+      await sleep(4000);
+      const b = sample();
+      const s1 = await host.snapshot(t);
+      const cpu = cpuBetween(a, b);
+      const rendererPct = cpu.byPid[String(t.wc.getOSProcessId())] ?? Number.NaN;
+      const rafHz = rates(s0, s1).rafHz;
+      result.animated.push({ config: c.config, cpuPct: cpu.total, rendererPct, gpuPct: cpu.byType.GPU ?? 0, rafHz });
+      log(`  cost ${c.config}: all ${cpu.total.toFixed(1)}%, renderer ${rendererPct.toFixed(1)}%, gpu ${(cpu.byType.GPU ?? 0).toFixed(1)}%, rAF ${rafHz.toFixed(0)} Hz`);
+      await host.close(t);
+    }
+  } catch (e) {
+    result.error = errorText(e);
+    log(`  cost: ERROR ${result.error}`);
+  } finally {
+    for (const t of tabs) await host.close(t);
+  }
+  return result;
+}
+
+// --- the long run: does a hidden tab stay unthrottled past Chrome's five-minute intensive throttling? ----------------
+
+export interface LongRow { config: string; at: string; rates?: Rates; error?: string }
+
+export async function longCheck(host: TabHost, log: Log, minutes = 6.5): Promise<LongRow[]> {
+  const rows: LongRow[] = [];
+  const configs: Array<{ config: string; place: Place; throttling: boolean }> = [
+    { config: "never-shown window, throttling on", place: "ownHiddenWindow", throttling: true },
+    { config: "never-shown window, throttling off", place: "ownHiddenWindow", throttling: false },
+    { config: "detached, throttling off", place: "detached", throttling: false },
+  ];
+  const tabs: Array<{ c: (typeof configs)[number]; t: Tab }> = [];
+  try {
+    for (const c of configs) tabs.push({ c, t: await host.create({ place: c.place, partition: `bot-long-${tabs.length}`, throttling: c.throttling, path: `${PROBE}&sse=0` }) });
+    const start = Date.now();
+    const marks = [0.5, 5, minutes]; // the last window is wholly past Chrome's five minutes
+    let prev = new Map<Tab, Snapshot>();
+    for (const { t } of tabs) { await host.exec(t, "window.__s7.resetGaps()"); prev.set(t, await host.snapshot(t)); }
+    for (const m of marks) {
+      while (Date.now() - start < m * 60_000) {
+        await sleep(Math.min(30_000, m * 60_000 - (Date.now() - start)));
+        log(`  long: ${((Date.now() - start) / 60_000).toFixed(1)} min`);
+      }
+      const next = new Map<Tab, Snapshot>();
+      for (const { c, t } of tabs) {
+        try {
+          const s = await host.snapshot(t);
+          rows.push({ config: c.config, at: `${m} min`, rates: rates(prev.get(t)!, s) });
+          next.set(t, s);
+          await host.exec(t, "window.__s7.resetGaps()");
+        } catch (e) {
+          rows.push({ config: c.config, at: `${m} min`, error: errorText(e) });
+        }
+      }
+      prev = next;
+    }
+  } finally {
+    for (const { t } of tabs) await host.close(t);
+  }
+  return rows;
+}
+
+// --- round eight: waking a resting tab, many tabs in one host, and the host's invariants -----------------------------
+
+export interface WakeResult {
+  cycles: Array<{ restRates?: Rates; firstRafMs?: number; freshPictureMs?: number; awakeRates?: Rates }>;
+  firstRafMs: ReturnType<typeof summarize>;
+  freshPictureMs: ReturnType<typeof summarize>;
+  error?: string;
+}
+
+/**
+ * Edit 2's rest rule: a tab no bot is using rests in a never-shown window with throttling on; the next command
+ * moves it into the 1x1 host with throttling off. How long until it draws, and until a fresh picture?
+ */
+export async function wakeCheck(host: TabHost, log: Log, cycles = 4, restSec = 10): Promise<WakeResult> {
+  const result: WakeResult = { cycles: [], firstRafMs: summarize([]), freshPictureMs: summarize([]) };
+  let tab: Tab | undefined;
+  let awakeHost: ReturnType<TabHost["newTiny"]> | undefined;
+  try {
+    tab = await host.create({ place: "ownHiddenWindow", partition: "persist:bot-wake", throttling: true, path: `${PROBE}&sse=0` });
+    const rest = tab.win!;
+    awakeHost = host.newTiny("S7 wake host");
+    for (let i = 0; i < cycles; i++) {
+      const c: WakeResult["cycles"][number] = {};
+      const r0 = await host.snapshot(tab);
+      await sleep(restSec * 1000);
+      const r1 = await host.snapshot(tab);
+      c.restRates = rates(r0, r1);
+      const t0 = Date.now();
+      tab.wc.setBackgroundThrottling(false);
+      host.rehome(tab, awakeHost);
+      const raf = await waitFor(async () => { const v = await host.exec<number>(tab!, `window.__s7.rafAfter(${t0})`); return v > 0 ? v : undefined; }, 5000, 10);
+      if (raf !== undefined) c.firstRafMs = raf - t0;
+      const pic = await waitFor(async () => {
+        const r = await host.capture(tab!, "capturePage", AGENT_W, 2000);
+        return r.ok && r.staleMs !== undefined && r.askedAt - r.staleMs >= t0 ? r : undefined;
+      }, 5000, 10);
+      if (pic !== undefined) c.freshPictureMs = Date.now() - t0;
+      const a0 = await host.snapshot(tab);
+      await sleep(2000);
+      c.awakeRates = rates(a0, await host.snapshot(tab));
+      host.rehome(tab, rest);
+      tab.wc.setBackgroundThrottling(true);
+      result.cycles.push(c);
+      log(`  wake ${i + 1}: resting ${c.restRates.intervalHz.toFixed(1)} Hz / rAF ${c.restRates.rafHz.toFixed(1)}; first rAF ${c.firstRafMs ?? "-"} ms, fresh picture ${c.freshPictureMs ?? "-"} ms; awake rAF ${c.awakeRates.rafHz.toFixed(0)} Hz`);
+    }
+    result.firstRafMs = summarize(result.cycles.map((c) => c.firstRafMs ?? Number.NaN));
+    result.freshPictureMs = summarize(result.cycles.map((c) => c.freshPictureMs ?? Number.NaN));
+  } catch (e) {
+    result.error = errorText(e);
+    log(`  wake: ERROR ${result.error}`);
+  } finally {
+    if (tab !== undefined) await host.close(tab);
+    if (awakeHost !== undefined && !awakeHost.isDestroyed()) awakeHost.destroy();
+  }
+  return result;
+}
+
+export interface SharedResult {
+  tabs: Array<{ rates?: Rates; capture: { ok: number; tries: number; ms: ReturnType<typeof summarize>; staleMs: ReturnType<typeof summarize>; size: string } }>;
+  /** Round nine: each tab held at 1280x800 and a device scale factor of 1 by the CDP override. */
+  fitted?: boolean;
+  error?: string;
+}
+
+/** Four animated tabs as stacked views in ONE 1x1 host window: does each draw, and can each be pictured? */
+export async function sharedHostCheck(host: TabHost, log: Log, n = 4): Promise<SharedResult> {
+  // round nine: every tab held at the agent's 1280x800 and a device scale factor of 1, as the design has it (round
+  // eight's tabs without the override laid out at 0x0 and drew nothing at a scale factor of 2 on Windows)
+  const result: SharedResult = { tabs: [], fitted: true };
+  const tabs: Tab[] = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      const t = await host.create({ place: "sharedTinyWindow", partition: `persist:bot-shared-${i}`, throttling: false, path: "/pages/probe.html?scenario=anim&sse=0" });
+      tabs.push(t);
+      await host.fit(t);
+    }
+    await sleep(2000);
+    const a = [];
+    for (const t of tabs) a.push(await host.snapshot(t));
+    await sleep(4000);
+    for (let i = 0; i < n; i++) {
+      const t = tabs[i]!;
+      const r = rates(a[i]!, await host.snapshot(t));
+      const caps: CaptureResult[] = [];
+      for (let k = 0; k < 4; k++) { caps.push(await host.capture(t, "capturePage", AGENT_W, 3000)); await sleep(100); }
+      const good = caps.filter((c) => c.ok);
+      result.tabs.push({ rates: r, capture: { ok: good.length, tries: caps.length, ms: summarize(good.map((c) => c.ms)), staleMs: summarize(caps.map((c) => c.staleMs ?? Number.NaN)), size: good[0] ? `${good[0].width}x${good[0].height}` : "-" } });
+      log(`  shared host tab ${i + 1}/${n}: rAF ${r.rafHz.toFixed(0)} Hz, capturePage ${good.length}/${caps.length}`);
+    }
+  } catch (e) {
+    result.error = errorText(e);
+    log(`  shared host: ERROR ${result.error}`);
+  } finally {
+    for (const t of tabs) await host.close(t);
+  }
+  return result;
+}
+
+export interface HostInvariants {
+  hostBounds?: string;
+  belowBounds?: string;
+  focusedAtStart?: boolean;
+  focusedAfterPageGrab?: boolean;
+  pageHasFocusAfterGrab?: boolean;
+  focusedWindowTitle?: string;
+  /** Windows: GWL_STYLE / GWL_EXSTYLE and the flags that matter. */
+  windowsStyles?: { style: string; exStyle: string; toolWindow: boolean; noActivate: boolean; transparent: boolean; layered: boolean; appWindow: boolean } | string;
+  /** X11 and Windows: a real click at the host's point. */
+  clickThrough?: { at: string; tool: string; belowClicks: number; hostClicks: number } | string;
+  /** Round nine, X11: what the X server says of the plain host (xwininfo: map state, override-redirect, shape). */
+  x11?: Record<string, string> | string;
+  /** Round nine, X11: the host with an empty window shape (`setShape([])`). */
+  shaped?: ShapedHost;
+  error?: string;
+}
+
+/**
+ * Round nine, X11. Electron's click-through keeps a 1x1 input region at the window's top-left corner on X11 and
+ * Wayland (electron_desktop_window_tree_host_linux.cc), so a 1x1 host takes a click on its only pixel (round eight).
+ * An empty window shape takes every pixel of the window off the screen and out of input on X11 (Chromium has no
+ * window shapes on Wayland). Does the host still draw and get pictured that way, and does a click go through?
+ */
+export interface ShapedHost {
+  xwininfo?: Record<string, string> | string;
+  rates?: Rates;
+  capture?: { ok: number; tries: number; ms: ReturnType<typeof summarize>; size: string };
+  clickThrough?: { at: string; tool: string; belowClicks: number; hostClicks: number };
+  /** The same shaped host with throttling on: does Chromium take a window with no shape as covered? */
+  controlRates?: Rates;
+  error?: string;
+}
+
+type Run = (file: string, args: string[], opts: { encoding: "utf8"; timeout: number }) => string;
+
+function xwininfo(win: InstanceType<typeof import("electron").BaseWindow>, run: Run): Record<string, string> | string {
+  try {
+    const h = win.getNativeWindowHandle();
+    const xid = h.length >= 8 ? h.readBigUInt64LE(0) : BigInt(h.readUInt32LE(0));
+    const text = run("xwininfo", ["-shape", "-id", `0x${xid.toString(16)}`], { encoding: "utf8", timeout: 10_000 });
+    const pick = (re: RegExp): string => re.exec(text)?.[1]?.trim() ?? "";
+    return {
+      id: `0x${xid.toString(16)}`,
+      size: `${pick(/Width:\s*(\d+)/)}x${pick(/Height:\s*(\d+)/)}`,
+      mapState: pick(/Map State:\s*(.+)/),
+      overrideRedirect: pick(/Override Redirect State:\s*(.+)/),
+      shape: text.split("\n").filter((l) => /shape/i.test(l)).map((l) => l.trim()).join("; "),
+    };
+  } catch (e) {
+    return `not read: ${errorText(e)}`;
+  }
+}
+
+async function shapedHostCheck(host: TabHost, below: InstanceType<typeof import("electron").BrowserWindow>, x: number, y: number, run: Run, log: Log): Promise<ShapedHost> {
+  const out: ShapedHost = {};
+  let t: Tab | undefined;
+  let control: Tab | undefined;
+  try {
+    t = await host.create({ place: "tinyWindow", partition: "persist:bot-shaped", throttling: false, path: "/pages/probe.html?scenario=anim&sse=0" });
+    t.win!.setPosition(x, y);
+    t.win!.setShape([]);
+    t.win!.moveTop();
+    await sleep(1500);
+    out.xwininfo = xwininfo(t.win!, run);
+    const a = await host.snapshot(t);
+    await sleep(3000);
+    out.rates = rates(a, await host.snapshot(t));
+    const caps: CaptureResult[] = [];
+    for (let k = 0; k < 4; k++) { caps.push(await host.capture(t, "capturePage", AGENT_W, 3000)); await sleep(100); }
+    const good = caps.filter((c) => c.ok);
+    out.capture = { ok: good.length, tries: caps.length, ms: summarize(good.map((c) => c.ms)), size: good[0] ? `${good[0].width}x${good[0].height}` : "-" };
+    const hostBefore = (await host.snapshot(t)).observers.clicks;
+    const belowBefore = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
+    run("xdotool", ["mousemove", String(x), String(y), "click", "1"], { encoding: "utf8", timeout: 15_000 });
+    await sleep(800);
+    const hostAfter = (await host.snapshot(t)).observers.clicks;
+    const belowAfter = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
+    out.clickThrough = { at: `${x},${y}`, tool: "xdotool", belowClicks: belowAfter - belowBefore, hostClicks: hostAfter - hostBefore };
+    await host.close(t);
+    t = undefined;
+    control = await host.create({ place: "tinyWindow", partition: "persist:bot-shaped-control", throttling: true, path: "/pages/probe.html?scenario=anim&sse=0" });
+    control.win!.setShape([]);
+    await sleep(1500);
+    const c0 = await host.snapshot(control);
+    await sleep(3000);
+    out.controlRates = rates(c0, await host.snapshot(control));
+  } catch (e) {
+    out.error = errorText(e);
+  } finally {
+    if (t !== undefined) await host.close(t);
+    if (control !== undefined) await host.close(control);
+  }
+  log(`  shaped host: ${JSON.stringify(out.xwininfo)}; rAF ${out.rates?.rafHz?.toFixed(0) ?? "-"} Hz, capturePage ${out.capture?.ok ?? "-"}/${out.capture?.tries ?? "-"}, click ${JSON.stringify(out.clickThrough ?? "-")}; throttling on: rAF ${out.controlRates?.rafHz?.toFixed(0) ?? "-"} Hz, ${out.controlRates?.visibility ?? "-"}${out.error ? `; error ${out.error}` : ""}`);
+  return out;
+}
+
+/**
+ * What CI can see of the host's invariants: it never takes focus (not even when its page asks), its window styles on
+ * Windows, and a real click at its point reaching the window below it (X11 with xdotool, Windows with SendInput).
+ */
+export async function hostCheck(host: TabHost, server: SpikeServer, log: Log): Promise<HostInvariants> {
+  const result: HostInvariants = {};
+  const { app, BaseWindow, BrowserWindow } = await import("electron");
+  const { execFileSync } = await import("node:child_process");
+  let below: InstanceType<typeof BrowserWindow> | undefined;
+  let tab: Tab | undefined;
+  try {
+    // not resizable: on Linux a frameless window's edges are resize handles, which take a click before the page does
+    // (round nine's click at the window's corner pixel reached neither page)
+    below = new BrowserWindow({ x: 0, y: 0, width: 420, height: 320, show: false, frame: false, resizable: false, title: "S7 below", webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    await below.loadURL(`${server.origin}/pages/probe.html?scenario=static&sse=0&tab=below`);
+    below.show();
+    below.focus();
+    await sleep(500);
+    // the host is shown after the window below, so it stacks above it
+    tab = await host.create({ place: "tinyWindow", partition: "persist:bot-hostcheck", throttling: false, path: "/pages/probe.html?scenario=static&sse=0" });
+    const hw = tab.win!;
+    const h0 = hw.getBounds();
+    below.setBounds({ x: h0.x, y: h0.y, width: 420, height: 320 });
+    // round ten: the host 100 px inside the window below, so the click lands well inside that window's page
+    hw.setPosition(h0.x + 100, h0.y + 100);
+    hw.moveTop();
+    await sleep(800);
+    const hb = hw.getBounds();
+    result.hostBounds = `${hb.x},${hb.y} ${hb.width}x${hb.height}`;
+    const bb = below.getBounds();
+    result.belowBounds = `${bb.x},${bb.y} ${bb.width}x${bb.height}`;
+    result.focusedAtStart = hw.isFocused();
+    result.pageHasFocusAfterGrab = await host.exec<boolean>(tab, "window.__s7.grabFocus()");
+    await sleep(500);
+    result.focusedAfterPageGrab = hw.isFocused();
+    result.focusedWindowTitle = BaseWindow.getFocusedWindow()?.getTitle() ?? "(none)";
+
+    if (process.platform === "win32") {
+      try {
+        const handle = hw.getNativeWindowHandle();
+        const hwnd = handle.length >= 8 ? handle.readBigUInt64LE(0) : BigInt(handle.readUInt32LE(0));
+        const ps = `Add-Type -Name W -Namespace S7 -MemberDefinition '[DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr h, int i);'; $h=[IntPtr]::new(${hwnd}); "{0} {1}" -f [S7.W]::GetWindowLongPtr($h,-16).ToInt64(), [S7.W]::GetWindowLongPtr($h,-20).ToInt64()`;
+        const [style, ex] = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", timeout: 30_000 }).trim().split(/\s+/).map((v) => BigInt(v));
+        const has = (bit: number): boolean => (ex! & BigInt(bit)) !== 0n;
+        result.windowsStyles = { style: `0x${style!.toString(16)}`, exStyle: `0x${ex!.toString(16)}`, toolWindow: has(0x80), noActivate: has(0x08000000), transparent: has(0x20), layered: has(0x80000), appWindow: has(0x40000) };
+      } catch (e) {
+        result.windowsStyles = `not read: ${errorText(e)}`;
+      }
+    }
+
+    const x = hb.x + Math.floor(hb.width / 2), y = hb.y + Math.floor(hb.height / 2);
+    const hostBefore = (await host.snapshot(tab)).observers.clicks;
+    const belowBefore = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
+    let tool = "";
+    if (process.platform === "win32") {
+      tool = "SendInput via user32 SetCursorPos and mouse_event";
+      const ps = `Add-Type -Name M -Namespace S7 -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);'; [S7.M]::SetCursorPos(${x}, ${y}) | Out-Null; Start-Sleep -Milliseconds 100; [S7.M]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 50; [S7.M]::mouse_event(4,0,0,0,[UIntPtr]::Zero)`;
+      execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { timeout: 30_000 });
+    } else if (process.platform === "linux" && !onWayland() && process.env.DISPLAY && app.commandLine.getSwitchValue("ozone-platform") !== "headless") {
+      tool = "xdotool";
+      execFileSync("xdotool", ["mousemove", String(x), String(y), "click", "1"], { timeout: 15_000 });
+    }
+    if (tool === "") {
+      result.clickThrough = "not testable here (macOS needs Accessibility for synthetic clicks; Wayland and no display have no global input)";
+    } else {
+      await sleep(800);
+      const hostAfter = (await host.snapshot(tab)).observers.clicks;
+      const belowAfter = await below.webContents.executeJavaScript("window.__s7.snapshot().observers.clicks") as number;
+      result.clickThrough = { at: `${x},${y}`, tool, belowClicks: belowAfter - belowBefore, hostClicks: hostAfter - hostBefore };
+    }
+    if (tool === "xdotool") {
+      const run: Run = (file, args, opts) => execFileSync(file, args, opts);
+      result.x11 = xwininfo(hw, run);
+      await host.close(tab);
+      tab = undefined;
+      result.shaped = await shapedHostCheck(host, below, x, y, run, log);
+    }
+    log(`  host: focused ${result.focusedAtStart} → after the page's grab ${result.focusedAfterPageGrab} (focused window "${result.focusedWindowTitle}"); styles ${JSON.stringify(result.windowsStyles ?? "-")}; click ${JSON.stringify(result.clickThrough)}`);
+  } catch (e) {
+    result.error = errorText(e);
+    log(`  host: ERROR ${result.error}`);
+  } finally {
+    if (tab !== undefined) await host.close(tab);
+    if (below !== undefined && !below.isDestroyed()) below.destroy();
+  }
+  return result;
+}

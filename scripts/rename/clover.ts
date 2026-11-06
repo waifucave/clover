@@ -56,6 +56,9 @@ export const CLOVER_EXEMPT_PATHS: readonly string[] = [
   "packages/core/test/cowork/native/",
   // ...and the guest image's builder, whose paths (`opt/winter/...`, `/usr/share/winter/...`) are that image's layout.
   "scripts/cowork-guest-artifact/",
+  // A-M1: the router's code, moved into core from router 0.0.16 and kept as it was until lane A renames it.
+  "packages/core/src/runtime-sdk/host/",
+  "packages/core/test/runtime-sdk/host/",
   // Past experiments, and the spike lanes' new ones.
   "spikes/",
   // Written for Clover after C0 (plan §7's layout): the per-OS helpers and the spike lanes' workflows. A Winter
@@ -85,27 +88,27 @@ const SWIFT_MODULES =
   "Winter(?:Kit|Protocol|ChatKit|SessionKit|SessionClient|BrowserHost(?:Core)?|ComputerUse(?:Shell)?|CUCore|CUFixture|Cowork[A-Za-z]*|Helper|OfficeHelper|Headless[A-Za-z]*|Present[A-Za-z]*|CEF[A-Za-z]*|CodeIdentity|HostOutput|AppTests|KitTests|ProtocolTests|ChatKitTests|SessionKitTests|Tests)";
 
 export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
-  // ── The agent SDK (lane A renames and republishes it, after the owner's go-ahead) ──────────────
+  // ── The agent SDK: renamed to `@waifucave/clover-*` in A-M1; what is left is Winter's own ──────────
   {
     id: "sdk-packages",
-    regex: /@yanlinglabs\\?[/+]winter-(?!(?:protocol|core|cli|plugin-sdk)(?![a-z0-9-]))[a-z0-9-]+(?:@[0-9][0-9a-z.+-]*)?|(?<=["'])winter-agent-sdk(?=["'])|\bwinter-agent-sdk-darwin-[a-z0-9]+\b/g,
-    why: "the agent SDK's npm packages (`@yanlinglabs/winter-agent-sdk` and its siblings) and Winter for Chrome's package: renaming them here would break installs; lane A renames and republishes the SDK",
+    regex: /@yanlinglabs\\?[/+]winter-(?:agent-sdk-darwin-[a-z0-9]+|runtime-sdk|for-chrome)(?![a-z0-9-])(?:@[0-9][0-9a-z.+-]*)?|(?<=["'])winter-agent-sdk(?=["'])|\bwinter-agent-sdk-darwin-[a-z0-9]+\b/g,
+    why: "Winter's own npm packages, which stay Winter's: the coding agent binary core installs (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, lane K's), the archived router, and Winter for Chrome's package. The SDK itself is `@waifucave/clover-*` since A-M1: CLOVER_EXPLICIT_TOKEN_MAP renames its imports",
   },
   {
     id: "sdk-package-names",
     // `winterAgentSdk` is also the router's own `peerVersions` field; `createWinterRuntimeSdk` and
     // `REQUIRED_WINTER_AGENT_SDK` name the packages they wrap and pin.
-    regex: /\w*(?:[Ww]inter(?:Agent|Runtime|Provider)(?:Sdk|SDK|Runtime|Catalog|Conformance)|WINTER_(?:AGENT|RUNTIME|PROVIDER)_(?:SDK|RUNTIME|CATALOG|CONFORMANCE))\w*|\bwinter-(?:agent-runtime|provider-catalog|provider-runtime|provider-conformance|runtime-sdk|conformance)\b/g,
-    why: "identifiers and words that name an SDK package (`winter-agent-sdk`, `winter-runtime-sdk`, the provider packages) or the router's `winterAgentSdk` field; they change when the packages do",
+    regex: /\w*(?:[Ww]inter(?:Agent|Runtime|Provider)(?:Sdk|SDK|Runtime|Catalog|Conformance)|WINTER_(?:AGENT|RUNTIME|PROVIDER)_(?:SDK|RUNTIME|CATALOG|CONFORMANCE))\w*|(?<!@yanlinglabs\/)\bwinter-(?:agent-runtime|provider-catalog|provider-runtime|provider-conformance|runtime-sdk|conformance)\b/g,
+    why: "identifiers and words that name an SDK package (`winter-agent-sdk`, `winter-runtime-sdk`, the provider packages) or the router's `winterAgentSdk` field; a scoped `@yanlinglabs/winter-*` import is left to CLOVER_EXPLICIT_TOKEN_MAP (A-M1)",
   },
   {
     id: "sdk-api",
-    regex: /\b(?:WINTER_BRAND|WINTER_DEFAULT_TOOL_DEFINITIONS|WINTER_MCP_CLIENT_METADATA_URL|WINTER_TEST_NAMESPACE|WinterMcpServerInstance|isWinterMcpServerInstance|WinterModelDescriptor|WinterProviderDescriptor|WinterProviderResolutionError|WinterRpcError|WinterRpcTimeoutError|WinterCompatibilitySessionStore|AttachedWinterSession|attachWinterSession|winterAdapter|WinterCredentialMissing|WinterStoreLeaseError|WinterStoreError|WinterCatalog|winterSessionId|parentWinterSessionId|DEFAULT_ANTHROPIC_CONSOLE_PROFILE|setWinterIdentity|activeWinterIdentity|winterUserAgent)\b|resolveWinterHome(?= as sdkResolve)|\bwinter\b(?<=\bpeers\??\.winter)|\bwinter\b(?<=\bpeers:\s*\{\s*winter)|\bwinter\b(?<=\bmessaging\??\.winter)|\bwinter\b(?<=\bmessaging:\s*\{\s*winter)|\bwinterHome\b(?<=\bWinterCompatibilitySessionStore\(\{\s*winterHome)|\bwinterHome\b(?<=\bhandoff\??\.winterHome)|\bwinterHome\b(?=\s*:)(?<=\bhandoff:\s*\{(?:[^}]*[,\n])?\s*winterHome)|\bwinterHome\b(?<=\bSeamContext\.winterHome)|\bwinterHome\b(?<="resolveEndpoint", "winterHome)/g,
+    regex: /\b(?:WINTER_BRAND|WINTER_DEFAULT_IDENTITY|WINTER_DEFAULT_TOOL_DEFINITIONS|WINTER_MCP_CLIENT_METADATA_URL|WINTER_TEST_NAMESPACE|WinterMcpServerInstance|isWinterMcpServerInstance|WinterModelDescriptor|WinterProviderDescriptor|WinterProviderResolutionError|WinterRpcError|WinterRpcTimeoutError|WinterCompatibilitySessionStore|AttachedWinterSession|attachWinterSession|winterAdapter|WinterCredentialMissing|WinterStoreLeaseError|WinterStoreError|WinterCatalog|winterSessionId|parentWinterSessionId|DEFAULT_ANTHROPIC_CONSOLE_PROFILE|setWinterIdentity|activeWinterIdentity|winterUserAgent)\b|resolveWinterHome(?= as sdkResolve)|\bwinter\b(?<=\bpeers\??\.winter)|\bwinter\b(?<=\bmessaging\??\.winter)|\bwinter\b(?<=\bmessaging:\s*\{\s*winter)|\bwinterHome\b(?<=\bWinterCompatibilitySessionStore\(\{\s*winterHome)|\bwinterHome\b(?<=\bhandoff\??\.winterHome)/g,
     why: "the agent SDK's and router's own API: exported names, the router's `peers.winter` and `messaging.winter`, its `winterHome` and `winterSessionId` fields (the product session id, also the `runtime-state.db` column)",
   },
   {
     id: "sdk-wire",
-    regex: /\bwinter_(?:provider(?:_state)?|mcp_server|site_icons|dialect_record|code)\b|\bwinter-agent\b(?!-)|\bwinter-t8-lane[a-z](?:-fixture-content)?\b|(?<![.\w])winter\.(?:openai-chat-completions|openai-responses|anthropic-messages|vertex-gemini|local-openai|google-generate-content|xai-oauth|codex-oauth|bedrock-converse|azure-openai)\b|(?<=["'`])winter-(?:agent|session|thread)(?=["'`])|\bwinter-test(?=[/"'`])|(?<=["'`])winter\.mcp(?=["'`])|"winter"(?=[^\n]*(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b))|"winter"(?<=(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b)[^\n]*"winter")|"winter"(?=\s*\|\s*"(?:official|engine)"|\s*:\s*"engine"|\]\s*,\s*\[\w+,\s*"(?:official|engine)")|"winter"(?<="(?:official|engine)"\s*\|\s*"winter")|"winter"(?<=\bfamily:\s*"winter")|\bwinter\b(?<=\bassertVersionMatrix\(\{\s*winter)|"winter"(?<=(?:says|is now) "winter")|"winter"(?<=\b(?:peers|messaging)\b[^\n]*\["winter")|"winter"(?=`)(?<=`=== "winter")/g,
+    regex: /\bwinter_(?:provider(?:_state)?|mcp_server|site_icons|dialect_record|code)\b|\bwinter-agent\b(?!-)|\bwinter-t8-lane[a-z](?:-fixture-content)?\b|(?<![.\w])winter\.(?:openai-chat-completions|openai-responses|anthropic-messages|vertex-gemini|local-openai|google-generate-content|xai-oauth|codex-oauth|bedrock-converse|azure-openai)\b|(?<=["'`])winter-(?:agent|session|thread)(?=["'`])|\bwinter-test(?=[/"'`])|(?<=["'`])winter\.mcp(?=["'`])|"winter"(?=[^\n]*(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b))|"winter"(?<=(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b)[^\n]*"winter")|"winter"(?=\s*\|\s*"(?:official|engine)"|\s*:\s*"engine"|\]\s*,\s*\[\w+,\s*"(?:official|engine)")|"winter"(?<="(?:official|engine)"\s*\|\s*"winter")|"winter"(?<=\bfamily:\s*"winter")|"winter"(?<=(?:says|is now) "winter")|"winter"(?<=\b(?:peers|messaging)\b[^\n]*\["winter")|"winter"(?=`)(?<=`=== "winter")/g,
     why: "values the agent SDK and router put on the wire: message fields (`winter_provider`, `winter_mcp_server`), the runtime kind `winter-agent`, the router's transports and its `winter` leg (core's `SessionLeg` mirrors it), the test provider's `winter-test/…` models, the catalog's adapter ids (`winter.openai-responses`), the `winter_code` preset",
   },
   {
@@ -427,6 +430,16 @@ export const CLOVER_EXPLICIT_TOKEN_MAP: readonly (readonly [from: string, to: st
   ["@yanlinglabs/winter-core", "@waifucave/clover-core"],
   ["@yanlinglabs/winter-cli", "@waifucave/clover-cli"],
   ["@yanlinglabs/winter-plugin-sdk", "@waifucave/clover-plugin-sdk"],
+  // A-M1: the agent SDK's packages (clover-sdk 0.0.63 renamed them; the binary package stays Winter's and is
+  // protected by the `sdk-packages` entry). Applied on every run, so a rebase or another lane's branch that
+  // still imports `@yanlinglabs/winter-*` is swept the same way.
+  ["@yanlinglabs/winter-agent-sdk", "@waifucave/clover-agent-sdk"],
+  ["@yanlinglabs/winter-agent-runtime", "@waifucave/clover-agent-runtime"],
+  ["@yanlinglabs/winter-provider-catalog", "@waifucave/clover-provider-catalog"],
+  ["@yanlinglabs/winter-provider-runtime", "@waifucave/clover-provider-runtime"],
+  ["@yanlinglabs/winter-provider-conformance", "@waifucave/clover-provider-conformance"],
+  ["@yanlinglabs/winter-conformance", "@waifucave/clover-conformance"],
+  ["@yanlinglabs/winter-web", "@waifucave/clover-web"],
   // identities (spec §2): the app, and the core's Keychain service and launchd label
   ["com.winter.app", "com.waifucave.clover"],
   ["com.winter.core", "com.waifucave.clover.core"],

@@ -20,12 +20,12 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { openaiResponsesFake } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 const CATALOG_OPENAI_MODEL = "openai/gpt-6-astra"; // the same canonical row the D30 default names
 
@@ -77,7 +77,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* closed */ } }
 }
 
-describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Clover child", (winterBin) => {
+describeWithEmbeddedRuntime("P8d-8 (D30) — advisor in init.tools on a real Clover child", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient | undefined;
@@ -87,7 +87,7 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Clover
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 2,
       provider: { type: "openai-compatible", model: CATALOG_OPENAI_MODEL, baseUrl: openaiFakeRef!.url },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 10, ...(advisorModel === undefined ? {} : { advisorModel }) },
+      runtimes: { winterIdleTimeoutSec: 10, ...(advisorModel === undefined ? {} : { advisorModel }) },
     }, null, 2));
   }
 
@@ -187,7 +187,7 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Clover
 // loopback, so the ONLY thing that can explain two DIFFERENT model ids appearing in two DIFFERENT
 // requests to the same endpoint is `Options.advisor.model` actually reaching the child and being
 // honoured for its own separate generation, exactly as `options.ts`/`query.ts` document.
-describeWithWinterBinary("P8d-8/F2 — the advisor's GENERATION TARGET on the real Clover child", (winterBin) => {
+describeWithEmbeddedRuntime("P8d-8/F2 — the advisor's GENERATION TARGET on the real Clover child", () => {
   const SESSION_MODEL = "openai/gpt-6-astra"; // the session's OWN model (D30 default would also be "astra")
   const ADVISOR_MODEL = "gpt-5.6-sol"; // an EXPLICIT, DIFFERENT, valid openai-family catalog model
 
@@ -213,7 +213,7 @@ describeWithWinterBinary("P8d-8/F2 — the advisor's GENERATION TARGET on the re
       writeFileSync(join(home, "settings.json"), JSON.stringify({
         schemaVersion: 2,
         provider: { type: "openai-compatible", model: SESSION_MODEL, baseUrl: fake.url },
-        runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 10, advisorModel: ADVISOR_MODEL },
+        runtimes: { winterIdleTimeoutSec: 10, advisorModel: ADVISOR_MODEL },
       }, null, 2));
       const secrets = new FileSecretStore(join(home, "test-secrets"));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test" });

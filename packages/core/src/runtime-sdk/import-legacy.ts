@@ -60,7 +60,7 @@
 import { randomUUID } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { WinterCompatibilitySessionStore, transcriptProjectKey, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import { WinterCompatibilitySessionStore, transcriptProjectKey, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 import type { SessionEvent } from "@waifucave/clover-protocol";
 import { MAIN_THREAD } from "../projector";
 import { modelTextOf } from "../sessions/model-text";

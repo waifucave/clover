@@ -2,7 +2,7 @@
 // legs apply when an incarnation ends.
 import { describe, expect, test } from "bun:test";
 import { disposeFailedRunHome, linkedRunHomeBuilder, routerSupportsRunHome, runHomeHandleOf, runHomeReportSummary, settleRunHome } from "../../src/runtime-sdk/run-home-support";
-import type { RunHome } from "@yanlinglabs/winter-runtime-sdk";
+import type { RunHome } from "../../src/runtime-sdk/host";
 
 const stub = (onDispose: () => void, failDispose = false): RunHome => ({
   runId: "r1", dir: "/h/cache/runs/r1", sdkHome: "/h/sdk",
@@ -14,7 +14,7 @@ const stub = (onDispose: () => void, failDispose = false): RunHome => ({
 
 describe("feature detection", () => {
   test("the linked router's builder agrees with the module's own export", async () => {
-    const linked = routerSupportsRunHome(await import("@yanlinglabs/winter-runtime-sdk"));
+    const linked = routerSupportsRunHome(await import("../../src/runtime-sdk/host"));
     expect(linkedRunHomeBuilder() !== undefined).toBe(linked);
   });
 

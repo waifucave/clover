@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb, type RuntimeStateDb } from "../../src/runtime-state/db";
 import { RuntimeSessionRecords, UnknownRuntimeGenerationError, type NewRuntimeSessionRecord } from "../../src/runtime-state/records";
 import {

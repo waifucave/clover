@@ -8,9 +8,19 @@ import { join } from "node:path";
 
 const HEAVY = join(import.meta.dir, "heavy");
 const posix = process.platform !== "win32";
+const PINNED_BUN = readFileSync(join(import.meta.dir, "..", ".bun-version"), "utf8").trim();
+
+/** A pinned-Bun cache that already holds this checkout's pinned version (a stand-in), so no test fetches one. */
+function bunCache(): string {
+  const cache = mkdtempSync(join(tmpdir(), "clover-heavy-test-bun-"));
+  mkdirSync(join(cache, PINNED_BUN));
+  writeFileSync(join(cache, PINNED_BUN, "bun"), `#!/bin/sh\necho ${PINNED_BUN}\n`, { mode: 0o755 });
+  return cache;
+}
+const CACHE = posix ? bunCache() : "";
 
 function env(dir: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  return { ...process.env, HEAVY_DIR: dir, HEAVY_POLL_SECONDS: "1", ...extra };
+  return { ...process.env, HEAVY_DIR: dir, HEAVY_POLL_SECONDS: "1", CLOVER_BUN_CACHE: CACHE, CLOVER_PINNED_BUN: "1", ...extra };
 }
 
 function slotDir(): string {
@@ -70,6 +80,19 @@ describe.if(posix)("scripts/heavy", () => {
     const run = spawnSync(HEAVY, ["true"], { env: env(dir, { HEAVY_SLOTS: "1" }), encoding: "utf8" });
     expect(run.status).toBe(0);
     expect(run.stderr).not.toContain("busy");
+  });
+
+  test("the job runs with the checkout's pinned Bun first on PATH, and CLOVER_PINNED_BUN=0 leaves PATH alone", () => {
+    const dir = slotDir();
+    const which = ["sh", "-c", "command -v bun; bun --version"];
+    const pinned = spawnSync(HEAVY, which, { cwd: join(import.meta.dir, ".."), env: env(dir), encoding: "utf8" });
+    expect(pinned.status).toBe(0);
+    expect(pinned.stdout).toBe(`${join(CACHE, PINNED_BUN, "bun")}\n${PINNED_BUN}\n`);
+    const off = spawnSync(HEAVY, which, { cwd: join(import.meta.dir, ".."), env: env(dir, { CLOVER_PINNED_BUN: "0" }), encoding: "utf8" });
+    expect(off.stdout).not.toContain(CACHE);
+    // Outside a checkout that pins a Bun, PATH is left as it is.
+    const elsewhere = spawnSync(HEAVY, which, { cwd: dir, env: env(dir), encoding: "utf8" });
+    expect(elsewhere.stdout).not.toContain(CACHE);
   });
 
   test("usage and bad settings exit 2", () => {

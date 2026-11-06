@@ -1,4 +1,4 @@
-import { createKeychainMcpOAuthStore, type McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { createKeychainMcpOAuthStore, type McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { MIGRATION_SHADOW_SUFFIX } from "../auth/secret-store";
 
 // WS-25: the daemon's ONE MCP OAuth token/registration store per keychain service. `refreshMcpOAuthToken`'s

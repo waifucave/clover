@@ -1,0 +1,3 @@
+# The spike's own config, so `bun test` here never picks up the repo root's preload (Winter's).
+[test]
+root = "test"

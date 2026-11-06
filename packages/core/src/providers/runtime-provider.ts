@@ -2,7 +2,7 @@ import {
   codexCredentialRef,
   createCodexOauthAdapter,
   createResponsesAdapter,
-} from "@yanlinglabs/winter-provider-runtime";
+} from "@waifucave/clover-provider-runtime";
 import type {
   ContentBlockLike,
   ProviderAdapter,
@@ -10,7 +10,7 @@ import type {
   ProviderEvent as RuntimeProviderEvent,
   ProviderMessageLike,
   TurnRequest as RuntimeTurnRequest,
-} from "@yanlinglabs/winter-provider-runtime";
+} from "@waifucave/clover-provider-runtime";
 import type { SecretStore } from "../auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES } from "../auth/credential-material";
 import { credentialStoreOverSecretStore } from "./credential-store";
@@ -22,7 +22,7 @@ import type { ModelInfo, Provider, ProviderEvent, ToolSpec, TurnInputItem, TurnR
 /**
  * P8c lane 5: the daemon's internal model calls (compactor/titler/bash-reviewer, and — through
  * `withQuota`'s usage/rate-limit tracking — the `quota`/`status` view) run over
- * `@yanlinglabs/winter-provider-runtime` adapters instead of Clover's own raw-HTTP request/SSE code
+ * `@waifucave/clover-provider-runtime` adapters instead of Clover's own raw-HTTP request/SSE code
  * (`openai-compatible.ts`/`codex-oauth.ts`, kept — see this module's own header for the ruling).
  * `RuntimeBackedProvider` is the ONE adapter shape both provider types share: it implements Clover's
  * own `Provider` interface (`streamTurn`/`models`/`id`) over a provider-runtime `ProviderAdapter` +

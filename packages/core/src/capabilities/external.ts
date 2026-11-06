@@ -38,7 +38,7 @@
 // already built never appears in that already-running session (documented, matches every other
 // capability's contract) — a FRESH session picks it up because `buildCapabilitiesFor` calls
 // `deps.tools()` again for it.
-import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Mode, ToolDefinition } from "../agent/tools/registry";

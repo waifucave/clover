@@ -1,0 +1,473 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "posixReader": "async",
+    "seconds": 248.91
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: Runtime.evaluate timed out (last bytes from the browser 25003 ms ago (8934 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":22,\"bytesOut\":2901}; trace: 2212 → 15 Runtime.evaluate, 2213 ← 15, 2213 → 16 Runtime.evaluate, 2214 ← 16, 2214 → 17 Runtime.evaluate, 2215 ← 17, 7216 → 18 Runtime.evaluate, 7216 ← 18, 7216 → 19 Runtime.evaluate, 12217 → 20 Browser.getVersion, 17218 → 21 Target.createTarget, 22218 → 22 Runtime.evaluate) — the browser is still running; stderr: [1105/015827.099346:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [1105/015827.112066:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [1105/015827.112724:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [1105/015827.116934:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [1105/015827.130238:WARNING:media/gpu/vaapi/vaapi_wrapper.cc:1655] drmGetDevices2() has not found any devices | [1105/015827.133036:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process."
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "linux64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux64/chrome-headless-shell-linux64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 126922702,
+        "unpackedBytes": 287428833,
+        "files": 287,
+        "symlinks": 0,
+        "downloadMs": 698,
+        "extractMs": 1330,
+        "sha256": "547dcd374e02961bf998f6046a267644f8502225c36bb78ca307dab32a0b3eb4",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "fdpipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/015826.030226:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/015826.215008:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGTRAP); stderr: [1105/015826.411626:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "fdpipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 158
+        }
+      ],
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 158,
+        "warmMs": 54,
+        "portMs": 61
+      },
+      "afterStoppedTab": {
+        "getVersion": "no: Browser.getVersion timed out (last bytes from the browser 10002 ms ago (8934 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":20,\"bytesOut\":2637}; trace: 2211 → 14 Runtime.evaluate, 2212 ← 14, 2212 → 15 Runtime.evaluate, 2213 ← 15, 2213 → 16 Runtime.evaluate, 2214 ← 16, 2214 → 17 Runtime.ev",
+        "createTarget": "no: Target.createTarget timed out (last bytes from the browser 15002 ms ago (8934 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":21,\"bytesOut\":2726}; trace: 2212 ← 14, 2212 → 15 Runtime.evaluate, 2213 ← 15, 2213 → 16 Runtime.evaluate, 2214 ← 16, 2214 → 17 Runtime.evaluate, 2215 ← 17, 7216 → 1",
+        "trace": "last bytes from the browser 15002 ms ago (8934 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":21,\"bytesOut\":2726}; trace: 209 ← Page.frameStoppedLoading, 209 → 13 Runtime.evaluate, 211 ← 13, 2211 → 14 Runtime.evaluate, 2212 ← 14, 2212 → 15 Runtime.evaluate, 2213 ← 15, 2213 → 16 Runtime.evaluate, 2214 ← 16, 2214 → 17 Runtime.evaluate, 2215 ← 17, 7216 → 18 Runtime.evaluate, 7216 ← 18, 7216 → 19 Runtime.evaluate, 12217 → 20 Browser.getVersion, 17218 → 21 Target.createTarget"
+      },
+      "screenshots": {
+        "png": {
+          "ms": {
+            "n": 8,
+            "min": 296,
+            "p50": 309,
+            "p95": 318,
+            "max": 318,
+            "mean": 309.75
+          },
+          "staleMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "bytes": {
+            "n": 8,
+            "min": 620552,
+            "p50": 658356,
+            "p95": 673938,
+            "max": 673938,
+            "mean": 655798.88
+          },
+          "cpuMsPerShot": 408.75
+        },
+        "jpeg": {
+          "ms": {
+            "n": 8,
+            "min": 76,
+            "p50": 79,
+            "p95": 87,
+            "max": 87,
+            "mean": 81.5
+          },
+          "staleMs": {
+            "n": 8,
+            "min": -49,
+            "p50": -45,
+            "p95": -38,
+            "max": -38,
+            "mean": -42.87
+          },
+          "bytes": {
+            "n": 8,
+            "min": 146749,
+            "p50": 153614,
+            "p95": 176308,
+            "max": 176308,
+            "mean": 159428.75
+          },
+          "cpuMsPerShot": 116.25
+        }
+      },
+      "screencast": {
+        "framesPerSec": 57.75,
+        "kbitPerSec": 63326.44,
+        "avgFrameBytes": 137070.22,
+        "latencyMs": {
+          "n": 75,
+          "min": 34,
+          "p50": 37,
+          "p95": 48,
+          "max": 76,
+          "mean": 38.67
+        },
+        "interFrameMs": {
+          "n": 461,
+          "min": 0,
+          "p50": 15,
+          "p95": 54,
+          "max": 72,
+          "mean": 17.54
+        },
+        "browserCpuPct": 169.42,
+        "note": "latency: from the marker's draw time to the frame's arrival at the daemon, on up to ten decoded frames a second"
+      },
+      "media": [
+        {
+          "flags": "default flags",
+          "setup": {
+            "media": "video.play ok; audio running",
+            "scrollY": 0
+          },
+          "setupMs": 178,
+          "ok": true,
+          "visibility": "visible",
+          "intervalHz": 99.96,
+          "rafHz": 59.98,
+          "mediaPlayedPerSec": 0.91,
+          "decodedFps": 28.99,
+          "audioState": "running",
+          "browserAnswersMs": 0
+        }
+      ],
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 171.78,
+            "memKind": "pss",
+            "rssMiB": 465.37,
+            "procs": 6,
+            "cpuPct": 0
+          },
+          {
+            "tabs": 1,
+            "memMiB": 206.88,
+            "memKind": "pss",
+            "rssMiB": 595.63,
+            "procs": 7,
+            "cpuPct": 2.24
+          },
+          {
+            "tabs": 2,
+            "memMiB": 229.48,
+            "memKind": "pss",
+            "rssMiB": 714.96,
+            "procs": 8,
+            "cpuPct": 4.23
+          },
+          {
+            "tabs": 4,
+            "memMiB": 272.36,
+            "memKind": "pss",
+            "rssMiB": 951.77,
+            "procs": 10,
+            "cpuPct": 6.45
+          },
+          {
+            "tabs": 8,
+            "memMiB": 357.45,
+            "memKind": "pss",
+            "rssMiB": 1423.16,
+            "procs": 14,
+            "cpuPct": 10.89
+          }
+        ],
+        "perIdleTabMiB": 23.21,
+        "browserBaseMiB": 171.78,
+        "fourContextsMiB": 93.86,
+        "animatedTabCpuPct": 32.33,
+        "secondBrowserBaseMiB": 114.19,
+        "secondBrowserProcs": 6,
+        "firstBrowserMiBAtThatMoment": 514.34
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "tabs: Runtime.evaluate timed out (last bytes from the browser 25001 ms ago (8808 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":22,\"bytesOut\":2901}; trace: 2792 → 15 Runtime.evaluate, 2792 ← 15, 2792 → 16 Runtime.evaluate, 2793 ← 16, 2793 → 17 Runtime.evaluate, 2794 ← 17, 7795 → 18 Runtime.evaluate, 7796 ← 18, 7796 → 19 Runtime.evaluate, 12796 → 20 Browser.getVersion, 17796 → 21 Target.createTarget, 22797 → 22 Runtime.evaluate) — the browser is still running; stderr: [3908:3908:1105/020029.744693:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.NetworkManager.GetDevices: object_path= /org/freedesktop/NetworkManager: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.NetworkManager was not provided by any .service files | [3908:3973:1105/020037.078565:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3973:1105/020037.078586:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3973:1105/020042.078789:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3973:1105/020042.078810:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3973:1105/020047.142715:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3973:1105/020047.142741:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3908:1105/020047.173312:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.NetworkManager.GetDevices: object_path= /org/freedesktop/NetworkManager: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.NetworkManager was not provided by any .service files | [3908:3973:1105/020052.079855:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe | [3908:3973:1105/020052.079876:ERROR:content/browser/devtools/devtools_pipe_handler.cc:274] Could not write into pipe"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "linux64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome",
+        "reused": false,
+        "zipBytes": 201329937,
+        "unpackedBytes": 422995514,
+        "files": 301,
+        "symlinks": 0,
+        "downloadMs": 874,
+        "extractMs": 1808,
+        "sha256": "b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "fdpipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #16 0x556f2c72b03a (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome+0x7646039) |   r8: 000016880013c263  r9: 0000000000000001 r10: 0000000000000008 r11: 0000000000000246 |  r12: 0000000000000006 r13: 0000556c00000000 r14: 0000000000000016 r15: 00007fff35174268 |   di: 0000000000000d6b  si: 0000000000000d6b  bp: 00007fff35173be0  bx: 0000000000000d6b |   dx: 0000000000000006  ax: 0000000000000000  cx: 00007f2f65c9ec0c  sp: 00007fff35173ba0 |   ip"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #16 0x556f6222203a (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome+0x7646039) |   r8: 00003f580013c263  r9: 0000000000000001 r10: 0000000000000008 r11: 0000000000000246 |  r12: 0000000000000006 r13: 0000556c00000000 r14: 0000000000000016 r15: 00007ffe25c22108 |   di: 0000000000000d7d  si: 0000000000000d7d  bp: 00007ffe25c21a80  bx: 0000000000000d7d |   dx: 0000000000000006  ax: 0000000000000000  cx: 00007f564669ec0c  sp: 00007ffe25c21a40 |   ip: "
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGABRT); stderr: #16 0x55754f3da03a (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux64/chrome-linux64/chrome+0x7646039) |   r8: 000030080013c263  r9: 0000000000000001 r10: 0000000000000008 r11: 0000000000000246 |  r12: 0000000000000006 r13: 0000557400000000 r14: 0000000000000016 r15: 00007ffe4e48abb8 |   di: 0000000000000d91  si: 0000000000000d91  bp: 00007ffe4e48a530  bx: 0000000000000d91 |   dx: 0000000000000006  ax: 0000000000000000  cx: 00007f514229ec0c  sp: 00007ffe4e48a4f0 |   ip: 00007f514229ec0c ef"
+        },
+        {
+          "transport": "fdpipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 302
+        }
+      ],
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 302,
+        "warmMs": 242,
+        "portMs": 256
+      },
+      "afterStoppedTab": {
+        "getVersion": "no: Browser.getVersion timed out (last bytes from the browser 10000 ms ago (8808 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":20,\"bytesOut\":2637}; trace: 2791 → 14 Runtime.evaluate, 2791 ← 14, 2792 → 15 Runtime.evaluate, 2792 ← 15, 2792 → 16 Runtime.evaluate, 2793 ← 16, 2793 → 17 Runtime.ev",
+        "createTarget": "no: Target.createTarget timed out (last bytes from the browser 15001 ms ago (8808 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":21,\"bytesOut\":2726}; trace: 2791 ← 14, 2792 → 15 Runtime.evaluate, 2792 ← 15, 2792 → 16 Runtime.evaluate, 2793 ← 16, 2793 → 17 Runtime.evaluate, 2794 ← 17, 7795 → 1",
+        "trace": "last bytes from the browser 15001 ms ago (8808 in all); our writes {\"queued\":0,\"inFlight\":false,\"writes\":21,\"bytesOut\":2726}; trace: 788 ← Page.frameStoppedLoading, 788 → 13 Runtime.evaluate, 790 ← 13, 2791 → 14 Runtime.evaluate, 2791 ← 14, 2792 → 15 Runtime.evaluate, 2792 ← 15, 2792 → 16 Runtime.evaluate, 2793 ← 16, 2793 → 17 Runtime.evaluate, 2794 ← 17, 7795 → 18 Runtime.evaluate, 7796 ← 18, 7796 → 19 Runtime.evaluate, 12796 → 20 Browser.getVersion, 17796 → 21 Target.createTarget"
+      },
+      "screenshots": {
+        "png": {
+          "ms": {
+            "n": 8,
+            "min": 253,
+            "p50": 261,
+            "p95": 276,
+            "max": 276,
+            "mean": 264.75
+          },
+          "staleMs": {
+            "n": 0,
+            "min": null,
+            "p50": null,
+            "p95": null,
+            "max": null,
+            "mean": null
+          },
+          "bytes": {
+            "n": 8,
+            "min": 532190,
+            "p50": 543772,
+            "p95": 548058,
+            "max": 548058,
+            "mean": 543188.88
+          },
+          "cpuMsPerShot": 386.25
+        },
+        "jpeg": {
+          "ms": {
+            "n": 8,
+            "min": 74,
+            "p50": 80,
+            "p95": 84,
+            "max": 84,
+            "mean": 80.25
+          },
+          "staleMs": {
+            "n": 8,
+            "min": -49,
+            "p50": -44,
+            "p95": -39,
+            "max": -39,
+            "mean": -44.5
+          },
+          "bytes": {
+            "n": 8,
+            "min": 126004,
+            "p50": 142200,
+            "p95": 154566,
+            "max": 154566,
+            "mean": 141760.63
+          },
+          "cpuMsPerShot": 127.5
+        }
+      },
+      "screencast": {
+        "framesPerSec": 60.5,
+        "kbitPerSec": 57696.43,
+        "avgFrameBytes": 119207.49,
+        "latencyMs": {
+          "n": 75,
+          "min": 32,
+          "p50": 33,
+          "p95": 36,
+          "max": 41,
+          "mean": 33.67
+        },
+        "interFrameMs": {
+          "n": 483,
+          "min": 0,
+          "p50": 16,
+          "p95": 40,
+          "max": 97,
+          "mean": 16.69
+        },
+        "browserCpuPct": 144.29,
+        "note": "latency: from the marker's draw time to the frame's arrival at the daemon, on up to ten decoded frames a second"
+      },
+      "media": [
+        {
+          "flags": "default flags",
+          "setup": {
+            "media": "video.play ok; audio running",
+            "scrollY": 0
+          },
+          "setupMs": 110,
+          "ok": true,
+          "visibility": "visible",
+          "intervalHz": 99.98,
+          "rafHz": 59.99,
+          "mediaPlayedPerSec": 0.95,
+          "decodedFps": 28.79,
+          "audioState": "running",
+          "browserAnswersMs": 0
+        }
+      ],
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 436.01,
+            "memKind": "pss",
+            "rssMiB": 1378.07,
+            "procs": 12,
+            "cpuPct": 1.49
+          },
+          {
+            "tabs": 1,
+            "memMiB": 510.68,
+            "memKind": "pss",
+            "rssMiB": 1584.81,
+            "procs": 13,
+            "cpuPct": 2.47
+          },
+          {
+            "tabs": 2,
+            "memMiB": 560.76,
+            "memKind": "pss",
+            "rssMiB": 1768.94,
+            "procs": 14,
+            "cpuPct": 4.44
+          },
+          {
+            "tabs": 4,
+            "memMiB": 651.38,
+            "memKind": "pss",
+            "rssMiB": 2126.2,
+            "procs": 16,
+            "cpuPct": 6.9
+          },
+          {
+            "tabs": 8,
+            "memMiB": 864.03,
+            "memKind": "pss",
+            "rssMiB": 2698.92,
+            "procs": 18,
+            "cpuPct": 13.51
+          }
+        ],
+        "perIdleTabMiB": 53.5,
+        "browserBaseMiB": 436.01,
+        "fourContextsMiB": 302.82,
+        "animatedTabCpuPct": 44.77,
+        "secondBrowserBaseMiB": 285.48,
+        "secondBrowserProcs": 11,
+        "firstBrowserMiBAtThatMoment": 3294.5
+      }
+    }
+  }
+}

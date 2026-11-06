@@ -4,8 +4,8 @@
  * effort \"max\" cannot be mapped onto it" — even though the session's own row (whichever
  * `deepseek`-adapter-family provider it actually ran on) declares a real effort vocabulary.
  *
- * ROOT CAUSE, confirmed against the REAL pinned catalog (`@yanlinglabs/winter-provider-catalog`)
- * and the REAL pinned Clover-leg runtime (`@yanlinglabs/winter-provider-runtime`, version pinned by
+ * ROOT CAUSE, confirmed against the REAL pinned catalog (`@waifucave/clover-provider-catalog`)
+ * and the REAL pinned Clover-leg runtime (`@waifucave/clover-provider-runtime`, version pinned by
  * `runtime-sdk/versions.ts`'s `REQUIRED_WINTER_AGENT_SDK`): this is an SDK-SIDE bug, not a daemon
  * one. The DAEMON'S OWN inputs are correct end to end —
  *
@@ -47,9 +47,9 @@
  *   can never answer an effort/capability check with another provider's row.
  */
 import { describe, expect, test } from "bun:test";
-import type { WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { descriptorLookupForAdapter } from "@yanlinglabs/winter-provider-runtime";
+import type { WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { descriptorLookupForAdapter } from "@waifucave/clover-provider-runtime";
 import { providerFor } from "../../src/runtime-sdk/provider-selection";
 
 /**

@@ -26,8 +26,9 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 | | |
 | --- | --- |
 | **macOS 26+**, Apple silicon | The deployment target. There is no legacy compatibility path — see [rules](#rules-that-bite). |
-| **[Bun](https://bun.sh) ≥ 1.3** | The runtime. TypeScript runs directly; there is no build step in dev. |
+| **[Bun](https://bun.sh)**, the version in `.bun-version` | The runtime. TypeScript runs directly; there is no build step in dev. CI runs that version; `scripts/pinned-bun` fetches it beside any other Bun you have. |
 | **pnpm** | Orchestrates the workspaces. `bun install` is what you actually run. |
+| **A GitHub token with `read:packages`** | The `@waifucave` packages (the agent SDK's `@waifucave/clover-*` among them) are on GitHub Packages, which needs a token even to read. `bun install` takes it from `NODE_AUTH_TOKEN` (see [First build](#first-build)). |
 | **Xcode 26+** | Only if you're touching the Swift packages the iPhone app uses (`apple/WinterKit`, `apple/WinterProtocol`). |
 
 TypeScript-only contributions (the daemon, the CLI, tools, providers) need nothing from the Xcode
@@ -38,8 +39,11 @@ column.
 ```sh
 git clone https://github.com/waifucave/clover.git
 cd clover
-bun install
+NODE_AUTH_TOKEN=$(gh auth token) bun install   # gh's token needs read:packages: `gh auth refresh -s read:packages` once
 ```
+
+The repo's `.npmrc` reads the `@waifucave` scope from GitHub Packages with `NODE_AUTH_TOKEN`; no token is ever
+written to disk. CI uses the workflow's own token (`packages: read`), so nothing needs to be configured there.
 
 That's the whole TypeScript setup. The Swift packages the iPhone app uses fetch one large artifact
 rather than committing it:

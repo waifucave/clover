@@ -22,7 +22,7 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { EXA_API_KEY_SECRET } from "../../src/agent/exa-key";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { winterExecutableForTests } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -77,13 +77,12 @@ interface Surface { eager: string[]; results: Reported }
 /** The modes' surfaces, by Exa-key state (`withExa` / `noExa` daemons). */
 async function bootDaemon(withExa: boolean): Promise<{ home: string; daemon: RunningDaemon; client: TestClient }> {
   const home = mkdtempSync(join(tmpdir(), `clover-tool-surface-${withExa ? "exa" : "noexa"}-`));
-  const bin = winterExecutableForTests();
   writeFileSync(join(home, "settings.json"), JSON.stringify({
     schemaVersion: 3,
     provider: { model: "winter-test/calls" },
     // Computer use ON, so `Computer` is offered where the ruling offers it.
     computerUse: { enabled: true },
-    runtimes: { winterIdleTimeoutSec: 10, ...(bin !== undefined ? { winterExecutable: bin } : {}) },
+    runtimes: { winterIdleTimeoutSec: 10 },
   }, null, 2));
   const secrets = new FileSecretStore(join(home, "test-secrets"));
   if (withExa) await secrets.set(EXA_API_KEY_SECRET, "exa-test-key-not-real");
@@ -126,19 +125,21 @@ const toolSearchResult = (s: Surface, i = 0): { matches: string[]; total_deferre
   return JSON.parse(searches[i]!.content) as { matches: string[]; total_deferred_tools: number };
 };
 
-/** Every name a mode could conceivably be offered — a `select:` over it loads exactly what the mode has. */
-const PROBE = [
-  "Computer", "ComputerV2", "mcp__clover__computer_v2__script", "Browser", "CronList", "SpawnSession", "ListSessions", "ManageSession",
-  "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides", "mcp__clover__lsp__lsp",
-  "mcp__clover__computer__computer", "mcp__clover__browser__browser", "mcp__clover__sessions__session_spawn",
-  "Edit", "Write", "Agent", "Glob", "Grep", "Monitor", "ListAgents",
-].join(",");
-
 /** The STANDING server's alias twins of `SendMessage`/`ListAgents` (the agent SDK's WS-09 §10 design: a
  *  model that knows the canonical spelling may still select it). Deferred wherever their native is
  *  offered, hidden wherever it is not; same executor, so no new capability. */
 const SEND_MESSAGE_TWIN = "mcp__clover__send_message";
 const LIST_AGENTS_TWIN = "mcp__clover__list_agents";
+
+/** Every name a mode could conceivably be offered — a `select:` over it loads exactly what the mode has. A-M1
+ *  review M9: the twins too, now that nothing in the daemon denies them by name (the SDK spells them from the
+ *  session's brand and hides them with their natives), so a mode that lacks the natives must not load them. */
+const PROBE = [
+  "Computer", "ComputerV2", "mcp__clover__computer_v2__script", "Browser", "CronList", "SpawnSession", "ListSessions", "ManageSession",
+  "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides", "mcp__clover__lsp__lsp",
+  "mcp__clover__computer__computer", "mcp__clover__browser__browser", "mcp__clover__sessions__session_spawn",
+  "Edit", "Write", "Agent", "Glob", "Grep", "Monitor", "ListAgents", SEND_MESSAGE_TWIN, LIST_AGENTS_TWIN,
+].join(",");
 
 describe("the tool surface (Exa key stored)", () => {
   let d: Awaited<ReturnType<typeof bootDaemon>>;
@@ -162,7 +163,9 @@ describe("the tool surface (Exa key stored)", () => {
     const search = toolSearchResult(s);
     // ManageSession is gone from Dispatch (user ruling 2026-10-02): not offered, not loadable.
     // ComputerV2 (2026-10-08) is built instead of the old Computer, deferred like it.
-    expect([...search.matches].sort()).toEqual(["Browser", "ComputerV2", "CronList", "ListSessions", "SpawnSession"]);
+    // SendMessage's standing twin loads with it (deferred, the same executor); ListAgents is not Dispatch's, so
+    // its twin is hidden.
+    expect([...search.matches].sort()).toEqual(["Browser", "ComputerV2", "CronList", "ListSessions", "SpawnSession", SEND_MESSAGE_TWIN]);
     // The deferred pool: the three the ruling names, plus SendMessage's standing twin (see above).
     expect(search.total_deferred_tools).toBe(4);
     // `ListSessions` runs (a real listing); the OLD spelling — what a resumed coordinator's history may
@@ -183,7 +186,6 @@ describe("the tool surface (Exa key stored)", () => {
     expect(announcedDeferred(d.daemon, sessionId)).toEqual(["Browser", "ComputerV2", "CronList"]);
     // The incarnation passed the fail-closed init check (nothing outside its allowed list was offered).
     expect(d.daemon.sessions.read(sessionId).filter((e) => e.type === "agent_error")).toEqual([]);
-    void SEND_MESSAGE_TWIN;
   }, 60_000);
 
   test("CHAT: no messaging trio (SendMessage/ListAgents/ReadNotifications removed 2026-10-02), Browser deferred, Search not WebSearch", async () => {
@@ -197,8 +199,11 @@ describe("the tool surface (Exa key stored)", () => {
     // `advisor` is chat-allowed but advertised only when a reviewer resolves (none for a test double).
     expect(s.eager).toEqual(["AskUserQuestion", "Search", "ToolSearch", "WebFetch"]);
     const search = toolSearchResult(s);
+    // Browser alone: the standing twins of SendMessage/ListAgents go with their natives, so selecting them by
+    // name loads nothing (A-M1 review M9: probed explicitly, since no daemon-side deny backs this any more).
     expect([...search.matches].sort()).toEqual(["Browser"]);
-    // Browser alone: the standing twins of SendMessage/ListAgents go with their natives.
+    expect(search.matches).not.toContain(SEND_MESSAGE_TWIN);
+    expect(search.matches).not.toContain(LIST_AGENTS_TWIN);
     expect(search.total_deferred_tools).toBe(1);
     const browsed = s.results[1]!;
     expect(browsed.name).toBe("Browser");
@@ -208,7 +213,6 @@ describe("the tool surface (Exa key stored)", () => {
     const calls = d.daemon.sessions.read(sessionId).filter((e) => e.type === "tool_call") as Array<{ name: string }>;
     expect(calls.map((c) => c.name)).toEqual(["ToolSearch", "browser"]);
     expect(d.daemon.sessions.read(sessionId).filter((e) => e.type === "agent_error")).toEqual([]);
-    void LIST_AGENTS_TWIN;
   }, 60_000);
 });
 
@@ -232,8 +236,7 @@ describe("the tool surface (NO Exa key)", () => {
   }, 60_000);
 });
 
-const bin = winterExecutableForTests();
-(bin === undefined ? describe.skip : describe)("the tool surface — CODE (the real winter binary)", () => {
+describeWithEmbeddedRuntime("the tool surface — CODE (embedded, like every session)", () => {
   let d: Awaited<ReturnType<typeof bootDaemon>>;
   beforeAll(async () => { d = await bootDaemon(true); }, 60_000);
   afterAll(async () => { d.client.close(); await d.daemon.stop(); rmSync(d.home, { recursive: true, force: true }); });
@@ -251,7 +254,8 @@ const bin = winterExecutableForTests();
     const search = toolSearchResult(s);
     expect([...search.matches].sort()).toEqual([
       "Agent", "Browser", "ComputerV2", "CronList", "Edit", "Glob", "Grep", "ListAgents", "Monitor", "Write",
-      "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+      LIST_AGENTS_TWIN, "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+      SEND_MESSAGE_TWIN,
     ]);
     // Browser, ComputerV2, CronList, the three office tools, LSP — and the two standing twins.
     expect(search.total_deferred_tools).toBe(9);
