@@ -162,8 +162,13 @@ export interface RepoKeyStore {
 }
 export const repoKeychain: RepoKeyStore = { get: (i) => Bun.secrets.get(i), set: (i) => Bun.secrets.set(i) };
 
+/**
+ * A v4 key with Ed25519 as EdDSA (algorithm 22, `ed25519Legacy` in openpgp.js), the form gpgv and sqv on today's
+ * Debian and Ubuntu verify. openpgp.js's `curve25519` is RFC 9580's Ed25519 (algorithm 27), which Ubuntu 24.04's
+ * gpgv can't check (apt reports the signature as invalid, ERRSIG).
+ */
 export async function generateRepoKey(): Promise<{ privateKey: string; publicKey: string; fingerprint: string }> {
-  const { privateKey, publicKey } = await openpgp.generateKey({ type: "curve25519", userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
+  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
   const fingerprint = (await openpgp.readKey({ armoredKey: publicKey })).getFingerprint();
   return { privateKey, publicKey, fingerprint };
 }

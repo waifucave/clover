@@ -19,6 +19,10 @@ describe("the Linux repositories", () => {
     const k = await generateRepoKey();
     expect(k.privateKey).toContain("PRIVATE KEY BLOCK");
     expect(k.publicKey).not.toContain("PRIVATE");
+    // EdDSA in a v4 key (algorithm 22): what apt's gpgv verifies; RFC 9580's Ed25519 (27) it can't.
+    const pub = await (await import("openpgp")).readKey({ armoredKey: k.publicKey });
+    expect(pub.keyPacket.version).toBe(4);
+    expect(pub.getAlgorithmInfo()).toMatchObject({ algorithm: "eddsaLegacy", curve: "ed25519Legacy" });
     const store = memory();
     await expect(repoSigningKey(store, undefined)).rejects.toThrow(/key --generate/);
     await expect(repoSigningKey(store, k.publicKey)).rejects.toThrow(/has no/);
