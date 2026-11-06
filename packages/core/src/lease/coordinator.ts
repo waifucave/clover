@@ -45,6 +45,10 @@ export const LEASE_LINK = {
   handBack: "link.lease.handBack",
   /** notify `{at}`: the sender is the main the user chose, since `at`. */
   main: "link.lease.main",
+  /** notify `{scope, epoch}`: a computer started a tenure with this epoch (sent to every live link, and passed on once
+   *  by each computer that hadn't heard it), so a main cut off from the handshake stops even when it never paired with
+   *  the computer that took over (H-M2's check 4, L4). */
+  epoch: "link.lease.epoch",
 } as const;
 
 /** After the service refused a new tenure `not_voter`, how long before trying again. */
@@ -55,7 +59,10 @@ export interface LeaseCoordinatorOptions {
   lease: MainLease;
   choice: MainChoice;
   registry: { list(): DeviceRecord[]; get(id: string): DeviceRecord | undefined };
-  transport: Pick<LinkTransport, "connect" | "links" | "watch" | "handle" | "onNotify" | "networkChanged">;
+  transport: Pick<LinkTransport, "connect" | "links" | "watch" | "handle" | "onNotify" | "networkChanged"> & {
+    /** Whether `peer` was heard from within two keepalives (the link transport's own); absent, an up link counts. */
+    recentlyHeard?(peer: string): boolean;
+  };
   clock: Clock;
   /** Whether the user is using this computer now (the app's last input; lane E). */
   userActive?(): boolean;
@@ -93,6 +100,9 @@ export class LeaseCoordinator {
   #handingBack: Promise<void> | undefined;
   /** Per peer, since when (monotonic) its link has been up without a break. */
   readonly #upSince = new Map<string, number>();
+  /** The computer whose `take` nudge is pending, and the tenure last announced (`scope@epoch`). */
+  #takeFrom: string | undefined;
+  #announced: string | undefined;
   /** Until when (monotonic) not to try a new tenure again, after the service said this computer doesn't vote yet. */
   #notVoterUntil = Number.NEGATIVE_INFINITY;
   #handBackHook: (() => Promise<void>) | undefined;
@@ -110,6 +120,7 @@ export class LeaseCoordinator {
     const t = o.transport;
     for (const l of t.links()) if (l.up) this.#upSince.set(l.peer, o.clock.monotonic());
     this.#offs.push(this.lease.watch((s) => {
+      this.#announceTenure();
       this.#events.emit(s);
       this.#kick();
     }));
@@ -136,7 +147,14 @@ export class LeaseCoordinator {
       if (!this.#isComputer(from)) return;
       this.#log(`${from} asks this computer to take the lease`);
       this.#takeNow = true;
+      this.#takeFrom = from;
       this.#kick();
+    }));
+    this.#offs.push(t.onNotify(LEASE_LINK.epoch, (p, from) => {
+      if (!this.#isComputer(from)) return;
+      const { scope, epoch } = (p ?? {}) as { scope?: unknown; epoch?: unknown };
+      if (typeof scope !== "string" || typeof epoch !== "number" || !Number.isSafeInteger(epoch) || epoch <= 0) return;
+      this.peerEpoch(epoch, scope, from);
     }));
     this.#offs.push(t.handle(LEASE_LINK.handBack, (p, from) => {
       const at = (p as { at?: unknown } | undefined)?.at;
@@ -175,10 +193,13 @@ export class LeaseCoordinator {
    *  L3). A computer that can't be reached might be on, and one whose link came back after the deadline may have
    *  taken over meanwhile. */
   mayOutlast(deadline: number = Number.POSITIVE_INFINITY): boolean {
+    // A group member this computer can't name might have taken over: no exception while the service lists one.
+    if (this.lease.unknownMembers() > 0) return false;
     const up = new Set(this.#o.transport.links().filter((l) => l.up).map((l) => l.peer));
     return this.#otherComputers().every((d) => {
       const since = this.#upSince.get(d.id);
-      return up.has(d.id) && since !== undefined && since < deadline;
+      // Up without a break since before the deadline, and heard from lately (not just a link not yet seen to drop).
+      return up.has(d.id) && since !== undefined && since < deadline && (this.#o.transport.recentlyHeard?.(d.id) ?? true);
     });
   }
 
@@ -193,11 +214,31 @@ export class LeaseCoordinator {
   }
 
   /** A peer's hello named this epoch: if it's newer than any seen, read the record again. */
-  peerEpoch(epoch: number): void {
-    // Another computer holds a later lease: this one stops acting until its own renew or acquire succeeds.
-    if (this.lease.peerEpoch(epoch)) {
+  peerEpoch(epoch: number, scope?: string, from?: string): void {
+    // Another computer holds a later lease: this one stops acting until its own renew or acquire succeeds, and passes
+    // the word on once, so a computer the new holder never paired with hears it too.
+    if (this.lease.peerEpoch(epoch, scope)) {
+      this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: not acting until the handshake says otherwise`);
+      this.#sendEpoch(scope ?? this.lease.scopeId(), epoch, from);
       this.#lastRead = Number.NEGATIVE_INFINITY;
       this.#kick();
+    }
+  }
+
+  /** This computer started a tenure (any acquire or takeover that gave it a new epoch): every live link hears it. */
+  #announceTenure(): void {
+    if (!this.lease.holds() || !this.lease.hasScope()) return;
+    const scope = this.lease.scopeId();
+    const epoch = this.lease.state().epoch;
+    const key = `${scope}@${epoch}`;
+    if (this.#announced === key) return;
+    this.#announced = key;
+    this.#sendEpoch(scope, epoch);
+  }
+
+  #sendEpoch(scope: string, epoch: number, except?: string): void {
+    for (const l of this.#o.transport.links()) {
+      if (l.up && l.peer !== except && this.#isComputer(l.peer)) this.#notify(l.peer, LEASE_LINK.epoch, { scope, epoch });
     }
   }
 
@@ -356,6 +397,7 @@ export class LeaseCoordinator {
     const live = k.holderRaw !== null && k.expiresAt !== null && now < k.expiresAt;
     if (live) {
       this.#takeNow = false;
+      this.#takeFrom = undefined;
       if (this.choice.isSelf() && k.holder !== null && k.holder !== this.#o.self) await this.#askBack(k.holder, k.epoch);
       // Read again as it's due to run out.
       return Math.min(this.#o.readEveryMs ?? 15_000, Math.max(250, k.expiresAt! - now + 250));
@@ -373,7 +415,13 @@ export class LeaseCoordinator {
   async #considerTakeover(lastHolder: string | null): Promise<void> {
     const lease = this.lease;
     const takeNow = this.#takeNow;
+    const takeFrom = this.#takeFrom;
     this.#takeNow = false;
+    this.#takeFrom = undefined;
+    // A nudge takes at once only when the lease was let go (a released record names no holder) or comes from the last
+    // holder itself (a hand-over or a hand-back). Over a lapsed record from anyone else, the last holder may still be
+    // acting, cut off from the handshake: the usual checks run first (check 4, L4).
+    const fromLastHolder = takeNow && (lease.known().holderRaw === null || (takeFrom !== undefined && takeFrom === lease.lastHolder()));
     if (this.#yieldedAt !== undefined) {
       // Handed over: the bots went to another computer. Only if none took them in two leases' time does this one.
       if (this.#o.clock.monotonic() - this.#yieldedAt < 2 * lease.ttlMs) {
@@ -382,8 +430,8 @@ export class LeaseCoordinator {
       }
       this.#yieldedAt = undefined;
     }
-    if (this.choice.isSelf() || takeNow) {
-      if (this.#mayStartTenure()) await this.#acquire(takeNow ? "asked" : "the main");
+    if (this.choice.isSelf() || fromLastHolder) {
+      if (this.#mayStartTenure()) await this.#acquire(fromLastHolder ? "asked" : "the main");
       return;
     }
     const main = this.choice.current();

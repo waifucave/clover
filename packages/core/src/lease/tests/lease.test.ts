@@ -64,8 +64,13 @@ describe("MainLease beyond the contract", () => {
     // Not newer: nothing changes.
     expect(studio.peerEpoch(1)).toBe(false);
     expect(studio.canAct()).toBe(true);
-    // Newer: another computer may hold a later lease; nothing is acted on until the service says otherwise.
-    expect(studio.peerEpoch(2)).toBe(true);
+    // Another scope's epoch is never compared (check 4).
+    expect(studio.peerEpoch(9, "group:other")).toBe(false);
+    expect(studio.canAct()).toBe(true);
+    // Newer in this scope: another computer may hold a later lease; nothing is acted on until the service says so.
+    expect(studio.peerEpoch(2, studio.scopeId())).toBe(true);
+    // Heard once: the same word again isn't passed on twice.
+    expect(studio.peerEpoch(2)).toBe(false);
     expect(studio.canAct()).toBe(false);
     await studio.renew();
     expect(studio.canAct()).toBe(true);

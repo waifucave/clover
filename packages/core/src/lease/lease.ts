@@ -10,8 +10,9 @@
 //   only while no other computer could take over, or while it has had a live link to each one that could since
 //   before the deadline passed (a link that came back later may be to a computer that took over meanwhile). The
 //   coordinator answers that from the links (coordinator.ts).
-// * **A newer epoch from a peer** (its hello): another computer holds a later lease, so this one stops acting until
-//   a renew or an acquire succeeds, as after a wake (H-M2's check 3, L3).
+// * **A newer epoch from a peer** (its hello, or the announcement a computer sends its links when it starts a tenure,
+//   passed on once by each): another computer holds a later lease in the same scope, so this one stops acting until a
+//   renew or an acquire succeeds, as after a wake (H-M2's checks 3 and 4, L3 and L4).
 // * **The fencing token is (scope, epoch)** (H-M2's review): epochs count within one lease record (the account's, a
 //   group's, or this computer's own), so a sign-in or a merge starts a new count. `fence()` is what an act is stamped
 //   with; `isStale(epoch, scope)` tells a receiver to refuse an act from an earlier lease: an older epoch in the
@@ -71,6 +72,10 @@ export class MainLease implements Lease {
   #woke = false;
   /** A peer named a newer epoch than any this device has seen: nothing is acted on until a renew or acquire. */
   #behind = false;
+  /** Per scope, the newest epoch a peer named: so an announcement is taken, and passed on, once. */
+  readonly #peerSeen = new Map<string, number>();
+  /** The last device the record named as holder (a hand-over's or hand-back's sender, after it released). */
+  #lastHolder: string | null = null;
   #handingOver = false;
   /** Releases so far, so a renew in flight across one is not taken as holding. */
   #releases = 0;
@@ -175,13 +180,27 @@ export class MainLease implements Lease {
     this.#changed();
   }
 
-  /** A peer's hello named `epoch`: newer than any seen here, another computer holds a later lease, so this one stops
-   *  acting until its own renew or acquire succeeds. Returns whether it was newer. */
-  peerEpoch(epoch: number): boolean {
-    if (this.#local || epoch <= this.highestEpoch()) return false;
+  /** A peer named `epoch` in `scope` (its hello, or a tenure's announcement): newer than any seen here in this
+   *  scope, another computer holds a later lease, so this one stops acting until its own renew or acquire succeeds.
+   *  An epoch of another scope is never compared. Returns whether it was newer (and so to be passed on). */
+  peerEpoch(epoch: number, scope?: string): boolean {
+    const id = this.scopeId();
+    if (this.#local || (scope !== undefined && scope !== id)) return false;
+    if (epoch <= Math.max(this.highestEpoch(), this.#peerSeen.get(id) ?? 0)) return false;
+    this.#peerSeen.set(id, epoch);
     this.#behind = true;
     this.#changed();
     return true;
+  }
+
+  /** The last device the record named as holder, even once it released. */
+  lastHolder(): string | null {
+    return this.#lastHolder;
+  }
+
+  /** How many group members the service lists that this device can't name (scope.ts). */
+  unknownMembers(): number {
+    return this.#o.scope()?.unknownMembers?.() ?? 0;
   }
 
   /** Whether this device (or `device`) may start a new tenure of the lease: in a group, only a member that votes. */
@@ -289,6 +308,7 @@ export class MainLease implements Lease {
     else this.#scopes.push(...this.#scopes.splice(this.#scopes.indexOf(id), 1));
     this.#deadline = null;
     this.#known = { holder: null, holderRaw: null, epoch: 0, expiresAt: null };
+    this.#lastHolder = null;
     this.#local = null;
     this.#changed();
   }
@@ -348,6 +368,8 @@ export class MainLease implements Lease {
       this.#deadline = sent + this.ttlMs - this.marginMs;
       this.#woke = false;
       this.#behind = false;
+      // The service says this device holds the newest lease: a peer's later word counts against this epoch again.
+      this.#peerSeen.set(this.scopeId(), record.epoch);
       this.#armDeadline();
     }
     this.#changed();
@@ -363,6 +385,7 @@ export class MainLease implements Lease {
     // Never step back to an older record (a read that crossed a newer push).
     if (r.epoch < this.#known.epoch) return;
     this.#known = { ...r };
+    if (r.holder !== null) this.#lastHolder = r.holder;
     this.#raise(r.epoch);
     if (r.holder !== this.self) this.#deadline = null;
     this.#armLapse();

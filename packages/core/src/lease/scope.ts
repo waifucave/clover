@@ -36,6 +36,9 @@ export interface LeaseScope {
   /** Whether this device (or `device`) votes now, so a new tenure of the lease is its to take (a group's rule: lane I's
    *  service refuses any other `not_voter`). Absent: every device may (the account's lease). */
   votes?(now: number, device?: string): boolean;
+  /** How many members the service lists that this device can't name (a group's; 0 or absent elsewhere): any of them
+   *  might hold a later lease, so the main's exception to fencing is off while there are some. */
+  unknownMembers?(): number;
 }
 
 /** Runs a request against the service, as the lease sees its outcome. */
@@ -127,6 +130,11 @@ export class GroupLeaseScope implements LeaseScope {
 
   get group(): string {
     return this.#group;
+  }
+
+  unknownMembers(): number {
+    const g = this.#registry.group();
+    return g && g.id === this.#group ? (g.unknownMembers ?? 0) : 0;
   }
 
   /** By the group record's last read: unread (or a service that shows no voters) counts as voting, and the service

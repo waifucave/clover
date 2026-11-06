@@ -59,6 +59,9 @@ export interface GroupRecord {
   votesFrom?: number | null;
   /** How many members the service names, as of its last read (a merge's survivor rule compares these). */
   size?: number;
+  /** How many of those members this device can't name (no device it knows holds the key), as of the last read: any
+   *  turns off the main's exception to fencing (H-M2's check 4, L4). */
+  unknownMembers?: number;
   /** The group this one replaced after this device was removed from it (group recovery's two-voter case). */
   recoveredFrom?: string;
   /** Every key ever bound to each device in this group, so a revoke removes them all (H-M2's check 2). */
@@ -508,10 +511,11 @@ export class FileDeviceRegistry implements DeviceRegistry {
 
   /** What the service's read of the group says: who votes from when, and how many members it has. A member the read
    *  doesn't name is kept (a read can cross a join in flight); a revoke drops it. */
-  groupRead(group: string, read: { size: number; self?: number | null; members: Record<string, number | null | undefined> }): void {
+  groupRead(group: string, read: { size: number; self?: number | null; members: Record<string, number | null | undefined>; unknown?: number }): void {
     const g = this.#state.group;
     if (!g || g.id !== group) return;
     g.size = read.size;
+    if (read.unknown !== undefined) g.unknownMembers = read.unknown;
     if (read.self !== undefined) g.votesFrom = read.self;
     for (const [device, m] of Object.entries(g.members)) if (device in read.members) m.votesFrom = read.members[device] ?? null;
     this.#save();

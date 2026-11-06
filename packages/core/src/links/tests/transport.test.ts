@@ -218,6 +218,20 @@ describe("CloverLinkTransport, beyond the contract's cases", () => {
     expect(await ab.request<string>("who", null)).toBe("b");
   });
 
+  test("a hello carries the lease epoch with its scope, and a link counts as heard only within two keepalives (check 4)", async () => {
+    const clock = new FakeClock();
+    const got: [number, string | undefined][] = [];
+    const c = await cluster(["a", "b"], { clock, transport: { epoch: () => 4, epochScope: () => "group:g", onPeerEpoch: (_p, e, s) => got.push([e, s]), keepaliveMs: 1_000, idleTimeoutMs: 60_000 } });
+    await c.t("a").connect(c.id("b"));
+    expect(got).toEqual([[4, "group:g"], [4, "group:g"]]);
+    expect((c.t("a") as unknown as { recentlyHeard(p: string): boolean }).recentlyHeard(c.id("b"))).toBe(true);
+    // The path goes quiet: no keepalive gets through, though the link isn't seen to drop yet.
+    c.net.partition(c.key("a"), c.key("b"));
+    clock.advance(2_001);
+    await flush();
+    expect((c.t("a") as unknown as { recentlyHeard(p: string): boolean }).recentlyHeard(c.id("b"))).toBe(false);
+  });
+
   test("a lost link re-dials by itself, backing off, once the path is back", async () => {
     const clock = new FakeClock();
     const c = await cluster(["a", "b"], { clock });

@@ -354,7 +354,9 @@ export class GroupKeeper {
       const at = members.find((x) => x.key === m.key);
       if (at) byDevice[device] = at.votesFrom ?? null;
     }
-    this.#o.registry.groupRead(g.id, { size: members.length, self: own.votesFrom ?? null, members: byDevice });
+    const known = new Set([g.ownKey, ...Object.values(g.members).map((m) => m.key)]);
+    const unknown = members.filter((m) => !known.has(m.key)).length;
+    this.#o.registry.groupRead(g.id, { size: members.length, self: own.votesFrom ?? null, members: byDevice, unknown });
   }
 
   async #readQuiet(): Promise<void> {

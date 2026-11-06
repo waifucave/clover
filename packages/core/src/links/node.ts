@@ -187,7 +187,8 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     self: key.id, wire, registry, directory: peers, clock: o.clock, planner,
     // The hello carries the newest lease epoch this device has seen; a newer one from a peer makes it read the record.
     epoch: () => main?.lease.highestEpoch() ?? 0,
-    onPeerEpoch: (_peer, epoch) => main?.coordinator.peerEpoch(epoch),
+    epochScope: () => (main?.lease.hasScope() ? main.lease.scopeId() : undefined),
+    onPeerEpoch: (peer, epoch, scope) => main?.coordinator.peerEpoch(epoch, scope, peer),
     ...o.transport,
   });
 

@@ -34,8 +34,9 @@ interface Node {
 
 type Scope = ReturnType<MemoryLeaseService["scope"]>;
 
-async function computers(names: string[], wrap?: (name: string, scope: Scope) => Scope) {
-  const c = await makeLinkCluster(names, { clock, transport: { failFastMs: 300, dialTimeoutMs: 500 } });
+async function computers(names: string[], wrap?: (name: string, scope: Scope) => Scope, pairs?: [string, string][]) {
+  const c = await makeLinkCluster(names, { clock, transport: { failFastMs: 300, dialTimeoutMs: 500 }, ...(pairs ? { pairAll: false } : {}) });
+  if (pairs) for (const [a, b] of pairs) await c.pair(a, b);
   stops.push(() => c.close());
   const service = new MemoryLeaseService(clock, { minTtlSec: 0 });
   const nodes = new Map<string, Node>();
@@ -52,7 +53,8 @@ async function computers(names: string[], wrap?: (name: string, scope: Scope) =>
     nodes.set(name, node);
   }
   // Every computer keeps its links up, as the daemon does.
-  for (const a of names) for (const b of names) if (a < b) await c.devices.get(a)!.transport.connect(c.devices.get(b)!.id);
+  const paired = (a: string, b: string) => !pairs || pairs.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+  for (const a of names) for (const b of names) if (a < b && paired(a, b)) await c.devices.get(a)!.transport.connect(c.devices.get(b)!.id);
   const id = (n: string) => c.devices.get(n)!.id;
   const holder = () => {
     const h = service.record.holder;
@@ -134,6 +136,15 @@ describe("the main computer", () => {
     await waitFor(() => w.holder() === "Laptop");
   }, 20_000);
 
+  test("a group member the main can't name turns its exception off: cut off from the handshake, it stops at its deadline (check 4)", async () => {
+    const w = await computers(["Studio", "Laptop"], (name, scope) => (name === "Studio" ? { ...scope, unknownMembers: () => 1 } : scope));
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    w.service.cutOff(w.id("Studio"));
+    // Linked to every computer it knows, but the service lists a member it can't name, which may have taken over.
+    await waitFor(() => !w.n("Studio").mc.lease.canAct(), 3 * TIMINGS.ttlMs);
+  }, 20_000);
+
   test("Hand over and quit: the lease goes at once to a computer that is on, which takes it", async () => {
     const w = await computers(["Studio", "Laptop"]);
     await w.n("Studio").mc.coordinator.chooseSelf();
@@ -210,6 +221,22 @@ describe("the main computer", () => {
       if (w.n("Studio").mc.lease.canAct() && w.n(taker).mc.lease.canAct()) both++;
     }
     expect(both).toBe(0);
+    expect(w.n("Studio").mc.lease.canAct()).toBe(false);
+  }, 30_000);
+
+  test("L4: a main cut off from the service only, linked to every computer it knows, stops once a computer it never paired with takes over (check 4)", async () => {
+    // The studio and the server never paired; the laptop is paired with both.
+    const w = await computers(["Studio", "Laptop", "Server"], undefined, [["Studio", "Laptop"], ["Laptop", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    w.service.cutOff(w.id("Studio"), true);
+    await waitFor(() => w.holder() !== "Studio" && w.holder() !== null, 10_000);
+    let two = 0;
+    for (let i = 0; i < 20; i++) {
+      await Bun.sleep(100);
+      if (["Studio", "Laptop", "Server"].filter((n) => w.n(n).mc.lease.canAct()).length > 1) two++;
+    }
+    expect(two).toBe(0);
     expect(w.n("Studio").mc.lease.canAct()).toBe(false);
   }, 30_000);
 
