@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ancestry, descendsFrom, parentPid, probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../../src/platform/caller-probe";
+import { ancestry, descendsFrom, parentPid, probePeer, socketFd, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "../../src/platform/caller-probe";
+import { claimDaemonChildren } from "../../src/platform/daemon-children";
 import { resolveEndpoint } from "../../src/platform/transport";
 
 
@@ -65,6 +66,21 @@ describe("the caller check's OS probe", () => {
     a.kill(); b.kill(); self.end(); server.stop(true);
   });
 
+  test.skipIf(process.platform !== "win32")("Windows: only this endpoint's ends count; another pipe the daemon serves never does (review S4)", async () => {
+    const pathA = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
+    const pathB = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
+    const peers = new WindowsPipePeers(pathA);
+    const seen: Array<number | null> = [];
+    const other = Bun.listen({ unix: pathB, socket: { data() {} } }); // its ends are this process's too
+    const server = Bun.listen({ unix: pathA, socket: { open(s) { seen.push(peers.opened(s)); }, close(s) { peers.closed(s); }, data() {} } });
+    const b = Bun.spawn([process.execPath, "-e", CLIENT(pathB)], { stdout: "ignore", stderr: "ignore", windowsHide: true });
+    await Bun.sleep(500); // b's end on the other pipe is connected before a's
+    const a = Bun.spawn([process.execPath, "-e", CLIENT(pathA)], { stdout: "ignore", stderr: "ignore", windowsHide: true });
+    for (let i = 0; i < 200 && seen.length < 1; i++) await Bun.sleep(10);
+    expect(seen).toEqual([a.pid]);
+    a.kill(); b.kill(); server.stop(true); other.stop(true);
+  });
+
   test.skipIf(process.platform === "win32")("a client in this process: its pid, outside every floor", async () => {
     const l = listenOnce();
     const c = await Bun.connect({ unix: l.path, socket: { data() {} } });
@@ -109,4 +125,22 @@ describe("the caller check's OS probe", () => {
     expect(descendsFrom(peer, new Set([child.pid]))).toBe(true); // the wrapper is in its tree
     child.kill(); l.stop();
   });
+
+  test("review B1: what the daemon starts stays its own, a double fork included (Linux's subreaper, Windows' job)", async () => {
+    const claimed = claimDaemonChildren();
+    if (process.platform === "linux") expect(claimed.subreaper).toBe(true);
+    if (process.platform === "win32") expect(claimed.job).toBe(true);
+    // A child that starts a grandchild and exits at once: the grandchild is orphaned.
+    const script = `const g = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 20000)"], { stdio: ["ignore", "ignore", "ignore"] }); g.unref(); console.log(g.pid); process.exit(0);`;
+    const child = Bun.spawn([process.execPath, "-e", script], { stdout: "pipe", stderr: "ignore", windowsHide: true });
+    const g = Number((await new Response(child.stdout).text()).trim());
+    await child.exited;
+    await Bun.sleep(200);
+    const ancestors = ancestry(g);
+    if (process.platform === "linux") expect(ancestors[0]).toBe(process.pid); // re-parented to us, not to init
+    if (process.platform !== "darwin") expect(spawnedByDaemon(g, ancestors)).toBe(true);
+    expect(spawnedByDaemon(child.pid, [process.pid])).toBe(true);
+    expect(spawnedByDaemon(process.pid, ancestry(process.pid))).toBe(false); // the daemon itself
+    try { process.kill(g); } catch { /* gone */ }
+  }, 30_000);
 });

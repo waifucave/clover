@@ -13,6 +13,7 @@
 // another) is the wiring step once B's roles are in.
 import { readFileSync, readlinkSync } from "node:fs";
 import { callerFloorVerdict, type FloorVerdict, type SandboxProbe } from "./sandbox-floor";
+import { inDaemonJob } from "./win-job";
 import type { DaemonPlatform } from "./transport";
 
 import { ffiLib as open, ffiPtr as ptr, type FfiLib as Lib } from "./ffi";
@@ -35,6 +36,7 @@ function kernel32(): Lib | null {
     GetFileType: { args: ["u64"], returns: "u32" },
     GetNamedPipeInfo: { args: ["u64", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     GetNamedPipeClientProcessId: { args: ["u64", "ptr"], returns: "i32" },
+    GetFileInformationByHandleEx: { args: ["u64", "i32", "ptr", "u32"], returns: "i32" },
     OpenProcess: { args: ["u32", "i32", "u32"], returns: "u64" },
     CloseHandle: { args: ["u64"], returns: "i32" },
   });
@@ -50,6 +52,46 @@ function advapi32(): Lib | null {
 
 function ntdll(): Lib | null {
   return open("ntdll", "ntdll.dll", { NtQueryInformationProcess: { args: ["u64", "i32", "ptr", "u32", "ptr"], returns: "i32" } });
+}
+
+function libSystemExtra(): Lib | null {
+  return open("darwin-extra", "/usr/lib/libSystem.B.dylib", {
+    getpeereid: { args: ["i32", "ptr", "ptr"], returns: "i32" },
+    proc_pidpath: { args: ["i32", "ptr", "u32"], returns: "i32" },
+  });
+}
+
+/** The uid of the process on the other end of a connected Unix socket: `getpeereid` on macOS, `SO_PEERCRED`'s
+ *  uid on Linux. For a client, the server's. */
+export function peerUid(fd: number, os: DaemonPlatform = currentOs()): number | null {
+  if (os === "darwin") {
+    const uid = new Uint32Array(1), gid = new Uint32Array(1);
+    return (libSystemExtra()?.getpeereid?.(fd, ptr(uid), ptr(gid)) as number | undefined) === 0 ? uid[0]! : null;
+  }
+  if (os === "linux") {
+    const cred = new Int32Array(3), len = new Uint32Array([12]);
+    return (libc()?.getsockopt?.(fd, 1, 17, ptr(cred), ptr(len)) as number | undefined) === 0 ? cred[1]! >>> 0 : null;
+  }
+  return null;
+}
+
+/** The executable a process runs: `proc_pidpath` on macOS, `/proc/<pid>/exe` on Linux. */
+export function processImage(pid: number, os: DaemonPlatform = currentOs()): string | null {
+  if (os === "darwin") {
+    const buf = Buffer.alloc(4096);
+    const n = libSystemExtra()?.proc_pidpath?.(pid, ptr(buf), buf.length) as number | undefined;
+    return n !== undefined && n > 0 ? buf.subarray(0, n).toString("utf8") : null;
+  }
+  if (os === "linux") { try { return readlinkSync(`/proc/${pid}/exe`); } catch { return null; } }
+  return null;
+}
+
+/** macOS's responsible process (the one TCC attributes a process to): it stays the daemon's for whatever the daemon
+ *  starts, a double fork included, while the app (started by `open`) and a terminal's CLI have their own. */
+function responsibility(): Lib | null {
+  return open("darwin-responsibility", "/usr/lib/libSystem.B.dylib", {
+    responsibility_get_pid_responsible_for_pid: { args: ["i32"], returns: "i32" },
+  });
 }
 
 function currentOs(): DaemonPlatform {
@@ -176,6 +218,23 @@ export interface PeerFacts {
   readonly ancestors: readonly number[];
   readonly probe: SandboxProbe;
   readonly floor: FloorVerdict;
+  /** Started by this daemon, however indirectly: the daemon is among its parents (Linux re-parents a double fork
+   *  to it, `PR_SET_CHILD_SUBREAPER`), macOS names the daemon its responsible process, or on Windows it runs in the
+   *  daemon's job. Such a process is never the user or the app (review B1). */
+  readonly spawnedByDaemon?: boolean;
+}
+
+/** Whether `pid` (with its parents) was started by this daemon (see `PeerFacts.spawnedByDaemon`). The daemon
+ *  itself is not its own child. */
+export function spawnedByDaemon(pid: number, ancestors: readonly number[], os: DaemonPlatform = currentOs(), self = process.pid): boolean {
+  if (pid === self) return false;
+  if (ancestors.includes(self)) return true;
+  if (os === "darwin") {
+    const r = responsibility()?.responsibility_get_pid_responsible_for_pid?.(pid) as number | undefined;
+    if (r !== undefined && r === self) return true;
+  }
+  if (os === "win32" && inDaemonJob(pid)) return true;
+  return false;
 }
 
 /** Probe the peer of a connected Bun socket (or a descriptor). On Windows pass the pid
@@ -185,7 +244,8 @@ export function probePeer(socketOrFd: unknown, os: DaemonPlatform = currentOs(),
   const pid = knownPid !== undefined ? knownPid : fd === null ? null : peerPid(fd, os);
   if (pid === null) return { pid: null, ancestors: [], probe: {}, floor: "fenced" };
   const probe = sandboxProbe(pid, os);
-  return { pid, ancestors: ancestry(pid, os), probe, floor: callerFloorVerdict(os, probe) };
+  const ancestors = ancestry(pid, os);
+  return { pid, ancestors, probe, floor: callerFloorVerdict(os, probe), spawnedByDaemon: spawnedByDaemon(pid, ancestors, os) };
 }
 
 /** One of the daemon's own handles, from NtQueryInformationProcess(ProcessHandleInformation). */
@@ -210,14 +270,29 @@ export function ownHandles(): OwnHandle[] | null {
   return null;
 }
 
-/** The connected server ends of named pipes among `handles`, with their clients' pids. */
-function connectedServerEnds(handles: readonly OwnHandle[]): Map<bigint, { pid: number }> {
+/** A pipe handle's name as GetFileInformationByHandleEx gives it (`\\name`), folded. */
+function pipeHandleName(h: bigint): string | null {
+  const buf = Buffer.alloc(4 + 1024);
+  if ((kernel32()!.GetFileInformationByHandleEx!(h, 2 /* FileNameInfo */, ptr(buf), buf.length) as number) === 0) return null;
+  return buf.subarray(4, 4 + buf.readUInt32LE(0)).toString("utf16le").toLowerCase();
+}
+
+/** `\\.\pipe\name` → `\name`, folded: the form `pipeHandleName` compares with. */
+export function pipeEndName(endpoint: string): string {
+  return `\\${endpoint.replace(/^\\\\\.\\pipe\\/i, "")}`.toLowerCase();
+}
+
+/** The connected server ends of the named pipe `name` (`pipeEndName`) among `handles`, with their clients' pids;
+ *  every pipe's when `name` is null. Another pipe the daemon serves (S7's browser pipes, H's sidecar) never counts
+ *  for this endpoint's connections (review S4). */
+function connectedServerEnds(handles: readonly OwnHandle[], name: string | null): Map<bigint, { pid: number }> {
   const k = kernel32()!;
   const out = new Map<bigint, { pid: number }>();
   for (const h of handles) {
     if ((k.GetFileType!(h.handle) as number) !== 3) continue; // FILE_TYPE_PIPE
     const flags = new Uint32Array(1);
     if ((k.GetNamedPipeInfo!(h.handle, ptr(flags), null, null, null) as number) === 0 || (flags[0]! & 1) === 0) continue; // PIPE_SERVER_END
+    if (name !== null && pipeHandleName(h.handle) !== name) continue;
     const pid = new Uint32Array(1);
     if ((k.GetNamedPipeClientProcessId!(h.handle, ptr(pid)) as number) !== 0 && pid[0]! > 0) out.set(h.handle, { pid: pid[0]! });
   }
@@ -239,12 +314,30 @@ const WRITE_DAC = 0x40000;
 export class WindowsPipePeers {
   private readonly owner = new Map<bigint, object>();
   private readonly bySocket = new WeakMap<object, { handle: bigint; pid: number }>();
+  private readonly name: string | null;
+  /** Server ends already connected when the pipe's DACL was locked down: their sockets are closed (review M3). */
+  private early = new Set<bigint>();
+
+  /** `endpoint`: the pipe this listener serves; only its ends are matched. */
+  constructor(endpoint?: string) { this.name = endpoint === undefined ? null : pipeEndName(endpoint); }
+
+  /** Right after the DACL is locked down: whatever is connected now connected under the default DACL. */
+  lockedDown(): void {
+    const handles = ownHandles();
+    this.early = new Set(handles === null ? [] : connectedServerEnds(handles.filter((h) => (h.access & WRITE_DAC) !== 0), this.name).keys());
+  }
+
+  /** Whether this socket's connection was made before the DACL was locked down. */
+  isEarly(socket: object): boolean {
+    const e = this.bySocket.get(socket);
+    return e !== undefined && this.early.has(e.handle);
+  }
 
   /** The listener's `open(socket)`: the client pid of this connection, or null. */
   opened(socket: object): number | null {
     const handles = ownHandles();
     if (handles === null) return null;
-    const ends = connectedServerEnds(handles.filter((h) => (h.access & WRITE_DAC) !== 0));
+    const ends = connectedServerEnds(handles.filter((h) => (h.access & WRITE_DAC) !== 0), this.name);
     for (const h of [...this.owner.keys()]) if (!ends.has(h)) this.owner.delete(h);
     const fresh = [...ends].filter(([h]) => !this.owner.has(h)).sort((a, b) => (a[0] < b[0] ? -1 : 1));
     if (fresh.length === 0 || new Set(fresh.map(([, e]) => e.pid)).size !== 1) return null;

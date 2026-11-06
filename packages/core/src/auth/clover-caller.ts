@@ -8,7 +8,10 @@
 //   layer a plugin (its token names it); plugin-host the plugin its process serves, with each
 //         `pluginHost.api` call acting as the plugin the host stamps (R7)
 //   bridge the agent session it serves; remote, web the user on that device; peer another computer,
-//         always fenced (J-M1's review)
+//         always fenced (J-M1's review). On this computer's endpoint these three come only from the link
+//         sidecar's process, by pid (review S8)
+// A process the daemon started, however indirectly, is never the user (review B1): the probe's
+// `spawnedByDaemon`, and the pids the daemon registers here (`daemonProcesses`).
 // and then, per request: the role's allow list (B's `allowedMethods`, CLOVER_ERR.ROLE_REFUSED), and a
 // `userOnly` method only for the user (CLOVER_ERR.NOT_THE_USER).
 import {
@@ -22,6 +25,9 @@ import type { CloverBinding, HelloRefusal } from "./clover-tokens";
 export interface SessionRef { readonly sessionId: string; readonly sessionKind: SessionKind; readonly bot?: string }
 
 export class SessionProcesses {
+  /** The daemon's own registry: what it spawns registers here (plugins, hooks, LSP, background commands). */
+  static readonly shared = new SessionProcesses();
+
   private readonly byPid = new Map<number, SessionRef>();
   /** Every pid the daemon started for a bot, an agent or a plugin, whether or not it has a session. */
   private readonly spawned = new Set<number>();
@@ -39,6 +45,15 @@ export class SessionProcesses {
   }
 }
 
+/** Registers a process the daemon just spawned in the daemon's registry, and forgets it once it exits. */
+export function noteSpawned(pid: number | undefined, exited: Promise<unknown> | { once(event: "exit", fn: () => void): unknown }): void {
+  if (pid === undefined || pid <= 0) return;
+  SessionProcesses.shared.add(pid);
+  const forget = () => SessionProcesses.shared.remove(pid);
+  if ("then" in exited) void exited.then(forget, forget);
+  else exited.once("exit", forget);
+}
+
 export interface CallerInput {
   readonly binding: CloverBinding;
   /** The peer process, probed from the connection. */
@@ -46,6 +61,10 @@ export interface CallerInput {
   readonly processes: SessionProcesses;
   /** The pid the daemon started a plugin-host process with, to check a plugin-host connection's peer. */
   readonly hostPid?: number;
+  /** The link sidecar's pid (lane H): the only local process that says hello as `remote`, `web` or `peer`. */
+  readonly linkPid?: number;
+  /** This daemon's pid (`process.pid`). */
+  readonly daemonPid?: number;
 }
 
 const notTheUser = (message: string): HelloRefusal => ({ code: CLOVER_ERR.NOT_THE_USER, message });
@@ -54,7 +73,10 @@ const notTheUser = (message: string): HelloRefusal => ({ code: CLOVER_ERR.NOT_TH
 export function resolveCloverCaller(input: CallerInput): Caller | HelloRefusal {
   const { binding, peer, processes } = input;
   const chain = peer.pid === null ? [] : [peer.pid, ...peer.ancestors];
-  const underSpawned = descendsFrom(peer, processes.pids());
+  // Started by this daemon: the probe says so, the daemon is among its parents, or a pid it registered is.
+  const daemonPid = input.daemonPid ?? process.pid;
+  const underSpawned = peer.spawnedByDaemon === true || (peer.pid !== daemonPid && peer.ancestors.includes(daemonPid))
+    || descendsFrom(peer, processes.pids());
   const asUser = peer.floor === "outside-floor" && !underSpawned;
   switch (binding.role) {
     case "app":
@@ -68,18 +90,19 @@ export function resolveCloverCaller(input: CallerInput): Caller | HelloRefusal {
     case "layer":
       return { kind: "plugin", pluginId: binding.pluginId };
     case "plugin-host":
-      if (input.hostPid !== undefined && peer.pid !== null && peer.pid !== input.hostPid) {
+      // Both pids, or no: an unknown peer, or a host the daemon has no pid for, is refused (review S1).
+      if (input.hostPid === undefined || peer.pid === null || peer.pid !== input.hostPid) {
         return { code: CLOVER_ERR.PROCESS_REFUSED, message: `this connection doesn't come from the ${binding.hostProcess} plugin-host process` };
       }
       return { kind: "plugin", pluginId: binding.hostProcess === "clover" ? "clover" : binding.pluginId ?? "shared" };
     case "bridge":
       return { kind: "session", sessionId: binding.agentSessionId, sessionKind: "agent" };
-    case "remote":
-      return { kind: "user", client: "ios", device: binding.device };
-    case "web":
-      return { kind: "user", client: "web", device: binding.device };
-    case "peer":
-      return { kind: "peer", device: binding.device };
+    case "remote": case "web": case "peer":
+      if (input.linkPid === undefined || peer.pid === null || peer.pid !== input.linkPid) {
+        return { code: CLOVER_ERR.PROCESS_REFUSED, message: `a ${binding.role} connection comes only from the link sidecar` };
+      }
+      return binding.role === "peer" ? { kind: "peer", device: binding.device }
+        : { kind: "user", client: binding.role === "remote" ? "ios" : "web", device: binding.device };
   }
 }
 
