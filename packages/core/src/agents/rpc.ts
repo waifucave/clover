@@ -47,8 +47,9 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
           id: b.id,
           name: o.names?.[b.id] ?? BACKEND_NAMES[b.id] ?? b.id,
           pluginId: b.pluginId,
-          // Devin's cloud is ACP with cloud placement (spec §9.3); a vendor cloud agent with no command to start is not.
-          protocol: Object.keys(b.quirks.launch.command).length > 0 ? "acp" : "cloud",
+          // Devin's cloud is ACP with cloud placement (spec §9.3); a cloud agent with no command to start is a vendor's
+          // own API. Local backends, the in-process ones included, are ACP.
+          protocol: b.quirks.placement === "cloud" && Object.keys(b.quirks.launch.command).length === 0 ? "cloud" : "acp",
           placement: b.quirks.placement,
           computers: [{
             computer: o.computer, installed: d.installed, sandboxed: d.sandboxed, marks: [...marks],
