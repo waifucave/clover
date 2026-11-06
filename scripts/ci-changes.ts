@@ -31,8 +31,9 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
   // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
-  // the Linux packages: the app, its builder config, packaging/ and the scripts that build them
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts"],
+  // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon they carry
+  // (the job installs the deb and runs its `clover`)
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],

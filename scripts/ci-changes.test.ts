@@ -57,9 +57,9 @@ describe("ci-changes", () => {
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
 
-  test("the core: its own, the CLI's and the scripts' tests, the daemon, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
+  test("the core: its own, the CLI's and the scripts' tests, the daemon, the packages that carry it, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
-    expect(core).toEqual(["workspaces", "daemon", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
+    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
     expect(core).not.toContain("app");
   });
 
@@ -92,8 +92,15 @@ describe("ci-changes", () => {
 describe("CI on a merge-queue group", () => {
   const ci = Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as {
     on: Record<string, unknown>;
-    jobs: Record<string, { if?: string; steps?: { id?: string; run?: string; env?: Record<string, string> }[] }>;
+    jobs: Record<string, { if?: string; outputs?: Record<string, string>; steps?: { id?: string; run?: string; env?: Record<string, string> }[] }>;
   };
+
+  test("the changes job hands on every area: its outputs are exactly the areas ci-changes.ts writes", () => {
+    // A job keyed to an area the outputs leave out reads an empty string, is skipped every time, and the gate passes.
+    const outputs = ci.jobs.changes?.outputs ?? {};
+    expect(Object.keys(outputs).sort()).toEqual([...CI_AREA_NAMES].sort());
+    for (const [name, value] of Object.entries(outputs)) expect(value, name).toBe(`\${{ steps.areas.outputs.${name} }}`);
+  });
 
   test("ci.yml runs on merge_group, and gate runs whatever happened", () => {
     expect(Object.keys(ci.on)).toContain("merge_group");

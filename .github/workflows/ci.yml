@@ -50,6 +50,7 @@ jobs:
       workspaces: ${{ steps.areas.outputs.workspaces }}
       daemon: ${{ steps.areas.outputs.daemon }}
       app: ${{ steps.areas.outputs.app }}
+      packages: ${{ steps.areas.outputs.packages }}
       gallery: ${{ steps.areas.outputs.gallery }}
       typecheck: ${{ steps.areas.outputs.typecheck }}
       lockfiles: ${{ steps.areas.outputs.lockfiles }}
@@ -264,6 +265,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and check the packages
         run: bun scripts/build-packages.ts --arch x64,arm64 --check
