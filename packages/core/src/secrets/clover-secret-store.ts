@@ -101,6 +101,61 @@ export function vaultKey(vault: Vault, name = "secrets-file-key"): () => Promise
   };
 }
 
+/** How `systemd-creds` seals the key here: `--user` (systemd 256 or later, the user's own credential key, with the TPM
+ *  where there is one), or `--with-key=tpm2` on systemd 250 to 255 when the user can reach the TPM; null for neither. */
+export interface SystemdCreds { readonly args: readonly string[]; readonly tpm: boolean }
+
+export type CredsRunner = (argv: readonly string[], stdin?: string) => Promise<{ ok: boolean; out: string }>;
+
+const bunCredsRunner: CredsRunner = async (argv, stdin) => {
+  try {
+    const p = Bun.spawn([...argv], { stdin: stdin === undefined ? "ignore" : "pipe", stdout: "pipe", stderr: "ignore" });
+    if (stdin !== undefined && p.stdin) { p.stdin.write(stdin); await p.stdin.end(); }
+    const out = await new Response(p.stdout).text();
+    return { ok: (await p.exited) === 0, out };
+  } catch { return { ok: false, out: "" }; }
+};
+
+/** What `systemd-creds` offers on this Linux computer. */
+export async function probeSystemdCreds(run: CredsRunner = bunCredsRunner): Promise<SystemdCreds | null> {
+  const v = await run(["systemd-creds", "--version"]);
+  const version = Number(/systemd\s+(\d+)/.exec(v.out)?.[1] ?? 0);
+  if (!v.ok || version < 250) return null;
+  const tpm = (await run(["systemd-creds", "has-tpm2", "--quiet"])).ok;
+  if (version >= 256) return { args: ["--user"], tpm };
+  return tpm ? { args: ["--with-key=tpm2"], tpm } : null;
+}
+
+/** The secrets file's key sealed by `systemd-creds` in `path` (`secrets.key.cred`), made on first use. */
+export function systemdCredsKey(path: string, creds: SystemdCreds, run: CredsRunner = bunCredsRunner): () => Promise<Buffer> {
+  let cached: Buffer | undefined;
+  const name = "--name=clover-secrets-key";
+  return async () => {
+    if (cached) return cached;
+    if (!existsSync(path)) {
+      const fresh = randomBytes(32).toString("base64");
+      const tmp = `${path}.${process.pid}.tmp`;
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      const r = await run(["systemd-creds", ...creds.args, "encrypt", name, "-", tmp], fresh);
+      if (!r.ok) { rmSync(tmp, { force: true }); throw new ContractError("locked", "systemd-creds could not seal the secrets file's key"); }
+      chmodSync(tmp, 0o600);
+      renameSync(tmp, path);
+    }
+    const r = await run(["systemd-creds", ...creds.args, "decrypt", name, path, "-"]);
+    const k = Buffer.from(r.out.trim(), "base64");
+    if (!r.ok || k.length !== 32) throw new ContractError("locked", "systemd-creds could not open the secrets file's key");
+    return (cached = k);
+  };
+}
+
+/** What `clover doctor` and the daemon's log say about a store's status: a warning when the key sits unsealed, so a
+ *  plaintext key is never a silent default (the controller's condition); null when there's nothing to warn of. */
+export function secretStoreWarning(status: SecretStoreStatus): string | null {
+  if (status.state === "locked") return `saved logins are locked: ${status.reason ?? "unlock the keyring"}`;
+  if (status.plaintext) return "saved logins are encrypted with a key kept unsealed in a file (no keyring, no systemd-creds here): anyone who can read your files can read them";
+  return null;
+}
+
 /** A headless computer's last resort: the key in a file only the user can read (status `plaintext`). */
 export function keyFileKey(path: string): () => Promise<Buffer> {
   return async () => {
@@ -240,7 +295,8 @@ export class CloverSecretStore implements SecretStore {
 
 /** This computer's store (spec §8.5): the Keychain on macOS; on Windows and Linux the encrypted file, its key in
  *  Credential Manager or the Secret Service, or on a headless Linux computer a key file labelled `plaintext`
- *  (`systemd-creds` sealing is still to come, so it is not offered yet). `vault` stands in for `Bun.secrets` (tests). */
+ *  sealed by `systemd-creds` where it is here, and only as a last resort a key file labelled `plaintext`, which
+ *  `secretStoreWarning` turns into a warning. `vault` stands in for `Bun.secrets` (tests). */
 export async function openCloverSecretStore(o: {
   home: string;
   /** The daemon's Keychain service (`keychainService(profile, home)`); the store keeps its items under `<service>.items`
@@ -250,6 +306,9 @@ export async function openCloverSecretStore(o: {
   vault?: (service: string) => Vault;
   clock?: Pick<Clock, "now">;
   interactive?: boolean;
+  /** Linux: what `systemd-creds` offers (`probeSystemdCreds`); probed when not given. */
+  systemdCreds?: SystemdCreds | null;
+  credsRunner?: CredsRunner;
 }): Promise<CloverSecretStore> {
   const os = o.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
   const vault = o.vault ?? bunVault;
@@ -260,11 +319,19 @@ export async function openCloverSecretStore(o: {
   if (os === "windows") return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, vaultKey(keys)), status: { backend: "encrypted-file", keySource: "credential-manager", plaintext: false, state: "unlocked" }, ...clock });
   // Linux: the Secret Service if it answers; a locked keyring someone can unlock waits; else the key file.
   let service: "unlocked" | "locked" | "absent" = "absent";
-  try { await keys.get("probe"); service = "unlocked"; } catch (e) { service = /lock/i.test(String(e)) ? "locked" : "absent"; }
+  // A write, not a read: a Secret Service with no login collection answers reads and refuses writes (measured on the
+  // Ubuntu 26.04 VM over SSH).
+  try { await keys.set("probe", "1"); await keys.delete("probe"); service = "unlocked"; }
+  catch (e) { service = /lock/i.test(String(e)) ? "locked" : "absent"; }
   const interactive = o.interactive ?? Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
   if (service === "unlocked") return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, vaultKey(keys)), status: { backend: "encrypted-file", keySource: "secret-service", plaintext: false, state: "unlocked" }, ...clock });
   if (service === "locked" && interactive) {
     return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, vaultKey(keys)), status: { backend: "encrypted-file", keySource: "secret-service", plaintext: false, state: "unlocked" }, locked: "the keyring is locked: unlock it to use saved logins", ...clock });
+  }
+  // Headless: the key sealed by systemd-creds where it can be, the plaintext key file only as the last resort.
+  const creds = o.systemdCreds !== undefined ? o.systemdCreds : await probeSystemdCreds(o.credsRunner);
+  if (creds) {
+    return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, systemdCredsKey(join(o.home, "secrets.key.cred"), creds, o.credsRunner)), status: { backend: "encrypted-file", keySource: "systemd-creds", tpm: creds.tpm, plaintext: false, state: "unlocked" }, ...clock });
   }
   return new CloverSecretStore({ home: o.home, values: new EncryptedFileValues(file, keyFileKey(join(o.home, "secrets.key"))), status: { backend: "encrypted-file", keySource: "key-file", plaintext: true, state: "unlocked" }, ...clock });
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSecretStoreConformance } from "../../src/contracts/conformance/secret-store";
 import { encryptedFileStatus, Secret } from "../../src/contracts/secret-store";
-import { CloverSecretStore, EncryptedFileValues, KeychainValues, keyFileKey, memoryVault, openCloverSecretStore, vaultKey, type Vault } from "../../src/secrets/clover-secret-store";
+import { CloverSecretStore, EncryptedFileValues, KeychainValues, keyFileKey, memoryVault, openCloverSecretStore, probeSystemdCreds, secretStoreWarning, systemdCredsKey, vaultKey, type CredsRunner, type Vault } from "../../src/secrets/clover-secret-store";
 
 // C-M2: the real SecretStore, through B's conformance suite on both value backends (the OS stores as in-memory vaults,
 // so no test touches the real Keychain, Credential Manager or keyring), then what the disk holds.
@@ -77,9 +77,48 @@ describe("what the disk holds", () => {
     expect(mac.status().backend).toBe("keychain");
     expect((await openCloverSecretStore({ home: home(), service: "svc", os: "windows", vault })).status()).toMatchObject({ keySource: "credential-manager" });
     expect((await openCloverSecretStore({ home: home(), service: "svc", os: "linux", vault })).status()).toMatchObject({ keySource: "secret-service", plaintext: false });
-    const absent: Vault = { get: async () => { throw new Error("no Secret Service on the bus"); }, set: async () => {}, delete: async () => false };
-    expect((await openCloverSecretStore({ home: home(), service: "svc", os: "linux", vault: () => absent, interactive: false })).status()).toMatchObject({ keySource: "key-file", plaintext: true });
-    const locked: Vault = { ...absent, get: async () => { throw new Error("the collection is locked"); } };
+    const absent: Vault = { get: async () => null, set: async () => { throw new Error("Object does not exist at path /org/freedesktop/secrets/collection/login"); }, delete: async () => false };
+    expect((await openCloverSecretStore({ home: home(), service: "svc", os: "linux", vault: () => absent, interactive: false, systemdCreds: null })).status()).toMatchObject({ keySource: "key-file", plaintext: true });
+    expect((await openCloverSecretStore({ home: home(), service: "svc", os: "linux", vault: () => absent, interactive: false, systemdCreds: { args: ["--user"], tpm: true } })).status()).toMatchObject({ keySource: "systemd-creds", tpm: true, plaintext: false });
+    const locked: Vault = { ...absent, set: async () => { throw new Error("the collection is locked"); } };
     expect((await openCloverSecretStore({ home: home(), service: "svc", os: "linux", vault: () => locked, interactive: true })).status()).toMatchObject({ state: "locked" });
+  });
+
+  test("headless Linux seals the key with systemd-creds: --user from 256, the TPM on 250 to 255, else none", async () => {
+    const runner = (version: number, tpm: boolean): CredsRunner => async (argv) => {
+      if (argv[1] === "--version") return { ok: true, out: `systemd ${version} (${version}.1)\n+PAM` };
+      if (argv[1] === "has-tpm2") return { ok: tpm, out: "" };
+      return { ok: false, out: "" };
+    };
+    expect(await probeSystemdCreds(runner(257, false))).toEqual({ args: ["--user"], tpm: false });
+    expect(await probeSystemdCreds(runner(252, true))).toEqual({ args: ["--with-key=tpm2"], tpm: true });
+    expect(await probeSystemdCreds(runner(252, false))).toBeNull();
+    expect(await probeSystemdCreds(runner(249, true))).toBeNull();
+    expect(await probeSystemdCreds(async () => ({ ok: false, out: "" }))).toBeNull(); // no systemd-creds at all
+
+    // The key is made once, sealed into the .cred file, and read back through decrypt.
+    const sealed = new Map<string, string>();
+    const calls: string[][] = [];
+    const creds: CredsRunner = async (argv, stdin) => {
+      calls.push([...argv]);
+      if (argv.includes("encrypt")) { require("node:fs").writeFileSync(argv.at(-1)!, "sealed"); sealed.set("k", stdin!); return { ok: true, out: "" }; }
+      if (argv.includes("decrypt")) return { ok: true, out: `${sealed.get("k")}\n` };
+      return { ok: false, out: "" };
+    };
+    const h = home();
+    const key = systemdCredsKey(join(h, "secrets.key.cred"), { args: ["--user"], tpm: false }, creds);
+    const store = new CloverSecretStore({ home: h, values: new EncryptedFileValues(join(h, "secrets.enc"), key), status: encryptedFileStatus("systemd-creds") });
+    await store.set({ owner: { kind: "core" }, name: "a" }, VALUE);
+    expect(calls[0]).toEqual(["systemd-creds", "--user", "encrypt", "--name=clover-secrets-key", "-", expect.stringContaining("secrets.key.cred")]);
+    expect(readFileSync(join(h, "secrets.key.cred"), "utf8")).toBe("sealed");
+    const again = new CloverSecretStore({ home: h, values: new EncryptedFileValues(join(h, "secrets.enc"), systemdCredsKey(join(h, "secrets.key.cred"), { args: ["--user"], tpm: false }, creds)), status: encryptedFileStatus("systemd-creds") });
+    expect((await again.get({ owner: { kind: "core" }, name: "a" }))?.value.reveal()).toBe(VALUE);
+  });
+
+  test("a plaintext key is a warning, never silent; a sealed one isn't", () => {
+    expect(secretStoreWarning(encryptedFileStatus("key-file"))).toMatch(/unsealed/);
+    expect(secretStoreWarning(encryptedFileStatus("systemd-creds", true))).toBeNull();
+    expect(secretStoreWarning({ backend: "keychain", plaintext: false, state: "unlocked" })).toBeNull();
+    expect(secretStoreWarning({ backend: "encrypted-file", keySource: "secret-service", plaintext: false, state: "locked", reason: "unlock it" })).toMatch(/locked/);
   });
 });
