@@ -33,16 +33,25 @@ export const LinkView = z.object({
 export type LinkView = z.infer<typeof LinkView>;
 
 /** Who may answer another computer's card with a signature (the owner's decision on review N1): a phone, with its own
- *  key, or any desktop, with a key its app holds apart from the core's link key, so plugin code can't sign with it
- *  where the OS allows: a Keychain item limited to the signed app on macOS, a TPM- or Windows Hello-backed key on
- *  Windows. Where the OS can't keep it from plugin code (Linux, and Windows without either), the owner accepted the
- *  risk: "any desktop may answer; a compromised plugin on a Windows or Linux computer could approve actions on other
- *  computers". Servers, cloud computers and browsers never sign. `none` names a key the OS can't keep apart. */
-export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain", "tpm", "hello", "none"] as const;
+ *  answer key, or any desktop, with a key its app holds apart from the core's link key, so plugin code can't sign with
+ *  it where the OS allows. Where the OS can't keep it from plugin code (Linux, and Windows without a TPM), the owner
+ *  accepted the risk: "any desktop may answer; a compromised plugin on a Windows or Linux computer could approve
+ *  actions on other computers". Servers, cloud computers and browsers never sign.
+ *
+ *  Using a holder never prompts (the owner's rule: no biometric, Windows Hello or passcode prompt anywhere; at most,
+ *  optionally, when a device is added or removed). So no holder is Windows Hello, and none carries a `userPresence`,
+ *  biometry or passcode access control:
+ *  * `secure-enclave` (Apple), `keystore` (Android) and `tpm` (Windows): a hardware key with no user-auth policy;
+ *  * `app-keychain` (macOS): a Keychain item whose access list names only the signed app;
+ *  * `keychain` (macOS): a Keychain item with no `userPresence` access control and no app-only access list;
+ *  * `dpapi` (Windows): a blob DPAPI protects in the current user's scope, without the prompt flag;
+ *  * `secret-service` (Linux): an item in the session's unlocked Secret Service collection;
+ *  * `none`: a key the OS keeps no better than the app's own files. */
+export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain", "keychain", "tpm", "dpapi", "secret-service", "none"] as const;
 export const AnswerKeyHolder = z.enum(ANSWER_KEY_HOLDERS);
 export type AnswerKeyHolder = z.infer<typeof AnswerKeyHolder>;
 
-/** The answer key's algorithm (lanes H and I): `p256` for a key the Secure Enclave, Windows Hello or a TPM holds (raw
+/** The answer key's algorithm (lanes H and I): `p256` for a key the Secure Enclave, the Android Keystore or a TPM holds (raw
  *  uncompressed point, 65 bytes; signatures are ECDSA over SHA-256, `r‖s`, 64 bytes), `ed25519` for one in software.
  *  Verification picks it from the record; the registration statement covers it. Absent is `ed25519`. */
 export const AnswerKeyAlg = z.enum(["ed25519", "p256"]);
@@ -75,6 +84,15 @@ export const LeaseView = z.object({
   /** The computer the user chose, or that was chosen automatically (§6.4). */
   main: DeviceId.nullable(),
   holder: DeviceId.nullable(),
+  /** Who `holder` is to this device, so a client shows it without guessing (lane H): this device (`self`), a computer
+   *  this device knows (`computer`, by its name), or a device it doesn't know (`unknown`: not paired with this one yet,
+   *  or removed), shown as "held by a computer this one doesn't know". Null with no holder. The core fills it in
+   *  `main.get` and `lease_changed`; a lease's own state, before the core names its holder, leaves it out. */
+  heldBy: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("self") }),
+    z.object({ kind: z.literal("computer"), computer: ComputerName }),
+    z.object({ kind: z.literal("unknown") }),
+  ]).nullable().optional(),
   /** The lease's scope: the account's, or the account-less devices' group's (item 85); with `epoch`, its fencing token. */
   scope: utf16(128, 1).optional(),
   epoch: z.number().int().nonnegative(),

@@ -133,8 +133,10 @@
                         "secure-enclave",
                         "keystore",
                         "app-keychain",
+                        "keychain",
                         "tpm",
-                        "hello",
+                        "dpapi",
+                        "secret-service",
                         "none"
                       ]
                     },
@@ -697,6 +699,63 @@
                   }
                 ]
               },
+              "heldBy": {
+                "anyOf": [
+                  {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "self"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "computer"
+                          },
+                          "computer": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 63,
+                            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "computer"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "unknown"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "scope": {
                 "type": "string",
                 "minLength": 1,
@@ -992,8 +1051,10 @@
               "secure-enclave",
               "keystore",
               "app-keychain",
+              "keychain",
               "tpm",
-              "hello",
+              "dpapi",
+              "secret-service",
               "none"
             ]
           },
@@ -2469,8 +2530,10 @@
                       "secure-enclave",
                       "keystore",
                       "app-keychain",
+                      "keychain",
                       "tpm",
-                      "hello",
+                      "dpapi",
+                      "secret-service",
                       "none"
                     ]
                   },
@@ -2588,6 +2651,60 @@
                   {
                     "type": "string",
                     "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "heldBy": {
+                "anyOf": [
+                  {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "self"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "computer"
+                          },
+                          "computer": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 63,
+                            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "computer"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "unknown"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      }
+                    ]
                   },
                   {
                     "type": "null"

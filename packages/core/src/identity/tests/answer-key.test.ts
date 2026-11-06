@@ -7,19 +7,24 @@ import { join } from "node:path";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { Secret } from "../../contracts/secret-store";
 import { FileDeviceRegistry } from "../../devices/registry";
-import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import { ANSWER_KEY_HOLDERS, cardAnswerSigningInput } from "@waifucave/clover-protocol";
 import { fromBase64, utf8 } from "../bytes";
 import { AnswerKey, answerKeyHolder } from "../answer-key";
 import { DeviceKey } from "../device-key";
 
 describe("answer key", () => {
-  test("held by the Keychain on macOS, Hello or the TPM on Windows, and marked none elsewhere", () => {
-    expect(answerKeyHolder("macos", { appKeychain: true })).toBe("app-keychain");
+  test("held by stores that never prompt: the Keychain on macOS, the TPM or DPAPI on Windows, the Secret Service on Linux", () => {
+    expect(answerKeyHolder("macos", { appKeychain: true, keychain: true })).toBe("app-keychain");
+    expect(answerKeyHolder("macos", { keychain: true })).toBe("keychain");
     expect(answerKeyHolder("macos", {})).toBe("none");
-    expect(answerKeyHolder("windows", { hello: true, tpm: true })).toBe("hello");
-    expect(answerKeyHolder("windows", { tpm: true })).toBe("tpm");
+    expect(answerKeyHolder("windows", { tpm: true, dpapi: true })).toBe("tpm");
+    expect(answerKeyHolder("windows", { dpapi: true })).toBe("dpapi");
     expect(answerKeyHolder("windows", {})).toBe("none");
-    expect(answerKeyHolder("linux", { tpm: true })).toBe("none");
+    expect(answerKeyHolder("linux", { secretService: true })).toBe("secret-service");
+    expect(answerKeyHolder("linux", { tpm: true, dpapi: true, keychain: true })).toBe("none");
+    // Windows Hello is never a holder (the owner's rule: no prompt to use the key).
+    expect(ANSWER_KEY_HOLDERS).not.toContain("hello" as never);
+    expect(answerKeyHolder("windows", { hello: true } as never)).toBe("none");
   });
 
   test("the app's key reaches the registry with its proof; answers verify with it and never with the link key", async () => {

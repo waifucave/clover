@@ -11,7 +11,7 @@ import {
 import type { CallCardRenderer } from "../../src/contracts/approval-broker";
 import { isContractError } from "../../src/contracts/common";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../../src/contracts/fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../../src/contracts/fakes/device-registry";
 import { computersApiRoutes, filesApiRoutes, filesWatch } from "../../src/computers/api";
 import { toolCallBinding } from "../../src/tree/service";
 import { Cluster, until } from "../tree/cluster-support";
@@ -103,8 +103,8 @@ describe("a peer's command at a level that asks", () => {
     const clock = { now: () => Date.now() };
     const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
     const { registry: devices } = await FakeDeviceRegistry.create({ clock, name: "Laptop1" });
-    const phone = await makeFakeDevice();
-    await devices.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "terminal" });
+    const phone = await makeFakePhone();
+    await devices.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "terminal" });
     const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Run" }, { id: "deny", kind: "deny", label: "Don't" }];
     const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
     const render: CallCardRenderer = (call) => (call.method === "tool.run" ? { kind: "tool", fields: { title: { type: "text", text: `Run on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) } : undefined);

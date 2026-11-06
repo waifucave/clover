@@ -88,13 +88,20 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: 
       expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
     });
 
-    test("a phone's record keeps its ios, and it answers with its own Ed25519 key", async () => {
+    test("a phone's record keeps its ios; it answers only with its answer key, never its link key (no fallback)", async () => {
       const { registry } = await make({ clock: new FakeClock() });
       const phone = await makeFakeDevice();
       await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: phone.publicKey }, { via: "code", card: "card_pair02" });
       expect(registry.get(phone.id)?.os).toBe("ios");
-      expect(await registry.verifyAnswer(phone.id, data, await phone.sign(data))).toBe(true);
-      expect(await verifyKeySignature("p256", fromBase64(phone.publicKey), data, await phone.sign(data))).toBe(false);
+      // No answer key: its link key's signature is refused, so it answers no card.
+      expect(await registry.verifyAnswer(phone.id, data, await phone.sign(data))).toBe(false);
+      // With one, that key answers, and the link key still doesn't.
+      const linked = await makeFakeDevice();
+      const answers = await makeFakeDevice();
+      await registry.add({ id: linked.id, name: "Phone2", kind: "phone", runsCore: false, os: "ios", publicKey: linked.publicKey, answerKey: { publicKey: answers.publicKey, held: "keychain" } }, { via: "code", card: "card_pair03" });
+      expect(await registry.verifyAnswer(linked.id, data, await answers.sign(data))).toBe(true);
+      expect(await registry.verifyAnswer(linked.id, data, await linked.sign(data))).toBe(false);
+      expect(await verifyKeySignature("p256", fromBase64(answers.publicKey), data, await answers.sign(data))).toBe(false);
     });
 
     test("rename", async () => {

@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardContent, type SignedCardAnswer } from "@waifucave/clover-protocol";
 import type { AnswerDevices, CallCardRenderer } from "../../src/contracts/approval-broker";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64, type FakeDevice } from "../../src/contracts/fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64, type FakeDevice } from "../../src/contracts/fakes/device-registry";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -26,9 +26,9 @@ export interface Phone {
 }
 
 export async function makePhone(): Promise<Phone> {
-  const device = await makeFakeDevice();
+  const device = await makeFakePhone();
   const { registry } = await FakeDeviceRegistry.create({ clock: { now: () => Date.now() }, name: "Studio" });
-  await registry.add({ id: device.id, name: "Phone", kind: "phone", runsCore: false, publicKey: device.publicKey }, { via: "terminal" });
+  await registry.add({ id: device.id, name: "Phone", kind: "phone", runsCore: false, publicKey: device.publicKey, answerKey: device.answerKey }, { via: "terminal" });
   return {
     device, devices: registry,
     approve: (computer, method, params) => sign(device, computer, renderCard({ computer, method, params })!),

@@ -14,7 +14,7 @@ import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
 import { MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock } from "../fakes/clock";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
 import { RESERVED_COMPUTER_NAMES, isReservedComputerName, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
@@ -54,8 +54,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
     const clock = new FakeClock();
     const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
     const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-    const phone = await makeFakeDevice();
-    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+    const phone = await makeFakePhone();
+    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
     const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }];
     const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
     // The holder's own card for a tree change, from its built-in tables.

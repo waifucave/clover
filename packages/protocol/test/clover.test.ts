@@ -8,7 +8,7 @@ import {
 } from "../src/clover";
 import { CloverSessionEvent, SENT_AT_WINDOW_MS, SessionView, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
 import { Caller as CallerSchema, DeviceOs, Os, isComputerOs } from "../src/common";
-import { DeviceView, PEER_STREAM_GRANTS } from "../src/devices";
+import { DeviceView, LeaseView, PEER_STREAM_GRANTS } from "../src/devices";
 import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
 import { paramsFor } from "../src/rpc";
@@ -521,6 +521,22 @@ describe("#179's review and H-M1's asks", () => {
     expect([set.roles, set.userOnly]).toEqual([["app"], true]);
     expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(true);
     expect(set.params.safeParse({ publicKey: "not base64!", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(false);
+    // Only holders that never prompt (the owner's rule): no Windows Hello; DPAPI, the Secret Service and a plain
+    // Keychain item instead.
+    for (const held of ["keychain", "dpapi", "secret-service"]) {
+      expect([held, set.params.safeParse({ publicKey: "A".repeat(43) + "=", held, signature: "B".repeat(86) + "==" }).success]).toEqual([held, true]);
+    }
+    expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "hello", signature: "B".repeat(86) + "==" }).success).toBe(false);
+  });
+
+  test("the lease view names its holder for a client: this device, a computer it knows, or one it doesn't (lane H)", () => {
+    const lease = { main: null, holder: "desk0000000000000001", epoch: 3, expiresAt: 1, refresher: null, state: "held" };
+    for (const heldBy of [{ kind: "self" }, { kind: "computer", computer: "Studio" }, { kind: "unknown" }, null]) {
+      expect(LeaseView.safeParse({ ...lease, heldBy }).success).toBe(true);
+    }
+    expect(LeaseView.safeParse(lease).success).toBe(true);
+    expect(LeaseView.safeParse({ ...lease, heldBy: { kind: "unknown", computer: "Studio" } }).data?.heldBy).toEqual({ kind: "unknown" });
+    expect(LeaseView.safeParse({ ...lease, heldBy: { kind: "stranger" } }).success).toBe(false);
   });
 });
 

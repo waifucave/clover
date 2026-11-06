@@ -1,10 +1,14 @@
 // A desktop's answer key (item 91; the owner's decision on review N1): the key a desktop signs card answers for other
 // computers with, held by the app apart from the core's link key, so plugin code (which runs beside the core, never in
 // the app's main process) can't sign with it where the OS allows:
-// * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one);
-// * Windows: a key behind Windows Hello (`hello`) or the TPM (`tpm`);
-// * otherwise (Linux, Windows without either) the key is kept as well as the OS lets the app, and is marked `none`:
-//   the owner accepted that a compromised plugin there could approve actions on other computers.
+// * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one), or else a
+//   plain Keychain item (`keychain`);
+// * Windows: a TPM key (`tpm`), or else a DPAPI blob in the current user's scope (`dpapi`);
+// * Linux: an item in the Secret Service (`secret-service`);
+// * otherwise the key is kept as well as the OS lets the app, and is marked `none`.
+// The owner accepted that a compromised plugin on Windows or Linux could approve actions on other computers. Using the
+// key never prompts (the owner's rule): no Windows Hello, no `userPresence`, biometry or passcode access control, no
+// DPAPI prompt flag, and the TPM key has no user-auth policy.
 //
 // This module is for the app's main process (lane E): it makes or loads the key through storage the app provides,
 // proves it to the core (`registration`, which `FileDeviceRegistry.setOwnAnswerKey` checks), and signs answers.
@@ -21,21 +25,27 @@ import { type Ed25519Key, ed25519FromSeed, generateEd25519 } from "./keys";
 export interface AnswerKeyProtections {
   /** macOS: a Keychain item whose access list names only the signed app. */
   appKeychain?: boolean;
-  /** Windows: Windows Hello can guard the key. */
-  hello?: boolean;
-  /** Windows: the TPM can hold it. */
+  /** macOS: a Keychain item, with no `userPresence` access control. */
+  keychain?: boolean;
+  /** Windows: the TPM can hold it, with no user-auth policy. */
   tpm?: boolean;
+  /** Windows: DPAPI in the current user's scope, without the prompt flag. */
+  dpapi?: boolean;
+  /** Linux: the session's Secret Service, unlocked. */
+  secretService?: boolean;
 }
 
 /** How the key will be held, from the OS and what it offers; `none` when nothing keeps plugin code from it. */
 export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHolder {
   if (os === "macos" && can.appKeychain) return "app-keychain";
-  if (os === "windows" && can.hello) return "hello";
+  if (os === "macos" && can.keychain) return "keychain";
   if (os === "windows" && can.tpm) return "tpm";
+  if (os === "windows" && can.dpapi) return "dpapi";
+  if (os === "linux" && can.secretService) return "secret-service";
   return "none";
 }
 
-/** Where the app keeps the key's seed: its Keychain item, its Hello- or TPM-wrapped blob, or (for `none`) a file the
+/** Where the app keeps the key's seed: its Keychain item, its TPM- or DPAPI-wrapped blob, its Secret Service item, or (for `none`) a file the
  *  app alone writes. The seed passes through here only as a `Secret`. */
 export interface AnswerKeyStorage {
   load(): Promise<Secret | null>;

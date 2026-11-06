@@ -29,6 +29,20 @@ export async function makeFakeDevice(): Promise<FakeDevice> {
   };
 }
 
+/** A phone as it pairs (no fallback, lane H's ask): its link key (`id`, `publicKey`, `link`) and an answer key apart
+ *  from it (`answerKey`, for its record), which `sign` signs with, since a phone answers only with its answer key. */
+export interface FakePhone extends FakeDevice {
+  answerKey: { publicKey: string; held: "secure-enclave" };
+  link: FakeDevice;
+}
+
+/** Makes a phone: a link key, and an answer key in memory. Pair it with `answerKey: phone.answerKey`. */
+export async function makeFakePhone(): Promise<FakePhone> {
+  const link = await makeFakeDevice();
+  const answers = await makeFakeDevice();
+  return { id: link.id, publicKey: link.publicKey, sign: answers.sign, answerKey: { publicKey: answers.publicKey, held: "secure-enclave" }, link };
+}
+
 export class FakeDeviceRegistry implements DeviceRegistry {
   readonly #clock: Pick<Clock, "now">;
   readonly #devices = new Map<string, DeviceRecord>();
