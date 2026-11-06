@@ -5,7 +5,7 @@ import { join, posix } from "node:path";
 import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
-import { diskName, foldName, foldPath, nonAsciiUnderHome } from "../../src/fence/fold";
+import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
 
 // C-M2: the real fence. B's conformance suite runs against it with the suite's own fictional paths (no disk), then
 // the folding and the disk's links are checked on real folders.
@@ -29,10 +29,15 @@ describe("the fence's fold (B-M1's review, J-M1's B1)", () => {
     expect(foldPath("C:\\Users\\Me\\.clover\\Settings.json::$DATA", "windows")).toBe("c:/users/me/.clover/settings.json");
   });
 
-  test("a component under the Clover home that isn't plain ASCII is named", () => {
-    expect(nonAsciiUnderHome("/Users/José/.clover/levels/x.json", "/Users/José/.clover", "macos")).toBeNull();
-    expect(nonAsciiUnderHome("/Users/me/.clover/ſettings.json", "/Users/me/.clover", "macos")).toBe("ſettings.json");
-    expect(nonAsciiUnderHome("/Users/me/project/ſ.txt", "/Users/me/.clover", "macos")).toBeNull();
+  test("a non-ASCII name is named only where Clover names things: the home's top level and folders holding a fenced item", () => {
+    const H = "/Users/José/.clover";
+    const fenced = [`${H}/levels`, `${H}/plugins-state/oks`];
+    expect(nonAsciiAlias(`${H}/ſettings.json`, fenced, H, "macos")).toBe("ſettings.json");
+    expect(nonAsciiAlias(`${H}/plugins-state/ökay.json`, fenced, H, "macos")).toBe("ökay.json");
+    expect(nonAsciiAlias(`${H}/levels/x.json`, fenced, H, "macos")).toBeNull(); // the home's own name may be anything
+    expect(nonAsciiAlias(`${H}/bots/alpha/memory/café.md`, fenced, H, "macos")).toBeNull(); // a bot's note
+    expect(nonAsciiAlias(`${H}/plugins/lüna/clover.json`, fenced, H, "macos")).toBeNull(); // a plugin's files
+    expect(nonAsciiAlias("/Users/me/project/ſ.txt", fenced, H, "macos")).toBeNull();
   });
 });
 
@@ -59,10 +64,11 @@ describe("the real fence on a real disk", () => {
     }
   });
 
-  test("ſettings, and any other non-ASCII name under the home, is refused outright", () => {
+  test("ſettings, and a non-ASCII name where Clover names things, is refused outright; elsewhere any name is fine", () => {
     const { clover, home, fence } = make();
     expect(fence.check({ op: "write", path: join(clover, "ſettings.json") })).toEqual({ allowed: false, reason: "clover-home", path: clover });
-    expect(fence.check({ op: "write", path: join(clover, "plugins", "lüna", "clover.json") })).toMatchObject({ allowed: false, reason: "clover-home" });
+    expect(fence.check({ op: "write", path: join(clover, "plugins-state", "öks") })).toMatchObject({ allowed: false, reason: "clover-home" });
+    expect(fence.check({ op: "write", path: join(clover, "plugins", "lüna", "clover.json") })).toEqual({ allowed: true }); // no fenced item there
     expect(fence.check({ op: "write", path: join(home, "project", "lüna.txt") })).toEqual({ allowed: true });
   });
 

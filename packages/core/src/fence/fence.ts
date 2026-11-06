@@ -2,7 +2,8 @@
 // computer, over its own Clover home: the fenced set laid out by layout.ts, every path resolved on this disk
 // (canonical.ts) and compared folded (fold.ts), so a link, a `..` after a link, a fenced name in another case or
 // Unicode form, or a Windows short name, trailing dot or stream suffix never leads past it, whether or not the item
-// exists yet. Any name component under the Clover home that isn't plain ASCII is refused outright. A hard link is
+// exists yet. A name that isn't ASCII where Clover names things (the home's top level, a folder holding a fenced
+// item) is refused outright. A hard link is
 // another name for the same file: a write, delete or move of a file with more than one link is judged as the
 // fenced file it shares an inode with (J-M1's review), and refused outright when the fenced set holds too many
 // files to tell (fail closed).
@@ -15,7 +16,7 @@ import {
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
-import { foldPath, nonAsciiUnderHome } from "./fold";
+import { foldPath, nonAsciiAlias } from "./fold";
 import { fenceLayout, type LaidOutKind } from "./layout";
 
 export interface CloverFenceOptions {
@@ -87,8 +88,9 @@ export class CloverFence implements Fence {
   check(op: FenceOp): FenceVerdict {
     const paths = op.op === "move" ? [op.path, op.to] : [op.path];
     const canonical = paths.map((p) => this.#canonical(p));
+    const fenced = this.fencedSet().map((i) => i.path);
     for (const p of canonical) {
-      if (nonAsciiUnderHome(p, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+      if (nonAsciiAlias(p, fenced, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     }
     if (op.op !== "read" && op.op !== "list" && op.op !== "stat") {
       const linked = this.#hardLinked(canonical[0]!);
