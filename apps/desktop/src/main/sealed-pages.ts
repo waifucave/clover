@@ -169,9 +169,12 @@ export function ownCardPage(input: {
   const script = `(() => {
   const b = window.cloverSealed;
   if (b === undefined) return;
-  const openedAt = Date.now();
+  // About a second after the page is shown (showInactive), and reset on any move: a plugin can't predict
+  // when the window stops following the cursor, so a timed "click here" prompt can't land on Approve (S3).
+  let openedAt = Date.now();
+  window.addEventListener("mousemove", () => { openedAt = Date.now(); }, { once: true, passive: true });
   document.addEventListener("click", (e) => {
-    if (Date.now() - openedAt < 400) return;
+    if (Date.now() - openedAt < 1000) return;
     if (!e.isTrusted) return;
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
