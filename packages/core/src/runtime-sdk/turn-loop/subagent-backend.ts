@@ -14,7 +14,7 @@
 // * **Events** are K's `AgentEvent`s: the reply's text, thinking, each tool call and its end, usage, and progress for
 //   the stall watchdog.
 import { mkdirSync } from "node:fs";
-import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type Options, type Query } from "@waifucave/clover-agent-sdk";
+import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpSdkServerConfigWithInstance, type Options, type Query } from "@waifucave/clover-agent-sdk";
 import type { Unsubscribe } from "../../contracts/common";
 import type {
   AgentBackend, AgentDetection, AgentEvent, AgentPermissionAnswer, AgentPermissionAsk, AgentQuirks, AgentSession, AgentSessionState, AgentStartSpec,
@@ -137,7 +137,7 @@ class InProcessSession implements AgentSession {
   readonly #canUseTool: CanUseTool = async (toolName, input, opts) => {
     const answer = await this.#ask(toolName, input, opts);
     // The pause may have come on while the card was open: an allow given then waits for the user's resume (review B2).
-    if (answer.behavior === "allow" && !(await this.#holdWhilePaused(opts.signal))) return { behavior: "deny", message: "Stopped: the user paused bots and their agents." };
+    if (answer !== null && answer.behavior === "allow" && !(await this.#holdWhilePaused(opts.signal))) return { behavior: "deny", message: "Stopped: the user paused bots and their agents." };
     return answer;
   };
 
@@ -173,7 +173,9 @@ class InProcessSession implements AgentSession {
       ...embeddedSessionOptions(deps, { model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root }),
       systemPrompt: spec.instructions === undefined || spec.instructions.trim() === "" ? SYSTEM_PROMPT : `${SYSTEM_PROMPT}\n\n<bridge>\n${spec.instructions.trim()}\n</bridge>`,
       tools: [...SUBAGENT_TOOLS],
-      mcpServers: { [spec.bridge.name]: { type: "stdio", command: spec.bridge.command, args: [...spec.bridge.args], env: { ...spec.bridge.env } } },
+      // Lane K's bridge: in process when the manager hands one (`inProcessBridge`, for a backend that says `inProcess`:
+      // a session with no pid can't pass the stdio bridge's pid binding), else the stdio server.
+      mcpServers: { [spec.bridge.name]: inProcessBridgeOf(spec) ?? { type: "stdio", command: spec.bridge.command, args: [...spec.bridge.args], env: { ...spec.bridge.env } } },
       canUseTool: this.#canUseTool,
       hooks: this.#hooks,
       permissionMode: "default",
@@ -296,10 +298,18 @@ class InProcessSession implements AgentSession {
   }
 }
 
+/** Lane K's in-process bridge on a start spec (`AcpStartSpec.inProcessBridge`, K-M3): an in-process MCP server
+ *  serving the bridge's tools straight to the manager. */
+function inProcessBridgeOf(spec: AgentStartSpec): McpSdkServerConfigWithInstance | undefined {
+  const b = (spec as AgentStartSpec & { inProcessBridge?: unknown }).inProcessBridge;
+  return b !== null && typeof b === "object" && (b as { type?: unknown }).type === "sdk" ? (b as McpSdkServerConfigWithInstance) : undefined;
+}
+
 /** The in-process backend, one more `agentBackends` entry for lane K's manager. */
-export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend {
+export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly inProcess: true } {
   return {
     id: IN_PROCESS_BACKEND_ID,
+    inProcess: true,
     pluginId: deps.pluginId ?? "clover",
     quirks: IN_PROCESS_QUIRKS,
     async detect(): Promise<AgentDetection> {

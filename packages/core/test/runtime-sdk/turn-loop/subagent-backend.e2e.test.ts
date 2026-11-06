@@ -97,6 +97,30 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     }
   }, 60_000);
 
+  test("lane K's in-process bridge replaces the stdio one; its tools reach the manager", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const got: unknown[] = [];
+    const inProcessBridge = {
+      type: "sdk" as const, name: "clover_bridge",
+      instance: {
+        listTools: () => [{ name: "SendMessage", inputSchema: { type: "object" } }],
+        callTool: async (_n: string, args: Record<string, unknown>) => { got.push(args); return { content: [{ type: "text", text: "sent" }] }; },
+      },
+    };
+    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls" });
+    expect(backend.inProcess).toBe(true);
+    const session = await backend.start({ ...spec(root, "winter-test/calls"), inProcessBridge } as AgentStartSpec);
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    try {
+      const end = await session.prompt({ text: 'CALL mcp__clover_bridge__SendMessage {"to":"luna","message":"done"}' });
+      expect(JSON.parse(end.text)[0].content).toBe("sent");
+      expect(got).toEqual([{ to: "luna", message: "done" }]);
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
   test("cancel ends a running turn cancelled", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");

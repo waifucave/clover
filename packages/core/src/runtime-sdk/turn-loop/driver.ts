@@ -286,7 +286,7 @@ export class BotSessionDriver implements SessionDriver {
   #gatedCanUseTool(inner: CanUseTool): CanUseTool {
     return async (name, input, opts) => {
       const r = await inner(name, input, opts);
-      if (r.behavior !== "allow") {
+      if (r === null || r.behavior !== "allow") {
         this.#dropCallId(name, opts.toolUseID);
         return r;
       }

@@ -1,5 +1,5 @@
 // The seam every in-process session of the embedded runtime shares (lane A): a bot's conversation (driver.ts), an
-// in-process subagent (subagent-backend.ts), and lane K's Winter coding agent run in-process. Each one is a `query()`
+// in-process subagent (subagent-backend.ts), and lane K's in-process coding agent (clover-code). Each one is a `query()`
 // over the embedded host's spawn hook, with the core's brand on the Clover home, an environment from an allow-list,
 // and, for a real model, the daemon's provider fill (the provider, the credential broker, the model plugins' adapters).
 // Owner: lane A; lane K builds on it.
