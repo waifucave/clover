@@ -29,6 +29,7 @@ import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
+import { SealedFrames } from "./sealed";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut } from "./shortcuts";
@@ -156,6 +157,35 @@ async function ready(): Promise<void> {
     menu: (id, items, point) => popupMenu(id, items, point),
     api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
+    // The sealed path (E-M3): the frame's own channel; the app signs with the answer key over the card's id and hash,
+    // takes the core's answer, and the frame's visibility check runs in its own window's truth (the frame inside the
+    // part's page sees its covers; the app's other windows are the main's to count).
+    sealedAnswer: async (token, option, children) => {
+      const key = answerKeyValue;
+      if (key === undefined) return { accepted: false, reason: "the answer key isn't there" };
+      const out = sealed.buildAnswer(token, option, children, key, signedDevice ?? "");
+      if ("error" in out) return { accepted: false, reason: out.error };
+      const client = pair.client;
+      if (client === undefined) return { accepted: false, reason: "Clover isn't running" };
+      const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
+      return { accepted: r.accepted === true, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) };
+    },
+    sealedVisible: async (token) => {
+      // The frame's own window counts the covers it sees. The store's look still standing is the channel's say-so.
+      const seen = sealed.look(token);
+      if (seen === undefined) return false;
+      // The core says a computer-use action is running: no click counts while it does (R12, §5.5). Asked per look,
+      // because the store's own time is the frame's, not the core's.
+      const client = pair.client;
+      if (client === undefined) return false;
+      try {
+        const busy = await client.request<{ running?: boolean }>("computer.acting", { computer: seen.card.computer }, 3_000);
+        if (busy?.running === true) return false;
+      } catch {
+        // An older daemon: the check rides the frame's own IOv2 answer alone.
+      }
+      return true;
+    },
     userSend: async (windowId, to, message) => {
       // One key press or click the main process saw come to the window covers one send (§5.5).
       if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
@@ -218,6 +248,18 @@ function makePair(): Pair {
     onConnected: (client, hello) => {
       // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
       void answerKey().register(client, hello.device);
+      signedDevice = hello.device;
+      // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones.
+      void client.request<unknown>("card.list").catch(() => undefined).then((r) => {
+        for (const c of (r as { cards?: unknown[] })?.cards ?? []) sealed.fromCore(c);
+      });
+      client.onNotification((method, params) => {
+        const p = params as Record<string, unknown> | undefined;
+        if (method === "core.event" && typeof p?.type === "string") {
+          if (p.type === "card_requested" || p.type === "card_pending") sealed.fromCore((p as { card?: unknown }).card);
+          if (p.type === "card_resolved") sealed.resolvedOutcome(String((p as { id?: unknown }).id ?? ""), String((p as { outcome?: unknown }).outcome ?? "cancelled") as never);
+        }
+      });
       return loadRegistry(client);
     },
     onState: (s) => stateChanged(s),
@@ -296,6 +338,11 @@ function scheduleReload(): void {
     if (c !== undefined) void loadRegistry(c);
   }, 200);
 }
+
+// The sealed frames' store (spec §5.5; E-M3): cards in through the app's role events, frame channels and answers out,
+// signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
+const sealed = new SealedFrames();
+let signedDevice: string | undefined;
 
 /** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). */
 async function loadRegistry(client: DaemonClient): Promise<void> {

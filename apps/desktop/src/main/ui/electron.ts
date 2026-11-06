@@ -246,6 +246,10 @@ export interface IpcHooks {
   webFrame(windowId: number, mount: string, web: { plugin: UiPlugin; web: Readonly<Record<string, unknown>> }, bounds: Rect | undefined): void;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
   menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
+  /** A sealed button's answer: the app signs it with the answer key over the frame's own channel (§5.5; E-M3). */
+  sealedAnswer(token: string, option: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string }>;
+  /** Whether the sealed frame's button may answer in its own window now: visible and unplanned elsewhere (E-M3). */
+  sealedVisible(token: string): Promise<boolean>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -473,6 +477,24 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
+  // The sealed frames' answer: the sender is the sealed page itself (its own scheme), whose token names the channel;
+  // the app signs it out of doors and takes the core's answer. Nothing between.
+  handle("clover:sealed-answer", async (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    const token = str(a.token, 128);
+    const option = typeof a.option === "string" && a.option.length <= 64 ? a.option : undefined;
+    const ch = token !== undefined && Array.isArray(a.children) ? a.children : undefined;
+    if (token === undefined || option === undefined || (ch !== undefined && !ch.every((c: unknown) => typeof c === "string"))) throw new LayerError("bad sealed answer");
+    return hooks.sealedAnswer(token, option, ch !== undefined ? (ch as readonly string[]) : undefined);
+  });
+  handle("clover:sealed-visible", async (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    const token = str(a.token, 128);
+    if (token === undefined) throw new LayerError("bad sealed look");
+    return hooks.sealedVisible(token);
+  });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
     const f = event.senderFrame;
@@ -497,7 +519,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }
