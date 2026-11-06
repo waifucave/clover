@@ -22,11 +22,12 @@
 // Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review; `plugins` by the
 // controller's ruling on B's registry review; `sessions-runtime` and `bot-memory` from A-M3's review), so not yet in
 // `fencedSet()`: `pendingFenced` below.
-import { posix, win32 } from "node:path";
+import { readdirSync } from "node:fs";
+import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FencedKind } from "../contracts/fence";
 import { userLayersDir } from "../bots/paths";
-import { transcriptsDir } from "../sessions/ids";
+import { botSegment, transcriptsDir } from "../sessions/ids";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
 
@@ -69,8 +70,9 @@ export function pendingFenced(o: {
   // allowed. A bot's plugin comes in only through `plugin.install`'s OK card, and is made in a dev folder, which the
   // fence follows by its real path (`followDevFolders`).
   // `sessions-runtime`: the bot driver's state per session (A-M3), which a turn resumes from.
-  // `bot-memory`: each bot's folder, `bots/<bot>/` (its memory and its agents); memory changes go only through the
-  // memory tool, never a bot's Bash.
+  // `bot-memory`: every bot's folder, `bots/<bot>/` (its memory and its agents), write-denied to all: memory changes
+  // go only through the memory tool, never a bot's Bash (the controller's ruling). Reads of other bots' folders are
+  // denied per caller: `botMemoryReadDenied` below.
   const p = pathFor(o.os);
   const u = (...parts: string[]) => p.join(o.home, ...parts);
   const loginStart: Record<Os, string[]> = {
@@ -91,4 +93,20 @@ export function pendingFenced(o: {
     "sessions-runtime": [p.join(o.cloverHome, "sessions-runtime")],
     "bot-memory": [p.join(o.cloverHome, "bots")],
   };
+}
+
+/** The bots' folders a session of `bot` may not read (the controller's ruling on A-M3's review): every bot's folder
+ *  under `<home>/bots/` but its own bot's. `folders` are the folder names there now (`botFolders`); a session with
+ *  no bot (a coding session, an agent) gets none here, so reads stay as the kind's default. */
+export function botMemoryReadDenied(o: { cloverHome: string; os: Os; bot?: string; folders: readonly string[] }): string[] {
+  if (o.bot === undefined) return [];
+  const p = pathFor(o.os);
+  const own = botSegment(o.bot);
+  return o.folders.filter((f) => f !== own).map((f) => p.join(o.cloverHome, "bots", f));
+}
+
+/** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */
+export function botFolders(cloverHome: string): string[] {
+  try { return readdirSync(join(cloverHome, "bots"), { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name); }
+  catch { return []; }
 }
