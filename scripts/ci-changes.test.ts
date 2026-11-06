@@ -79,3 +79,24 @@ describe("ci-changes", () => {
     expect([...(Array.isArray(gateNeeds) ? gateNeeds : [])].sort()).toEqual(all.sort());
   });
 });
+
+// The merge queue (main's protection): a queued PR is tested on top of the latest main before it lands, which needs CI,
+// and so `gate`, to run on its merge group, with the areas taken from the group's own base.
+describe("CI on a merge-queue group", () => {
+  const ci = Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as {
+    on: Record<string, unknown>;
+    jobs: Record<string, { if?: string; steps?: { id?: string; run?: string; env?: Record<string, string> }[] }>;
+  };
+
+  test("ci.yml runs on merge_group, and gate runs whatever happened", () => {
+    expect(Object.keys(ci.on)).toContain("merge_group");
+    expect(ci.jobs.gate?.if).toBe("always()");
+  });
+
+  test("the changes job compares a group with the base it was built on", () => {
+    const step = ci.jobs.changes?.steps?.find((s) => s.id === "areas");
+    expect(step?.env?.GROUP_BASE).toBe("${{ github.event.merge_group.base_sha }}");
+    expect(step?.run).toContain('merge_group)');
+    expect(step?.run).toContain('--base "$GROUP_BASE"');
+  });
+});
