@@ -5,6 +5,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 ---
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -42,8 +43,12 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
  2 files changed, 216 insertions(+), 35 deletions(-)
 
+ src/cli.rs     | 110 ++++++++++++++++++++++++++------
+ src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 240 insertions(+), 37 deletions(-)
+
 diff --git a/src/cli.rs b/src/cli.rs
-index 8e616e2..5b99c7e 100644
+index 8e616e2..f46b64a 100644
 --- a/src/cli.rs
 +++ b/src/cli.rs
 @@ -181,6 +181,13 @@ enum Cmd {
@@ -225,6 +230,53 @@ index 8e616e2..5b99c7e 100644
                  Ok((c, s.sandbox_user_sid))
              }) {
                  Ok(v) => v,
+@@ -3387,7 +3435,7 @@ mod tests {
+         assert!(matches!(
+             with.cmd,
+             Cmd::User {
+-                sub: UserCmd::Status
++                sub: UserCmd::Status { user: None }
+             }
+         ));
+         // Standalone shape: no sentinel.
+@@ -3396,7 +3444,7 @@ mod tests {
+         assert!(matches!(
+             without.cmd,
+             Cmd::User {
+-                sub: UserCmd::Status
++                sub: UserCmd::Status { user: None }
+             }
+         ));
+         // The sentinel is NOT a clap flag — without the strip, it
+@@ -3405,6 +3453,28 @@ mod tests {
+         assert!(
+             Cli::try_parse_from(["srt-win.exe", SRT_WIN_DISPATCH_ARG1, "user", "status",]).is_err()
+         );
++        // The per-principal selector parses through.
++        let named = Cli::try_parse_from(["srt-win.exe", "user", "status", "--user", "clover-sb-a"])
++            .expect("user status --user should parse");
++        assert!(matches!(
++            named.cmd,
++            Cmd::User {
++                sub: UserCmd::Status { user: Some(_) }
++            }
++        ));
++        let named_exec = Cli::try_parse_from([
++            "srt-win.exe",
++            "exec",
++            "--user",
++            "clover-sb-a",
++            "--",
++            "cmd.exe",
++        ])
++        .expect("exec --user should parse");
++        assert!(matches!(
++            named_exec.cmd,
++            Cmd::Exec { user: Some(_), .. }
++        ));
+     }
+ 
+     /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
 index ba0ac37..49a8079 100644
 --- a/src/install.rs
