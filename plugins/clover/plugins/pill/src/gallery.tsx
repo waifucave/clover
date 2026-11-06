@@ -227,7 +227,7 @@ function SurfaceScreen({ env, width, height, draft }: { env: SurfaceEnvironment;
           <div style={{ position: "absolute", left: left - 1, top: top - 1, width: spec.bounds.width + 2, height: spec.bounds.height + 2, boxSizing: "border-box", border: "1px dashed #FFFFFFD9" }} />
         )}
         <div style={{ position: "absolute", left, top, background: framed ? "#000000" : undefined }}>
-          <PillSurface environment={env} host={host} target={ALPHA} targets={TARGETS} draft={draft} reducedMotion />
+          <PillSurface environment={env} host={host} target={ALPHA} targets={TARGETS} draft={draft} initialPresentation={draft ? "expanded" : undefined} reducedMotion />
         </div>
       </div>
     </SealedKitContext.Provider>
