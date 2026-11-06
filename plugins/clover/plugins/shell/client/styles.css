@@ -228,9 +228,126 @@ button.cl-window__title:hover {
   min-height: 0;
 }
 
-/* In main, the conversation runs up under the bar. A bot tab in the panel has no bar over it. */
-.cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation {
+/* In main, the conversation runs up under the bar. A bot tab in the panel has no bar over it, and a stage takes the
+   top in its place. */
+.cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation,
+.cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation {
   --cl-inset-top: var(--clover-plugin-clover-bar-height);
+}
+
+.cl-bot-tab:has(> .cl-bot-tab__stage) > .cl-bot-tab__conversation {
+  --cl-inset-top: 0px;
+}
+
+.cl-bot-tab__stage {
+  flex: none;
+  padding-top: var(--clover-plugin-clover-bar-height);
+}
+
+.cl-window__content:has(> .cl-agent-tab) {
+  padding-top: 0;
+}
+
+/* The status bar, when a plugin fills it: a thin row under the main column. */
+.cl-window__status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--clover-space-m);
+  min-height: 28px;
+  padding: 0 var(--clover-space-m);
+  border-top: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+}
+
+/* What main shows when nothing fills it, or while it loads. */
+.cl-shell-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: calc(var(--clover-plugin-clover-bar-height) + var(--clover-space-xl)) var(--clover-space-xl) var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-shell-empty__title {
+  margin: 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-shell-empty__detail {
+  max-width: 360px;
+  margin: 0;
+  font-size: var(--clover-font-size-label);
+}
+
+/* An agent's live tab: its transcript, its state over the composer, and Interrupt and Stop. */
+.cl-agent-tab {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-agent-tab__status {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  width: 100%;
+  max-width: 832px;
+  margin: 0 auto var(--clover-space-xs);
+  padding: 0 var(--clover-space-xxl);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-agent-tab__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-text-muted);
+}
+
+.cl-agent-tab__dot[data-status="prompting"],
+.cl-agent-tab__dot[data-status="starting"] {
+  background: var(--clover-color-accent);
+}
+
+.cl-agent-tab__dot[data-status="failed"] {
+  background: var(--clover-color-danger);
+}
+
+.cl-agent-tab__state {
+  color: var(--clover-color-text);
+}
+
+.cl-agent-tab__where {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-agent-tab__action {
+  flex: none;
+  height: 24px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-agent-tab__action:hover {
+  background: var(--clover-color-hover);
 }
 
 .cl-bot-tab__composer {
@@ -239,9 +356,190 @@ button.cl-window__title:hover {
   padding-left: var(--cl-axis-shift, 0px);
 }
 
-.cl-window-icon {
+.cl-window-icon,
+.cl-panel-icon {
   flex: none;
 }
+
+/* The panel host and its toggles: two views at most, one above the other, each with its header (as tall as the title
+   bar), and the host's placeholder for a panel no plugin fills. */
+.cl-panel-toggles {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cl-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-panel-toggle:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-panel-toggle[aria-pressed="true"] {
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+}
+
+.cl-panel-toggle:focus-visible,
+.cl-panel :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+/* The host: one view, or two one above the other. */
+.cl-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-panel button {
+  font: inherit;
+}
+
+.cl-panel__view {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-panel__view + .cl-panel__view {
+  border-top: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-panel__head {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: var(--clover-plugin-clover-bar-height);
+  padding: 0 var(--clover-space-s) 0 21px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-panel__head-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+/* A panel that brings its own header draws it in the row, and the title steps aside. */
+.cl-panel__head-main:has(> .cl-panel__head-own) > .cl-panel__title {
+  display: none;
+}
+
+.cl-panel__head-own {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--clover-space-s);
+  min-width: 0;
+}
+
+.cl-panel__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+  font-weight: var(--clover-font-weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-panel__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.cl-panel__icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-panel__icon-button:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-panel__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A panel no installed plugin fills: the host says so, centred. */
+.cl-panel__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-panel__empty-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-panel__empty-detail {
+  max-width: 340px;
+  margin: 0;
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-panel__empty-action {
+  margin-top: var(--clover-space-s);
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   .cl-window * {

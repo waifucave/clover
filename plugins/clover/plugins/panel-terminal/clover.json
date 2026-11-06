@@ -15,10 +15,18 @@
     "ui": [
       {
         "spot": "panel",
+        "id": "terminal",
         "key": "terminal",
         "title": "Terminal",
-        "component": "TerminalPanel"
+        "component": "TerminalEntry",
+        "when": {
+          "session": "coding"
+        }
       }
     ]
-  }
+  },
+  "capabilities": [
+    "terminal",
+    "conversation.read"
+  ]
 }

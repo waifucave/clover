@@ -23,9 +23,9 @@ const FILE_TOOLS = new Set(["Read", "Write", "Edit"]);
 export interface ToolRunProps extends MessageSpotProps<ToolRunItem> {
   expanded: boolean;
   onToggle: () => void;
-  /** The `tool.result` spot (keyed by tool name): a replacement for one call's result, or
-   *  `undefined` to draw the default. */
-  renderResult?: (call: ToolCall) => ReactNode | undefined;
+  /** The `tool.result` spot (keyed by tool name): a replacement for one call's result, or `undefined` to draw the
+   *  default, which it is handed (`standard`) to fall back on. */
+  renderResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
 }
 
 export function outputPreview(output: string): { text: string; moreLines: number; cut: boolean } {
@@ -151,7 +151,14 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
       {expanded && (
         <ol className="cl-conv-tools__calls" id={bodyId}>
           {calls.map((call) => {
-            const custom = renderResult?.(call);
+            const standard = (
+              <>
+                <Output call={call} />
+                <DiffChip call={call} ctx={ctx} />
+                <Sites call={call} ctx={ctx} />
+              </>
+            );
+            const custom = renderResult?.(call, standard);
             return (
               <li key={call.callId} className="cl-conv-call" data-status={call.status}>
                 <div className="cl-conv-call__head">
@@ -161,15 +168,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
                   {call.computer && !computer && <span className="cl-conv-call__computer">{S.toolOnComputer(call.computer)}</span>}
                   {call.reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}
                 </div>
-                {custom !== undefined ? (
-                  <div className="cl-conv-call__custom">{custom}</div>
-                ) : (
-                  <>
-                    <Output call={call} />
-                    <DiffChip call={call} ctx={ctx} />
-                    <Sites call={call} ctx={ctx} />
-                  </>
-                )}
+                {custom === undefined ? standard : <div className="cl-conv-call__custom">{custom}</div>}
               </li>
             );
           })}

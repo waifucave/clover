@@ -163,7 +163,8 @@
   color: var(--clover-color-text-placeholder);
 }
 
-.cl-files__tree {
+.cl-files__tree,
+.cl-files__matches {
   flex: 1 1 auto;
   min-height: 0;
   margin: 0;
@@ -187,6 +188,39 @@
   font-size: var(--clover-font-size-label);
   text-align: left;
   cursor: pointer;
+}
+
+/* A search's matches, in place of the tree: where each is, and its line. */
+.cl-files__match {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-files__match:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-files__match-where {
+  color: var(--clover-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.cl-files__match-text {
+  overflow: hidden;
+  font-family: var(--clover-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cl-files__row:hover {

@@ -1559,6 +1559,13 @@ if (import.meta.main) {
   // through a real daemon on a temp CLOVER_HOME with a FileSecretStore, the session in a Bun Worker
   // built from the second compile entrypoint. Same argv[2] shape and the same CLOVER_HOME rule as
   // `__runtime-state-probe` (it refuses without one; it never touches a real home or the Keychain).
+  // M1: bun:ffi in the compiled binary on every OS (./ffi-probe.ts); `build:daemon --smoke` runs it.
+  if (process.argv[2] === "__ffi-probe") {
+    const { runFfiProbe } = await import("./ffi-probe");
+    const r = runFfiProbe();
+    process.stdout.write(`${r.line}\n`);
+    process.exit(r.ok ? 0 : 1);
+  }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
     const result = await runChannelReceiverProbe();

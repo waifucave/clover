@@ -4,7 +4,8 @@
 //
 //   bun run build:daemon                                  this machine's target
 //   bun run build:daemon --target linux-x64[,…] | --all   cross-compile (Bun fetches the other targets' runtimes)
-//   bun run build:daemon --smoke                          also run the host binary's `--version` on a temp home
+//   bun run build:daemon --smoke                          also run the host binary's `--version` on a temp home, and
+//                                                         its `__ffi-probe` (bun:ffi in the compiled binary)
 //   bun run build:daemon --dry-run                        print the commands, build nothing
 //
 // Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
@@ -110,7 +111,7 @@ function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-/** `--version` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
+/** `--version` and `__ffi-probe` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
 function smoke(binary: string, version: string): void {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
   try {
@@ -122,6 +123,13 @@ function smoke(binary: string, version: string): void {
       throw new Error(`${binary} --version: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out)} (expected "clover ${version}")${r.stderr ? `\n${r.stderr.slice(0, 2000)}` : ""}`);
     }
     console.log(`build:daemon: smoke: ${out}`);
+    // bun:ffi inside the compiled binary (the bridge's peer-pid check, the Keychain): the C library's pid is this one.
+    const ffi = spawnSync(binary, ["__ffi-probe"], { env, encoding: "utf8", timeout: 60_000 });
+    const ffiOut = (ffi.stdout ?? "").trim();
+    if (ffi.status !== 0 || !ffiOut.startsWith("ffi: ok")) {
+      throw new Error(`${binary} __ffi-probe: exit ${ffi.status ?? ffi.signal}, printed ${JSON.stringify(ffiOut)}${ffi.stderr ? `\n${ffi.stderr.slice(0, 2000)}` : ""}`);
+    }
+    console.log(`build:daemon: smoke: ${ffiOut}`);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
