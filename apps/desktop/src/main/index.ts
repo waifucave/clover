@@ -1261,8 +1261,9 @@ async function smoke(): Promise<void> {
                 b.style.opacity = ${Number(opacity)};
               })()`, true).catch(() => undefined);
             }
-            // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms).
-            await new Promise((r) => setTimeout(r, 350));
+            // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms), and the
+            // button's own 500 ms visible + 400 ms open gates pass before the press.
+            await new Promise((r) => setTimeout(r, 800));
             const buttonRaw = await frame.executeJavaScript(
               `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
             const buttonRect = buttonRaw !== null && typeof buttonRaw === "object" && typeof (buttonRaw as { x?: unknown }).x === "number" ? buttonRaw as { x: number; y: number; width: number; height: number } : null;
