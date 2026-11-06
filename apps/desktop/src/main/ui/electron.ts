@@ -81,6 +81,19 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP } : {}) });
   });
 
+  // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
+  // copy of the card's sealed content. What runs in it is the page's own check (IOv2 in E-M3's next piece); its
+  // answers go over the preload's own channel (`clover:sealed-answer`).
+  ses.protocol.handle(SEALED_SCHEME, (request) => {
+    const url = new URL(request.url);
+    if (url.pathname !== "/" && !url.pathname.startsWith("/card/")) return notFound();
+    const token = url.searchParams.get("token");
+    if (token === null || token === "" || token.length > 128) return forbidden();
+    const serving = runtime.serveSeal(token);
+    if (serving === undefined) return forbidden();
+    return new Response(serving.html, { headers: serving.headers });
+  });
+
   ses.protocol.handle(LAYER_SCHEME, (request) => {
     const url = new URL(request.url);
     const layer = url.host;
@@ -154,9 +167,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     return notFound();
   });
 
-  // Sealed card frames are E-M3's.
-  ses.protocol.handle(SEALED_SCHEME, () => forbidden());
-
+  // The sealed frames' scheme: handled above with its own single-use serving (E-M3's own registration). The web
+  // scheme never carries a card (§5.5 "Where cards appear").
   const refused = new Set<string>();
   ses.webRequest.onBeforeRequest((details, callback) => {
     let protocolName = "";
@@ -477,6 +489,17 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
+  // A sealed frame's own single-use URL: its part asks, the runtime mints (the plugin's `approvals` capability's own
+  // gate), and the scheme's handler serves once from the store's own copy of the card's sealed content.
+  handle("clover:sealed-frame", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const cardId = str(a.cardId, 64);
+    const element = typeof a.element === "string" && (a.element.startsWith("field:") || a.element.startsWith("button:")) && a.element.length <= 80 ? a.element : undefined;
+    if (mount === undefined || cardId === undefined || element === undefined) throw new LayerError("bad sealed frame");
+    return runtime.sealedFrameOf(s.frame, mount, cardId, element);
+  });
+
   // The sealed frames' answer: the sender is the sealed page itself (its own scheme), whose token names the channel;
   // the app signs it out of doors and takes the core's answer. Nothing between.
   handle("clover:sealed-answer", async (event, a) => {
@@ -519,7 +542,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }

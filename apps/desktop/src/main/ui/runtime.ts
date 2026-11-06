@@ -21,6 +21,9 @@ import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
+import { fieldPage, buttonPage, labelOf } from "../sealed-pages";
+import { sealHeaders } from "./documents";
+import type { SealedFrames, SealedValue } from "../sealed";
 
 /** A frame as Electron describes it. */
 export interface FrameRef {
@@ -907,6 +910,49 @@ export class UiRuntime {
     if (grant === undefined || this.now() - grant.at > DRAG_GRANT_TTL_MS || grant.windowId !== part.windowId) return { error: "no such drag" };
     if (!mayClaim(grant.offer.type, part.plugin?.capabilities ?? new Set())) return { error: "this part's plugin may not hold that" };
     return grant.offer;
+  }
+
+  // ----------------------------------------------------------------------------------------------
+  // Sealed frames (spec §5.5; E-M3): the parts' holes for a card's fields and buttons, one frame each, from the
+  // app's own scheme. A part with the `approvals` capability places and positions them, and sees nothing of them.
+  // ----------------------------------------------------------------------------------------------
+
+  /** A seal frame is private (the puzzle's own promise), kept by the app's own store rather than this one; the
+   *  `sealed(seed)` handler fills it at boot. */
+  sealed?: SealedFrames;
+
+  /** A part asks for one sealed element's frame: `field:<name>` or `button:<option>`. Refused for a part whose
+   *  plugin lacks `approvals` (§5.5: a component gets sealed frames only then; the OK carries it), and for a draft
+   *  asked outside the plugin's own layer's document. Returns the single-use URL the part puts in the iframe's src. */
+  sealedFrameOf(frame: FrameRef, mountId: string, cardId: string, element: string): string | undefined {
+    const part = this.actInThisLayer(frame, mountId);
+    if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
+    if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
+    // The card tokens go in alone (§5.5): the part's resolved ones, clipped to `card.*` names.
+    const tokens: Record<string, TokenValue> = {};
+    for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
+    const made = this.sealed.mint(cardId, element, this.docOf(part)?.windowId, tokens);
+    if (made === undefined) return undefined;
+    return `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
+  }
+
+  /** The scheme's serving: the page's own HTML for one token, once (the store marks it), with its own headers. */
+  serveSeal(token: string): { html: string; headers: Readonly<Record<string, string>> } | undefined {
+    if (this.sealed === undefined) return undefined;
+    const serving = this.sealed.serve(token);
+    if (serving === undefined) return undefined;
+    const { card, element, tokens } = serving;
+    if (element.startsWith("field:")) {
+      const value = card.fields[element.slice("field:".length)];
+      if (value === undefined || typeof value !== "object") return undefined;
+      return { html: fieldPage({ cardId: card.id, token, field: element.slice("field:".length), tokens, value: value as { type: "text"; text: string } }), headers: sealHeaders() };
+    }
+    if (element.startsWith("button:")) {
+      const option = card.options.find((o) => o.id === element.slice("button:".length));
+      if (option === undefined) return undefined;
+      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }), headers: sealHeaders() };
+    }
+    return undefined;
   }
 
   // ----------------------------------------------------------------------------------------------

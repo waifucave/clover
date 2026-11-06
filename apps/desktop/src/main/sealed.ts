@@ -8,6 +8,7 @@
 // (`card_pending`), a plugin's page carries no field's url, and the sealed pages' contents go nowhere (their scheme
 // serves once for the one mount), and nothing signs except the answer key — so a plugin can't answer.
 import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import type { TokenValue } from "@waifucave/clover-plugin-sdk";
 
 /** What the app hears of a card: the whole sealed one (`card_requested`, or `card.get`'s re-read for a resolved one a
  *  plugin still shows). The store keeps `hash` and the fields verbatim from the core; nothing else ships anywhere. */
@@ -44,6 +45,22 @@ export interface SealedFrame {
 
 export type SealedOutcome = "approved" | "denied" | "expired" | "withdrawn" | "cancelled";
 
+/** One sealed field's content, as the core's own shape (`approvals.ts`'s `SealedValue`), what a frame's page draws. */
+export type SealedValue = {
+  type: "text";
+  text: string;
+} | {
+  type: "code";
+  code: string;
+  language?: string;
+} | {
+  type: "list";
+  items: readonly string[];
+} | {
+  type: "rows";
+  rows: readonly { label: string; value: string }[];
+};
+
 const CHANNEL_TTL_MS = 60_000;
 
 /**
@@ -59,9 +76,11 @@ const CHANNEL_TTL_MS = 60_000;
 export class SealedFrames {
   private readonly cards = new Map<string, SealedCard>();
   /** The frame's token → its element: minted at mount, answered once. */
-  private readonly channels = new Map<string, { cardId: string; element: string; at: number }>();
+  private readonly channels = new Map<string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>> }>();
   /** A card's channel is gone when its card resolved (the store's own sanity). */
   private readonly resolved = new Set<string>();
+  /** Each token's own page served once (`sealed.ts`'s own comment will read it in the scheme's handler). */
+  private readonly served = new Set<string>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -90,20 +109,25 @@ export class SealedFrames {
   cancelled(id: string): void {
     this.cards.delete(id);
     this.resolved.add(id);
-    this.dropChannels(id);
+    for (const [token, ch] of [...this.channels]) {
+      if (ch.cardId !== id) continue;
+      this.channels.delete(token);
+      this.served.delete(token);
+    }
   }
 
   /** Mints one frame's channel, once per element of a pending card (`card.frame` names it on the proof). Tokens are
    *  single-use and expire; the same element of the same card minted again replaces its older token. A card past its
-   *  expiry (its turn wasn't the user's, §5.5) mints none. */
-  mint(cardId: string, element: string): { token: string; card: SealedCard } | undefined {
+   *  expiry (its turn wasn't the user's, §5.5) mints none. The mint carries the frame's own window, for its page to
+   *  answer against, and the part's `card.*` tokens, which its page alone sees. */
+  mint(cardId: string, element: string, windowId?: number, tokens?: Readonly<Record<string, TokenValue>>): { token: string; card: SealedCard } | undefined {
     if (this.resolved.has(cardId)) return undefined;
     const card = this.cards.get(cardId);
     if (card === undefined) return undefined;
     if (card.expiresAt !== null && card.expiresAt <= this.now()) return undefined;
     const token = this.token();
     for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId && ch.element === element) this.channels.delete(t);
-    this.channels.set(token, { cardId, element, at: this.now() });
+    this.channels.set(token, { cardId, element, at: this.now(), ...(windowId !== undefined ? { windowId } : {}), ...(tokens !== undefined ? { tokens: { ...tokens } } : {}) });
     return { token, card };
   }
 
@@ -112,6 +136,17 @@ export class SealedFrames {
     const ch = this.channels.get(token);
     if (ch === undefined || this.now() - ch.at > CHANNEL_TTL_MS) return undefined;
     return { card: this.cards.get(ch.cardId)!, element: ch.element };
+  }
+
+  /** Marks a served frame's token: the scheme serves a frame's page once, and a second serve reads nothing. The
+   *  answer channel lives on (a reload mints its own token, its own page, its own channel), and the frame's own
+   *  window is the mint's. */
+  serve(token: string): { card: SealedCard; element: string; windowId?: number; tokens?: Readonly<Record<string, TokenValue>> } | undefined {
+    const ch = this.channels.get(token);
+    if (ch === undefined || this.now() - ch.at > CHANNEL_TTL_MS) return undefined;
+    if (this.served.has(token)) return undefined;
+    this.served.add(token);
+    return { card: this.cards.get(ch.cardId)!, element: ch.element, ...(ch.windowId !== undefined ? { windowId: ch.windowId } : {}), ...(ch.tokens !== undefined ? { tokens: ch.tokens } : {}) };
   }
 
   /** Builds the proof for a button's answer, and burns the channel: the answer is used once, and the core takes the

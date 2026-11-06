@@ -76,9 +76,13 @@ function fakeBridge(views: Record<string, SpotView>) {
       calls.push({ op: "dragOffer", args: [mount, offer] });
       return { token: "g1" };
     },
-    dragClaim: async (mount, token) => {
+    dragClaim: async (mount: string, token: string) => {
       calls.push({ op: "dragClaim", args: [mount, token] });
       return { type: "text/plain", data: "dropped" };
+    },
+    sealedFrame: async (mount: string, cardId: string, element: string) => {
+      calls.push({ op: "sealedFrame", args: [mount, cardId, element] });
+      return `clover-sealed://card/${cardId}/${element}?token=x`;
     },
     onMessage: (l) => {
       listeners.add(l);

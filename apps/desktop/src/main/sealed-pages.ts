@@ -11,6 +11,7 @@
  * where a parsable page sees only its own). */
 
 import type { TokenValue } from "@waifucave/clover-plugin-sdk";
+import type { SealedValue } from "./sealed";
 
 /** The card's own tokens as the page's custom properties: `card.*` alone (§5.5 "sealed frames take only these"). */
 function tokenCss(tokens: Readonly<Record<string, TokenValue>> | undefined): string {
@@ -47,7 +48,7 @@ function isBidirectional(code: number): boolean {
 }
 
 /** A text field's HTML: its lines in a block that scrolls inside the part's size, in the part's own typography. */
-export function fieldPage(input: { cardId: string; token: string; field: string; value: { type: "text"; text: string } | { type: "code"; code: string; language?: string } | { type: "list"; items: readonly string[] } | { type: "rows"; rows: readonly { label: string; value: string }[] }; tokens?: Readonly<Record<string, TokenValue>> }): string {
+export function fieldPage(input: { cardId: string; token: string; field: string; value: SealedValue; tokens?: Readonly<Record<string, TokenValue>> }): string {
   const body = (() => {
     if (input.value.type === "text") return `<p class="text">${esc(input.value.text)}</p>`;
     if (input.value.type === "code") return `<pre class="code"><code>${esc(input.value.code)}</code></pre>`;
@@ -144,4 +145,12 @@ ${body}
 /** The page's text stays text: `&`, `<`, quotes escaped once, and nothing unescapes later. */
 function esc(text: string): string {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+/** A button's own words: the core's own table holds the language they shipped in (§5.5). The card's fields' and
+ *  labels' own language is the core's — the envelope of a card's text travels with the card, already said. */
+export function labelOf(text: unknown): string {
+  if (typeof text === "string") return text;
+  if (text !== null && typeof text === "object" && typeof (text as { en?: unknown }).en === "string") return String((text as { en: string }).en);
+  return "";
 }
