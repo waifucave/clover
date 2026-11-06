@@ -43,7 +43,7 @@ async function call<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof ContractError) throw err;
     if (err instanceof HandshakeError && err.code === "not_voter") {
       // Group recovery (proposal 4): a member takes the lease over only once it votes.
-      throw new ContractError("refused", "this computer can be made the main computer once it votes in your devices' group (72 hours after it joined), or from the main computer now");
+      throw new ContractError("refused", "this computer can be made the main computer once it votes in your devices' group (7 days after it joined, or at once if a quorum of your devices let it in), or from the main computer now");
     }
     if (err instanceof HandshakeError && err.status >= 400 && err.status < 500 && err.status !== 429) {
       throw new ContractError(err.status === 410 ? "not_found" : "refused", `the handshake refused the lease request (${err.status} ${err.code})`);

@@ -4,7 +4,8 @@
 // a service checks, so a client that passes here speaks the format; it keeps everything in memory.
 //
 // Groups also follow lane I's "Group recovery" proposal as lane H reads it (H-M2; the service builds it once agreed):
-// * a member votes from its join when a quorum of voters admitted it (the founder too), else after `voteAfterMs`;
+// * a member votes from its join when a quorum of voters admitted it (the founder too), else after `voteAfterMs`
+//   (7 days); a key moving in from another group brings no vote with it;
 // * removing a member other than yourself takes the removes of a quorum of the voters other than it, not counting the
 //   keys it admitted in the last `rollbackMs` (403 `no_quorum` short of one); removing yourself takes only you;
 // * a quorum's removal undoes the changes the removed member signed in the last `rollbackMs`: the keys it admitted go
@@ -55,7 +56,7 @@ export interface FakeHandshakeOptions {
   /** The account channel: who an account token is (`sub`, `dev`), as the service checks it against the JWKS; without
    *  it the channel answers 401. */
   accountOf?: (token: string) => { sub: string; dev: string } | undefined;
-  /** Group recovery's timings (the proposal's 72 hours and 7 days by default). */
+  /** Group recovery's timings (7 days for each by default, as ruled). */
   voteAfterMs?: number;
   rollbackMs?: number;
 }
@@ -424,13 +425,12 @@ export function startFakeHandshake(opts: FakeHandshakeOptions = {}): FakeHandsha
           const by = [...new Set(admits.map((a) => a.by))];
           const voters = [...g.members].filter(([, m]) => votes(m)).length;
           const voting = by.filter((k) => votes(g.members.get(k))).length;
-          let votesFrom = voting >= quorumOf(voters) ? now() : now() + voteAfterMs;
-          // A key moving from another group (a merge, a recovery invite) keeps its vote, or its wait for one, and leaves
-          // that group in the same step.
+          const votesFrom = voting >= quorumOf(voters) ? now() : now() + voteAfterMs;
+          // A key moving from another group (a merge, a recovery invite) leaves that group in the same step. Its vote
+          // there never carries here (the controller's ruling): only this group's quorum makes it a voter at once.
           const fromGroup = typeof b.from === "string" ? groups.get(b.from) : undefined;
           const before = fromGroup?.members.get(newKey);
           if (fromGroup && before && b.from !== id) {
-            votesFrom = Math.min(votesFrom, before.votesFrom ?? votesFrom);
             fromGroup.members.delete(newKey);
             fromGroup.removed.set(newKey, now());
             if (fromGroup.lease.holder === newKey) fromGroup.lease = { holder: null, epoch: fromGroup.lease.epoch, expiresAt: null };

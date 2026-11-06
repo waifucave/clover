@@ -95,7 +95,7 @@ async function answer(d: Daemon, change: string, allow: boolean, check?: (labels
 const groupOf = (d: Daemon) => d.links.registry.group()?.id;
 
 describe("merging two groups (R18)", () => {
-  test("only in a confirmed pairing: the host's group survives, the joiner keeps its vote, and its old mate follows by its own card, keeping its vote too", async () => {
+  test("only in a confirmed pairing: the host's group survives, the joiner moves, and its old mate follows by its own card; neither brings a vote", async () => {
     const hs = service();
     const net = new MemoryNetwork();
     const [a, b, c, d] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Laptop"), await daemon(net, hs, "Server"), await daemon(net, hs, "Mini")];
@@ -114,11 +114,29 @@ describe("merging two groups (R18)", () => {
     await answer(d, "device-add", true, (labels) => labels);
     await waitFor(() => groupOf(d) === g1);
     await waitFor(() => hs.groups.get(g1)?.members.size === 4 && !hs.groups.has(g2));
-    // Both took their keys along and kept their votes.
+    // Both took their keys along, but not their votes (the controller's ruling): the laptop's admit alone isn't the
+    // quorum of a two-voter group, so they vote in 7 days.
     const members = hs.groups.get(g1)!.members;
-    for (const k of [cKey, dKey]) expect(members.get(k)!.votesFrom!).toBeLessThanOrEqual(Date.now());
+    for (const k of [cKey, dKey]) expect(members.get(k)!.votesFrom!).toBeGreaterThan(Date.now() + 6 * 86_400_000);
     for (const m of [c, d]) expect(m.links.registry.groupLeft(g2)?.how).toBe("moved");
     expect(b.links.registry.group()!.members[c.links.key.id]?.key).toBe(cKey);
+  }, 40_000);
+
+  test("a one-voter host group's admit is its quorum: the joiner votes at once there", async () => {
+    const hs = service();
+    const net = new MemoryNetwork();
+    const [a, c, d] = [await daemon(net, hs, "Studio"), await daemon(net, hs, "Server"), await daemon(net, hs, "Mini")];
+    // A group of the studio alone: it founds one by pairing a device that is then revoked and removed.
+    const [x] = [await daemon(net, hs, "Old")];
+    await pair(a, x);
+    await revokeDevice(a.links.revokeOptions(), x.links.key.id);
+    const g1 = groupOf(a)!;
+    await waitFor(() => hs.groups.get(g1)?.members.size === 1);
+    await pair(c, d);
+    const cKey = c.links.registry.group()!.ownKey;
+    await pair(a, c);
+    await waitFor(() => groupOf(c) === g1 && hs.groups.get(g1)!.members.has(cKey));
+    expect(hs.groups.get(g1)!.members.get(cKey)!.votesFrom!).toBeLessThanOrEqual(Date.now());
   }, 40_000);
 
   test("what a paired computer says of its group moves nothing, and nobody's admit is signed for a key it didn't invite (the reviewer's probe)", async () => {
@@ -176,9 +194,9 @@ describe("voters and the quorum (lane I's proposal)", () => {
     const g = groupOf(a)!;
     await waitFor(() => hs.groups.get(g)?.members.size === 3);
     // The laptop came in on the studio's admit alone when the studio was the only voter: it votes. The server came in
-    // on one admit of two voters: it votes in 72 hours.
+    // on one admit of two voters: it votes in 7 days.
     await c.links.groups!.refresh();
-    expect(c.links.registry.group()!.votesFrom! > Date.now() + 71 * 3600_000).toBe(true);
+    expect(c.links.registry.group()!.votesFrom! > Date.now() + 6 * 86_400_000).toBe(true);
     await a.links.groups!.refresh();
     expect(a.links.registry.group()!.members[b.links.key.id]?.votesFrom).toBeLessThanOrEqual(Date.now());
     const scope = (await GroupLeaseScope.open({ client: c.client, registry: c.links.registry, store: c.store }))!;

@@ -42,8 +42,9 @@ export const removeStatement = (group: string, key: string, t: number, keep: rea
 
 // ---- group recovery (PROTOCOL.md "Group recovery", lane I's proposal adopted for H-M2) ----
 
-/** A member votes once it has been in the group this long, or at once if a quorum of voters admitted it. */
-export const VOTE_AFTER_MS = 72 * 3600_000;
+/** A member votes once it has been in the group this long, or at once if a quorum of voters admitted it (the
+ *  controller's ruling after I-M3's review: 7 days, not 72 hours). */
+export const VOTE_AFTER_MS = 7 * 86_400_000;
 /** How far back a quorum's removal of a member undoes the changes it signed. */
 export const ROLLBACK_MS = 7 * 86_400_000;
 /** The voters a change to another member needs: a majority of the `v` voters other than its target. */
@@ -68,8 +69,9 @@ export interface GroupJoin {
   by?: string;
   bysig?: string;
   admits?: { by: string; sig: string }[];
-  /** The group this key moves from (a merge or a recovery invite): a member there keeps its vote, and the service
-   *  takes it out of that group. */
+  /** The group this key moves from (a merge or a recovery invite): the service takes it out of that group. A vote
+   *  never carries across groups (the controller's ruling): the key votes here at once only if this group's quorum
+   *  admitted it. */
   from?: string;
 }
 

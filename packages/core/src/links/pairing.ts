@@ -529,7 +529,8 @@ export class PairingService {
         const peerGroupKey = toBase64Url(peer.groupKey);
         if (this.#isNewcomer(p)) {
           // A merge (R18): both groups were in the transcript the user checked, and the host's survives. This device
-          // takes its key along (`from`), so it keeps its vote, and the service moves it out of the old group.
+          // takes its key along (`from`), and the service moves it out of the old group. It votes at once only if the
+          // host's admit is the host group's quorum (a one-voter group's); a vote never carries across groups.
           const old = this.#o.registry.group();
           await this.#o.store.set(groupKeyRef(p.group!), p.groupKey.seed(), { synced: false });
           const mine = toBase64Url(p.groupKey.publicKey);

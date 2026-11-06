@@ -4,10 +4,12 @@
 // * **Keys.** Members tell each other their group keys over the link (`link.group.info`), so the lease's holder, a
 //   member key, maps to a device on every member, not only on the one that admitted it.
 // * **Merging (R18).** Two groups merge only inside a pairing the user confirmed: both group ids are in the transcript
-//   whose words they checked, and the host's group survives (links/pairing.ts). The joiner takes its key along, so it
-//   keeps its vote, and then invites its old group's computers (`link.group.invite`). Each asks its user with a card
-//   before it follows, takes its own key along too, and invites the computers it checked on that card, hop by hop. A
-//   computer never moves on what a peer says of its group alone, and never goes back on its own to a group it left.
+//   whose words they checked, and the host's group survives (links/pairing.ts). The joiner takes its key along (the
+//   service moves it out of the old group), and then invites its old group's computers (`link.group.invite`). Each
+//   asks its user with a card before it follows, and invites the computers it checked on that card, hop by hop. A vote
+//   never carries across groups: a mover votes at once only if the host group's quorum admitted it (a one-voter host
+//   group is one), else after 7 days. A computer never moves on what a peer says of its group alone, and never goes
+//   back on its own to a group it left.
 // * **Voters and the quorum (proposal 1, 2).** The keeper reads from the service who votes and from when. Removing
 //   another member takes a quorum of voters: this computer asks the other voters over the link
 //   (`link.group.cosign`), and each one asks its user with a card first. A computer never co-signs on its own.
@@ -249,8 +251,8 @@ export class GroupKeeper {
     this.#inviteAll(old, group, "merge", devices);
   }
 
-  /** Moves into `group` with `peer`'s admit, taking this computer's key along from `old` (so it keeps its vote), then
-   *  invites the computers its user checked. */
+  /** Moves into `group` with `peer`'s admit, taking this computer's key along from `old`, then invites the computers
+   *  its user checked. */
   async #moveVia(peer: string, group: string, old: GroupRecord, reason: "merge" | "recovery", next: string[]): Promise<void> {
     const hs = this.#o.handshake;
     const key = await this.#key(old);

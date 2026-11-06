@@ -46,6 +46,13 @@ async function device(s: ReturnType<typeof stack>, name: string) {
   return { name, store, key, boxKey, registry, account, home };
 }
 
+describe("the account service's statements, byte for byte with lane I's", () => {
+  test("mint names the account, as services/accounts' own test vector has it", async () => {
+    const { mintStatement } = await import("../account");
+    expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe("clover-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123");
+  });
+});
+
 describe("account", () => {
   test("password sign-in keeps the session as a device item, never in the registry's file", async () => {
     const s = stack();
