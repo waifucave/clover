@@ -39,6 +39,8 @@ describe("the harness prompt", () => {
   test("a side thread names its routine", () => {
     const p = harnessPrompt({ bot: { id: "luna", name: "Luna", instructions: "" }, kind: "side-thread", routine: "morning news", computer: "Studio" });
     expect(p).toContain("side thread");
+    expect(p).toContain("Your memory lives at home/memory");
+    expect(p).toContain("home/memory/MEMORY.md");
     expect(p).toContain("\"morning news\"");
   });
 

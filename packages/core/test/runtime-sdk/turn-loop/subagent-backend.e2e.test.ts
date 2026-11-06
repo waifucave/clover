@@ -79,6 +79,24 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     }
   }, 60_000);
 
+  test("a delegation can't reach the bot's memory (the owner's decision): Read and Write there are refused", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const memory = temp("clover-a3-sub-mem-");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(join(memory, "MEMORY.md"), "- secret plans\n");
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", privateFoldersFor: () => [memory] }).start(spec(root, "winter-test/calls"));
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    try {
+      const end = await session.prompt({ text: [`CALL Read {"file_path":${JSON.stringify(join(memory, "MEMORY.md"))}}`, `CALL Write {"file_path":${JSON.stringify(join(memory, "x.md"))},"content":"x"}`].join("\n") });
+      const r = JSON.parse(end.text) as { content: string }[];
+      expect(r[0]!.content).not.toContain("secret plans");
+      expect(existsSync(join(memory, "x.md"))).toBe(false);
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
   test("cancel ends a running turn cancelled", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");

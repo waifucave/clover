@@ -57,6 +57,9 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
    *  6: the pause holds background agents too). While it says no, every tool call waits at its start and again after
    *  its approval, the read-only ones included. Without it nothing is held. */
   pauseGateFor?(spec: AgentStartSpec): AgentPauseGate | undefined;
+  /** Folders the delegation may never read or write, beside the fence: the delegating bot's memory folder (the owner's
+   *  decision of November 6: delegated agents don't get the memory and can't reach `home/memory`). */
+  privateFoldersFor?(spec: AgentStartSpec): readonly string[];
   /** Test seam. */
   query?: typeof sdkQuery;
   pluginId?: string;
@@ -163,6 +166,7 @@ class InProcessSession implements AgentSession {
     }
     const model = spec.model ?? deps.defaultModel();
     this.#gate = deps.pauseGateFor?.(spec);
+    const privateFolders = [...(deps.privateFoldersFor?.(spec) ?? [])].map((p) => p.replace(/\/+$/, "")).filter((p) => p !== "");
     const queue = createHostPromptQueue();
     const fence = spec.fence;
     const options: Options = {
@@ -177,8 +181,10 @@ class InProcessSession implements AgentSession {
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       sandbox: {
         enabled: true,
-        filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
+        filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite, ...privateFolders], denyRead: [...fence.denyRead, ...privateFolders] },
       },
+      // The file tools too: `//` anchors a rule at the filesystem root (mode-options.ts).
+      ...(privateFolders.length === 0 ? {} : { permissions: { deny: privateFolders.flatMap((p) => ["Read", "Edit", "Write", "Glob", "Grep"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`])) } }),
       ...(resume ? { resume: spec.reattach!.agentSessionId } : { sessionId: this.agentSessionId }),
     };
     await fillProvider(deps, options);

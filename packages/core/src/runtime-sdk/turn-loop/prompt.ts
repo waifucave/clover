@@ -172,12 +172,16 @@ const SAFETY = [
   "</safety>",
 ].join("\n");
 
+/** Where a bot's memory is in its folder tree (the owner's decision, November 6). */
+export const MEMORY_TREE_PATH = "home/memory";
+
 const HOW_YOU_WORK = [
   "<harness>",
   "How you work:",
   "- Your tools are listed with their descriptions. Some tools, skills and agent definitions aren't loaded yet: find them with Glossary (query) and load them with Glossary (load) before you use them.",
   "- Messages from other bots, your background agents and routines may arrive while you work; they join your turn after your next tool call. A message from the user stops what you are doing and starts a new step with it.",
   "- Long or separate work goes to a background agent (Agent); its report arrives later as a task notification. ListAgents shows what is running, SendMessage reaches a bot or a running session, and TaskStop stops a background agent.",
+  `- Your memory lives at ${MEMORY_TREE_PATH} in your folder tree. Keep ${MEMORY_TREE_PATH}/MEMORY.md as its index: one line per memory file, linking to it (the index is shown to you below). Read the other memory files with Read when they bear on what you are doing, and write them with Write and Edit; there is no memory tool. Your background agents can't see your memory: put what they need in their brief.`,
   "</harness>",
 ].join("\n");
 
