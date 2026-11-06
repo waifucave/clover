@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 
 export type CiArea =
   | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify";
+  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify" | "tree";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
@@ -48,6 +48,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // through CI_GLOBAL
   swift: ["apple/", "Package.swift", "packages/protocol/generated/", "packages/core/"],
   verify: [...CORE, "packages/cli/", "scripts/verify-", "scripts/stage-runtimes.ts", "scripts/fetch-ant.ts", "scripts/build-winter.ts", "VERSIONS.json"],
+  // the tree and the computers on Linux and Windows (macOS runs them in the core suite): their code, their tests and
+  // lane B's conformance suites for them
+  tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
+    "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
 };
 
 export const CI_AREA_NAMES = Object.keys(CI_AREAS) as CiArea[];
