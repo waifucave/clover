@@ -1,0 +1,20 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "clover.notifications.aBot": "A bot",
+    "clover.notifications.fallbackTitle": "Clover",
+    "clover.notifications.aPlugin": "A plugin",
+    "clover.notifications.plugin": "Plugin “{plugin}”",
+    "clover.notifications.fromPlugin": "{from}: {title}",
+    "clover.notifications.message": "Sent you a message",
+    "clover.notifications.card": "Needs your OK",
+    "clover.notifications.question": "Has a question for you",
+    "clover.notifications.routine": "A routine finished",
+    "clover.notifications.agent": "An agent finished",
+    "clover.notifications.unseen": {
+      "one": "1 unseen",
+      "other": "{count} unseen"
+    }
+  }
+}
