@@ -648,6 +648,7 @@ export class LocalHolder implements Holder {
     let st: Stats | undefined;
     // Each part's identity as the walk saw it, looked at again once the walk is done: a folder swapped for a link
     // mid-walk (whose lstat of the next part went through it) no longer is what the walk saw.
+    // A swap undone before this second look isn't caught here (it takes exact timing); `read` is covered by its handle.
     const seen: { path: string; dev: number; ino: number }[] = [];
     const again = async () => {
       for (const s of seen) {
