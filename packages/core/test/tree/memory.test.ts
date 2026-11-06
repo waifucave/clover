@@ -74,12 +74,25 @@ describe("home/memory", () => {
     for (const as of [LUNA, CODING, AGENT]) {
       expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe("not_found");
       expect(await code(t.write("bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("not_found");
-      expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).not.toBe("ok");
+      expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("not_found");
       expect((await t.list("bots/alpha", { as })).map((s) => s.path)).not.toContain("bots/alpha/memory");
       expect(await t.glob("**/*", { as, cwd: "bots/alpha" })).not.toContain("bots/alpha/memory/secret.md");
       expect((await t.grep("alpha", { as, path: "bots/alpha" })).map((m) => m.path)).not.toContain("bots/alpha/memory/secret.md");
     }
     expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe("not_found");
+    // The real path is no way around it for any model-driven caller (the user's own coding sessions included): only the
+    // user's own surfaces and the core reach it there.
+    for (const as of [CODING, AGENT, LUNA, PLUGIN]) {
+      const real = "home/Studio/.clover/bots/alpha/memory";
+      expect(await code(t.read(`${real}/secret.md`, { as }))).toBe("not_found");
+      expect(await code(t.stat(`${real}/secret.md`, { as }))).toBe("not_found");
+      expect(await code(t.list(real, { as }))).toBe("not_found");
+      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe("not_found");
+      const ctx = { session: "s_x", sessionKind: "coding" as const, callId: `c-${as.kind}`, cwd: "home/Studio" };
+      expect((await studio.node.tools.run("Read", { file_path: ".clover/bots/alpha/memory/secret.md" }, ctx)).isError).toBe(true);
+      expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/secret.md`);
+    }
+    expect(existsSync(join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"))).toBe(false);
     // The bot itself, from another computer: memory never goes over the link.
     expect(await code(laptop.node.tree.read("bots/alpha/memory/secret.md", { as: ALPHA }))).toBe("not_found");
     // The user on this computer still has their own files.
