@@ -1,0 +1,138 @@
+{
+  "manifest": 1,
+  "name": "Conversation",
+  "description": "The conversation view: a bot's one continuous conversation, with every message kind, streaming and thinking titles.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "conversation.read",
+    "approvals",
+    "bots.read",
+    "devices.read"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "conversation",
+        "component": "ConversationEntry",
+        "declares": {
+          "conversation.message": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "object"
+                },
+                "ctx": {
+                  "type": "object"
+                }
+              }
+            },
+            "keep": [
+              "approval"
+            ],
+            "needs": [
+              "conversation.read"
+            ],
+            "context": [
+              "bot"
+            ],
+            "doc": "One message, keyed by kind; the approval cell can't be hidden."
+          },
+          "conversation.message.extra": {
+            "shape": "list",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "object"
+                },
+                "ctx": {
+                  "type": "object"
+                }
+              }
+            },
+            "needs": [
+              "conversation.read"
+            ],
+            "context": [
+              "bot"
+            ],
+            "doc": "Add-ons under each message."
+          },
+          "tool.result": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "object"
+                },
+                "ctx": {
+                  "type": "object"
+                }
+              }
+            },
+            "needs": [
+              "conversation.read"
+            ],
+            "context": [
+              "bot"
+            ],
+            "doc": "A tool's result, keyed by tool name."
+          }
+        }
+      }
+    ]
+  }
+}

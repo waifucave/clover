@@ -19,12 +19,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openaiChatFake, openaiResponsesFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { openaiChatFake, openaiResponsesFake, startFake, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 const SOURCE_MODEL = "openai/gpt-5.6-sol";
 const TARGET_MODEL = "zai/glm-5";
@@ -94,7 +94,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* closed */ } }
 }
 
-describeWithWinterBinary("WS-24: the compaction-on-switch prompt, end to end (real daemon, real winter child, fake providers)", (winterBin) => {
+describeWithEmbeddedRuntime("WS-24: the compaction-on-switch prompt, end to end (real daemon, real winter child, fake providers)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -130,7 +130,7 @@ describeWithWinterBinary("WS-24: the compaction-on-switch prompt, end to end (re
       schemaVersion: 3,
       provider: { model: SOURCE_MODEL },
       providers: { openai: { baseUrl: source.url }, zai: { baseUrl: `${target.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 120 },
+      runtimes: { winterIdleTimeoutSec: 120 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-ws24-openai" });

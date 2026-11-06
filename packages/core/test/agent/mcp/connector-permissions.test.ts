@@ -2,7 +2,7 @@
 // REAL PreToolUse hook (`sessionHooksFor`) and the REAL approval bridge (`canUseToolFor`), with the child's
 // own evaluation order modelled from the pinned runtime (see `childDecides`).
 import { describe, expect, test } from "bun:test";
-import type { CanUseTool, HookCallback, HookCallbackMatcher, PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, HookCallback, HookCallbackMatcher, PermissionResult } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../../src/agent/approvals";
 import { QuestionBroker } from "../../../src/agent/questions";
@@ -203,7 +203,7 @@ const ctx = (id = "tu1"): Parameters<CanUseTool>[2] => ({ signal: new AbortContr
 
 /**
  * The child's own order for an MCP call, from the pinned runtime's `evaluateStages`
- * (`@yanlinglabs/winter-agent-runtime` 0.0.31, `dist/index-d4pmmr27.js`): PreToolUse hooks first (a hook
+ * (`@waifucave/clover-agent-runtime` 0.0.31, `dist/index-d4pmmr27.js`): PreToolUse hooks first (a hook
  * deny wins outright), then deny rules, then ask rules / a hook `ask` (`dontAsk` → deny, otherwise the
  * prompt stage = `canUseTool`), then a hook `allow`, then the mode stage (`bypassPermissions` allows; an
  * MCP call is never built-in read-only, so every other mode is "unresolved"), then allow rules, then

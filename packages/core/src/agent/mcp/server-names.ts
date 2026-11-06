@@ -30,7 +30,7 @@
 // Never throws: an unreadable file or directory is simply not there.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { resolveMarketplacePluginPath } from "@yanlinglabs/winter-agent-sdk";
+import { resolveMarketplacePluginPath } from "@waifucave/clover-agent-sdk";
 import { sdkEnabledPlugins, sdkLocalMcpServers, sdkUserMcpServers } from "../../settings";
 import { readSdkGlobalConfig } from "../../sdk-files";
 import { sdkHomeFor, sdkPluginsRoot } from "../paths";

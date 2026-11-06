@@ -1,5 +1,5 @@
 import { resolve, sep } from "node:path";
-import type { CanUseTool, PermissionResult, PermissionUpdate } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, PermissionResult, PermissionUpdate } from "@waifucave/clover-agent-sdk";
 import type { ApprovalOption, NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker, approvalCardSummary, approvalOptionsFor } from "../agent/approvals";
 import type { QuestionBroker } from "../agent/questions";

@@ -1,0 +1,32 @@
+{
+  "manifest": 1,
+  "name": "Terminal",
+  "description": "A code session's terminal panel: a terminal over a PTY feed, in the session's folder on its computer. Never in a bot's tab.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "id": "terminal",
+        "key": "terminal",
+        "title": "Terminal",
+        "component": "TerminalEntry",
+        "when": {
+          "session": "coding"
+        }
+      }
+    ]
+  },
+  "capabilities": [
+    "terminal",
+    "conversation.read"
+  ]
+}

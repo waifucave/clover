@@ -1,0 +1,5 @@
+/* The archive gallery's stand-in for a transcript: the conversation part draws it in the app. */
+.story-transcript {
+  margin: 24px;
+  color: var(--clover-color-text-muted);
+}

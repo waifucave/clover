@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpRenameResult, type WritableSocket } from "@waifucave/clover-protocol";
-import { createMemoryMcpOAuthStore, encodeMcpOAuthTokenRecord, mcpOAuthTokenAccount } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import { createMemoryMcpOAuthStore, encodeMcpOAuthTokenRecord, mcpOAuthTokenAccount } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";

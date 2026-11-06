@@ -1,4 +1,4 @@
-// Spike S4 as the core sees it (spec §6.6): the Fish Audio plugin (`plugins/clover/fish-audio`) validates as a child of
+// Spike S4 as the core sees it (spec §6.6): the Fish Audio plugin (`plugins/clover/plugins/fish-audio`) validates as a child of
 // the bundled `clover` plugin, its `voices` entry comes up in the registry, and its host half, loaded from the entry its
 // manifest names, runs in lane B's fake plugin host, which is how the core runs it until B-M2. Every request it makes
 // goes through the plugin API's keyed fetch: here a stand-in that keeps the door's first two rules, the plugin's own
@@ -21,8 +21,8 @@ import type { ApiRouter } from "../../contracts/plugin-host";
 import type { PluginRecord } from "../../contracts/plugin-registry";
 import type { SecretStore } from "../../contracts/secret-store";
 import type { HostModule, Manifest } from "../../contracts/sdk-types";
-import type { ListenResult, SpeakResult } from "../../../../../plugins/clover/fish-audio/host/index";
-import { FakeFish } from "../../../../../plugins/clover/fish-audio/test/fake-fish";
+import type { ListenResult, SpeakResult } from "../../../../../plugins/clover/plugins/fish-audio/host/index";
+import { FakeFish } from "../../../../../plugins/clover/plugins/fish-audio/test/fake-fish";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 
 const PLUGIN = "clover/fish-audio";
@@ -79,15 +79,15 @@ function servePluginApi(opts: { registry: FakePluginRegistry; secrets: SecretSto
   };
 }
 
-/** The `clover` plugin with Fish Audio as its child, laid out as the plugin SDK reads a tree (`<parent>/plugins/<child>`;
- *  the repo keeps `plugins/clover/fish-audio` until lane M moves the children), validated and held in the registry.
+/** The `clover` plugin with Fish Audio as its only child, laid out as the plugin SDK reads a tree and as the repo keeps
+ *  it (`<parent>/plugins/<child>`, here `plugins/clover/plugins/fish-audio`), validated and held in the registry.
  *  The parent's manifest is the repo's once lane M's skeleton is in, else the least one. */
 async function installed() {
   const root = join(tempDir(), "clover");
   mkdirSync(root, { recursive: true });
   const parent = join(REPO, "plugins", "clover", "clover.json");
   writeFileSync(join(root, "clover.json"), existsSync(parent) ? readFileSync(parent, "utf8") : `${JSON.stringify({ manifest: 1, id: "clover", name: "Clover" })}\n`);
-  cpSync(join(REPO, "plugins", "clover", "fish-audio"), join(root, "plugins", "fish-audio"), { recursive: true });
+  cpSync(join(REPO, "plugins", "clover", "plugins", "fish-audio"), join(root, "plugins", "fish-audio"), { recursive: true });
   const { report, inputs } = await pluginFromFolder(root, { bundled: true });
   const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: inputs });
   return { report, inputs, registry };

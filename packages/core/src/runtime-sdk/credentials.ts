@@ -14,7 +14,7 @@
  * long-standing secret names (`exa-api-key`/`web-search-api-key`, still read verbatim by the tools
  * and by `sync.config`), and they appear here only because the user manages them the same way.
  */
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { CredentialRow as CredentialRowSchema } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { SecretStore } from "../auth/secret-store";

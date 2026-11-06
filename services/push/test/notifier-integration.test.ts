@@ -1,10 +1,10 @@
-// The clover/push plugin's own notifier (plugins/clover/push/src/notifier.ts) against the real push Worker,
+// The clover/push plugin's own notifier (plugins/clover/plugins/push/src/notifier.ts) against the real push Worker,
 // inside workerd, with APNs and Web Push faked: what the core hands it never leaves the computer.
 
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
-import { PushNotifier } from "../../../plugins/clover/push/src/notifier";
+import { PushNotifier } from "../../../plugins/clover/plugins/push/src/notifier";
 import { accountToken, apnsToken, call, fakeLog, ORIGIN, subscriptions, uniqueAccount } from "./helpers";
 
 describe("the push plugin's notifier, against the Worker", () => {

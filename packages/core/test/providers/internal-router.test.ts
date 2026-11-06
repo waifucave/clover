@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codexFake, openaiChatFake, openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { codexFake, openaiChatFake, openaiResponsesFake } from "@waifucave/clover-provider-conformance/fakes";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial, clearCredentialMaterial } from "../../src/auth/credential-material";
 import { createInternalProviderView, staticInternalProviderView, REFRESH_SOON_MIN_MS } from "../../src/providers/internal-view";
@@ -209,7 +209,7 @@ describe("a Claude default", () => {
 // it instead of taking the structural `allow()` path a credential-less home gets.
 describe("a Claude-only home", () => {
   test("the bash reviewer RUNS on the user's own Claude model — a live verdict off a loopback anthropic-messages fake", async () => {
-    const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance/fakes");
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance/fakes");
     const fake = await startFake({
       routes: [{
         path: "*",
@@ -254,7 +254,7 @@ describe("a Claude-only home", () => {
 // behind lifting `console` out of `CLAUDE_FIRST_PARTY_PROVIDER_IDS`.
 describe("a Console-only home", () => {
   test("the bash reviewer RUNS on the Console bearer — Authorization: Bearer + the OAuth beta, never x-api-key", async () => {
-    const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance/fakes");
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance/fakes");
     const fake = await startFake({
       routes: [{
         path: "*",

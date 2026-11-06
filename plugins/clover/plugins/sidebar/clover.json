@@ -1,0 +1,88 @@
+{
+  "manifest": 1,
+  "name": "Sidebar",
+  "description": "The default sidebar: the bots and their live agents, or the coding sessions by project, with the account and settings at the bottom.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "bots.read",
+    "computers.read",
+    "conversation.read"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "sidebar",
+        "component": "SidebarEntry",
+        "declares": {
+          "sidebar.bot": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "selected": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "needsYou": {
+                  "type": "object",
+                  "properties": {
+                    "cards": {
+                      "type": "integer"
+                    },
+                    "questions": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "A bot's row, keyed by bot."
+          },
+          "sidebar.app": {
+            "shape": "list",
+            "props": {},
+            "fields": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                },
+                "opens": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "App buttons; `opens` names the `main` key it shows."
+          }
+        }
+      }
+    ]
+  }
+}

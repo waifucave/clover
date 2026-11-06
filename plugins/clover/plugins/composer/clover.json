@@ -1,0 +1,56 @@
+{
+  "manifest": 1,
+  "name": "Composer",
+  "description": "The composer: where the user writes to a bot, attaches files, holds to talk and picks the model.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "composer",
+        "component": "ComposerEntry",
+        "declares": {
+          "composer.action": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The composer's buttons, keyed by action id: attach, model, level, voice, send, stop."
+          }
+        }
+      }
+    ]
+  },
+  "capabilities": [
+    "conversation.read",
+    "bots.read",
+    "computers.read",
+    "approvals"
+  ]
+}

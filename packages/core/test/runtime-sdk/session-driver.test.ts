@@ -9,7 +9,7 @@ import { HostCodeExecutionService } from "../../src/runtime-sdk/host-code-broker
 //       and `ensure` undefined, never a throw (the IPC layer then refuses typed, fix wave F2);
 //   R1  the store's own log is what a resume re-pushes (`unconsumed` over `store.read`).
 import { describe, expect, test } from "bun:test";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { diagnoseRuntimeState, repairRuntimeState } from "../../src/runtime-state/doctor";
 import { storeHomeFor, storeProjectsDir } from "../../src/agent/paths";
@@ -20,9 +20,9 @@ import { recordedRunHomes } from "../helpers/run-homes";
 import { toolsGatedNoneRow } from "../helpers/tools-refused-catalog-row";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Options, Query } from "@yanlinglabs/winter-agent-sdk";
-import * as clover from "@yanlinglabs/winter-agent-sdk";
-import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk, RunHomeError } from "@yanlinglabs/winter-runtime-sdk";
+import type { Options, Query } from "@waifucave/clover-agent-sdk";
+import * as clover from "@waifucave/clover-agent-sdk";
+import { createInMemoryRuntimeDirectoryStore, createRuntimeSdkHost, RunHomeError } from "../../src/runtime-sdk/host";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FakeProvider } from "../../src/agent/fake-provider";
 import { SessionTitler, TITLE_INSTRUCTION } from "../../src/agent/titles";
@@ -97,7 +97,7 @@ class FakeQuery {
 
 const result = (): Frame => ({ type: "result", subtype: "success", is_error: false, permission_denials: [], result: "" });
 
-function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<string, unknown> = {}, wrapSdk?: (sdk: ReturnType<typeof createRuntimeSdk>) => ReturnType<typeof createRuntimeSdk>, opts: { legacyRouter?: boolean; runHomes?: Parameters<typeof recordedRunHomes>[1] } = {}) {
+function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<string, unknown> = {}, wrapSdk?: (sdk: ReturnType<typeof createRuntimeSdkHost>) => ReturnType<typeof createRuntimeSdkHost>, opts: { legacyRouter?: boolean; runHomes?: Parameters<typeof recordedRunHomes>[1] } = {}) {
   // `legacyRouter`: the PRE-run-home branch (router 0.0.11) the daemon still keeps behind its feature
   // detection — the support flag pinned false, a router without `requireRunHome`, and no run-home deps.
   // Dead once R.4 pins a run-home router for good; kept only for the tests of that branch.
@@ -109,13 +109,11 @@ function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<stri
   const records = new RuntimeSessionRecords(rs);
   const checkpoints = new ProjectionCheckpoints(rs);
   const queries: FakeQuery[] = [];
-  const sdk = createRuntimeSdk({
-    peers: { winter: { ...clover, query: (({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FakeQuery(prompt, options); queries.push(q); return q as unknown as Query; }) as unknown as typeof clover.query } },
-    peerVersions: CLOVER_PEER_VERSIONS,
-    keychain: { read: async () => undefined },
+  const sdk = createRuntimeSdkHost({
+    sdk: { ...clover, query: (({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FakeQuery(prompt, options); queries.push(q); return q as unknown as Query; }) as unknown as typeof clover.query },
     brand: CORE_BRAND,
     directoryStore: createInMemoryRuntimeDirectoryStore(),
-    handoff: { winterHome: home },
+    home,
     // WS-21: the production shape — a run-home router (`create.ts` passes this whenever run homes are wired);
     // its store is the shared runtime home, the only store a run home may be applied against.
     ...(opts.legacyRouter === true ? {} : { requireRunHome: true }),
@@ -681,7 +679,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
     const secretsHome = mkdtempSync(join(tmpdir(), "clover-console-select-"));
     const secrets = new FileSecretStore(join(secretsHome, "secrets.json"));
     await seed(secrets);
-    const handle = await createWinterRuntimeSdk({ home: secretsHome, settings: () => null, secrets, capabilities: [] });
+    const handle = await createWinterRuntimeSdk({ home: secretsHome, settings: () => null, secrets });
     const t = table({ secrets }, { selectRuntimeFor: (input: Parameters<WinterRuntimeSdk["selectRuntimeFor"]>[0]) => handle.selectRuntimeFor(input) });
     return {
       t, secrets,
@@ -1143,7 +1141,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
         expect(JSON.parse((own as { material: string }).material).key).toBe(key);
         expect(await options.onCredentialResolve!({ ref: { kind: "keychain", account: "harness-token" } }, { signal })).toEqual({ ok: false, reason: "not_allowed" });
         // The configured MCP server's sign-in is answerable (signed out here: no store wired).
-        const { mcpOAuthTokenAccount } = await import("@yanlinglabs/winter-agent-runtime/mcp-auth");
+        const { mcpOAuthTokenAccount } = await import("@waifucave/clover-agent-runtime/mcp-auth");
         expect(await options.onCredentialResolve!({ ref: { kind: "keychain", account: mcpOAuthTokenAccount("https://mcp.linear.example/mcp") } }, { signal })).toEqual({ ok: false, reason: "not_found" });
         // The plugin's server can refresh its sign-in (it is in the fold); a server under another name cannot.
         const pluginAccount = mcpOAuthTokenAccount("https://plugin.example/mcp");
@@ -1752,7 +1750,7 @@ describe("WS-21: run homes on the Clover leg (the router's real buildRunHome, re
   const querySpy = () => {
     const calls: Array<{ options: Options & { runtime?: { runHome?: { runId: string } } } }> = [];
     let failNext = false;
-    const wrap = (sdk: ReturnType<typeof createRuntimeSdk>) => new Proxy(sdk, {
+    const wrap = (sdk: ReturnType<typeof createRuntimeSdkHost>) => new Proxy(sdk, {
       get(target, prop, receiver) {
         if (prop !== "query") return Reflect.get(target, prop, receiver);
         return (args: { prompt: AsyncIterable<string>; options: Options }) => {
@@ -2050,7 +2048,7 @@ describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Clover leg)", 
   test("round 4: the router's cold-resume runHomeFor canonicalizes the cwd and re-keys the transcript first", async () => {
     const { t, sid, id, real, projects, rawKey, canonKey } = await oldLayoutSession();
     try {
-      const built: import("@yanlinglabs/winter-runtime-sdk").RunHomeInput[] = [];
+      const built: import("../../src/runtime-sdk/host").RunHomeInput[] = [];
       const facts: import("../../src/runtime-sdk/run-home-input").RunHomeSessionFacts[] = [];
       const runHome: NonNullable<CloverLegDeps["runHome"]> = {
         inputFor: (f) => { facts.push(f); return { home: t.home, mode: f.mode, dispatchChild: f.dispatchChild, leg: f.leg, cwd: f.cwd, trustedProjectRoot: null, gitRoot: null, mcpDisabled: [], reservedMcpServerNames: [], memoryDir: "/m" }; },

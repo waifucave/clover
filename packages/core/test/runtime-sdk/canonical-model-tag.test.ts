@@ -16,7 +16,7 @@ import { buildLiveModelResolver } from "../../src/providers/manager";
 import { startIpcServer } from "../../src/ipc/server";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import { CATALOG_TAG_RENAMES } from "@yanlinglabs/winter-provider-catalog";
+import { CATALOG_TAG_RENAMES } from "@waifucave/clover-provider-catalog";
 import { canonicalModelTag, canonicalModelTagWith, setCatalogKeysForTests } from "../../src/runtime-sdk/model-tag";
 import { liveSettingsView, loadSettings, saveSettings, Settings } from "../../src/settings";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";

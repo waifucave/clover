@@ -1,4 +1,4 @@
-import { query } from "@yanlinglabs/winter-agent-sdk";
+import { query } from "@waifucave/clover-agent-sdk";
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

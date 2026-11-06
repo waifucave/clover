@@ -2,7 +2,7 @@ import { test, expect, afterEach, jest } from "bun:test";
 import { mkdtempSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CanUseTool, PermissionResult, PermissionUpdate } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, PermissionResult, PermissionUpdate } from "@waifucave/clover-agent-sdk";
 import { ApprovalRequestedEvent, ApprovalResolvedEvent, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker, approvalCardSummary, approvalOptionsFor } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
