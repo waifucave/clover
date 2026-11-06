@@ -522,6 +522,11 @@ describe("the Windows installer's elevated step", () => {
     expect(text).toContain('!include "${PROJECT_DIR}\\out\\sandbox.nsh"');
     expect(text).toContain("-Verb RunAs");
     expect(text).toContain("'-EncodedCommand'");
+    // A method call in a command's argument list splits in two (PowerShell passed `[Convert]::ToBase64String` and
+    // the bytes as two arguments): the encoded command is computed first and passed as a variable.
+    expect(text).toContain("$$e = [Convert]::ToBase64String($$u.GetBytes($$c));");
+    expect(text).toContain("'-EncodedCommand',$$e -Verb RunAs");
+    expect(text).not.toMatch(/',\[Convert\]::/);
     // The path and the SID go in base64 (UTF-16): nothing of a folder name is quoted, so no quote of any kind
     // (PowerShell's curly ones included) can end a string.
     expect(text).toContain("$$src = [Convert]::ToBase64String($$u.GetBytes($$env:CLOVERINSTALL_SANDBOX_SOURCE))");

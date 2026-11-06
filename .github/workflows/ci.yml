@@ -466,12 +466,12 @@ jobs:
             if (-not $ps -or $ps -ne $ts) { throw "the digests differ for $file" }
           }
 
-      # The elevated script for real on this runner (an elevated admin, as the installer's runas is), called the way
-      # the installer calls it (`& {script} -Action … -SourceB64 … -UserB64 …` as an encoded command), with the runner's
-      # git.exe as the payload and its digest as the pin, and everything from running the copy on cut off (git.exe has
-      # no `sandbox` command). The copy must be owned by Administrators with no one else able to write, an old copy is
-      # replaced, one a user can write is refused on remove, a wrong digest and a bad SID are refused.
-      - name: The installer's elevated script protects the copy
+      # The elevated step for real on this runner (an elevated admin), run as the installer runs it: its PowerShell
+      # command taken from installer.nsh (the runas included), the script compacted by the release's own sandboxScript,
+      # the runner's git.exe as the payload and its digest as the pin, and everything from running the copy on cut off
+      # (git.exe has no `sandbox` command). The copy must be owned by Administrators with no one else able to write, an
+      # old copy is replaced, one a user can write is refused on remove, a wrong digest and a bad SID are refused.
+      - name: The installer's elevated step protects the copy
         shell: powershell
         run: |
           $src = Get-Content -Raw packaging/windows/sandbox-elevated.ps1
@@ -480,14 +480,23 @@ jobs:
           $git = (Get-Command git.exe).Source
           $cut = $src.IndexOf('$p = Start-Process -FilePath $exe')
           if ($cut -lt 0) { throw 'the script no longer runs the copy where this step cuts it' }
-          $body = $src.Substring(0, $cut).Replace('__CLOVER_CORE_DIGEST__', (Get-CloverDigest $git)) + "exit 0`n"
-          $u = [Text.Encoding]::Unicode
-          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-          function Run([string]$action, [string]$source, [string]$user) {
-            $c = '& {' + $body + "} -Action $action -SourceB64 '" + [Convert]::ToBase64String($u.GetBytes($source)) + "' -UserB64 '" + [Convert]::ToBase64String($u.GetBytes($user)) + "'"
-            $p = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', [Convert]::ToBase64String($u.GetBytes($c)) -NoNewWindow -Wait -PassThru
+          $script = Join-Path $env:RUNNER_TEMP 'lane-m-elevated.ps1'
+          Set-Content -LiteralPath $script -Value ($src.Substring(0, $cut) + "exit 0`n") -Encoding UTF8
+          $env:CLOVER_SCRIPT = $script
+          $env:CLOVER_PIN = Get-CloverDigest $git
+          $packed = (bun -e "import { sandboxScript } from './scripts/release/build'; import { readFileSync } from 'node:fs'; console.log(sandboxScript(readFileSync(process.env.CLOVER_SCRIPT!, 'utf8'), process.env.CLOVER_PIN!))").Trim()
+          $nsh = Get-Content -Raw packaging/windows/installer.nsh
+          $line = [regex]::Match($nsh, '(?s)!macro cloverSandbox ACTION.*?-Command "(.*?)"`').Groups[1].Value
+          if (-not $line) { throw 'no elevated command in installer.nsh' }
+          $command = $line.Replace('$$', '$').Replace('${CLOVER_SANDBOX_PS}', $packed)
+          function Run([string]$action, [string]$source) {
+            $env:CLOVERINSTALL_SANDBOX_SOURCE = $source
+            $u = [Text.Encoding]::Unicode
+            $e = [Convert]::ToBase64String($u.GetBytes($command.Replace('${ACTION}', $action)))
+            $p = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $e -NoNewWindow -Wait -PassThru
             return $p.ExitCode
           }
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
           $exe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) "Clover Sandbox\$sid\clover-core.exe"
           function Check-Protected([string]$path) {
             $acl = Get-Acl -LiteralPath $path
@@ -498,20 +507,26 @@ jobs:
               if ($ace.AccessControlType -eq 'Allow' -and $id -ne 'S-1-5-32-544' -and $id -ne 'S-1-5-18' -and ($ace.FileSystemRights -band [Security.AccessControl.FileSystemRights]'Write, Delete, ChangePermissions, TakeOwnership')) { throw "$path lets $id write ($($ace.FileSystemRights))" }
             }
           }
-          $r = Run 'setup' $git $sid; if ($r -ne 0) { throw "setup exited $r" }
+          $r = Run 'setup' $git; if ($r -ne 0) { throw "setup exited $r" }
           if ((Get-FileHash $exe).Hash -ne (Get-FileHash $git).Hash) { throw 'the copy is not the payload' }
           Check-Protected (Split-Path $exe); Check-Protected (Split-Path (Split-Path $exe)); Check-Protected $exe
-          # An old copy a user could write: replaced by a new one, born protected.
+          # An old copy a user could write: refused on remove, and replaced on setup by a new one, born protected.
           icacls $exe /grant '*S-1-5-32-545:(M)' | Out-Null
-          $r = Run 'remove' $git $sid; if ($r -ne 6) { throw "remove ran a copy users can write (exit $r)" }
-          $r = Run 'setup' $git $sid; if ($r -ne 0) { throw "setup over an old copy exited $r" }
+          $r = Run 'remove' $git; if ($r -ne 6) { throw "remove ran a copy users can write (exit $r)" }
+          $r = Run 'setup' $git; if ($r -ne 0) { throw "setup over an old copy exited $r" }
           Check-Protected $exe
-          $r = Run 'remove' $git $sid; if ($r -ne 0) { throw "remove of a protected copy exited $r" }
-          # A payload that isn't the pinned build, and a SID with a newline after it (`$` would let it through; `\z` doesn't).
-          $r = Run 'setup' (Join-Path ([Environment]::SystemDirectory) 'cmd.exe') $sid; if ($r -ne 5) { throw "a wrong digest exited $r" }
+          $r = Run 'remove' $git; if ($r -ne 0) { throw "remove of a protected copy exited $r" }
+          # A payload that isn't the pinned build: refused, and nothing left behind.
+          $r = Run 'setup' (Join-Path ([Environment]::SystemDirectory) 'cmd.exe'); if ($r -ne 5) { throw "a wrong digest exited $r" }
           if (Test-Path -LiteralPath $exe) { throw 'the wrong copy was left behind' }
-          $r = Run 'setup' $git "$sid`n"; if ($r -ne 7) { throw "a bad SID exited $r" }
-          Write-Output 'the elevated script: the copy and its folders are protected, an old copy is replaced, a writable one refused, a wrong digest and a bad SID refused'
+          # A SID with a newline after it (`$` would let it through; `\z` doesn't), passed straight to the script.
+          $u = [Text.Encoding]::Unicode
+          $b = { param($t) [Convert]::ToBase64String($u.GetBytes($t)) }
+          $direct = '& {' + (Get-Content -Raw $script).Replace('__CLOVER_CORE_DIGEST__', $env:CLOVER_PIN) + "} -Action setup -SourceB64 '" + (& $b $git) + "' -UserB64 '" + (& $b "$sid`n") + "'"
+          $e = [Convert]::ToBase64String($u.GetBytes($direct))
+          $p = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $e -NoNewWindow -Wait -PassThru
+          if ($p.ExitCode -ne 7) { throw "a bad SID exited $($p.ExitCode)" }
+          Write-Output 'the elevated step: the copy and its folders are protected, an old copy is replaced, a writable one refused, a wrong digest and a bad SID refused'
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
