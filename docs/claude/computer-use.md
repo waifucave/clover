@@ -157,4 +157,4 @@ AX where macOS has an element; a window no client ever read while on the active 
 ### Dev and tests
 - `bun run dev:helper` rebuilds the dev helper; a rebuild has been observed to lose its Screen Recording grant (Accessibility survives) — never rebuild or restart it during a live task.
 - Logs: `/usr/bin/log show --predicate 'subsystem BEGINSWITH "com.winter.computeruse"'` (categories `bind`, `act`, `guardian`, `presentation`, `helper`; zsh's `log` is a builtin).
-- The live suite (`WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live --unattended …`) takes over the screen and runs only with the user's standing go-ahead — see [testing](./testing.md). `bun run check:idle-wakeups [--pid N]` measures idle wakeups.
+- The live suite (`WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live --unattended …`) takes over the screen and runs only with the user's standing go-ahead — see [testing](./testing.md). `bun run check:idle-wakeups [--pid N]` measures a process's wakeups ([testing](./testing.md#idle-wakeups)).

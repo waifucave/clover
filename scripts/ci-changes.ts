@@ -38,8 +38,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
   scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
   codegen: ["packages/protocol/", "apple/WinterProtocol/"],
-  // the Swift kits: only their own tree and the protocol's generated fixtures
-  swift: ["apple/", "Package.swift", "packages/protocol/generated/"],
+  // the Swift kits: their own tree, the protocol's generated fixtures, and the core, whose daemon WinterKit's tests start
+  // through bun (apple/WinterKit/Tests/WinterKitTests/support/RealDaemon.swift); a Bun or lockfile change comes in
+  // through CI_GLOBAL
+  swift: ["apple/", "Package.swift", "packages/protocol/generated/", "packages/core/"],
   verify: [...CORE, "packages/cli/", "scripts/verify-", "scripts/stage-runtimes.ts", "scripts/fetch-ant.ts", "scripts/build-winter.ts", "VERSIONS.json"],
 };
 

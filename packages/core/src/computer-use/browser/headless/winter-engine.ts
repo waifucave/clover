@@ -184,7 +184,11 @@ export const spawnEngineProcess: SpawnEngine = (command, args) => {
     onData(listener) { input.on("data", (chunk) => listener(typeof chunk === "string" ? Buffer.from(chunk) : chunk)); },
     onStderr(listener) { stderrListeners.push(listener); },
     onExit(listener) {
-      void proc.exited.then((code) => listener(proc.signalCode === null ? code : null, proc.signalCode ?? null));
+      // Bun names the signal ("SIGTERM"); a signal with no name (a Linux real-time one) is its number (Bun 1.4's types).
+      void proc.exited.then((code) => {
+        const signal = proc.signalCode;
+        listener(signal === null ? code : null, signal === null ? null : String(signal));
+      });
     },
     closeInput() { closeWrite(); },
     kill(signal) { try { proc.kill(signal); } catch { /* gone */ } },
