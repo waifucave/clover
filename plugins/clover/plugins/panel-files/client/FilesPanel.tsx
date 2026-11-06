@@ -52,7 +52,7 @@ interface Shown {
   listing?: true;
 }
 
-export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, onSearch }: FilesPanelProps) {
+export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, onSearch, matches }: FilesPanelProps) {
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(initialOpen ?? []));
   const [current, setCurrent] = useState<string | undefined>(undefined);
@@ -217,9 +217,31 @@ export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, o
             }}
           />
         </label>
-        <ul className="cl-files__tree" role="tree" aria-label={S.tree} ref={tree}>
-          {rows.length > 0 ? rows : <li className="cl-files__loading">{S.noMatch}</li>}
-        </ul>
+        {matches && filter.trim().startsWith("?") && filter.trim().slice(1).trim() === matches.query ? (
+          <ul className="cl-files__matches" aria-label={S.matches(matches.query)}>
+            {matches.items.length === 0 && <li className="cl-files__loading">{S.noInside(matches.query)}</li>}
+            {matches.items.map((m) => {
+              const rel = m.path.startsWith(`${root}/`) ? m.path.slice(root.length + 1) : m.path;
+              return (
+                <li key={`${m.path}:${m.line}`}>
+                  <button type="button" className="cl-files__match" aria-label={S.match(rel, m.line)} onClick={() => onOpen(m.path)}>
+                    <span className="cl-files__match-where">
+                      <ShowHidden text={rel} />:{m.line}
+                    </span>
+                    <span className="cl-files__match-text">
+                      <ShowHidden text={m.text.trim()} />
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+            {matches.truncated && <li className="cl-files__loading">{S.truncated}</li>}
+          </ul>
+        ) : (
+          <ul className="cl-files__tree" role="tree" aria-label={S.tree} ref={tree}>
+            {rows.length > 0 ? rows : <li className="cl-files__loading">{S.noMatch}</li>}
+          </ul>
+        )}
       </div>
     </div>
   );

@@ -48,8 +48,11 @@ describe("the shell stylesheet", () => {
 
 describe("the frame's material and its bar", () => {
   const rules = parseCss(css);
+  /** A declaration for a selector, alone or in a selector list. */
   const decl = (selector: string, property: string) =>
-    rules.find((r) => r.prelude === selector && r.context.length === 0)?.declarations.find((d) => d.property === property)?.value;
+    rules
+      .find((r) => r.context.length === 0 && r.prelude.split(",").map((p) => p.trim().replace(/\s+/g, " ")).includes(selector))
+      ?.declarations.find((d) => d.property === property)?.value;
 
   test("the window root paints nothing; the main column and the panel paint the surface", () => {
     expect(decl(".cl-window", "background")).toBe("transparent");
@@ -68,6 +71,8 @@ describe("the frame's material and its bar", () => {
     expect(decl(".cl-window__bar", "height")).toBe("var(--clover-plugin-clover-bar-height)");
     // Only in main: a bot tab in the panel (an agent opened from a bot's column) has no bar over it.
     expect(decl(".cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
+    // An agent's live tab in main runs up under the bar the same way.
+    expect(decl(".cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
     expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBeUndefined();
     // Anything else in main starts below the bar.
     expect(decl(".cl-window__content", "padding-top")).toBe("var(--clover-plugin-clover-bar-height)");

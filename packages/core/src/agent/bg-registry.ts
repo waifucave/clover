@@ -1,3 +1,4 @@
+import { noteSpawned } from "../auth/clover-caller";
 import { spawn, type ChildProcess } from "node:child_process";
 import { realpathSync, mkdirSync, appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -112,6 +113,7 @@ export class BackgroundTaskRegistry {
     const child: ChildProcess = spawn(spawnFile, spawnArgs, {
       cwd: realCwd, stdio: ["ignore", "pipe", "pipe"], detached: true, env: { ...process.env, TMPDIR: scratch },
     });
+    noteSpawned(child.pid, child); // C-M1: never the user (the caller check)
     const taskId = `bg_${randomBytes(6).toString("hex")}`;
     // CC parity (TaskOutput deprecated in favor of Read on the task's output file): lazily create
     // <sessionTmpDir>/bash/ (only when a bg task actually starts — every OTHER session never gets

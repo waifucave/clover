@@ -1,0 +1,17 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "noImplicitOverride": true,
+    "isolatedModules": true
+  },
+  "include": [
+    "host",
+    "src",
+    "test"
+  ]
+}

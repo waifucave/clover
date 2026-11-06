@@ -77,7 +77,9 @@ describe("contrast", () => {
     ["color.accent.text", "color.surface", 4.5],
     ["color.accent", "color.surface", 3],
     ["color.accent", "color.canvas", 3],
-    ["color.accent.contrast", "color.accent", 4.5],
+    // A label reads on the filled control, the accent darkened for it (lane B's `color.accent.fill`).
+    ["color.accent.contrast", "color.accent.fill", 4.5],
+    ["color.accent.glyph", "color.accent", 3],
     ["color.attention.text", "color.surface", 4.5],
     ["color.danger", "color.surface", 4.5],
     ["color.success", "color.surface", 4.5],
@@ -317,9 +319,9 @@ describe("the OS accent colour (lane B's rule)", () => {
     "#0078D4", "#4CC2FF", "#2F6FDF", "#4180E3", "#3570D8",
   ];
 
-  test("the base theme's controls follow it: the accent and the approve button are \"system\", their inks \"auto\"", () => {
-    expect(BASE_THEME.tokens["color.accent"]).toBe("system");
-    expect(BASE_THEME.tokens["card.approve.background"]).toBe("system");
+  test("the base theme's controls follow it: every accent token is \"system\", every ink on one \"auto\" (decision 82: no fixed blue)", () => {
+    for (const name of SYSTEM_ACCENT_TOKENS) expect(BASE_THEME.tokens[name], name).toBe("system");
+    expect(SYSTEM_ACCENT_TOKENS).toEqual(["color.accent", "color.accent.fill", "color.focus", "card.approve.background", "island.accept", "pill.accept"]);
     for (const ink of Object.keys(AUTO_INKS)) expect(BASE_THEME.tokens[ink], ink).toBe("auto");
     // Nothing in dark undoes it.
     for (const name of [...SYSTEM_ACCENT_TOKENS, ...Object.keys(AUTO_INKS)]) expect(BASE_THEME.dark?.tokens[name], name).toBeUndefined();
@@ -331,14 +333,21 @@ describe("the OS accent colour (lane B's rule)", () => {
     expect(dark["card.approve.background"]).toBe("#3570D8");
     const blue = resolveTokens("light", [tokensFor(BASE_THEME, "light")], { systemAccent: "#007AFF" });
     expect(blue["color.accent"]).toBe("#007AFF");
-    // The approve button carries a text label: the OS accent, darkened in its own hue until white reaches 4.5:1.
+    // The approve button and every filled control carry a text label: the OS accent, darkened in its own hue until
+    // white reaches 4.5:1. The fill follows the accent as resolved.
     expect(blue["card.approve.background"]).toBe(labelFill("#007AFF"));
+    expect(blue["color.accent.fill"]).toBe(labelFill("#007AFF"));
+    expect(blue["color.accent.contrast"]).toBe("#FFFFFF");
+    expect(blue["island.accept"]).toBe("#007AFF");
+    expect(blue["color.focus"]).toBe("#007AFF");
     expect(blue["card.approve.background"]).not.toBe("#007AFF");
     expect(blue["card.approve.text"]).toBe("#FFFFFF");
     // A theme above that sets its own accent keeps it (Alpha's tab keeps its look); one that says "system" again
     // falls back to the value beneath it.
     const own = resolveTokens("light", [tokensFor(BASE_THEME, "light"), { "color.accent": "#7651DD" }], { systemAccent: "#007AFF" });
     expect(own["color.accent"]).toBe("#7651DD");
+    // …and its filled controls are that accent, darkened for their white labels.
+    expect(own["color.accent.fill"]).toBe(labelFill("#7651DD"));
     expect(resolveTokens("light", [tokensFor(BASE_THEME, "light"), { "color.accent": "#7651DD" }, { "color.accent": "system" }])["color.accent"]).toBe("#7651DD");
   });
 
@@ -346,18 +355,32 @@ describe("the OS accent colour (lane B's rule)", () => {
     for (const appearance of ["light", "dark"] as const) {
       for (const accent of ACCENTS) {
         const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance)], { systemAccent: accent });
-        const glyph = hex(tokens, "color.accent.glyph");
-        expect(glyph, `${appearance} ${accent}`).toBe(contrast("#FFFFFF", accent) >= 3 ? "#FFFFFF" : hex(tokens, "color.accent.ink"));
-        expect(contrast(glyph, accent), `${appearance} ${accent} glyph`).toBeGreaterThanOrEqual(3);
+        for (const [glyphToken, on] of [["color.accent.glyph", "color.accent"], ["island.accept.text", "island.accept"], ["pill.accept.text", "pill.accept"]] as const) {
+          const glyph = hex(tokens, glyphToken);
+          expect(glyph, `${appearance} ${accent} ${glyphToken}`).toBe(contrast("#FFFFFF", accent) >= 3 ? "#FFFFFF" : hex(tokens, "color.accent.ink"));
+          expect(contrast(glyph, hex(tokens, on)), `${appearance} ${accent} ${glyphToken}`).toBeGreaterThanOrEqual(3);
+        }
       }
     }
+  });
+
+  test("a theme's dark ink that misses 3:1 too gives way to black (lane B's rule)", () => {
+    // A mid grey ink on a mid-grey accent: white misses 3:1, the grey does too, black reaches it.
+    expect(resolveAutoInk("#A0A0A0", { background: "#FFFFFF", darkInk: "#555555", floor: 3 })).toBe("#000000");
+    expect(resolveAutoInk("#FFC600", { background: "#FFFFFF", darkInk: "#111111", floor: 3 })).toBe("#111111");
+    expect(resolveAutoInk("#0A3D91", { background: "#FFFFFF", darkInk: "#111111", floor: 3 })).toBe("#FFFFFF");
+    // Through the stack: a theme whose dark ink is too light for a yellow OS accent.
+    const tokens = resolveTokens("light", [tokensFor(BASE_THEME, "light"), { "color.accent.ink": "#777777" }], { systemAccent: "#FFC600" });
+    expect(tokens["color.accent.glyph"]).toBe("#000000");
   });
 
   test("a control with a text label reaches 4.5:1 on every one of these accents, the approve button's included", () => {
     for (const appearance of ["light", "dark"] as const) {
       for (const accent of ACCENTS) {
         const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance)], { systemAccent: accent });
-        expect(contrast(hex(tokens, "color.accent.contrast"), accent), `${appearance} ${accent} label`).toBeGreaterThanOrEqual(4.5);
+        // A label sits on the fill, the accent darkened for it: always white, at 4.5:1 or more.
+        expect(hex(tokens, "color.accent.contrast"), `${appearance} ${accent} label`).toBe("#FFFFFF");
+        expect(contrast("#FFFFFF", hex(tokens, "color.accent.fill")), `${appearance} ${accent} label`).toBeGreaterThanOrEqual(4.5);
         // The approve button's fill is the accent darkened for its label, which is always white.
         expect(hex(tokens, "card.approve.text"), `${appearance} ${accent} approve`).toBe("#FFFFFF");
         expect(contrast("#FFFFFF", hex(tokens, "card.approve.background")), `${appearance} ${accent} approve`).toBeGreaterThanOrEqual(4.5);
@@ -366,7 +389,8 @@ describe("the OS accent colour (lane B's rule)", () => {
   });
 
   test("only the accent tokens may be \"system\", and only the inks on them \"auto\"", () => {
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "island.accept": "system" } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "island.accept": "system" } })).toEqual([]);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "island.surface": "system" } })).toHaveLength(1);
     expect(checkTheme({ theme: 1, name: "x", tokens: { "color.text": "auto" } })).toHaveLength(1);
     expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.glow": "system" } })).toHaveLength(1);
     expect(checkTheme({ theme: 1, name: "x", tokens: { "color.accent": "system", "color.accent.glyph": "auto" } }, { strict: true })).toEqual([]);
@@ -383,7 +407,6 @@ describe("every possible OS accent (the review's sweep: 52 steps a channel, 140,
     for (const tokens of [light, dark]) {
       const darkInk = hex(tokens, "color.accent.ink");
       expect(darkInk).toBe("#000000");
-      expect(hex(tokens, "card.approve.ink")).toBe("#000000");
       let text = 0;
       let glyph = 0;
       for (const accent of grid) {

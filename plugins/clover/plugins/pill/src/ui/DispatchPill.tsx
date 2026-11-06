@@ -15,7 +15,7 @@ import { CHILD_PALETTES, type PlumeThrow } from "../model/plume";
 import { turnPreview, type Exchange } from "../model/preview";
 import { restingSpring, retarget, settled, stepSpring, type SizeSpring } from "../model/spring";
 import { t } from "../strings";
-import { Bar, BarMenus, type BarMenu, type PillTarget } from "./Bar";
+import { Bar, BarMenus, targetLabel, type BarMenu, type PillTarget } from "./Bar";
 import { CardBody } from "./Card";
 import { Children } from "./Children";
 import { BROWSER_FRAMES, Plume, type FrameTimers } from "./Plume";
@@ -49,7 +49,9 @@ export interface DispatchPillProps {
   /** The draft, when the host keeps it; otherwise the pill keeps its own. */
   draft?: string;
   onDraft?: (text: string) => void;
-  onSend?: (text: string) => void;
+  /** Sends the words; a rejection (the runtime refused the send) puts them back in the pill's own field while it is
+   *  still empty. */
+  onSend?: (text: string) => void | Promise<void>;
   onStop?: () => void;
   /** A question card's answers; false (or a rejection) shows an error and keeps the card. */
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => boolean | Promise<boolean>;
@@ -301,7 +303,9 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   const send = () => {
     const text = draft.trim();
     if (text.length === 0) return;
-    props.onSend?.(text);
+    const sent = props.onSend?.(text);
+    // A refused send gives the words back, unless the user has typed again; a host that keeps the draft keeps it.
+    if (sent && props.draft === undefined) sent.catch(() => setOwnDraft((now) => (now === "" ? text : now)));
     setDraft("");
     setPresentation("compact");
     setMenu(null);
@@ -349,7 +353,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
 
   // What the bar shows, and what the shape holds now.
   const drawn = swap.current.shown;
-  const look = barLook(presentation === "expanded", running, draft, card !== null, t("clover.pill.placeholder", { name: target.name }), verb ?? t("clover.pill.working", { name: target.name }));
+  const look = barLook(presentation === "expanded", running, draft, card !== null, t("clover.pill.placeholder", { name: targetLabel(target) }), verb ?? t("clover.pill.working", { name: targetLabel(target) }));
   const now = timers.now();
   const fade = swap.current.fadeStart === null ? 1 : Math.max(0, 1 - (now - swap.current.fadeStart) / (FADE_OUT * 1000));
   // Only a swap's new content is revealed as the shape arrives; the same content resizing stays as it is.

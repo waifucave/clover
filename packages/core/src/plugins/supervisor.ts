@@ -1,3 +1,4 @@
+import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -82,7 +83,9 @@ export interface SupervisedProcess {
 export type SpawnFn = (cmd: string[], opts: { cwd: string; env: Record<string, string> }) => SupervisedProcess;
 
 function defaultSpawn(cmd: string[], opts: { cwd: string; env: Record<string, string> }): SupervisedProcess {
-  return Bun.spawn(cmd, { cwd: opts.cwd, env: opts.env, stdout: "ignore", stderr: "ignore", stdin: "ignore" });
+  const proc = Bun.spawn(cmd, { cwd: opts.cwd, env: opts.env, stdout: "ignore", stderr: "ignore", stdin: "ignore" });
+  noteSpawned(proc.pid, proc.exited); // C-M1: never the user (the caller check)
+  return proc;
 }
 
 /** `process.kill(pid, 0)` liveness probe / real `process.kill(pid, signal)` — the ONLY reason

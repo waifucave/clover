@@ -1,17 +1,31 @@
 {
   "manifest": 1,
   "name": "Island",
-  "description": "What needs you, at the top of the screen: requests born from the notch, and an island with tabs.",
+  "description": "What needs you, at the top of the screen: requests grow from the top centre, and an island with tabs for what waits, your usage and your devices.",
   "engines": { "clover": "^1.0.0" },
-  "capabilities": ["approvals"],
+  "capabilities": ["approvals", "devices.read"],
   "client": { "entry": "client/index.tsx" },
   "contributes": {
     "ui": [
       {
         "spot": "app.surface",
         "id": "island",
-        "component": "Island",
-        "window": { "type": "overlay", "alwaysOnTop": true, "transparent": true }
+        "component": "IslandApp",
+        "title": "Island",
+        "window": {
+          "type": "overlay",
+          "alwaysOnTop": true,
+          "transparent": true,
+          "placement": { "macos": "top-center", "windows": "top-center", "linux": "top-center" }
+        }
+      },
+      {
+        "spot": "island.tab",
+        "id": "devices",
+        "component": "DevicesTabEntry",
+        "title": "Devices",
+        "order": 900,
+        "attention": "never"
       }
     ]
   }

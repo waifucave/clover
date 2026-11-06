@@ -12,6 +12,9 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p ."
   },
+  "dependencies": {
+    "@waifucave/clover-plugin-island": "workspace:*"
+  },
   "peerDependencies": {
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

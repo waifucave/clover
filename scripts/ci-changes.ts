@@ -10,8 +10,8 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 export type CiArea =
-  | "workspaces" | "daemon" | "app" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify";
+  | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
+  | "extension" | "core" | "cli" | "scripts" | "codegen" | "swift" | "verify" | "tree";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
@@ -29,12 +29,17 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
   daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
-  app: ["apps/"],
+  // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
+  app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
+  // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon they carry
+  // (the job installs the deb and runs its `clover`)
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
   extension: ["extensions/"],
-  core: CORE,
+  // lane A's model plugins: the core's catalog and generator check reads them
+  core: [...CORE, "plugins/clover/plugins/model-*/**/*"],
   cli: [...CORE, "packages/cli/"],
   // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
   scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
@@ -44,6 +49,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // through CI_GLOBAL
   swift: ["apple/", "Package.swift", "packages/protocol/generated/", "packages/core/"],
   verify: [...CORE, "packages/cli/", "scripts/verify-", "scripts/stage-runtimes.ts", "scripts/fetch-ant.ts", "scripts/build-winter.ts", "VERSIONS.json"],
+  // the tree and the computers on Linux and Windows (macOS runs them in the core suite): their code, their tests and
+  // lane B's conformance suites for them
+  tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
+    "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
 };
 
 export const CI_AREA_NAMES = Object.keys(CI_AREAS) as CiArea[];
