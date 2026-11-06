@@ -156,6 +156,10 @@ describe("the real fence on a real disk", () => {
     const p = pendingFenced({ home: "/Users/me", cloverHome: "/Users/me/.clover", os: "macos" });
     expect(p["session-transcripts"]).toEqual(["/Users/me/.clover/projects", ...(linkedRouterSupportsRunHome() ? ["/Users/me/.clover/sdk/projects"] : [])]);
     expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" })["hook-shell"]).toEqual(["C:\\Users\\me\\AppData\\Local\\Programs\\Git"]);
+    // The secrets key, and the systemd-creds-sealed key on headless Linux: key-file on Linux, neither on macOS.
+    expect(new CloverFence({ os: "linux", home: "/h", cloverHome: "/h/.clover", canonical: (p) => posix.normalize(p) }).fencedSet().filter((i) => i.kind === "key-file").map((i) => i.path).sort())
+      .toEqual(["/h/.clover/secrets.key", "/h/.clover/secrets.key.cred"]);
+    expect(new CloverFence({ os: "macos", home: "/h", cloverHome: "/h/.clover", canonical: (p) => posix.normalize(p) }).fencedSet().some((i) => i.kind === "key-file")).toBe(false);
     const { clover, fence } = make("macos");
     const kinds = new Map(fence.fencedSet().map((i) => [i.kind, i.path] as const));
     expect(kinds.get("plugins")).toBe(join(clover, "plugins"));

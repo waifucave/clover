@@ -19,8 +19,8 @@
 //   usage                  usage/ (the usage ledger)
 //   sessions-runtime       sessions-runtime/ (the bot driver's state per session)
 //   run-folder             run/ (read-denied)
-//   secrets-file, key-file secrets.enc, secrets.key, on Windows and Linux only (read-denied); macOS's Keychain
-//                          holds them
+//   secrets-file, key-file secrets.enc, secrets.key and (headless Linux's systemd-creds-sealed key)
+//                          secrets.key.cred, on Windows and Linux only (read-denied); macOS's Keychain holds them
 //   dev-folders            wherever the user keeps them
 //
 // The login-start places (under the user's home), the browser profiles (under userData), the OK'd agent installs and
@@ -45,7 +45,7 @@ const pathFor = (os: Os, home?: string) => (os === "windows" && !(home?.startsWi
 export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, string[]> {
   const p = pathFor(os, cloverHome);
   const h = (...parts: string[]) => p.join(cloverHome, ...parts);
-  const offMac = (path: string) => (os === "macos" ? [] : [path]);
+  const offMac = (...paths: string[]) => (os === "macos" ? [] : paths);
   return {
     settings: [h("settings.json"), h("settings"), h("sdk", "settings.json")],
     levels: [h("levels")],
@@ -65,7 +65,7 @@ export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, str
     "sessions-runtime": [h("sessions-runtime")],
     "run-folder": [h("run")],
     "secrets-file": offMac(h("secrets.enc")),
-    "key-file": offMac(h("secrets.key")),
+    "key-file": offMac(h("secrets.key"), h("secrets.key.cred")),
   };
 }
 

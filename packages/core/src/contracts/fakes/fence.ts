@@ -35,7 +35,8 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   /** Wherever the OK'd agents are installed (`agentInstalls`). */
   "agent-installs": null,
   "secrets-file": "secrets.enc",
-  "key-file": "secrets.key",
+  /** The key file, and the systemd-creds-sealed key on headless Linux (lane C's layout lists both). */
+  "key-file": null,
 };
 
 export interface FakeFenceOptions {
@@ -144,6 +145,7 @@ export class FakeFence implements Fence {
       const override = this.#layout[kind];
       if (override) for (const p of override) add(kind, p);
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
+      else if (kind === "key-file") for (const n of ["secrets.key", "secrets.key.cred"]) add(kind, `${this.#cloverHome}/${n}`);
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
       else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
       else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
