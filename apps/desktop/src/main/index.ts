@@ -1346,9 +1346,9 @@ async function smoke(): Promise<void> {
           `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
         const buttonRect = fallbackRaw !== null && typeof fallbackRaw === "object" && typeof (fallbackRaw as { x?: unknown }).x === "number" ? fallbackRaw as { x: number; y: number; width: number; height: number } : null;
         if (buttonRect !== null) {
-          const bounds = w.getBounds();
-          const centerX = Math.round(bounds.x + buttonRect.x + buttonRect.width / 2);
-          const centerY = Math.round(bounds.y + buttonRect.y + buttonRect.height / 2);
+          // Viewport coordinates for this window's own webContents (not screen coordinates).
+          const centerX = Math.round(buttonRect.x + buttonRect.width / 2);
+          const centerY = Math.round(buttonRect.y + buttonRect.height / 2);
           // The fallback's own gates: the pointer must enter after the window shows, and a second after it shows.
           // Move there first so pointerover fires, wait out the 1 s, then press.
           void w.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
