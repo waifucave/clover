@@ -38,9 +38,20 @@ import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
-import { startDaemonLinks, type DaemonLinks } from "./ipc/device-links";
+import { startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { DeviceKey } from "./identity/device-key";
+import type { DeviceLinks } from "./links/node";
+import type { ComputerNode } from "./computers/node";
+import type { BotSide } from "./bots/wiring";
+import type { UpdateRestartGate } from "./lease/main";
+import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
+import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
+import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
+import { defaultTreeRoot } from "./tree/root";
+import { hostOs } from "./tree/names";
+import { homedir } from "node:os";
 import { SystemClock } from "./clock/system-clock";
-import { createHash as createDeviceHash } from "node:crypto";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
 import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, INTERNAL_PROVIDER_IDS, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
@@ -261,6 +272,10 @@ export interface RunningDaemon {
    * child) off this rather than off a mirror it built itself.
    */
   clover: CloverSessionDrivers;
+  /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
+   *  background after the socket is bound. `ready` settles once they are up, or found absent (no sidecar), or failed
+   *  (logged); each getter is undefined before then and without one. */
+  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
    *  capability server's `session_spawn` and every driver's turn-settled hook reach. */
   dispatchChildren: DispatchChildren | undefined;
@@ -418,8 +433,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
-  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none). */
-  links?: false;
+  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none).
+   *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
+   *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
+  links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
+  /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
+   *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
+   *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
+  parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string };
   /** undefined: try settings.json (production default). null: agent disabled (tests, Phase 0
    *  behavior). object: use this provider directly (tests inject FakeProvider). `live`, when
    *  present, is threaded into EngineConfig.provider.live (no-restart model resolution) — tests
@@ -3146,12 +3167,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // This device's id is its link key's (H-M1): the one the links below load from the same store.
+  const deviceKey = await DeviceKey.loadOrCreate(contractSecrets);
+  // The daemon integration: links, then node and bot side, in the background (below); `pair.quit{handOver}` and the
+  // stop reach them through these.
+  let daemonLinks: DaemonLinks | undefined;
+  let daemonParts: DaemonParts | undefined;
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
-    deviceId: createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32),
+    deviceId: deviceKey.id,
+    handOver: async () => { await daemonLinks?.handOver(); },
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
@@ -3356,14 +3384,69 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
-  // C-M2: H's links, started in the background so a slow sidecar never holds the daemon's start; their methods join
-  // the Clover server's handlers when they're up.
-  let daemonLinks: DaemonLinks | undefined;
-  const linksReady = (opts.links === false ? Promise.resolve(undefined) : startDaemonLinks({
-    home: dirs.home, store: contractSecrets, clock: new SystemClock(), handlers: cloverLaneHandlers,
-    dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
-    log: (line) => console.error(line),
-  })).then((d) => { daemonLinks = d; return d; }, (err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); return undefined; });
+  // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
+  // started in the background so a slow sidecar never holds the daemon's start; their methods join the Clover server's
+  // handlers when they're up. A daemon with no sidecar (run from source) runs none of them, and says so. The stop
+  // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
+  // TODO(#198, lane M): `RunningDaemon.updateGate` here, so the lease renews just before an update's restart.
+  const updateGate: UpdateRestartGate | undefined = undefined;
+  const partsClock = new SystemClock();
+  let partsRegistry: OpenedRegistry | undefined;
+  let partsStopping = false;
+  const daemonBots = async (): Promise<DaemonBotsInput> => {
+    // The bots come from the plugins folder (B-M1's registry, signed with the store's key). TODO(lanes B and M): the
+    // app's bundled plugins (`bundledDirs`), once they ship beside the daemon.
+    const opened = await openPluginRegistry({ cloverHome, os: hostOs(), secrets: contractSecrets, log: (line) => console.error(`[plugins] ${line}`) });
+    partsRegistry = opened;
+    return {
+      registry: opened.registry,
+      defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      drivers: ({ side, node, main }) => botDriverFactory({
+        home: cloverHome,
+        spawn: (options) => embeddedSessions.spawn(options),
+        // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked.
+        canUseTool: () => refuseUntilApprovals,
+        coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
+        registry: opened.registry,
+        epoch: () => main.epoch() ?? 0,
+        ...(node ? {
+          holds: node.holds, terminals: node.terminals,
+          computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
+        } : {}),
+        log: (line) => console.error(`[bots] ${line}`),
+      }),
+    };
+  };
+  const partsReady = (async () => {
+    if (opts.links === false) return;
+    daemonLinks = await startDaemonLinks({
+      home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
+      dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
+      ...(updateGate ? { updateGate } : {}),
+      log: (line) => console.error(line),
+      ...(opts.links ?? {}),
+    });
+    if (!daemonLinks.links || partsStopping) return;
+    const p = opts.parts ?? {};
+    const bots = p.bots === false ? false : p.bots ?? await daemonBots();
+    if (partsStopping) return;
+    // The tree folder only for the default home: a dev or test daemon never makes the shared one.
+    const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
+    daemonParts = await startDaemonParts({
+      cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links: daemonLinks.links, handlers: cloverLaneHandlers,
+      node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
+      bots,
+      log: (line) => console.error(line),
+    });
+  })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); });
+  const closeParts = (): Promise<void> => {
+    partsStopping = true;
+    return partsReady.then(async () => {
+      await daemonParts?.close();
+      partsRegistry?.close();
+      await daemonLinks?.close();
+    }).catch((err: unknown) => { console.error(`[links] closing failed: ${(err as Error).message}`); });
+  };
   return {
     socketPath: dirs.socketPath,
     ...(pairSide ? { pair: pairSide } : {}),
@@ -3381,6 +3464,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
+    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots },
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze
@@ -3394,7 +3478,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pairSide?.pair.quit("quit");
       pairSide?.dispose();
       cloverServer?.dispose();
-      void linksReady.then(() => daemonLinks?.close()).catch(() => undefined);
+      // The bot side, the node and the links close first, the sidecar with them; the stop's promise waits for it.
+      const partsClosed = opts.links === false ? undefined : closeParts();
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
       // the `void stopAll()` graceful path below is async and process.exit(0) (direct-run path) drops
@@ -3471,7 +3556,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       };
       // Synchronous when there is no Clover handle — `stop()`'s existing contract for every pre-8b
       // caller is unchanged (everything but the runtime drain has already happened on return).
-      const settled = cloverDone === undefined ? guestsDrained : guestsDrained === undefined ? cloverDone : Promise.all([cloverDone, guestsDrained]).then(() => undefined);
+      const drains = [cloverDone, guestsDrained, partsClosed].filter((p): p is Promise<void> => p !== undefined);
+      const settled = drains.length === 0 ? undefined : drains.length === 1 ? drains[0] : Promise.all(drains).then(() => undefined);
       return settled === undefined ? closeRest() : settled.then(closeRest);
     },
   };
