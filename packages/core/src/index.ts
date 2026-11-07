@@ -39,6 +39,7 @@ export {
   sessionGrantArgs, sessionGrantInput, sessionRevokeArgs, sessionForgetArgs, sessionRestoreArgs,
   installMarkerPath, formatInstallMarker, parseInstallMarker, markerAllowsSetup, markerAllowsRemove,
   principalLeasePath, parsePrincipalLease, formatPrincipalLease, leaseLaunchGate,
+  sandboxLeasesDir, acquirePoolLease, releasePoolLease,
   minimalChildEnv, userStatusArgs,
   poolPrincipalName, poolSublayerGuid, sandboxPool, SANDBOX_POOL_SIZE,
   type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
