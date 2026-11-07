@@ -29,12 +29,17 @@ type Devices = { get(id: string): Pick<DeviceRecord, "kind" | "revokedAt"> | und
 
 /** The door's server over the Clover server: the device from the socket object the door made, its role from the
  *  registry. */
-export function linkClientServer(server: LinkServer, registry: Devices): RemoteRpcServer {
+export function linkClientServer(server: LinkServer, registry: Devices, spend?: (token: string) => void): RemoteRpcServer {
   return {
     async hello(socket, connId, params, write, end) {
       const device = (socket as { device?: unknown; link?: unknown }).link === true ? (socket as { device?: unknown }).device : undefined;
       const role = typeof device === "string" ? linkRoleOf(registry.get(device)) : undefined;
-      if (typeof device !== "string" || role === undefined) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "not a client's link");
+      if (typeof device !== "string" || role === undefined) {
+        // Refused before `linkHello` spends it: the token the door minted for this hello is spent here.
+        const token = (params as { token?: unknown } | null | undefined)?.token;
+        if (typeof token === "string") spend?.(token);
+        throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "not a client's link");
+      }
       return server.linkHello(connId, params, { device, role, stillLinked: () => linkRoleOf(registry.get(device)) === role }, write, end);
     },
     handle: (conn, method, params) => server.handle(conn as CloverConn, method, params),
@@ -46,7 +51,7 @@ export function linkClientServer(server: LinkServer, registry: Devices): RemoteR
 export type CloverRemoteClientsOptions = Omit<RemoteClientsOptions, "server" | "coreEvents" | "nextConnId" | "registry" | "tokens"> & {
   server: LinkServer & Pick<CloverServer, "endConnections">;
   registry: RemoteClientsOptions["registry"] & { watch(fn: (change: DeviceChange) => void): Unsubscribe };
-  tokens: RemoteTokens & Pick<CloverTokens, "revokeWhere">;
+  tokens: RemoteTokens & Pick<CloverTokens, "revokeWhere" | "revoke">;
 };
 
 /** Mounts the client door on the daemon's Clover server. */
@@ -57,7 +62,7 @@ export function mountCloverRemoteClients(o: CloverRemoteClientsOptions): Unsubsc
     o.tokens.revokeWhere((b: CloverBinding) => "device" in b && b.device === change.id);
     o.server.endConnections((c) => c.caller.kind === "user" && c.caller.device === change.id);
   });
-  const offDoor = mountRemoteClients({ ...o, server: linkClientServer(o.server, o.registry), nextConnId: () => ++next });
+  const offDoor = mountRemoteClients({ ...o, server: linkClientServer(o.server, o.registry, (t) => o.tokens.revoke(t)), nextConnId: () => ++next });
   return () => { offDoor(); offRevoked(); };
 }
 
