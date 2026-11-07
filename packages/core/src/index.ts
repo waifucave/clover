@@ -26,7 +26,7 @@ export { type SelfUpdate } from "./update/service";
 export { INSTALL_MARKER, parseInstallMarker, readInstallMarker, removeInstallMarker, updatesItself, writeInstallMarker, type InstallChannel, type InstallKind, type InstallMarker } from "./update/install-marker";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
 export { linkClientServer, mountCloverRemoteClients, LINK_CONN_ID_BASE, type CloverRemoteClientsOptions } from "./ipc/link-clients";
-export { sendCoreEvent, type CoreEventInput, type CoreEventOptions, type CoreEventRouting } from "./ipc/core-events";
+export { sendCoreEvent, OWNER_SCOPED_EVENTS, type CoreEventInput, type CoreEventOptions, type CoreEventRouting } from "./ipc/core-events";
 export { approvalCoreEvents } from "./approvals/core-events";
 export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
