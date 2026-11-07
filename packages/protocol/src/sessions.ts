@@ -35,7 +35,10 @@ export const BotView = z.object({
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
-  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"])),
+  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
+  /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
+   *  #260). Only the person sets it, in the user layer (`bot.setUserLayer`, theirs alone); it is never a plugin's. */
+  lan: z.boolean().optional(),
   state: BotState,
   /** The computer running its main conversation (the main, or the takeover computer). */
   computer: ComputerName.optional(),
@@ -54,6 +57,10 @@ export const UserLayerPatch = z.object({
   avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional() }).nullable().optional(),
   theme: utf16(256).nullable().optional(),
   layout: utf16(4096).nullable().optional(),
+  /** The bot's LAN setting (lane L's `lanBots`): written only by the person, through their own app or terminal, or a
+   *  sealed card a plugin's request becomes. A bot, a session or a plugin never sets it: `bot.setUserLayer` is the
+   *  user's alone, and a plugin's `bot` entry has no such field. */
+  lan: z.boolean().nullable().optional(),
 });
 export type UserLayerPatch = z.infer<typeof UserLayerPatch>;
 
