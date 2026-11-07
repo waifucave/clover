@@ -9,6 +9,10 @@
 //                                                         `bridge` (an MCP initialize, K-M1's dispatch)
 //   bun run build:daemon --dry-run                        print the commands, build nothing
 //
+// Every `bun build` step gets `--define __CLOVER_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
+// the environment's choice of programs to run), and the compiled binary is sealed (scripts/seal-bun-doors.ts: Bun's
+// BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT* and NODE_PATH lookups renamed, then the byte check) before anything signs it.
+//
 // Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
 // binary is unsigned on every OS: the dev daemon signs its own copy on macOS (scripts/dev-daemon.ts), and release
 // signing is M2's. `--smoke` never starts a daemon: `--version` prints and exits before anything else runs.
@@ -18,7 +22,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } fr
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DIST_BUILD_DEFINE } from "../packages/core/src/build-kind";
 import { bunPinProblem, thisBunFirst } from "./bun-pin";
+import { sealFile } from "./seal-bun-doors";
 
 export type DaemonTarget = "darwin-arm64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
@@ -61,7 +67,8 @@ export function daemonCompileCommand(compileCoreScript: string, target: DaemonTa
   if (compileCoreScript.split(COMPILE_CORE_OUTFILE).length !== 2) throw new Error(`compile:core no longer writes ${COMPILE_CORE_OUTFILE} — update scripts/build-daemon.ts`);
   return compileCoreScript
     .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]}`)
-    .replace(COMPILE_CORE_OUTFILE, `--outfile ../../${daemonOutput(target)}`);
+    .replace(COMPILE_CORE_OUTFILE, `--outfile ../../${daemonOutput(target)}`)
+    .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} `);
 }
 
 export interface BuildDaemonArgs {
@@ -203,6 +210,14 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     const status = runScriptLine(command, cliDir);
     if (status !== 0 || !existsSync(output)) {
       console.error(`build:daemon: ${target}: the compile failed (exit ${status})`);
+      return 1;
+    }
+    // The seal (seal-bun-doors.ts): Bun's own doors to foreign code, closed before anything signs the binary.
+    try {
+      const sealed = sealFile(output);
+      console.log(`build:daemon: ${target}: sealed ${Object.entries(sealed.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`);
+    } catch (err) {
+      console.error(`build:daemon: ${target}: ${(err as Error).message}`);
       return 1;
     }
     console.log(`build:daemon: ${target}: ${daemonOutput(target)} (${(statSync(output).size / 1_048_576).toFixed(1)} MB, sha256 ${sha256(output)})`);
