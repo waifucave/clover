@@ -11,7 +11,10 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.70";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.69 (2026-11-06, K-M3 and A-M3's follow-up): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
+/** Bumped to 0.0.70 (2026-11-07, A's F8): what a command leaves running is adopted as a background task
+ *  (`RunCommandResult.leftBehind`, the macOS process holder named in `CLOVER_PROCESS_HOLDER`), and
+ *  `sandbox.denyLaunchServices`, which every bot and agent session turns on.
+ *  Earlier: bumped to 0.0.69 (2026-11-06, K-M3 and A-M3's follow-up): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
  *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68).
  *  A-M3's follow-up uses `Query.stopTask(id, { by })` to stop a paused bot's background shells and monitors.
  *  Earlier: bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
