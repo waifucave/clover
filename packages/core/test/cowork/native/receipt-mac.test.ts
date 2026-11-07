@@ -8,6 +8,7 @@ import { coworkNativeReceiptMacInput, parseCoworkNativeLauncherLine, parseCowork
 import { COWORK_NATIVE_RECEIPT_KEY_ACCOUNT, CoworkNativeReceiptKey, CoworkNativeReceiptKeyError, CoworkNativeReceiptKeyStore, computeCoworkNativeReceiptMac, isCanonicalBase64Of32Bytes, verifyCoworkNativeReceiptMac } from "../../../src/cowork/native/receipt-mac";
 import { CoworkNativeRecovery } from "../../../src/cowork/native/recovery";
 import { cleanupHarnesses, createHarness, RECEIPT_KEY, type Harness } from "./harness";
+import { darwinTest } from "../../helpers/darwin-only";
 
 afterEach(() => { cleanupHarnesses(); });
 
@@ -178,7 +179,7 @@ async function crashedWithReceipt(forge?: (receipt: ReturnType<Harness["launcher
 const flipMac = (receipt: { mac: string }) => (receipt.mac[0] === "A" ? "B" : "A") + receipt.mac.slice(1);
 
 describe("a retained Class A receipt needs its MAC and then both guards", () => {
-  test("a forged file (right shape, wrong MAC) releases nothing even with both guards passing, and the file stays", async () => {
+  darwinTest("a forged file (right shape, wrong MAC) releases nothing even with both guards passing, and the file stays", async () => {
     const h = await crashedWithReceipt(receipt => serializeCoworkNativeStopReceipt({ ...receipt, mac: flipMac(receipt) }));
     expect(h.guards.processAbsent && h.guards.imagesUnlocked).toBe(true);
     for (let round = 0; round < 2; round++) expect(h.host.bootReconcile()).toMatchObject([{ action: "retained", ownerRetained: true, reason: expect.stringContaining("mac_invalid") }]);
@@ -188,7 +189,7 @@ describe("a retained Class A receipt needs its MAC and then both guards", () => 
     expect(h.receipts.size).toBe(1);
     expect(h.guards.seen).toEqual([]); // a forged file never even reached the question about the old worker
   });
-  test("a file signed under another key, a receipt edited after signing and a file with no MAC all fail the same way", async () => {
+  darwinTest("a file signed under another key, a receipt edited after signing and a file with no MAC all fail the same way", async () => {
     const other = CoworkNativeReceiptKey.fromBytes(Buffer.from("synthetic-other-key-012345678901"));
     for (const make of [
       (r: { mac: string } & Record<string, unknown>) => serializeCoworkNativeStopReceipt(signCoworkNativeOrderlyReceipt((({ mac: _m, ...rest }) => rest)(r) as never, other)),
@@ -201,7 +202,7 @@ describe("a retained Class A receipt needs its MAC and then both guards", () => 
       cleanupHarnesses();
     }
   });
-  test("a valid MAC with a failing guard is still no evidence (the guards stay mandatory)", async () => {
+  darwinTest("a valid MAC with a failing guard is still no evidence (the guards stay mandatory)", async () => {
     const h = await crashedWithReceipt();
     h.guards.processAbsent = false;
     expect(h.host.recover(h.workspaceId)).toMatchObject({ action: "retained", reason: expect.stringContaining("guard_failed") });
@@ -209,13 +210,13 @@ describe("a retained Class A receipt needs its MAC and then both guards", () => 
     expect(h.host.recover(h.workspaceId)).toMatchObject({ action: "retained", reason: expect.stringContaining("guard_failed") });
     expect(h.calls.volumeRelease).toBe(0);
   });
-  test("a valid MAC and both guards releases, once, and retires the file", async () => {
+  darwinTest("a valid MAC and both guards releases, once, and retires the file", async () => {
     const h = await crashedWithReceipt();
     expect(h.host.recover(h.workspaceId)).toMatchObject({ action: "released", evidence: "orderly-receipt", ownerRetained: false });
     expect(owners(h)).toEqual([null, null]);
     expect(h.receipts.size).toBe(0);
   });
-  test("no key (missing, unreadable, or no key source at all) makes the receipt Class B: nothing releases", async () => {
+  darwinTest("no key (missing, unreadable, or no key source at all) makes the receipt Class B: nothing releases", async () => {
     const h = await crashedWithReceipt();
     for (const receiptKey of [(() => null), (() => { throw new Error("keychain locked"); }), undefined]) {
       const recovery = new CoworkNativeRecovery({ records: h.records, volumes: h.volumes, admission: h.ledger, power: h.power, registry: h.registry, hostBoot: h.hostBoot, guards: { processAbsent: () => true, imagesUnlocked: () => true },
@@ -224,7 +225,7 @@ describe("a retained Class A receipt needs its MAC and then both guards", () => 
     }
     expect(owners(h).every(owner => owner !== null)).toBe(true);
   });
-  test("the replay-debt path demands the MAC too: a forged copy of the old writer's receipt does not let the successor start", async () => {
+  darwinTest("the replay-debt path demands the MAC too: a forged copy of the old writer's receipt does not let the successor start", async () => {
     const h = createHarness();
     await (await h.host.start(h.workspaceId)).stop();
     h.restart({ crashAt: "receipt-received" });
@@ -244,14 +245,14 @@ describe("a retained Class A receipt needs its MAC and then both guards", () => 
     h.receipts.set(key2, good);
     expect((await h.host.start(h.workspaceId)).leaseEpoch).toBe(4);
   });
-  test("the launcher only ever signs with the key it was handed in begin: the daemon's key reaches begin and the receipts verify under it", async () => {
+  darwinTest("the launcher only ever signs with the key it was handed in begin: the daemon's key reaches begin and the receipts verify under it", async () => {
     const h = createHarness();
     await (await h.host.start(h.workspaceId)).stop();
     const session = h.launcher.sessions[0]!;
     expect(session.receiptKey?.equals(RECEIPT_KEY)).toBe(true);
     expect(verifyCoworkNativeOrderlyReceiptMac(session.stagedOrderly("11".repeat(16)), RECEIPT_KEY)).toBe(true);
   });
-  test("a start without a receipt key refuses before anything moves", async () => {
+  darwinTest("a start without a receipt key refuses before anything moves", async () => {
     const h = createHarness();
     const before = h.records.get(h.workspaceId).leaseEpoch;
     (h.deps as { receiptKey: () => null }).receiptKey = () => null;

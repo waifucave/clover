@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ancestry, descendsFrom, parentPid, probePeer, socketFd, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "../../src/platform/caller-probe";
 import { claimDaemonChildren, spawnDisclaimed } from "../../src/platform/daemon-children";
 import { resolveEndpoint } from "../../src/platform/transport";
+import { onDarwin, darwinTest } from "../helpers/darwin-only";
 
 
 /** Listen on a fresh endpoint and resolve with the probe of the first connection's peer. */
@@ -102,7 +103,7 @@ describe("the caller check's OS probe", () => {
     child.kill(); l.stop();
   });
 
-  test.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))("macOS: a client under a Seatbelt profile is fenced, even one that allows everything", async () => {
+  test.skipIf(!onDarwin || !existsSync("/usr/bin/sandbox-exec"))("macOS: a client under a Seatbelt profile is fenced, even one that allows everything", async () => {
     const l = listenOnce();
     const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", process.execPath, "-e", CLIENT(l.path)], { stdout: "ignore", stderr: "ignore" });
     const peer = await l.peer;
@@ -152,7 +153,7 @@ describe("the caller check's OS probe", () => {
     child.kill();
   }, 30_000);
 
-  test.skipIf(process.platform !== "darwin")("review B1 on macOS: under supervise's disclaimed start, a double-forked grandchild still names the daemon", async () => {
+  darwinTest("review B1 on macOS: under supervise's disclaimed start, a double-forked grandchild still names the daemon", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-resp-"));
     const out = join(dir, "result.json");
     const probe = JSON.stringify(join(import.meta.dir, "..", "..", "src", "platform", "caller-probe.ts"));

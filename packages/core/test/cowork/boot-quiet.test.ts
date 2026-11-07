@@ -9,7 +9,7 @@ import { COWORK_TABLES } from "../../src/cowork/schema";
 import { downgradeCoworkRuntimeStateToV7, RUNTIME_STATE_SCHEMA_VERSION } from "../../src/runtime-state/db";
 
 // Cowork cannot be created or run in production, so a production-shaped daemon must start NO Cowork timer and a failing Cowork boot
-// step must not abort startup. (The unit-level timer rules live in workspace-events.test.ts and folder-selections.test.ts.)
+// step must not abort startup. (The unit-level timer rules live in workspace-events.darwin.test.ts and folder-selections.test.ts.)
 let daemon: RunningDaemon | undefined;
 const homes: string[] = [];
 afterEach(async () => { try { await daemon?.stop(); } catch { /* already stopped */ } daemon = undefined; for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true }); });

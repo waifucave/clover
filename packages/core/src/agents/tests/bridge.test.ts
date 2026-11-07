@@ -5,7 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RpcError, RpcPeer } from "../acp/jsonrpc";
+import { RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
 import { bridgeCloverParts, type BridgeHandlers } from "../bridge/handlers";
 import { serveClover } from "../testing/clover-endpoint";
 import { BRIDGE_MAIN_PATH } from "../bridge/main";

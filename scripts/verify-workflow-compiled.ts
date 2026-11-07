@@ -10,7 +10,7 @@
  * INSIDE the compiled binary instead of being loaded from a path that only exists in dev.
  *
  * This script is the ONLY check that exercises the true bundler + the real Release artifact
- * (dist/clover-core). `packages/core/src/workflows/subprocess-entry.test.ts` covers the stdio bridge
+ * (dist/clover-core). `packages/core/src/workflows/subprocess-entry.darwin.test.ts` covers the stdio bridge
  * protocol under `bun test`, but that spawns `bun subprocess-entry.ts` directly (the DEV path) — it
  * never touches `bun build --compile` at all, so it could not have caught C1 and cannot regress-guard
  * it either. Only running the compiled binary itself can.

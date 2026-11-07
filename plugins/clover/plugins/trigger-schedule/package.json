@@ -1,0 +1,21 @@
+{
+  "name": "@waifucave/clover-plugin-trigger-schedule",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/trigger-schedule: the bundled schedule trigger for routine files (spec §7), with its grammar and time-zone math.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./spec": "./src/spec.ts",
+    "./zone": "./src/zone.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}

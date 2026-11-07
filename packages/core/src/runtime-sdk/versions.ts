@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.67";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.69";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,9 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.67";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
+/** Bumped to 0.0.69 (2026-11-06, K-M3): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
+ *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68).
+ *  Earlier: bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
  *  (`shadowBuiltins`: the core's `SendMessage`, `ListAgents`, `TaskStop`, `Agent`), and `Options.hostToolSearch`
  *  keeps deferral on for `Glossary`, which loads tools through `ToolSearch`'s `select:` path.
  *  Earlier: bumped to 0.0.66 (2026-11-06, A-M3's first commit): a code model plugin's turn errors cross the plugin host and

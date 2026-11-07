@@ -1,0 +1,12 @@
+{
+  "manifest": 1,
+  "name": { "en": "iPhone companion" },
+  "description": {
+    "en": "Chat with your bots and answer their cards from the Clover app on your iPhone. The phone pairs with this computer once, with a QR code and four words you check on both, and then reaches it directly over Clover's own encrypted link."
+  },
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun", "start": "main" },
+  "contributes": {
+    "companions": [{ "id": "ios", "name": { "en": "iPhone companion (the Clover app)" }, "handler": "companion" }]
+  }
+}
