@@ -129,6 +129,24 @@ describe("validateArgs", () => {
       expect(performance.now() - started).toBeLessThan(50);
     });
 
+    test("a pattern holds at most 2 quantifiers with no upper bound or one above 16, a quantified group counting its own (check 2)", () => {
+      for (const ok of ["^a*b*$", "^a+b{0,16}c*$", "^\\w{1,16}\\s?\\d{3}x*y+$", "^a*?b+?$", "^(?:ab){0,16}c*$"]) expect([ok, patternProblem(ok)]).toEqual([ok, undefined]);
+      for (const bad of ["^a*a*a*b$", "\\w*".repeat(40), "^a+b{1,}c*$", "^a*b{0,17}c+$", "^(?:ab)*c*d+$", "^(?:a*)?b*c*$"]) {
+        expect([bad, patternProblem(bad) !== undefined, checkArgsSchema({ type: "string", pattern: bad }).ok]).toEqual([bad, true, false]);
+      }
+      // Refused at schema time, so the cubic match never runs.
+      const started = performance.now();
+      expect(validateArgs({ type: "object", properties: { s: { type: "string", pattern: "\\w*".repeat(40) + "!" } } }, { s: "a".repeat(4000) })).toEqual({ ok: false, path: "", keyword: "schema" });
+      expect(performance.now() - started).toBeLessThan(50);
+    });
+
+    test("one call tries patterns on at most 64K characters in all", () => {
+      const s = { type: "object", additionalProperties: { type: "string", pattern: "^[a-z]+$" } };
+      const many = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, "a".repeat(4096)]));
+      expect(validateArgs(s, many(16))).toEqual({ ok: true }); // 64K exactly
+      expect(validateArgs(s, many(17))).toEqual({ ok: false, path: "", keyword: "budget" });
+    });
+
     test("a string longer than 4,096 code points isn't tried on a pattern; args over 256 KiB aren't checked at all", () => {
       const s = { type: "object", additionalProperties: { type: "string", pattern: "^[a-z]+$" } };
       expect(validateArgs(s, { a: "a".repeat(ARGS_MAX_PATTERN_INPUT) })).toEqual({ ok: true });

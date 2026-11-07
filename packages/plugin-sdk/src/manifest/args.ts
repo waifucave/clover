@@ -16,7 +16,8 @@
 //
 // The check is bounded, since a third-party schema runs in the core (#234's review, F3): a `pattern` stays in a
 // linear-time subset (at most 256 characters; no backreference, lookaround, or quantified group holding a quantifier
-// or an alternation), is tried only on strings of at most 4,096 code points (`patternLength`), the args are at most
+// or an alternation; at most 2 quantifiers with no upper bound or one above 16), is tried only on strings of at most
+// 4,096 code points (`patternLength`) and on at most 64K characters in all per call (`budget`), the args are at most
 // 256 KiB of JSON (`size`), `uniqueItems` is linear, and one call visits at most 100,000 schema nodes (`budget`).
 
 /** The keywords the check enforces. */
@@ -45,15 +46,35 @@ export const ARGS_MAX_PATTERN_INPUT = 4096;
 /** The most schema nodes one call's check visits; past it the check fails `budget` (`anyOf`, `oneOf` and arrays
  *  multiply the work). */
 export const ARGS_VISIT_BUDGET = 100_000;
+/** The most characters (UTF-16 code units) one call tries patterns on, in all; past it the check fails `budget`. */
+export const ARGS_PATTERN_INPUT_BUDGET = 64 * 1024;
+/** A quantifier's upper bound past which it counts as unbounded (#234's check 2, F3). */
+export const ARGS_PATTERN_BOUND = 16;
+/** The most unbounded (or above-16) quantifiers one `pattern` may hold: three in a row (`^a*a*a*b$`) backtrack in
+ *  cubic time. */
+export const ARGS_MAX_PATTERN_UNBOUNDED = 2;
 
 /** Why a `pattern` is outside the linear-time subset, or undefined when it is in it: no backreference, no lookaround,
- *  and no quantified group that holds a quantifier or an alternation (the shapes that backtrack exponentially, such
- *  as `^(a+)+$` or `(a|a)*`). */
+ *  no quantified group that holds a quantifier or an alternation (the shapes that backtrack exponentially, such as
+ *  `^(a+)+$` or `(a|a)*`), and at most 2 quantifiers with no upper bound or one above 16 (more backtrack in polynomial
+ *  time, such as `^a*a*a*b$`); a quantified group counts the ones it holds. */
 export function patternProblem(source: string): string | undefined {
   if (source.length > ARGS_MAX_PATTERN) return "too long";
   // One frame per open group: whether it holds a quantifier or an alternation at any depth.
-  const frames: { quant: boolean; alt: boolean }[] = [{ quant: false, alt: false }];
+  // `unbounded`: how many quantifiers with no upper bound, or one above 16, it holds.
+  const frames: { quant: boolean; alt: boolean; unbounded: number }[] = [{ quant: false, alt: false, unbounded: 0 }];
   const isQuant = (i: number) => source[i] === "*" || source[i] === "+" || source[i] === "?" || (source[i] === "{" && /^\{\d+(,\d*)?\}/.test(source.slice(i)));
+  const isUnbounded = (i: number) => {
+    if (source[i] === "*" || source[i] === "+") return true;
+    const m = source[i] === "{" ? /^\{(\d+)(,(\d*))?\}/.exec(source.slice(i)) : null;
+    return m !== null && m[2] !== undefined && (m[3] === "" || Number(m[3]) > ARGS_PATTERN_BOUND);
+  };
+  const tooMany = () => frames.reduce((n, f) => n + f.unbounded, 0) > ARGS_MAX_PATTERN_UNBOUNDED;
+  // The index just past the quantifier at `i`, and its lazy `?` if any.
+  const skipQuant = (i: number) => {
+    const end = source[i] === "{" ? source.indexOf("}", i) + 1 : i + 1;
+    return source[end] === "?" ? end + 1 : end;
+  };
   for (let i = 0; i < source.length; i++) {
     const c = source[i]!;
     if (c === "\\") {
@@ -68,7 +89,7 @@ export function patternProblem(source: string): string | undefined {
     }
     if (c === "(") {
       if (source.startsWith("(?=", i) || source.startsWith("(?!", i) || source.startsWith("(?<=", i) || source.startsWith("(?<!", i)) return "a lookaround";
-      frames.push({ quant: false, alt: false });
+      frames.push({ quant: false, alt: false, unbounded: 0 });
       continue;
     }
     if (c === ")") {
@@ -79,10 +100,20 @@ export function patternProblem(source: string): string | undefined {
       const parent = frames[frames.length - 1]!;
       parent.quant ||= f.quant || quantified;
       parent.alt ||= f.alt;
+      parent.unbounded += f.unbounded + (isUnbounded(i + 1) ? 1 : 0);
+      if (tooMany()) return "more than 2 quantifiers with no upper bound or one above 16";
+      // The group's own quantifier is counted here, not again as the next character.
+      if (quantified) i = skipQuant(i + 1) - 1;
       continue;
     }
     if (c === "|") frames[frames.length - 1]!.alt = true;
-    else if (isQuant(i) && !(c === "?" && source[i - 1] === "(")) frames[frames.length - 1]!.quant = true;
+    else if (isQuant(i) && !(c === "?" && source[i - 1] === "(")) {
+      const f = frames[frames.length - 1]!;
+      f.quant = true;
+      if (isUnbounded(i)) f.unbounded++;
+      if (tooMany()) return "more than 2 quantifiers with no upper bound or one above 16";
+      i = skipQuant(i) - 1;
+    }
   }
   return undefined;
 }
@@ -187,7 +218,8 @@ function typeMatches(type: string, v: unknown): boolean {
   }
 }
 
-interface Budget { visits: number; spent: boolean }
+/** One call's work: schema nodes visited, characters tried on patterns. */
+interface Budget { visits: number; patternInput: number; spent: boolean }
 
 function check(schema: unknown, v: unknown, path: string, depth: number, budget: Budget): ArgsCheck {
   const fail = (keyword: string, at = path): ArgsCheck => ({ ok: false, path: at, keyword });
@@ -221,6 +253,11 @@ function check(schema: unknown, v: unknown, path: string, depth: number, budget:
     if (s.maxLength !== undefined && length > (s.maxLength as number)) return fail("maxLength");
     if (s.pattern !== undefined) {
       if (length > ARGS_MAX_PATTERN_INPUT) return fail("patternLength");
+      budget.patternInput += v.length;
+      if (budget.patternInput > ARGS_PATTERN_INPUT_BUDGET) {
+        budget.spent = true;
+        return fail("budget");
+      }
       if (!regexOf(s.pattern as string)!.test(v)) return fail("pattern");
     }
   }
@@ -302,7 +339,7 @@ export function validateArgs(schema: unknown, args: unknown): ArgsCheck {
   if (!json.ok) return json;
   // The whole call's size first, before any walk is paid for.
   if (new TextEncoder().encode(JSON.stringify(value)).length > ARGS_MAX_BYTES) return { ok: false, path: "", keyword: "size" };
-  const budget: Budget = { visits: 0, spent: false };
+  const budget: Budget = { visits: 0, patternInput: 0, spent: false };
   if (schema === undefined) return check({ type: "object", maxProperties: 0 }, value, "", 0, budget);
   if (!checkArgsSchema(schema).ok) return { ok: false, path: "", keyword: "schema" };
   const r = check(schema, value, "", 0, budget);
