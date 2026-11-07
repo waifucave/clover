@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
 import { channelArgs, parseChannel, writeServedCopies, type Channel } from "./release/lib";
+import { STAGED_PLUGINS, stageBundledPlugins } from "./release/bundled-plugins";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -207,6 +208,9 @@ export function main(argv: readonly string[], root: string): number {
     return 0;
   }
   rmSync(outDir, { recursive: true, force: true });
+  // The bundled plugins: the tracked files only, staged where electron-builder.yml packs them.
+  const stagedPlugins = join(desktop, STAGED_PLUGINS);
+  stageBundledPlugins(root, stagedPlugins);
   for (const s of steps) {
     console.log(`build-packages: ${s.say}…`);
     if (s.stage !== undefined) {
@@ -220,6 +224,7 @@ export function main(argv: readonly string[], root: string): number {
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
   }
   rmSync(staged, { recursive: true, force: true });
+  rmSync(stagedPlugins, { recursive: true, force: true });
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   if (args.check) {

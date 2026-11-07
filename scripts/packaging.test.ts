@@ -10,8 +10,7 @@ import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, autostartArgs } f
 import { linkBinaryName } from "../packages/core/src/links/sidecar-binary";
 import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, LINK_BUILD, LINK_OUTPUT, packageArchNames, parseBuildPackagesArgs, parseListing, REQUIRED_FILES } from "./build-packages";
 import { caskFrom } from "./release-lib";
-import { BUNDLED_PLUGIN_IDS, BUNDLED_PLUGINS_DIR, builtPluginImportProblems, bundledPluginsProblems, importSpecifiers, unshippedPluginDependencies } from "./release/lib";
-import { CLIENT_BARE_IMPORTS } from "../packages/plugin-sdk/src/manifest/schema";
+import { BUNDLED_PLUGIN_IDS, BUNDLED_PLUGINS_DIR, STAGED_PLUGINS } from "./release/bundled-plugins";
 import { renderWinget, wingetInstallerUrl } from "./winget";
 
 const ROOT = join(import.meta.dir, "..");
@@ -141,64 +140,16 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     expect(remove).toContain("apparmor_parser --remove");
   });
 
-  test("the bundled plugins go in every app's resources/plugins (the registry's bundledDirs), beside resources/daemon, without tests", () => {
+  test("the bundled plugins go in every app's resources/plugins (the registry's bundledDirs), beside resources/daemon, from the staged tracked files", () => {
     expect(builder.extraResources).toHaveLength(2);
     const plugins = builder.extraResources[1];
-    expect(plugins.from).toBe("../../plugins");
+    expect(plugins.from).toBe(STAGED_PLUGINS.split("\\").join("/"));
     expect(plugins.to).toBe(BUNDLED_PLUGINS_DIR);
-    expect(plugins.filter).toEqual(["**/*", "!**/node_modules/**", "!**/test/**", "!**/tests/**", "!**/*.test.ts", "!**/*.test.tsx", "!**/tsconfig*.json"]);
-    // The repository's plugins/ is the bundled folder: each top-level subfolder a plugin, each with its manifest.
-    const repoPlugins = resolve(ROOT, "apps", "desktop", plugins.from);
-    expect(repoPlugins).toBe(join(ROOT, "plugins"));
-    for (const id of BUNDLED_PLUGIN_IDS) expect(existsSync(join(repoPlugins, id, "clover.json"))).toBe(true);
+    expect(plugins.filter).toEqual(["**/*", "!**/node_modules/**", "!**/test/**", "!**/tests/**", "!**/*.test.ts", "!**/*.test.tsx", "!**/tsconfig*.json", "!**/.env", "!**/.env.*", "!**/.DS_Store"]);
+    // The repository's plugins/ is what gets staged: each top-level subfolder a plugin, each with its manifest.
+    for (const id of BUNDLED_PLUGIN_IDS) expect(existsSync(join(ROOT, "plugins", id, "clover.json"))).toBe(true);
     // The Linux packages must hold each manifest.
     for (const id of BUNDLED_PLUGIN_IDS) expect(REQUIRED_FILES as readonly string[]).toContain(`/opt/Clover/resources/${BUNDLED_PLUGINS_DIR}/${id}/clover.json`);
-  });
-
-  test("a packaged app's bundled plugins are checked: each manifest there, no test, tsconfig or node_modules", () => {
-    const files = new Set(["/r/plugins/clover/clover.json", "/r/plugins/alpha/clover.json"]);
-    const ok = ["clover/clover.json", "alpha/clover.json", "alpha/tab/theme.css", "clover/plugins/archive/client/entry.tsx"];
-    expect(bundledPluginsProblems("/r", (p) => files.has(p), () => ok)).toEqual([]);
-    expect(bundledPluginsProblems("/r", (p) => p !== "/r/plugins/alpha/clover.json", () => ok)).toEqual(["/r/plugins/alpha/clover.json is missing: the alpha plugin isn't bundled"]);
-    for (const stray of ["alpha/tab/test/tab.test.ts", "clover/x/tests/a.ts", "clover/node_modules/x/index.js", "alpha/tab/tsconfig.json", "clover/a.test.tsx"]) {
-      expect(bundledPluginsProblems("/r", (p) => files.has(p), () => [...ok, stray])[0]).toContain(stray);
-    }
-  });
-
-  test("a bundled plugin's runtime dependencies must be shipped with it; the layers' React and UI API need nothing", () => {
-    const pkgs: Record<string, string> = {
-      "alpha/clover.json": "{}",
-      "clover/plugins/ui/package.json": JSON.stringify({ dependencies: { react: "19.3.1", "lucide-react": "1.61.0" }, peerDependencies: { "react-dom": "^19" }, devDependencies: { typescript: "5" } }),
-      "clover/plugins/host/package.json": JSON.stringify({ dependencies: { "@waifucave/clover-provider-runtime": "0.0.71" }, optionalDependencies: { fflate: "0.8.3" }, peerDependencies: { three: "*" } }),
-      "clover/plugins/host/node_modules/fflate/package.json": "{}",
-      "clover/plugins/none/package.json": JSON.stringify({ devDependencies: { typescript: "5" } }),
-    };
-    const files = Object.keys(pkgs);
-    expect(unshippedPluginDependencies(files, (rel) => pkgs[rel]!)).toEqual([
-      "clover/plugins/host: @waifucave/clover-provider-runtime", "clover/plugins/host: three",
-      "clover/plugins/ui: lucide-react",
-    ]);
-    // Shipped beside it: nothing left.
-    const all = [...files, "clover/plugins/host/node_modules/@waifucave/clover-provider-runtime/package.json", "clover/plugins/host/node_modules/three/package.json", "clover/plugins/ui/node_modules/lucide-react/package.json"];
-    expect(unshippedPluginDependencies(all, (rel) => pkgs[rel] ?? "{}")).toEqual([]);
-  });
-
-  test("a built bundled plugin: client modules import only the layer's React and UI API; host imports resolve in the shipped tree", () => {
-    expect(importSpecifiers(`import a from "react"; export { b } from './x.js'; import "./side.css.js"; const c = await import("lucide-react"); require("node:fs");`))
-      .toEqual(["./side.css.js", "./x.js", "lucide-react", "node:fs", "react"]);
-    const shipped = new Set(["ui/chunk.js", "host/node_modules/@waifucave/clover-provider-runtime"]);
-    const resolves = (from: string, spec: string) => shipped.has(spec.startsWith(".") ? `${from.slice(0, from.lastIndexOf("/") + 1)}${spec.replace(/^\.\//, "")}` : `host/node_modules/${spec}`);
-    const ok = [
-      { file: "ui/entry.js", kind: "client" as const, source: `import { jsx } from "react/jsx-runtime"; import { useUi } from "@waifucave/clover-plugin-sdk/ui"; import "./chunk.js";` },
-      { file: "host/index.js", kind: "host" as const, source: `import { run } from "@waifucave/clover-provider-runtime"; import fs from "node:fs"; import { $ } from "bun";` },
-    ];
-    expect(builtPluginImportProblems(ok, CLIENT_BARE_IMPORTS, resolves)).toEqual([]);
-    expect(builtPluginImportProblems([{ file: "ui/entry.js", kind: "client", source: `import { X } from "lucide-react";` }], CLIENT_BARE_IMPORTS, resolves))
-      .toEqual([expect.stringContaining("ui/entry.js: a client module imports lucide-react")]);
-    expect(builtPluginImportProblems([{ file: "host/index.js", kind: "host", source: `import dc from "node-datachannel";` }], CLIENT_BARE_IMPORTS, resolves))
-      .toEqual(["host/index.js: host code imports node-datachannel, which nothing in the shipped tree provides"]);
-    expect(builtPluginImportProblems([{ file: "ui/entry.js", kind: "client", source: `import "./missing.js";` }], CLIENT_BARE_IMPORTS, resolves))
-      .toEqual(["ui/entry.js: imports ./missing.js, which isn't in the shipped tree"]);
   });
 
   test("the AppArmor profile grants user namespaces to the app's executable alone", () => {

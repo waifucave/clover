@@ -12,7 +12,8 @@
 //      its own identifier and entitlements: lib.ts's RESOURCE_BINARIES)
 //   4. runs electron-builder for the OS's targets (`--publish never`, always) with the channel; with --sign, the
 //      identity and notarization on macOS, and forced signing and the update publisher on Windows; then checks the
-//      bundled plugins are in the app's resources/plugins (lib.ts's `bundledPluginsProblems`)
+//      bundled plugins (the tracked files under plugins/, staged in apps/desktop/out/plugins) are in the app's
+//      resources/plugins, with nothing left out and no symlink (bundled-plugins.ts)
 //   5. with --sign on macOS: signs, notarizes and staples the dmg, measures the update file's dmg entry again,
 //      and checks every signature (the app, the daemon, the sidecar, the dmg), Gatekeeper's verdict and the staples
 //   6. on latest, copies the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
@@ -29,13 +30,13 @@
 // None is printed, logged or written anywhere. Nothing is published.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
+import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree } from "./bundled-plugins";
 import {
-  bundledPluginsProblems,
   channelArgs, checkUpdateInfo, codesignArgs, codesignDmgArgs, expectedArtifacts, feedFile, formatUpdateInfo, identityTeam,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems,
   writeServedCopies, type Channel,
@@ -127,16 +128,6 @@ function must(say: string, cmd: readonly string[], cwd: string, env?: Record<str
   if ((r.status ?? 1) !== 0) throw new Error(`${say} failed (exit ${r.status ?? "signal"})`);
 }
 
-/** Every file under `dir`, relative to it (`[]` when there is no `dir`). */
-function walkFiles(dir: string, rel = ""): string[] {
-  let names: string[];
-  try { names = readdirSync(join(dir, rel)); } catch { return []; }
-  return names.flatMap((n) => {
-    const r = rel === "" ? n : `${rel}/${n}`;
-    return statSync(join(dir, r)).isDirectory() ? walkFiles(dir, r) : [r];
-  });
-}
-
 const sha256 = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
 
 /** The signed app's checks: each signature, Gatekeeper's verdict and the notarization staples. */
@@ -206,12 +197,16 @@ export function main(argv: readonly string[], root: string): number {
         must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
       }
     }
+    // The bundled plugins: the tracked files only, staged where electron-builder.yml packs them.
+    const stagedPlugins = join(desktop, STAGED_PLUGINS);
+    stageBundledPlugins(root, stagedPlugins);
     must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
     rmSync(staged, { recursive: true, force: true });
+    rmSync(stagedPlugins, { recursive: true, force: true });
     {
       // The bundled plugins, where the core looks for them (resources/plugins beside resources/daemon).
       const resources = a.os === "mac" ? join(outDir, "mac-arm64", "Clover.app", "Contents", "Resources") : join(outDir, "win-unpacked", "resources");
-      const plugins = bundledPluginsProblems(resources, existsSync, (dir) => walkFiles(dir));
+      const plugins = bundledPluginsProblems(resources, existsSync, walkTree);
       for (const p of plugins) console.error(`release/build: ${p}`);
       if (plugins.length > 0) return 1;
     }
