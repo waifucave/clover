@@ -2,7 +2,7 @@ import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cloverBun, ensurePluginRunFiles, guardedPluginEnv, isBunCommand, type PluginRunGuard } from "../registry/plugin-run";
+import { ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -773,14 +773,16 @@ export class PluginSupervisor {
       // that isn't Bun is one a manifest declares (a stdio server, a helper), never a host.
       if (!isBunCommand(config.entry.command)) throw new Error(`a plugin host runs under Bun only, not ${basename(config.entry.command)}`);
       const token = this.deps.mintToken(config.id);
-      // Clover's own Bun, never the one the manifest's command names (#234's check 4, H3): it chooses Bun and the args.
-      const cmd = [this.deps.bun ?? cloverBun().command, ...(config.entry.args ?? [])];
       const cwd = config.entry.cwd ? join(config.dir, config.entry.cwd) : config.dir;
       this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir) };
-      const env = guardedPluginEnv(
+      // Clover's own Bun, never the one the manifest's command names (#234's check 4, H3): it chooses Bun and the args.
+      const launch = pluginBunLaunch(
+        config.entry.args ?? [],
         { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: config.dir },
         { pluginRoot: config.dir, ...this.pluginRun },
       );
+      const cmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
+      const env = launch.env;
       proc = this.spawnFn(cmd, { cwd, env });
     } catch (err) {
       rt.pid = undefined;

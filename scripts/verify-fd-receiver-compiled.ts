@@ -11,6 +11,9 @@
  *   3b. `<copy> __host-code-adapter-probe`: the host-code broker's SDK modules resolve INSIDE the built binary (`installedHostCodeAdapter()` does not throw "Cannot find module").
  *       Same safety: no home, Keychain, daemon or launcher.
  *   3c. `<copy> __host-env-lazy-probe`: the activation seam's lazy `require("./host-env/environment")` resolves INSIDE the built binary (the seam stays off; the module loads, nothing is built).
+ *   3d. `<copy> __plugin-run-probe <empty folder>` (#234's check 4): a plugin host started the supervisor's way inside the compiled core runs on `cloverBun()`, which is the core
+ *       itself with `BUN_BE_BUN=1`, as Bun (its `Bun.main` is the host's entry, not the core's main), with the load guard preloaded (no `ShadowRealm`), and an outside import
+ *       is refused and never runs. Same safety: the scratch folder only.
  *   4. The negative control: the same probe against a copy of the binary whose Worker entry cannot be found must NOT print ok. (Checked without rebuilding: the probe is run with the
  *      entry string patched in the copy to a name that does not exist.)
  *
@@ -91,6 +94,12 @@ async function main(): Promise<void> {
     const lazyResult = parseProbe(lazy.stdout);
     if (lazy.code !== 0 || lazyResult?.ok !== true) throw new Error(`the lazy host-env require does not resolve inside the compiled daemon (exit ${lazy.code}): ${JSON.stringify(lazyResult)}\n${lazy.stderr.trim()}`);
     console.log(`ok: the activation seam's lazy host-env require resolved in the compiled daemon (${JSON.stringify(lazyResult)})`);
+
+    const pluginScratch = join(scratch, "plugin-run"); mkdirSync(pluginScratch);
+    const pluginRun = await runChild(good, ["__plugin-run-probe", pluginScratch], env, scratch);
+    const pluginResult = parseProbe(pluginRun.stdout);
+    if (pluginRun.code !== 0 || pluginResult?.ok !== true) throw new Error(`a plugin host through cloverBun() did not run as guarded Bun inside the compiled core (exit ${pluginRun.code}): ${JSON.stringify(pluginResult)}\n${pluginRun.stderr.trim()}`);
+    console.log(`ok: a plugin host ran on the compiled core as Bun (BUN_BE_BUN), guarded, its outside import refused (${JSON.stringify(pluginResult)})`);
 
     const broken = withBrokenEntry(readFileSync(DIST_BINARY));
     if (broken === null) throw new Error(`the binary does not contain the entry string ${ENTRY_NAME}: fd-channel.ts does not use the compiled entry`);

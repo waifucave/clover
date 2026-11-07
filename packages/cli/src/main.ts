@@ -1789,6 +1789,14 @@ if (import.meta.main) {
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
   }
+  // #234's check 4: a plugin host started through `cloverBun()` inside the compiled core runs as Bun with the load guard
+  // (`scripts/verify-fd-receiver-compiled.ts`, step 3d). argv[3]: an empty scratch folder; touches nothing else.
+  if (process.argv[2] === "__plugin-run-probe") {
+    const { runPluginRunProbe } = await import("./plugin-run-probe");
+    const result = runPluginRunProbe(process.argv[3]);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(result.ok ? 0 : 1);
+  }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
     const result = await runChannelReceiverProbe();

@@ -189,6 +189,12 @@ export function pluginBunFlags(files: PluginRunFiles): string[] {
 /** Variables a plugin process never inherits: they change what Bun or Node loads. */
 const DROPPED_ENV = /^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+)$/;
 
+/** How a plugin's Bun process starts (a supervised host): Clover's own Bun with `args`, and the guarded environment.
+ *  The supervisor and the compiled-core probe (`packages/cli/src/plugin-run-probe.ts`) share it. */
+export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): { cmd: string[]; env: Record<string, string> } {
+  return { cmd: [cloverBun().command, ...args], env: guardedPluginEnv(base, o) };
+}
+
 /** A plugin's stdio MCP server, as the runtime starts it (#234's check 4). A Bun one runs on Clover's own Bun with
  *  Clover's config, no `.env` and the load guard, held to the plugin's folder: its `env` carries the flags, and empties
  *  what changes loading, so no merge of the runtime's own environment under it brings `NODE_OPTIONS`, `NODE_PATH`,
