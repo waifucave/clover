@@ -18,6 +18,7 @@
 // cache is kept. A server that appears or changes between rebuilds reaches the conversation as a note at the next turn
 // (`mcpChangesSince`), and moves into the system prompt at the next rebuild.
 import { createHash } from "node:crypto";
+import { defuseTagNames } from "./defuse";
 
 /** One MCP server as the prompt lists it. */
 export interface PromptMcpServer {
@@ -62,14 +63,11 @@ export const MCP_INSTRUCTIONS_MAX_CHARS = 4_000;
 export const MCP_BLOCK_MAX_SERVERS = 48;
 export const MCP_BLOCK_MAX_CHARS = 64_000;
 
-/** Tag-like text a plugin or a bot wrote can't open or close one of the harness's blocks. */
-const HARNESS_TAG_NAMES = ["bot-instructions", "mcp-servers-update", "mcp-server-removed", "mcp-servers", "mcp-server", "devices", "memory-index", "memory", "safety", "harness"] as const;
-function tagPattern(names: readonly string[]): RegExp {
-  return new RegExp(`<(\\s*\\/?\\s*)(${names.join("|")})\\b`, "gi");
-}
-const HARNESS_TAGS = tagPattern(HARNESS_TAG_NAMES);
+/** Tag-like text a plugin or a bot wrote can't open or close one of the harness's blocks, however it is spelled
+ *  (`defuse.ts`: look-alike brackets and letters, invisible characters, any case). */
+export const HARNESS_TAG_NAMES = ["bot-instructions", "mcp-servers-update", "mcp-server-removed", "mcp-servers", "mcp-server", "devices", "memory-index", "memory", "safety", "harness"] as const;
 export function defuseTags(text: string): string {
-  return text.replace(HARNESS_TAGS, "‹$1$2");
+  return defuseTagNames(text, HARNESS_TAG_NAMES);
 }
 
 /** Lane D's memory block, its own `<memory>` wrapper and `<memory-index>` tags kept, and everything between them

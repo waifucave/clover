@@ -1,0 +1,102 @@
+{
+  "notes": "Cursor's CLI (`cursor-agent acp`, hidden from its help), 2026.10.22. S5 §1, edits 6 and 11; owner's item 78.",
+  "source": "measured (S5)",
+  "readOnlyMode": {
+    "option": "mode",
+    "values": [
+      "ask",
+      "plan"
+    ]
+  },
+  "quirks": {
+    "launch": {
+      "identity": {
+        "versionArgs": [
+          "--version"
+        ],
+        "versionPattern": "^(\\d{4}\\.\\d{1,2}\\.\\d{1,2})-[0-9a-f]{6,}\\s*$"
+      },
+      "envAllow": [],
+      "envSet": {
+        "NO_OPEN_BROWSER": "1"
+      },
+      "versions": ">=2026.10.22"
+    },
+    "capabilities": {
+      "snakeCaseDuplicates": false,
+      "httpMcpUnadvertised": false
+    },
+    "mcp": {
+      "transports": [
+        "stdio",
+        "http",
+        "sse"
+      ],
+      "storesPlainText": false,
+      "passesEnvironment": false,
+      "instructionsReachPrompt": false,
+      "systemPromptChannel": null,
+      "tellsConversationId": false
+    },
+    "sessions": {
+      "load": {
+        "supported": true,
+        "replays": true
+      },
+      "resume": {
+        "supported": false,
+        "replays": false
+      },
+      "replayKeepsToolCallIds": false,
+      "listFiltersHonestly": false,
+      "close": false
+    },
+    "turns": {
+      "refusal": "reported-completed",
+      "cancelLeavesToolCallsOpen": true,
+      "reportsUsage": false,
+      "quotaErrorsAsText": true
+    },
+    "permissions": {
+      "optionKinds": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "neverAsks": [
+        "edit inside the root",
+        "commands on the user's own allowlist",
+        "delete inside the root (by its code, untested)"
+      ],
+      "mcpNames": {
+        "server": "rawInput.providerIdentifier",
+        "tool": "rawInput.toolName"
+      }
+    },
+    "config": {
+      "modelOption": "model",
+      "effortOption": null,
+      "effortInModel": true,
+      "choicePersists": true
+    },
+    "auth": {
+      "methods": [
+        {
+          "id": "cursor_login",
+          "headless": false
+        }
+      ],
+      "requiredError": {
+        "messagePattern": "(cursor-)?agent login|authentication required"
+      }
+    },
+    "progress": {
+      "countsChildProcesses": true
+    },
+    "placement": "local",
+    "marks": [
+      "unasked-actions",
+      "persists-model-choice"
+    ]
+  }
+}

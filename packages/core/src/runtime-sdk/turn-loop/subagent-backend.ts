@@ -24,7 +24,8 @@ import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
 import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
-import { isUnknownTask } from "./driver";
+import { BOT_SANDBOX, isUnknownTask } from "./driver";
+import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { cloverSessions } from "../sessions";
 
@@ -222,9 +223,12 @@ class InProcessSession implements AgentSession {
       abortController: this.#abort,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       sandbox: {
-        enabled: true,
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite, ...privateFolders], denyRead: [...fence.denyRead, ...privateFolders] },
+        // On, no unsandboxed command, launchd closed (F8): set last, as for a bot.
+        ...BOT_SANDBOX,
       },
+      // The runtime's own notifications, folded ones included, framed as a bot's are (agent SDK 0.0.71).
+      notificationPreamble: TASK_NOTIFICATION_FRAME,
       // The file tools too: `//` anchors a rule at the filesystem root (mode-options.ts).
       ...(privateFolders.length === 0 ? {} : { permissions: { deny: privateFolders.flatMap((p) => ["Read", "Edit", "Write", "Glob", "Grep"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`])) } }),
       ...(resume ? { resume: spec.reattach!.agentSessionId } : { sessionId: this.agentSessionId }),
