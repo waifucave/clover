@@ -14,7 +14,7 @@
 ///     not a proof).
 // Where user-notify is unavailable (a kernel or arch this build doesn't cover: only x86-64 today) the sandbox runs
 // without the supervisor and the belt below still quarantines anything planted.
-import { closeSync, existsSync, fchmodSync, fstatSync, lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, fchmodSync, fstatSync, lstatSync, readFileSync } from "node:fs";
 import { ffiLib, ffiPtr } from "../platform/ffi";
 
 /** This machine's supervisor arch, or null where there is none (x86-64 measured live; arm64 by table). */
@@ -103,8 +103,13 @@ export function buildUserNotifFilter(arch: string = process.arch): Buffer | null
 }
 
 /** Flags that make an open a write (`O_ACCMODE` and the creating/truncating flags). */
-const O_WRONLY = 0o1, O_RDWR = 0o2, O_CREAT = 0o100, O_TRUNC = 0o1000, O_APPEND = 0o2000, O_TMPFILE = 0o20000000;
-const O_NOFOLLOW = 0o400000, O_CLOEXEC = 0o2000000, O_EXCL = 0o200, O_PATH = 0o10000000;
+const O_WRONLY = 0o1, O_RDWR = 0o2, O_CREAT = 0o100, O_TRUNC = 0o1000, O_APPEND = 0o2000;
+const O_CLOEXEC = 0o2000000, O_EXCL = 0o200, O_PATH = 0o10000000;
+/** O_NOFOLLOW and therefore O_TMPFILE (`__O_TMPFILE|O_DIRECTORY`) differ by platform (i386 values on some ARM
+ *  kernels): always take them from the platform's own constants, never hardcode them. Everything else above is
+ *  universal across the platforms Clover ships (verified against both). */
+const O_NOFOLLOW: number = fsConstants.O_NOFOLLOW as number;
+const O_TMPFILE: number = (0o20000000 | (fsConstants.O_DIRECTORY as number)) >>> 0;
 const AT_FDCWD = -100, AT_SYMLINK_NOFOLLOW = 0x100;
 
 /** Whether an open-like call writes, from its flags word (openat2's comes from its open_how). */
@@ -199,9 +204,9 @@ export function targetIds(pid: number): TargetIds | null {
 }
 
 /** Opens the base a trapped path resolves from: the target's cwd, one of its dir fds, or its root. Opens with
- *  O_PATH (never blocking, never needing read permission — this build's FFI refuses O_DIRECTORY on arm64) and
- *  checks the result is a directory. The fd pins the directory: nothing the target does afterwards (rename,
- *  replace, unmount) moves it. Returns -1 on failure, with the kernel's errno in `err`. */
+ *  O_PATH (never blocking, no read permission needed) and checks the result is a directory. The fd pins the
+ *  directory: nothing the target does afterwards (rename, replace, unmount) moves it. Returns -1 on failure,
+ *  with the kernel's errno in `err`. */
 export function resolveBase(lib: SupervisorLib, pid: number, absolute: boolean, dirfd: number): { fd: number; err: number } {
   const openDir = (p: string): { fd: number; err: number } => {
     const fd = Number(lib.openat(AT_FDCWD, bufOf(p), O_PATH, 0));
