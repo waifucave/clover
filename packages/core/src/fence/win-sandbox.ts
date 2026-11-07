@@ -704,6 +704,7 @@ export interface SrtUserStatus {
   readonly sid?: string;
   readonly markerVersion?: string | null;
   readonly setupVersion?: string;
+  readonly ownerSid?: string | null;
   readonly seclogon?: string;
   readonly credPresent?: boolean;
   readonly hiddenFromLogon?: boolean;
@@ -747,6 +748,11 @@ function parseUser(raw: unknown): SrtUserStatus | null {
     return typeof v === "boolean" ? v : undefined;
   };
   const markerRaw = u.marker_version;
+  // `owner_sid` rides top-level on the user-status object (null when
+  // absent): an existing principal with no recorded owner is refused
+  // by the caller, never adopted.
+  const hasOwnerField = Object.prototype.hasOwnProperty.call(u, "owner_sid");
+  const ownerSid = hasOwnerField ? (typeof u.owner_sid === "string" ? u.owner_sid : null) : undefined;
   return {
     exists: pick("exists") === true,
     ...(pickStr("sid") !== undefined ? { sid: pickStr("sid") } : {}),
@@ -754,6 +760,7 @@ function parseUser(raw: unknown): SrtUserStatus | null {
       ? { markerVersion: markerRaw === null ? null : String(markerRaw) }
       : {}),
     ...(versionField(u, "setup_version") !== undefined ? { setupVersion: versionField(u, "setup_version") } : {}),
+    ...(ownerSid !== undefined ? { ownerSid } : {}),
     ...(pickStr("seclogon") !== undefined ? { seclogon: pickStr("seclogon") } : {}),
     ...(pickBool("cred_present") !== undefined ? { credPresent: pickBool("cred_present") } : {}),
     ...(pickBool("hidden_from_logon") !== undefined ? { hiddenFromLogon: pickBool("hidden_from_logon") } : {}),
@@ -803,6 +810,7 @@ export function parseSrtStatus(
   if (user === null || !user.exists) return no("Bash isn't set up yet", SANDBOX_EXIT.FAILED);
   if (user.setupVersion === undefined || user.markerVersion !== user.setupVersion)
     return no("the install is from another launcher build; set it up again", SANDBOX_EXIT.FAILED);
+  if (typeof user.ownerSid !== "string") return no("the principal has no recorded owner; set it up again", SANDBOX_EXIT.FAILED);
   if (user.credPresent === false) return no("the principal's credential is missing; set it up again", SANDBOX_EXIT.FAILED);
   if (user.hiddenFromLogon === false) return no("the principal is visible at logon; set it up again", SANDBOX_EXIT.FAILED);
   if (user.seclogon !== undefined && user.seclogon !== "ok") return no("Secondary Logon isn't running", SANDBOX_EXIT.FAILED);

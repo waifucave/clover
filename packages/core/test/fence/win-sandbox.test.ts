@@ -149,8 +149,7 @@ describe("the status verdict", () => {
     expect(s.reason).toContain("isn't installed");
   });
 
-  test("numeric marker/setup versions (as srt-win reports them) match, and a pinned launcher is ready", () => {
-    // srt-win status reports marker_version/setup_version as JSON numbers; the parser must accept them.
+  test("numeric marker/setup versions (as srt-win reports them) match, and a pinned launcher is ready", () => {    // srt-win status reports marker_version/setup_version as JSON numbers; the parser must accept them.
     // Build a minimal valid PE32+ with no certificate table (same shape as the cert-fixture helper below).
     const buf = new ArrayBuffer(0x200);
     const view = new DataView(buf);
@@ -171,18 +170,22 @@ describe("the status verdict", () => {
       user: u,
       wfp: { state: "installed", filters: 4, allow_loopback: false },
     }), { launcher: file, pins });
-    const ready = parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok" });
+    const ready = parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok", owner_sid: "S-1-5-21-1" });
     expect(ready.ready).toBe(true);
     expect(ready.exit).toBe(SANDBOX_EXIT.OK);
     // A marker from another build is still refused, numeric or string.
-    expect(parse({ exists: true, marker_version: "2", setup_version: "3", seclogon: "ok" }).ready).toBe(false);
-    expect(parse({ exists: true, marker_version: "3", setup_version: "3", seclogon: "ok" }).ready).toBe(true);
+    expect(parse({ exists: true, marker_version: "2", setup_version: "3", seclogon: "ok", owner_sid: "S-1-5-21-1" }).ready).toBe(false);
+    expect(parse({ exists: true, marker_version: "3", setup_version: "3", seclogon: "ok", owner_sid: "S-1-5-21-1" }).ready).toBe(true);
+    // An existing principal with no recorded owner is refused, never adopted.
+    expect(parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok" }).ready).toBe(false);
+    expect(parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok", owner_sid: null }).ready).toBe(false);
     // The real srt-win shape nests the account under user.user; the install state stays on top.
     const nested = parse({
       cred_present: true,
       marker_version: 3,
       setup_version: 3,
       seclogon: "ok",
+      owner_sid: "S-1-5-21-1",
       user: { exists: true, sid: "S-1-5-21-1", hidden_from_logon: true, in_builtin_users: true, in_sandbox_group: true },
     });
     expect(nested.ready).toBe(true);
