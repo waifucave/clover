@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { AgentEvent, AgentPermissionAsk, AgentStartSpec } from "../../../src/contracts/agent-backend";
 import { isContractError } from "../../../src/contracts/common";
 import { query as sdkQuery } from "@waifucave/clover-agent-sdk";
-import { inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { inProcessSandboxReady, notAvailableHere } from "../../../src/agents/sandbox/in-process";
 import { BOT_SANDBOX } from "../../../src/runtime-sdk/turn-loop/driver";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
@@ -135,6 +136,19 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       await session.stop();
     }
   }, 60_000);
+
+  test("detect: available only where the embedded runtime's sandbox runs (lane K's check), whoever asks", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const deps = { home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN };
+    // Where the sandbox can't run, a direct caller learns it is not available, with lane K's reason.
+    const off = await inProcessAgentBackend({ ...deps, sandboxReady: () => false }).detect();
+    expect(off).toEqual(notAvailableHere(IN_PROCESS_BACKEND_ID));
+    expect(off.installed).toBe(false);
+    expect(off.reason).toContain("macOS-only for now");
+    expect((await inProcessAgentBackend({ ...deps, sandboxReady: () => true }).detect()).installed).toBe(true);
+    // By default it reads lane K's check itself.
+    expect((await inProcessAgentBackend(deps).detect()).installed).toBe(inProcessSandboxReady());
+  });
 
   test("a missing root is refused (not_found), never created, as lane K's clover-code refuses it", async () => {
     const home = temp("clover-a3-sub-home-");
